@@ -43,6 +43,7 @@ import {
   engineSendText,
 } from "./meta-send";
 import { decideFallback, resolveFallbackPolicy } from "./fallback";
+import { enqueueFlowRunEvent, flushFlowRunEvents } from "./event-log-buffer";
 import { addContactTagAndDispatch } from "@/lib/contacts/tag-events";
 import { removeContactTag } from "@/lib/contacts/tag-write";
 import {
@@ -340,16 +341,14 @@ async function logEvent(
   node_key: string | null,
   payload: Record<string, unknown> = {},
 ): Promise<void> {
-  const { error } = await db.from("flow_run_events").insert({
+  // Buffered — see event-log-buffer.ts. This is audit logging, not the
+  // dedup-critical insert (that's recordInboundOnce, kept unbuffered).
+  enqueueFlowRunEvent(db, {
     flow_run_id: flowRunId,
     event_type,
     node_key,
     payload,
   });
-  if (error) {
-    // Logging failure is non-fatal — surface but don't throw.
-    console.error("[flows] logEvent error:", error.message);
-  }
 }
 
 /**
@@ -1005,7 +1004,7 @@ export async function dispatchInboundToFlows(
       // One SELECT for the whole flow's nodes — advance loop is now
       // in-memory. See loadAllNodes.
       const nodes = await loadAllNodes(db, activeRun.flow_id);
-      return handleReplyForActiveRun(db, activeRun, input.message, nodes);
+      return await handleReplyForActiveRun(db, activeRun, input.message, nodes);
     }
 
     // No active run → look for a flow whose entry trigger matches.
@@ -1019,13 +1018,18 @@ export async function dispatchInboundToFlows(
       return { consumed: false, outcome: "no_match" };
     }
     const nodes = await loadAllNodes(db, flow.id);
-    return startNewRun(db, flow, input, nodes);
+    return await startNewRun(db, flow, input, nodes);
   } catch (err) {
     console.error(
       "[flows] dispatchInboundToFlows threw:",
       err instanceof Error ? err.message : err,
     );
     return { consumed: false, outcome: "no_match" };
+  } finally {
+    // Edge/serverless: an isolate can be evicted right after this
+    // request completes, so flush this run's buffered events now
+    // rather than relying on the interval timer alone.
+    await flushFlowRunEvents();
   }
 }
 
@@ -1374,29 +1378,36 @@ export async function resumeDueWaits(
   }
 
   let resumed = 0;
-  for (const run of (data ?? []) as FlowRunRow[]) {
-    const nodes = await loadAllNodes(db, run.flow_id);
-    const waitNode = run.current_node_key
-      ? (nodes.get(run.current_node_key) ?? null)
-      : null;
-    if (!waitNode || waitNode.node_type !== "wait") {
-      // Row is stale/inconsistent (e.g. the node was deleted/retyped
-      // out from under a parked run) — clear resume_at so it stops
-      // being rescanned every sweep instead of spinning forever.
+  try {
+    for (const run of (data ?? []) as FlowRunRow[]) {
+      const nodes = await loadAllNodes(db, run.flow_id);
+      const waitNode = run.current_node_key
+        ? (nodes.get(run.current_node_key) ?? null)
+        : null;
+      if (!waitNode || waitNode.node_type !== "wait") {
+        // Row is stale/inconsistent (e.g. the node was deleted/retyped
+        // out from under a parked run) — clear resume_at so it stops
+        // being rescanned every sweep instead of spinning forever.
+        await db.from("flow_runs").update({ resume_at: null }).eq("id", run.id);
+        await logEvent(db, run.id, "error", run.current_node_key, {
+          reason: "wait_resume_node_mismatch",
+        });
+        continue;
+      }
+      const cfg = waitNode.config as unknown as WaitNodeConfig;
       await db.from("flow_runs").update({ resume_at: null }).eq("id", run.id);
-      await logEvent(db, run.id, "error", run.current_node_key, {
-        reason: "wait_resume_node_mismatch",
+      await logEvent(db, run.id, "node_entered", waitNode.node_key, {
+        node_type: "wait",
+        resumed: true,
       });
-      continue;
+      await advanceFromNodeKey(db, run, cfg.next_node_key, nodes);
+      resumed += 1;
     }
-    const cfg = waitNode.config as unknown as WaitNodeConfig;
-    await db.from("flow_runs").update({ resume_at: null }).eq("id", run.id);
-    await logEvent(db, run.id, "node_entered", waitNode.node_key, {
-      node_type: "wait",
-      resumed: true,
-    });
-    await advanceFromNodeKey(db, run, cfg.next_node_key, nodes);
-    resumed += 1;
+  } finally {
+    // One cron tick can resume many runs — flush once at the end
+    // rather than relying on the interval timer alone (see
+    // dispatchInboundToFlows for why this matters on edge/serverless).
+    await flushFlowRunEvents();
   }
   return { resumed };
 }

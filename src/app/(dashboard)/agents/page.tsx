@@ -23,7 +23,9 @@ export default function AgentsPage() {
     (async () => {
       try {
         const res = await fetch('/api/ai/config');
-        const data = await res.json().catch(() => ({}));
+        const data = (await res.json().catch(() => ({}))) as {
+          configured?: boolean;
+        };
         if (!cancelled) setTab(data?.configured ? 'playground' : 'setup');
       } catch {
         if (!cancelled) setTab('setup');

@@ -106,18 +106,30 @@ export interface AccountContext {
 export async function getCurrentAccount(): Promise<AccountContext> {
   const supabase = await createClient();
 
+  // getClaims() verifies the access token's signature locally (against
+  // the project's cached JWKS) instead of getUser()'s round trip to
+  // /auth/v1/user — this helper is called on nearly every authenticated
+  // API route, so it dominated our Supabase Auth request volume. Only
+  // `sub` (the user id) is needed here; nothing below reads fresher
+  // user fields than the token already carries.
+  //
+  // Requires the project's JWT signing keys to be in "asymmetric" mode
+  // (Supabase Dashboard → Auth → JWT Keys) — on the legacy shared HS256
+  // secret, getClaims() falls back to a remote call and this gains
+  // nothing until that's switched on.
   const {
-    data: { user },
-    error: userErr,
-  } = await supabase.auth.getUser();
-  if (userErr || !user) {
+    data: claimsData,
+    error: claimsErr,
+  } = await supabase.auth.getClaims();
+  const userId = claimsData?.claims.sub;
+  if (claimsErr || !userId) {
     throw new UnauthorizedError();
   }
 
   const { data, error } = await supabase
     .from("profiles")
     .select("account_id, account_role")
-    .eq("user_id", user.id)
+    .eq("user_id", userId)
     .maybeSingle();
 
   if (error) {
@@ -165,7 +177,7 @@ export async function getCurrentAccount(): Promise<AccountContext> {
 
   return {
     supabase,
-    userId: user.id,
+    userId,
     accountId: data.account_id,
     role: data.account_role,
     account: { id: account.id, name: account.name },

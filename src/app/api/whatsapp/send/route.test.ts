@@ -121,6 +121,10 @@ function makeSupabaseMock() {
         data: { user: { id: 'user-1' } },
         error: null,
       })),
+      getClaims: vi.fn(async () => ({
+        data: { claims: { sub: 'user-1' } },
+        error: null,
+      })),
     },
     from: vi.fn((table: string) => builder(table)),
   }

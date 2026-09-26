@@ -50,9 +50,9 @@ function makeClient(opts: {
     calls,
     client: {
       auth: {
-        getUser: () =>
+        getClaims: () =>
           Promise.resolve({
-            data: { user: opts.user },
+            data: opts.user ? { claims: { sub: opts.user.id } } : null,
             error: opts.userErr ?? null,
           }),
       },

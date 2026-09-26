@@ -15,6 +15,7 @@ import {
   serializeWebhookEndpoint,
   normalizeWebhookUrl,
 } from '@/lib/webhooks/endpoints';
+import { invalidateWebhookEndpointsCache } from '@/lib/webhooks/cache';
 
 export async function GET(
   request: Request,
@@ -111,6 +112,8 @@ export async function PATCH(
     }
     if (!data) return fail('not_found', 'Webhook not found', 404);
 
+    invalidateWebhookEndpointsCache(ctx.accountId);
+
     return ok(serializeWebhookEndpoint(data as Record<string, unknown>));
   } catch (err) {
     return toApiErrorResponse(err);
@@ -138,6 +141,8 @@ export async function DELETE(
       return fail('internal', 'Failed to delete webhook', 500);
     }
     if (!data) return fail('not_found', 'Webhook not found', 404);
+
+    invalidateWebhookEndpointsCache(ctx.accountId);
 
     return ok({ id: data.id, deleted: true });
   } catch (err) {

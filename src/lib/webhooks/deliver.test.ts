@@ -13,11 +13,13 @@ vi.mock('@/lib/webhooks/ssrf', () => ({
 
 import { dispatchWebhookEvent, MAX_CONSECUTIVE_FAILURES } from './deliver';
 import { isDeliverableUrl } from './ssrf';
+import { resetWebhookEndpointsCacheForTests } from './cache';
 
 interface Row {
   id: string;
   url: string;
   secret: string;
+  events: string[];
 }
 interface Calls {
   updates: { id: string; payload: Record<string, unknown> }[];
@@ -40,10 +42,14 @@ function makeDb(rows: Row[], calls: Calls) {
         payload = p;
         return b;
       },
-      contains: () => Promise.resolve({ data: rows, error: null }),
       then: (resolve: (v: unknown) => unknown) => {
-        if (mode === 'update' && id) calls.updates.push({ id, payload });
-        return resolve({ data: null, error: null });
+        if (mode === 'update' && id) {
+          calls.updates.push({ id, payload });
+          return resolve({ data: null, error: null });
+        }
+        // select — the cache fetches all active endpoints for the
+        // account (no server-side event filter; that's now in-memory).
+        return resolve({ data: rows, error: null });
       },
     };
     return b;
@@ -58,6 +64,7 @@ function makeDb(rows: Row[], calls: Calls) {
 const emptyCalls = (): Calls => ({ updates: [], rpcs: [] });
 
 beforeEach(() => {
+  resetWebhookEndpointsCacheForTests();
   vi.mocked(isDeliverableUrl).mockResolvedValue(true);
   vi.stubGlobal('fetch', vi.fn());
 });
@@ -70,7 +77,7 @@ describe('dispatchWebhookEvent', () => {
     const calls = emptyCalls();
 
     await dispatchWebhookEvent(
-      makeDb([{ id: 'a', url: 'https://a.test/hook', secret: 's1' }], calls),
+      makeDb([{ id: 'a', url: 'https://a.test/hook', secret: 's1', events: ['message.received'] }], calls),
       'acct-1',
       'message.received',
       { x: 1 }
@@ -93,7 +100,7 @@ describe('dispatchWebhookEvent', () => {
     const calls = emptyCalls();
 
     await dispatchWebhookEvent(
-      makeDb([{ id: 'b', url: 'https://b.test/hook', secret: 's2' }], calls),
+      makeDb([{ id: 'b', url: 'https://b.test/hook', secret: 's2', events: ['message.received'] }], calls),
       'acct-1',
       'message.received',
       {}
@@ -113,7 +120,7 @@ describe('dispatchWebhookEvent', () => {
     const calls = emptyCalls();
 
     await dispatchWebhookEvent(
-      makeDb([{ id: 'c', url: 'https://127.0.0.1/hook', secret: 's3' }], calls),
+      makeDb([{ id: 'c', url: 'https://127.0.0.1/hook', secret: 's3', events: ['message.received'] }], calls),
       'acct-1',
       'message.received',
       {}

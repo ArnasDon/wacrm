@@ -17,6 +17,7 @@ import {
   generateWebhookSecret,
   normalizeWebhookUrl,
 } from '@/lib/webhooks/endpoints';
+import { invalidateWebhookEndpointsCache } from '@/lib/webhooks/cache';
 
 export async function GET(request: Request) {
   try {
@@ -90,6 +91,8 @@ export async function POST(request: Request) {
       console.error('[api/v1/webhooks] create error:', error);
       return fail('internal', 'Failed to create webhook', 500);
     }
+
+    invalidateWebhookEndpointsCache(ctx.accountId);
 
     // Secret shown exactly once.
     return ok(

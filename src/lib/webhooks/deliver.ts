@@ -26,6 +26,7 @@ import { decrypt } from '@/lib/whatsapp/encryption';
 import { buildSignatureHeader } from '@/lib/webhooks/sign';
 import { isDeliverableUrl } from '@/lib/webhooks/ssrf';
 import type { WebhookEvent } from '@/lib/webhooks/events';
+import { getActiveEndpointsForEvent } from '@/lib/webhooks/cache';
 
 /** Per-endpoint HTTP timeout. Kept short — this runs in `after()`. */
 export const DELIVERY_TIMEOUT_MS = 5000;
@@ -50,14 +51,9 @@ export async function dispatchWebhookEvent(
   data: unknown
 ): Promise<void> {
   try {
-    const { data: rows, error } = await db
-      .from('webhook_endpoints')
-      .select('id, url, secret')
-      .eq('account_id', accountId)
-      .eq('is_active', true)
-      .contains('events', [event]);
+    const rows = await getActiveEndpointsForEvent(db, accountId, event);
 
-    if (error || !rows || rows.length === 0) return;
+    if (rows.length === 0) return;
 
     // Sign the exact bytes we send so a receiver can recompute the
     // HMAC over the raw request body. `id` is a per-delivery uuid the

@@ -221,6 +221,7 @@ export default function FlowsPage() {
           canAct={canCreate}
           gateReason="create flows"
           onClick={() => setCreateOpen(true)}
+          className="hidden md:inline-flex"
         >
           <Plus className="h-4 w-4" />
           {t('newFlow')}
@@ -228,11 +229,13 @@ export default function FlowsPage() {
       </header>
 
       {flows.length === 0 ? (
-        <EmptyState
-          onCreate={() => setCreateOpen(true)}
-          canCreate={canCreate}
-          t={t}
-        />
+        <div className="hidden md:block">
+          <EmptyState
+            onCreate={() => setCreateOpen(true)}
+            canCreate={canCreate}
+            t={t}
+          />
+        </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           {flows.map((flow) => (
@@ -413,7 +416,7 @@ function FlowCard({
         </span>
       </div>
 
-      <div className="border-border mt-4 flex items-center justify-end gap-2 border-t pt-3">
+      <div className="border-border mt-4 hidden items-center justify-end gap-2 border-t pt-3 md:flex">
         <Button variant="ghost" size="sm" onClick={onEdit}>
           <Pencil className="h-3.5 w-3.5" />
           {t('edit')}

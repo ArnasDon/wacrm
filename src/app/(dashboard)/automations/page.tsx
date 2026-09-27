@@ -186,7 +186,7 @@ export default function AutomationsPage() {
           canAct={canCreate}
           gateReason="create automations"
           onClick={() => router.push('/automations/new')}
-          className="bg-primary text-primary-foreground hover:bg-primary/90"
+          className="bg-primary text-primary-foreground hover:bg-primary/90 hidden md:flex"
         >
           <Plus className="h-4 w-4" />
           {t('create')}
@@ -194,7 +194,7 @@ export default function AutomationsPage() {
       </div>
 
       {showTemplates && (
-        <section>
+        <section className="hidden md:block">
           <h2 className="text-muted-foreground mb-3 text-sm font-semibold">
             {t('templatesTitle')}
           </h2>
@@ -225,7 +225,7 @@ export default function AutomationsPage() {
       )}
 
       {automations.length === 0 ? (
-        <div className="border-border bg-card/40 flex h-48 flex-col items-center justify-center rounded-xl border border-dashed">
+        <div className="border-border bg-card/40 flex hidden h-48 flex-col items-center justify-center rounded-xl border border-dashed md:flex">
           <div className="bg-primary/10 flex h-12 w-12 items-center justify-center rounded-xl">
             <Zap className="text-primary h-6 w-6" />
           </div>
@@ -324,8 +324,10 @@ function AutomationCard({
 
         <button
           type="button"
-          onClick={onEdit}
-          className="min-w-0 flex-1 text-left"
+          onClick={() => {
+            if (window.innerWidth >= 768) onEdit();
+          }}
+          className="min-w-0 flex-1 cursor-default text-left md:cursor-pointer"
         >
           <div className="flex items-center gap-2">
             <span className="text-foreground truncate text-sm font-semibold">
@@ -379,7 +381,7 @@ function AutomationCard({
           <DropdownMenu>
             <DropdownMenuTrigger
               aria-label={t('openMenu')}
-              className="text-muted-foreground hover:bg-muted hover:text-foreground data-[popup-open]:bg-muted inline-flex h-8 w-8 items-center justify-center rounded-md transition-colors"
+              className="text-muted-foreground hover:bg-muted hover:text-foreground data-[popup-open]:bg-muted hidden h-8 w-8 items-center justify-center rounded-md transition-colors md:inline-flex"
             >
               <MoreVertical className="h-4 w-4" />
             </DropdownMenuTrigger>

@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { useAuth } from '@/hooks/use-auth';
 import { cn } from '@/lib/utils';
 import {
   LayoutDashboard,
@@ -39,13 +40,20 @@ const moreNavItems = [
   { href: '/flows', labelKey: 'flows', icon: Workflow },
   { href: '/broadcasts', labelKey: 'broadcasts', icon: Radio },
   { href: '/agents', labelKey: 'aiAgents', icon: Blocks },
-  { href: '/settings', labelKey: 'settings', icon: SettingsIcon },
+  { href: '/team', labelKey: 'team', icon: Users, adminOnly: true },
+  {
+    href: '/settings',
+    labelKey: 'settings',
+    icon: SettingsIcon,
+    adminOnly: true,
+  },
 ];
 
 export function BottomNav() {
   const t = useTranslations('Sidebar');
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
+  const { accountRole } = useAuth();
 
   return (
     <>
@@ -99,22 +107,31 @@ export function BottomNav() {
               <SheetTitle>{t('more')}</SheetTitle>
             </SheetHeader>
             <div className="grid flex-1 grid-cols-3 gap-4 overflow-y-auto p-4 pb-8">
-              {moreNavItems.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={() => setMoreOpen(false)}
-                  className="text-muted-foreground hover:text-primary flex flex-col items-center gap-2"
-                >
-                  <div className="bg-muted/50 hover:bg-muted/80 flex h-14 w-14 items-center justify-center rounded-2xl">
-                    <item.icon className="size-6" />
-                  </div>
-                  <span className="text-center text-[11px] font-medium">
-                    {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                    {t(item.labelKey as any)}
-                  </span>
-                </Link>
-              ))}
+              {moreNavItems.map((item) => {
+                if (
+                  item.adminOnly &&
+                  accountRole !== 'owner' &&
+                  accountRole !== 'admin'
+                ) {
+                  return null;
+                }
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={() => setMoreOpen(false)}
+                    className="text-muted-foreground hover:text-primary flex flex-col items-center gap-2"
+                  >
+                    <div className="bg-muted/50 hover:bg-muted/80 flex h-14 w-14 items-center justify-center rounded-2xl">
+                      <item.icon className="size-6" />
+                    </div>
+                    <span className="text-center text-[11px] font-medium">
+                      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                      {t(item.labelKey as any)}
+                    </span>
+                  </Link>
+                );
+              })}
             </div>
           </SheetContent>
         </Sheet>

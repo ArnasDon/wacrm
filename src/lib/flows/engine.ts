@@ -481,12 +481,29 @@ async function executeHandoff(
   run: FlowRunRow,
   node: FlowNodeRow,
 ): Promise<void> {
-  const cfg = node.config as { assign_to?: string; note?: string };
+  const cfg = node.config as {
+    target?: "human" | "ai";
+    assign_to?: string;
+    note?: string;
+  };
+  const isAiHandoff = cfg.target === "ai";
   const convUpdate: Record<string, unknown> = {
     status: "pending",
     updated_at: new Date().toISOString(),
   };
-  if (cfg.assign_to) convUpdate.assigned_agent_id = cfg.assign_to;
+
+  if (isAiHandoff) {
+    // A Flow handoff to AI must release any human assignment and re-enable
+    // the account's AI auto-reply for subsequent customer messages.
+    // The current inbound is intentionally not answered by AI because the
+    // Flow consumed it; the next inbound is the first AI turn.
+    convUpdate.assigned_agent_id = null;
+    convUpdate.ai_autoreply_disabled = false;
+  } else if (cfg.assign_to) {
+    convUpdate.assigned_agent_id = cfg.assign_to;
+    // Human handoff must keep AI paused so it cannot compete with the agent.
+    convUpdate.ai_autoreply_disabled = true;
+  }
   if (run.conversation_id) {
     await db
       .from("conversations")

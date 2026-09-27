@@ -189,6 +189,7 @@ export interface Conversation {
   assigned_agent_id?: string;
   last_message_text?: string;
   last_message_at?: string;
+  first_unanswered_at?: string;
   unread_count: number;
   created_at: string;
   updated_at: string;
@@ -422,6 +423,20 @@ export interface Deal {
   contact?: Contact;
   stage?: PipelineStage;
   assignee?: Profile;
+}
+
+export interface AssignmentHistory {
+  id: string;
+  account_id: string;
+  contact_id: string;
+  from_agent_id?: string | null;
+  to_agent_id?: string | null;
+  actor_id?: string | null;
+  reason: string;
+  created_at: string;
+  from_agent?: Profile;
+  to_agent?: Profile;
+  actor?: Profile;
 }
 
 export type BroadcastStatus =

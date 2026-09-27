@@ -13,7 +13,9 @@ import type {
   CustomField,
   Deal,
   MessageTemplate,
+  AssignmentHistory,
 } from '@/types';
+import { SlaBadge } from '@/components/ui/sla-badge';
 import {
   TemplatePicker,
   type TemplateSendValues,
@@ -43,6 +45,8 @@ import {
   Save,
   DollarSign,
   LayoutTemplate,
+  History,
+  User,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { contactHandle } from '@/lib/whatsapp/wa-identity';
@@ -68,6 +72,21 @@ export function ContactDetailView({
   const [contact, setContact] = useState<Contact | null>(null);
   const [loading, setLoading] = useState(false);
   const [copiedPhone, setCopiedPhone] = useState(false);
+  const [conversation, setConversation] = useState<{
+    id: string;
+    first_unanswered_at: string | null;
+    assigned_agent_id: string | null;
+  } | null>(null);
+  const [assignee, setAssignee] = useState<{
+    user_id: string;
+    full_name: string;
+  } | null>(null);
+
+  const [assignmentHistoryOpen, setAssignmentHistoryOpen] = useState(false);
+  const [assignmentHistory, setAssignmentHistory] = useState<
+    AssignmentHistory[]
+  >([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
   // Send template — lets the business initiate (or re-open) a conversation
   // with this contact by sending an approved template. The send route
@@ -120,6 +139,25 @@ export function ContactDetailView({
       setEditEmail(data.email ?? '');
       setEditCompany(data.company ?? '');
     }
+
+    const { data: conv } = await supabase
+      .from('conversations')
+      .select('id, first_unanswered_at, assigned_agent_id')
+      .eq('contact_id', contactId)
+      .maybeSingle();
+
+    if (conv) {
+      setConversation(conv);
+      if (conv.assigned_agent_id) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('user_id, full_name')
+          .eq('user_id', conv.assigned_agent_id)
+          .maybeSingle();
+        if (profile) setAssignee(profile);
+      }
+    }
+
     setLoading(false);
   }, [contactId, supabase]);
 
@@ -206,6 +244,23 @@ export function ContactDetailView({
     fetchCustomFields,
     fetchDeals,
   ]);
+
+  async function fetchAssignmentHistory() {
+    if (!contactId) return;
+    setLoadingHistory(true);
+    setAssignmentHistoryOpen(true);
+    const { data } = await supabase
+      .from('assignment_history')
+      .select(
+        '*, from_agent:profiles!from_agent_id(user_id, full_name), to_agent:profiles!to_agent_id(user_id, full_name), actor:profiles!actor_id(user_id, full_name)'
+      )
+      .eq('contact_id', contactId)
+      .order('created_at', { ascending: false });
+    if (data) {
+      setAssignmentHistory(data as unknown as AssignmentHistory[]);
+    }
+    setLoadingHistory(false);
+  }
 
   async function copyPhone() {
     if (!contact) return;
@@ -727,6 +782,27 @@ export function ContactDetailView({
                         </span>
                       )}
                     </div>
+                    {(conversation?.first_unanswered_at || assignee) && (
+                      <div className="text-muted-foreground mt-2 flex items-center gap-3 text-xs">
+                        {conversation?.first_unanswered_at && (
+                          <SlaBadge
+                            firstUnansweredAt={conversation.first_unanswered_at}
+                          />
+                        )}
+                        {assignee && (
+                          <button
+                            onClick={fetchAssignmentHistory}
+                            className="bg-muted hover:bg-muted/80 border-border flex cursor-pointer items-center gap-1 rounded border px-1.5 py-0.5 transition-colors"
+                          >
+                            <User className="size-3" />
+                            {t('assignedTo', { fallback: 'Assigned to: ' })}
+                            <span className="text-foreground font-medium">
+                              {assignee.full_name}
+                            </span>
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="mt-3">
@@ -864,6 +940,69 @@ export function ContactDetailView({
               </Tabs>
             </div>
           )}
+        </SheetContent>
+      </Sheet>
+      <Sheet
+        open={assignmentHistoryOpen}
+        onOpenChange={setAssignmentHistoryOpen}
+      >
+        <SheetContent
+          side="right"
+          className="bg-popover border-border text-popover-foreground flex w-full flex-col p-0 sm:max-w-md"
+        >
+          <SheetHeader className="border-border/50 border-b p-4">
+            <SheetTitle className="text-popover-foreground flex items-center gap-2">
+              <History className="size-4" />
+              {t('assignmentHistoryTitle', { fallback: 'Assignment History' })}
+            </SheetTitle>
+          </SheetHeader>
+          <div className="flex-1 overflow-y-auto p-4">
+            {loadingHistory ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="text-muted-foreground size-5 animate-spin" />
+              </div>
+            ) : assignmentHistory.length === 0 ? (
+              <p className="text-muted-foreground py-8 text-center text-sm">
+                {t('noAssignmentHistory', {
+                  fallback: 'No assignment history found.',
+                })}
+              </p>
+            ) : (
+              <div className="space-y-4">
+                {assignmentHistory.map((record) => (
+                  <div
+                    key={record.id}
+                    className="bg-card border-border rounded-lg border p-3 shadow-sm"
+                  >
+                    <p className="text-foreground mb-1 text-sm font-medium">
+                      {record.to_agent
+                        ? record.to_agent.full_name
+                        : 'Unassigned'}
+                    </p>
+                    <p className="text-muted-foreground text-xs">
+                      From:{' '}
+                      {record.from_agent
+                        ? record.from_agent.full_name
+                        : 'Unassigned'}
+                    </p>
+                    <div className="text-muted-foreground border-border/50 mt-2 flex items-center justify-between border-t pt-2 text-xs">
+                      <span>
+                        Reason:{' '}
+                        <span className="font-medium">{record.reason}</span>
+                      </span>
+                      <span>
+                        {new Date(record.created_at).toLocaleDateString()}{' '}
+                        {new Date(record.created_at).toLocaleTimeString([], {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </SheetContent>
       </Sheet>
       <TemplatePicker

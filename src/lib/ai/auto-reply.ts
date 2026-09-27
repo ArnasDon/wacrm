@@ -86,7 +86,10 @@ export async function dispatchInboundToAiReply(
 
     if (!config.autoReplyEnabled && !flowAiHandoff) return
     if (conv.assigned_agent_id) return // a human owns this thread
-    // An explicit Flow → AI handoff is a deliberate re-entry into AI mode.\n    // A previous AI handoff may have left this flag true; do not let stale\n    // state block a newly-started AI flow.\n    if (conv.ai_autoreply_disabled && !flowAiHandoff) return // handed off / turned off here
+    // An explicit Flow → AI handoff is a deliberate re-entry into AI mode.
+    // A previous AI handoff may have left this flag true; do not let stale
+    // state block a newly-started AI flow.
+    if (conv.ai_autoreply_disabled && !flowAiHandoff) return // handed off / turned off here
 
     // Deterministic message-level responders normally suppress the LLM to
     // avoid double replies. An explicit Flow → AI handoff is the exception.
@@ -106,7 +109,9 @@ export async function dispatchInboundToAiReply(
       conv.ai_reply_count >= config.autoReplyMaxPerConversation
     ) return
 
-    const startedAt = Date.now()\n    const messages = await buildConversationContext(db, conversationId)\n    console.info(`[ai auto-reply] context ready conversation=${conversationId} ms=${Date.now() - startedAt} messages=${messages.length}`)
+    const startedAt = Date.now()
+    const messages = await buildConversationContext(db, conversationId)
+    console.info(`[ai auto-reply] context ready conversation=${conversationId} ms=${Date.now() - startedAt} messages=${messages.length}`)
     if (messages.length === 0) return
 
     // Account-wide throttle on the shared BYO key. The per-conversation
@@ -136,26 +141,32 @@ export async function dispatchInboundToAiReply(
     }
 
     // Ground the reply in the account's knowledge base (best-effort).
-    const knowledgeStartedAt = Date.now()\n    const knowledge = await retrieveKnowledge(
+    const knowledgeStartedAt = Date.now()
+    const knowledge = await retrieveKnowledge(
       db,
       accountId,
       config,
       latestUserMessage(messages),
     )
 
-    console.info(`[ai auto-reply] knowledge ready conversation=${conversationId} ms=${Date.now() - knowledgeStartedAt} items=${knowledge.length}`)\n\n    const systemPrompt = buildSystemPrompt({
+    console.info(`[ai auto-reply] knowledge ready conversation=${conversationId} ms=${Date.now() - knowledgeStartedAt} items=${knowledge.length}`)
+
+    const systemPrompt = buildSystemPrompt({
       userPrompt: config.systemPrompt,
       mode: 'auto_reply',
       knowledge,
     })
 
-    const aiStartedAt = Date.now()\n    const { text, handoff, usage } = await generateReply({
+    const aiStartedAt = Date.now()
+    const { text, handoff, usage } = await generateReply({
       config,
       systemPrompt,
       messages,
     })
 
-    console.info(`[ai auto-reply] provider completed conversation=${conversationId} ms=${Date.now() - aiStartedAt} text=${text.length} handoff=${handoff}`)\n\n    // Record token spend on the account's BYO key. Fire-and-forget so it
+    console.info(`[ai auto-reply] provider completed conversation=${conversationId} ms=${Date.now() - aiStartedAt} text=${text.length} handoff=${handoff}`)
+
+    // Record token spend on the account's BYO key. Fire-and-forget so it
     // never adds latency to the customer-facing send: `logAiUsage`
     // swallows its own errors, so the floating promise can't reject.
     // Logged regardless of handoff — the provider call happened either
@@ -223,7 +234,8 @@ export async function dispatchInboundToAiReply(
     }
     if (claimed !== true) return // lost the per-conversation cap race
 
-    const sendStartedAt = Date.now()\n    await engineSendText({
+    const sendStartedAt = Date.now()
+    await engineSendText({
       accountId,
       userId: configOwnerUserId,
       conversationId,
@@ -232,7 +244,9 @@ export async function dispatchInboundToAiReply(
       aiGenerated: true,
     })
 
-    console.info(`[ai auto-reply] WhatsApp send completed conversation=${conversationId} ms=${Date.now() - sendStartedAt} total_ms=${Date.now() - startedAt}`)\n\n    // Keep the Flow → AI marker on the conversation. It is the
+    console.info(`[ai auto-reply] WhatsApp send completed conversation=${conversationId} ms=${Date.now() - sendStartedAt} total_ms=${Date.now() - startedAt}`)
+
+    // Keep the Flow → AI marker on the conversation. It is the
     // persistent state that tells later inbound messages that this
     // conversation is in the AI-agent mode. Clearing it here made only
     // the first "Hi" message eligible when account-level auto-reply was

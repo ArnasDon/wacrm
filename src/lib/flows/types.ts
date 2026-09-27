@@ -98,11 +98,16 @@ export interface SendMediaNodeConfig {
 }
 
 export interface HandoffNodeConfig {
+  /**
+   * Where the conversation should go after the flow finishes.
+   * Existing/omitted values remain human handoff for backward compatibility.
+   */
+  target?: "human" | "ai";
   /** Optional internal note written to flow_run_events.payload.note. */
   note?: string;
   /**
-   * Optional agent user_id to assign on the conversation when this
-   * node fires. Leave unset to flip the status without assignment.
+   * Optional human agent user_id to assign on the conversation.
+   * Ignored when target === "ai".
    */
   assign_to?: string;
 }

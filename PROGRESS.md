@@ -15,4 +15,4 @@ Checked off by the agent as each `IMPLEMENTATION_PLAN.md` section merges. One li
 - [x] Section K — PWA & Native-Feel Polish
 - [ ] Section L — Billing & Plan Gating
 - [x] Section M — Portal Lead Capture (Email Parser)
-- [ ] Section N — QA, Performance & Launch Readiness
+- [x] Section N — QA, Performance & Launch Readiness

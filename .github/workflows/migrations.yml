@@ -69,3 +69,7 @@ jobs:
       # just the absence of an error.
       - name: Verify the resulting schema
         run: supabase db query --local --file supabase/ci/verify-schema.sql
+
+      - name: Verify two-tenant RLS isolation
+        run: supabase db query --local --file supabase/ci/verify-rls-isolation.sql
+

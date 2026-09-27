@@ -210,6 +210,8 @@ export async function POST(request: Request) {
       }
     }
 
+    // Keep the persisted URL exactly as validated, while using null for native
+    // providers so an old compatible URL can never leak into a native config.
     const encryptedKey = rawKey ? encrypt(rawKey) : null
     const shared: Record<string, unknown> = {
       provider,

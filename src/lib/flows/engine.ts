@@ -58,6 +58,7 @@ import {
   type SetTagNodeConfig,
   type StartNodeConfig,
   type KeywordTriggerConfig,
+  FLOW_AI_HANDOFF_MARKER,
 } from "./types";
 
 // ============================================================
@@ -499,6 +500,7 @@ async function executeHandoff(
     // Flow consumed it; the next inbound is the first AI turn.
     convUpdate.assigned_agent_id = null;
     convUpdate.ai_autoreply_disabled = false;
+    convUpdate.ai_handoff_summary = FLOW_AI_HANDOFF_MARKER;
   } else if (cfg.assign_to) {
     convUpdate.assigned_agent_id = cfg.assign_to;
     // Human handoff must keep AI paused so it cannot compete with the agent.

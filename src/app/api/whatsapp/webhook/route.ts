@@ -22,6 +22,7 @@ import {
   handleTemplateWebhookChange,
   isTemplateWebhookField,
 } from '@/lib/whatsapp/template-webhook';
+import { sendPushToAccount } from '@/lib/push';
 
 // The `after()` callback in POST runs within this route's max duration.
 // Inbound processing can fan out to per-media Meta verification calls, so
@@ -881,6 +882,14 @@ async function processMessage(
   // so the broadcast's `replied_count` advances (via the aggregate
   // trigger installed in migration 003).
   await flagBroadcastReplyIfAny(accountId, contactRecord.id);
+
+  if (isFirstInboundMessage) {
+    sendPushToAccount(accountId, {
+      title: 'New Lead',
+      body: `${contactRecord.name} sent their first message!`,
+      url: `/conversations/${conversation.id}`,
+    }).catch(console.error);
+  }
 
   // ============================================================
   // Flow runner dispatch.

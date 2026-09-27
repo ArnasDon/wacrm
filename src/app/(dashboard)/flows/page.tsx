@@ -3,6 +3,9 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
+import { Skeleton } from '@/components/dashboard/skeleton';
+import { PullToRefresh } from '@/components/layout/pull-to-refresh';
+import { vibrate } from '@/lib/utils/vibrate';
 import {
   Workflow,
   Plus,
@@ -187,6 +190,7 @@ export default function FlowsPage() {
       if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
       setFlows((prev) => prev.filter((f) => f.id !== flow.id));
       toast.success(t('deleteSuccess'));
+      vibrate([50, 100, 50]);
     } catch (err) {
       console.error(err);
       toast.error(t('deleteError'));
@@ -195,13 +199,25 @@ export default function FlowsPage() {
 
   if (loading) {
     return (
-      <div className="flex h-full items-center justify-center">
-        <Loader2 className="text-muted-foreground h-6 w-6 animate-spin" />
+      <div className="space-y-6 p-6">
+        <header className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <Skeleton className="h-8 w-40" />
+            <Skeleton className="mt-2 h-4 w-60" />
+          </div>
+          <Skeleton className="h-10 w-28 hidden md:block" />
+        </header>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-32 rounded-xl" />
+          ))}
+        </div>
       </div>
     );
   }
 
   return (
+    <PullToRefresh>
     <div className="space-y-6 p-6">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
@@ -330,6 +346,7 @@ export default function FlowsPage() {
         </DialogContent>
       </Dialog>
     </div>
+    </PullToRefresh>
   );
 }
 

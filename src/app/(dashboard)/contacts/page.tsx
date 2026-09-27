@@ -3,7 +3,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
+import { PullToRefresh } from '@/components/layout/pull-to-refresh';
+import { vibrate } from '@/lib/utils/vibrate';
 import type { Contact, Tag, ContactTag } from '@/types';
+import { Skeleton } from '@/components/dashboard/skeleton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -308,6 +311,7 @@ export default function ContactsPage() {
       toast.error(t('toastFailedDelete'));
     } else {
       toast.success(t('toastDeleted'));
+      vibrate([50, 100, 50]);
       fetchContacts();
     }
 
@@ -387,6 +391,7 @@ export default function ContactsPage() {
   }
 
   return (
+    <PullToRefresh>
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -577,9 +582,16 @@ export default function ContactsPage() {
       {/* Mobile List View */}
       <div className="space-y-3 md:hidden">
         {loading ? (
-          <div className="flex flex-col items-center justify-center gap-2 py-12">
-            <Loader2 className="text-primary size-6 animate-spin" />
-            <p className="text-muted-foreground text-sm">{t('loading')}</p>
+          <div className="flex flex-col gap-3 py-4">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-3">
+                <Skeleton className="h-10 w-10 rounded-full" />
+                <div className="space-y-2 flex-1">
+                  <Skeleton className="h-4 w-[60%]" />
+                  <Skeleton className="h-3 w-[40%]" />
+                </div>
+              </div>
+            ))}
           </div>
         ) : contacts.length === 0 ? (
           <div className="flex flex-col items-center gap-2 py-12">
@@ -734,16 +746,35 @@ export default function ContactsPage() {
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableRow className="border-border">
-                <TableCell colSpan={10} className="py-12 text-center">
-                  <div className="flex flex-col items-center gap-2">
-                    <Loader2 className="text-primary size-6 animate-spin" />
-                    <p className="text-muted-foreground text-sm">
-                      {t('loading')}
-                    </p>
-                  </div>
-                </TableCell>
-              </TableRow>
+              Array.from({ length: 10 }).map((_, i) => (
+                <TableRow key={i} className="border-border">
+                  <TableCell className="w-10">
+                    <Skeleton className="h-4 w-4" />
+                  </TableCell>
+                  <TableCell>
+                    <Skeleton className="h-5 w-[150px]" />
+                  </TableCell>
+                  <TableCell className="hidden md:table-cell">
+                    <Skeleton className="h-4 w-[120px]" />
+                  </TableCell>
+                  <TableCell className="hidden xl:table-cell">
+                    <Skeleton className="h-5 w-[100px]" />
+                  </TableCell>
+                  <TableCell className="hidden 2xl:table-cell">
+                    <Skeleton className="h-5 w-[180px]" />
+                  </TableCell>
+                  <TableCell className="hidden xl:table-cell">
+                    <Skeleton className="h-5 w-16" />
+                  </TableCell>
+                  <TableCell className="hidden lg:table-cell">
+                    <Skeleton className="h-4 w-[100px]" />
+                  </TableCell>
+                  <TableCell className="hidden lg:table-cell">
+                    <Skeleton className="h-4 w-[120px]" />
+                  </TableCell>
+                  <TableCell />
+                </TableRow>
+              ))
             ) : contacts.length === 0 ? (
               <TableRow className="border-border">
                 <TableCell colSpan={10} className="py-12 text-center">
@@ -1040,5 +1071,6 @@ export default function ContactsPage() {
         </DialogContent>
       </Dialog>
     </div>
+    </PullToRefresh>
   );
 }

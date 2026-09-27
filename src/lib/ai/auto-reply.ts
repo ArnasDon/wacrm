@@ -13,6 +13,7 @@ import {
 } from '@/lib/flows/meta-send'
 import { sendTypingIndicator } from '@/lib/whatsapp/meta-api'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
+import { FLOW_AI_HANDOFF_MARKER } from '@/lib/flows/types'
 
 interface DispatchArgs {
   /** Tenancy key — drives config, contact, and whatsapp_config lookups. */
@@ -64,14 +65,20 @@ export async function dispatchInboundToAiReply(
     const config = await loadAiConfig(db, accountId)
     if (!config || !config.autoReplyEnabled) return
 
-    // Deterministic, user-configured responders win over the LLM — the
-    // caller already excludes messages a Flow consumed. Message-level
-    // automations (`new_message_received` / `keyword_match`) are
-    // dispatched independently for this same inbound and may send their
-    // own reply, so if the account has any active one we stand down to
-    // avoid double-texting the customer. (Relationship triggers like
-    // `first_inbound_message` don't count — they're not per-message
-    // auto-responders.)
+    // Load conversation state before automation suppression so an explicit
+    // Flow → AI handoff can override message-level responders.
+    const { data: conv, error: convErr } = await db
+      .from('conversations')
+      .select('assigned_agent_id, ai_autoreply_disabled, ai_reply_count, ai_handoff_summary')
+      .eq('id', conversationId)
+      .maybeSingle()
+    if (convErr || !conv) return
+    const flowAiHandoff = conv.ai_handoff_summary === FLOW_AI_HANDOFF_MARKER
+    if (conv.assigned_agent_id) return // a human owns this thread
+    if (conv.ai_autoreply_disabled) return // handed off / turned off here
+
+    // Deterministic message-level responders normally suppress the LLM to
+    // avoid double replies. An explicit Flow → AI handoff is the exception.
     const { data: autoResponders } = await db
       .from('automations')
       .select('id')
@@ -79,16 +86,8 @@ export async function dispatchInboundToAiReply(
       .eq('is_active', true)
       .in('trigger_type', ['new_message_received', 'keyword_match'])
       .limit(1)
-    if (autoResponders && autoResponders.length > 0) return
+    if (!flowAiHandoff && autoResponders && autoResponders.length > 0) return
 
-    const { data: conv, error: convErr } = await db
-      .from('conversations')
-      .select('assigned_agent_id, ai_autoreply_disabled, ai_reply_count')
-      .eq('id', conversationId)
-      .maybeSingle()
-    if (convErr || !conv) return
-    if (conv.assigned_agent_id) return // a human owns this thread
-    if (conv.ai_autoreply_disabled) return // handed off / turned off here
     // Cheap early-out; the authoritative cap check is the atomic claim
     // below (this read can race a concurrent inbound).
     if (conv.ai_reply_count >= config.autoReplyMaxPerConversation) return
@@ -211,6 +210,14 @@ export async function dispatchInboundToAiReply(
       text,
       aiGenerated: true,
     })
+
+    if (flowAiHandoff) {
+      await db
+        .from('conversations')
+        .update({ ai_handoff_summary: null })
+        .eq('id', conversationId)
+        .eq('ai_handoff_summary', FLOW_AI_HANDOFF_MARKER)
+    }
   } catch (err) {
     console.error('[ai auto-reply] dispatch failed:', err)
   }

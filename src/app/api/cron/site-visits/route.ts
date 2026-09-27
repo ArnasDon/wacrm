@@ -2,6 +2,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/automations/admin-client';
 import { runAutomationsForTrigger } from '@/lib/automations/engine';
+import { sendPushToAccount } from '@/lib/push';
 
 export async function GET(request: Request) {
   const expected = process.env.AUTOMATION_CRON_SECRET;
@@ -53,6 +54,11 @@ export async function GET(request: Request) {
         .from('site_visits')
         .update({ reminded_24h: true })
         .eq('id', visit.id);
+
+      sendPushToAccount(visit.account_id, {
+        title: 'Visit Reminder (24h)',
+        body: `Upcoming visit tomorrow at ${visit.properties?.title || 'property'} for ${visit.contacts?.name || 'client'}`,
+      }).catch(console.error);
     }
   }
 
@@ -89,6 +95,11 @@ export async function GET(request: Request) {
         .from('site_visits')
         .update({ reminded_2h: true })
         .eq('id', visit.id);
+
+      sendPushToAccount(visit.account_id, {
+        title: 'Visit Reminder (2h)',
+        body: `Upcoming visit in 2 hours at ${visit.properties?.title || 'property'} for ${visit.contacts?.name || 'client'}`,
+      }).catch(console.error);
     }
   }
 

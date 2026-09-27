@@ -25,6 +25,12 @@ export default function EditAutomationPage({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (window.innerWidth < 768) {
+      router.push('/automations');
+    }
+  }, [router]);
+
+  useEffect(() => {
     let cancelled = false;
     async function load() {
       const res = await fetch(`/api/automations/${id}`);

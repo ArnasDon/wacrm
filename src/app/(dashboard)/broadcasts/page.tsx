@@ -18,6 +18,7 @@ import { useCan } from '@/hooks/use-can';
 import { GatedButton } from '@/components/ui/gated-button';
 import { getBroadcastStatus } from '@/lib/broadcast-status';
 import { useTranslations } from 'next-intl';
+import { PullToRefresh } from '@/components/layout/pull-to-refresh';
 
 /**
  * Poll cadence while any broadcast is sending. Kept modest so we don't
@@ -151,8 +152,9 @@ export default function BroadcastsPage() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Top indeterminate progress bar: only visible while a broadcast
+    <PullToRefresh onRefresh={fetchBroadcasts}>
+      <div className="space-y-6">
+        {/* Top indeterminate progress bar: only visible while a broadcast
           is mid-send. Pure CSS animation so no extra deps. */}
       {anySending && (
         <div
@@ -299,5 +301,6 @@ export default function BroadcastsPage() {
         </div>
       )}
     </div>
+    </PullToRefresh>
   );
 }

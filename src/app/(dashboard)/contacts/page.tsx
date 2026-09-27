@@ -3,7 +3,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
+import { PullToRefresh } from '@/components/layout/pull-to-refresh';
+import { vibrate } from '@/lib/utils/vibrate';
 import type { Contact, Tag, ContactTag } from '@/types';
+import { Skeleton } from '@/components/dashboard/skeleton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -308,6 +311,7 @@ export default function ContactsPage() {
       toast.error(t('toastFailedDelete'));
     } else {
       toast.success(t('toastDeleted'));
+      vibrate([50, 100, 50]);
       fetchContacts();
     }
 
@@ -387,658 +391,691 @@ export default function ContactsPage() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-foreground text-2xl font-bold">{t('title')}</h1>
-          <p className="text-muted-foreground mt-1 text-sm">
-            {totalCount > 0
-              ? t('subtitle', { count: totalCount })
-              : t('subtitleZero')}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {canEditSettings && (
-            <Button
+    <PullToRefresh>
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-foreground text-2xl font-bold">{t('title')}</h1>
+            <p className="text-muted-foreground mt-1 text-sm">
+              {totalCount > 0
+                ? t('subtitle', { count: totalCount })
+                : t('subtitleZero')}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            {canEditSettings && (
+              <Button
+                variant="outline"
+                onClick={() => setCustomFieldsOpen(true)}
+                className="border-border text-muted-foreground hover:bg-muted"
+              >
+                <SlidersHorizontal className="size-4" />
+                {t('customFieldsBtn')}
+              </Button>
+            )}
+            <GatedButton
               variant="outline"
-              onClick={() => setCustomFieldsOpen(true)}
+              canAct={canEdit}
+              gateReason="add or import contacts"
+              onClick={() => setImportOpen(true)}
               className="border-border text-muted-foreground hover:bg-muted"
             >
-              <SlidersHorizontal className="size-4" />
-              {t('customFieldsBtn')}
-            </Button>
-          )}
-          <GatedButton
-            variant="outline"
-            canAct={canEdit}
-            gateReason="add or import contacts"
-            onClick={() => setImportOpen(true)}
-            className="border-border text-muted-foreground hover:bg-muted"
-          >
-            <Upload className="size-4" />
-            {t('importBtn')}
-          </GatedButton>
-          <GatedButton
-            canAct={canEdit}
-            gateReason="add or import contacts"
-            onClick={openAddForm}
-            className="bg-primary hover:bg-primary/90 text-primary-foreground"
-          >
-            <Plus className="size-4" />
-            {t('addContactBtn')}
-          </GatedButton>
-        </div>
-      </div>
-
-      {/* Search + tag filter */}
-      <div className="bg-background/95 sticky top-0 z-10 -mx-4 space-y-2 px-4 py-2 backdrop-blur sm:static sm:mx-0 sm:bg-transparent sm:px-0 sm:py-0">
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <div className="relative w-full max-w-sm">
-            <Search className="text-muted-foreground absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
-            <Input
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                setPage(0);
-              }}
-              placeholder={t('searchPlaceholder')}
-              className="bg-card border-border text-foreground placeholder:text-muted-foreground pl-8"
-            />
-          </div>
-
-          <Popover>
-            <PopoverTrigger
-              render={
-                <Button
-                  variant="outline"
-                  className="border-border text-muted-foreground hover:bg-muted shrink-0"
-                />
-              }
-            >
-              <Filter className="size-4" />
-              {t('filterByTags')}
-              {selectedTagIds.length > 0 && (
-                <span className="bg-primary text-primary-foreground ml-1 inline-flex items-center justify-center rounded-full px-1.5 text-[10px] font-semibold">
-                  {selectedTagIds.length}
-                </span>
-              )}
-            </PopoverTrigger>
-            <PopoverContent align="start" className="w-64 p-0">
-              <div className="border-border flex items-center justify-between border-b px-3 py-2">
-                <span className="text-popover-foreground text-sm font-medium">
-                  {t('filterByTags')}
-                </span>
-                {selectedTagIds.length > 0 && (
-                  <button
-                    onClick={clearTagFilters}
-                    className="text-muted-foreground hover:text-foreground text-xs"
-                  >
-                    {t('clearAll')}
-                  </button>
-                )}
-              </div>
-              {allTags.length === 0 ? (
-                <p className="text-muted-foreground px-3 py-4 text-center text-sm">
-                  {t('noTagsYet')}
-                </p>
-              ) : (
-                <div className="max-h-64 overflow-y-auto py-1">
-                  {allTags.map((tag) => (
-                    <label
-                      key={tag.id}
-                      className="hover:bg-muted/50 flex cursor-pointer items-center gap-2.5 px-3 py-1.5"
-                    >
-                      <Checkbox
-                        checked={selectedTagIds.includes(tag.id)}
-                        onCheckedChange={() => toggleTagFilter(tag.id)}
-                        aria-label={`Filter by ${tag.name}`}
-                      />
-                      <span
-                        className="size-2.5 shrink-0 rounded-full"
-                        style={{ backgroundColor: tag.color }}
-                      />
-                      <span className="text-popover-foreground truncate text-sm">
-                        {tag.name}
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              )}
-            </PopoverContent>
-          </Popover>
-        </div>
-
-        {/* Active tag-filter chips */}
-        {selectedTagIds.length > 0 && (
-          <div className="flex flex-wrap items-center gap-1.5">
-            {selectedTagIds.map((id) => {
-              const tag = tagsMap[id];
-              if (!tag) return null;
-              return (
-                <span
-                  key={id}
-                  className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium"
-                  style={{
-                    backgroundColor: tag.color + '20',
-                    color: tag.color,
-                  }}
-                >
-                  {tag.name}
-                  <button
-                    onClick={() => toggleTagFilter(id)}
-                    aria-label={`Remove ${tag.name} filter`}
-                    className="hover:opacity-70"
-                  >
-                    <X className="size-3" />
-                  </button>
-                </span>
-              );
-            })}
-            <button
-              onClick={clearTagFilters}
-              className="text-muted-foreground hover:text-foreground px-1 text-xs"
-            >
-              {t('clearAll')}
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Bulk action bar */}
-      {selected.size > 0 && (
-        <div className="border-border bg-muted/40 flex items-center justify-between gap-4 rounded-lg border px-4 py-2">
-          <p className="text-foreground text-sm">
-            {t('selectedCount', { count: selected.size })}
-          </p>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setSelected(new Set())}
-              className="text-muted-foreground hover:text-foreground"
-            >
-              {t('clearSelection')}
-            </Button>
+              <Upload className="size-4" />
+              {t('importBtn')}
+            </GatedButton>
             <GatedButton
-              variant="destructive"
-              size="sm"
               canAct={canEdit}
-              gateReason="delete contacts"
-              onClick={() => setBulkDeleteOpen(true)}
+              gateReason="add or import contacts"
+              onClick={openAddForm}
+              className="bg-primary hover:bg-primary/90 text-primary-foreground"
             >
-              <Trash2 className="size-4" />
-              {t('deleteSelected')}
+              <Plus className="size-4" />
+              {t('addContactBtn')}
             </GatedButton>
           </div>
         </div>
-      )}
 
-      {/* Mobile List View */}
-      <div className="space-y-3 md:hidden">
-        {loading ? (
-          <div className="flex flex-col items-center justify-center gap-2 py-12">
-            <Loader2 className="text-primary size-6 animate-spin" />
-            <p className="text-muted-foreground text-sm">{t('loading')}</p>
-          </div>
-        ) : contacts.length === 0 ? (
-          <div className="flex flex-col items-center gap-2 py-12">
-            <Users className="text-muted-foreground size-8" />
-            <p className="text-muted-foreground text-sm">
-              {hasActiveFilters ? t('noContactsMatch') : t('noContactsYet')}
-            </p>
-            {!hasActiveFilters && (
-              <GatedButton
-                canAct={canEdit}
-                gateReason="add or import contacts"
-                variant="outline"
-                size="sm"
-                onClick={openAddForm}
-                className="border-border text-muted-foreground hover:bg-muted mt-2"
-              >
-                <Plus className="size-3.5" />
-                {t('addFirstContact')}
-              </GatedButton>
-            )}
-          </div>
-        ) : (
-          contacts.map((contact) => (
-            <div
-              key={contact.id}
-              className="border-border bg-card relative overflow-hidden rounded-lg border"
-            >
-              <div
-                className="flex w-full snap-x snap-mandatory overflow-x-auto [&::-webkit-scrollbar]:hidden"
-                style={{ scrollbarWidth: 'none' }}
-              >
-                {/* Main Content */}
-                <div
-                  className="bg-card flex w-full flex-none cursor-pointer snap-start items-center gap-3 p-3"
-                  onClick={() => openDetail(contact.id)}
-                >
-                  <Checkbox
-                    checked={selected.has(contact.id)}
-                    onCheckedChange={() => toggleSelect(contact.id)}
-                    onClick={(e) => e.stopPropagation()}
-                    aria-label={`Select ${contact.name || contact.phone}`}
+        {/* Search + tag filter */}
+        <div className="bg-background/95 sticky top-0 z-10 -mx-4 space-y-2 px-4 py-2 backdrop-blur sm:static sm:mx-0 sm:bg-transparent sm:px-0 sm:py-0">
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <div className="relative w-full max-w-sm">
+              <Search className="text-muted-foreground absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
+              <Input
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setPage(0);
+                }}
+                placeholder={t('searchPlaceholder')}
+                className="bg-card border-border text-foreground placeholder:text-muted-foreground pl-8"
+              />
+            </div>
+
+            <Popover>
+              <PopoverTrigger
+                render={
+                  <Button
+                    variant="outline"
+                    className="border-border text-muted-foreground hover:bg-muted shrink-0"
                   />
-                  <div className="bg-muted border-border flex size-10 shrink-0 items-center justify-center rounded-full border">
-                    <span className="text-primary text-xs font-medium">
-                      {(contact.name || '?').charAt(0).toUpperCase()}
-                    </span>
+                }
+              >
+                <Filter className="size-4" />
+                {t('filterByTags')}
+                {selectedTagIds.length > 0 && (
+                  <span className="bg-primary text-primary-foreground ml-1 inline-flex items-center justify-center rounded-full px-1.5 text-[10px] font-semibold">
+                    {selectedTagIds.length}
+                  </span>
+                )}
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-64 p-0">
+                <div className="border-border flex items-center justify-between border-b px-3 py-2">
+                  <span className="text-popover-foreground text-sm font-medium">
+                    {t('filterByTags')}
+                  </span>
+                  {selectedTagIds.length > 0 && (
+                    <button
+                      onClick={clearTagFilters}
+                      className="text-muted-foreground hover:text-foreground text-xs"
+                    >
+                      {t('clearAll')}
+                    </button>
+                  )}
+                </div>
+                {allTags.length === 0 ? (
+                  <p className="text-muted-foreground px-3 py-4 text-center text-sm">
+                    {t('noTagsYet')}
+                  </p>
+                ) : (
+                  <div className="max-h-64 overflow-y-auto py-1">
+                    {allTags.map((tag) => (
+                      <label
+                        key={tag.id}
+                        className="hover:bg-muted/50 flex cursor-pointer items-center gap-2.5 px-3 py-1.5"
+                      >
+                        <Checkbox
+                          checked={selectedTagIds.includes(tag.id)}
+                          onCheckedChange={() => toggleTagFilter(tag.id)}
+                          aria-label={`Filter by ${tag.name}`}
+                        />
+                        <span
+                          className="size-2.5 shrink-0 rounded-full"
+                          style={{ backgroundColor: tag.color }}
+                        />
+                        <span className="text-popover-foreground truncate text-sm">
+                          {tag.name}
+                        </span>
+                      </label>
+                    ))}
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-foreground truncate text-sm font-medium">
+                )}
+              </PopoverContent>
+            </Popover>
+          </div>
+
+          {/* Active tag-filter chips */}
+          {selectedTagIds.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              {selectedTagIds.map((id) => {
+                const tag = tagsMap[id];
+                if (!tag) return null;
+                return (
+                  <span
+                    key={id}
+                    className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium"
+                    style={{
+                      backgroundColor: tag.color + '20',
+                      color: tag.color,
+                    }}
+                  >
+                    {tag.name}
+                    <button
+                      onClick={() => toggleTagFilter(id)}
+                      aria-label={`Remove ${tag.name} filter`}
+                      className="hover:opacity-70"
+                    >
+                      <X className="size-3" />
+                    </button>
+                  </span>
+                );
+              })}
+              <button
+                onClick={clearTagFilters}
+                className="text-muted-foreground hover:text-foreground px-1 text-xs"
+              >
+                {t('clearAll')}
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Bulk action bar */}
+        {selected.size > 0 && (
+          <div className="border-border bg-muted/40 flex items-center justify-between gap-4 rounded-lg border px-4 py-2">
+            <p className="text-foreground text-sm">
+              {t('selectedCount', { count: selected.size })}
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setSelected(new Set())}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                {t('clearSelection')}
+              </Button>
+              <GatedButton
+                variant="destructive"
+                size="sm"
+                canAct={canEdit}
+                gateReason="delete contacts"
+                onClick={() => setBulkDeleteOpen(true)}
+              >
+                <Trash2 className="size-4" />
+                {t('deleteSelected')}
+              </GatedButton>
+            </div>
+          </div>
+        )}
+
+        {/* Mobile List View */}
+        <div className="space-y-3 md:hidden">
+          {loading ? (
+            <div className="flex flex-col gap-3 py-4">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="flex items-center gap-3">
+                  <Skeleton className="h-10 w-10 rounded-full" />
+                  <div className="flex-1 space-y-2">
+                    <Skeleton className="h-4 w-[60%]" />
+                    <Skeleton className="h-3 w-[40%]" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : contacts.length === 0 ? (
+            <div className="flex flex-col items-center gap-2 py-12">
+              <Users className="text-muted-foreground size-8" />
+              <p className="text-muted-foreground text-sm">
+                {hasActiveFilters ? t('noContactsMatch') : t('noContactsYet')}
+              </p>
+              {!hasActiveFilters && (
+                <GatedButton
+                  canAct={canEdit}
+                  gateReason="add or import contacts"
+                  variant="outline"
+                  size="sm"
+                  onClick={openAddForm}
+                  className="border-border text-muted-foreground hover:bg-muted mt-2"
+                >
+                  <Plus className="size-3.5" />
+                  {t('addFirstContact')}
+                </GatedButton>
+              )}
+            </div>
+          ) : (
+            contacts.map((contact) => (
+              <div
+                key={contact.id}
+                className="border-border bg-card relative overflow-hidden rounded-lg border"
+              >
+                <div
+                  className="flex w-full snap-x snap-mandatory overflow-x-auto [&::-webkit-scrollbar]:hidden"
+                  style={{ scrollbarWidth: 'none' }}
+                >
+                  {/* Main Content */}
+                  <div
+                    className="bg-card flex w-full flex-none cursor-pointer snap-start items-center gap-3 p-3"
+                    onClick={() => openDetail(contact.id)}
+                  >
+                    <Checkbox
+                      checked={selected.has(contact.id)}
+                      onCheckedChange={() => toggleSelect(contact.id)}
+                      onClick={(e) => e.stopPropagation()}
+                      aria-label={`Select ${contact.name || contact.phone}`}
+                    />
+                    <div className="bg-muted border-border flex size-10 shrink-0 items-center justify-center rounded-full border">
+                      <span className="text-primary text-xs font-medium">
+                        {(contact.name || '?').charAt(0).toUpperCase()}
+                      </span>
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-foreground truncate text-sm font-medium">
+                        {contact.name || (
+                          <span className="text-muted-foreground italic">
+                            {t('unnamed')}
+                          </span>
+                        )}
+                      </p>
+                      <p className="text-muted-foreground truncate text-xs">
+                        {contact.phone}
+                      </p>
+                      {contact.tags && contact.tags.length > 0 && (
+                        <div className="mt-1.5 flex flex-wrap gap-1">
+                          {contact.tags.slice(0, 3).map((tag) => (
+                            <span
+                              key={tag.id}
+                              className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-medium"
+                              style={{
+                                backgroundColor: tag.color + '20',
+                                color: tag.color,
+                              }}
+                            >
+                              {tag.name}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <div className="mt-1 flex flex-col items-start gap-1">
+                      {contact.first_unanswered_at && (
+                        <SlaBadge
+                          firstUnansweredAt={contact.first_unanswered_at}
+                        />
+                      )}
+                      {contact.assignee && (
+                        <span className="text-muted-foreground bg-muted border-border inline-flex items-center rounded border px-1.5 py-0.5 text-[10px]">
+                          {contact.assignee.full_name}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  {/* Swipe Actions */}
+                  <div className="divide-border flex flex-none snap-end divide-x">
+                    <button
+                      onClick={() => openEditForm(contact)}
+                      className="bg-muted hover:bg-muted/80 flex items-center justify-center px-4 transition-colors"
+                      aria-label={t('editAction')}
+                    >
+                      <Pencil className="text-foreground size-4" />
+                    </button>
+                    <button
+                      onClick={() => confirmDelete(contact)}
+                      className="bg-destructive/10 hover:bg-destructive/20 flex items-center justify-center px-4 transition-colors"
+                      aria-label={t('deleteAction')}
+                    >
+                      <Trash2 className="text-destructive size-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Desktop Table View */}
+        <div className="border-border hidden overflow-hidden rounded-lg border md:block">
+          <Table>
+            <TableHeader>
+              <TableRow className="border-border hover:bg-transparent">
+                <TableHead className="w-10">
+                  <Checkbox
+                    checked={allOnPageSelected}
+                    indeterminate={!allOnPageSelected && someOnPageSelected}
+                    onCheckedChange={toggleSelectAll}
+                    disabled={contacts.length === 0}
+                    aria-label={t('selectAllOnPage')}
+                  />
+                </TableHead>
+                <TableHead className="text-muted-foreground">
+                  {t('tableColumns.name')}
+                </TableHead>
+                <TableHead className="text-muted-foreground">
+                  {t('tableColumns.phone')}
+                </TableHead>
+                <TableHead className="text-muted-foreground hidden md:table-cell">
+                  {t('tableColumns.email')}
+                </TableHead>
+                <TableHead className="text-muted-foreground hidden lg:table-cell">
+                  {t('tableColumns.company')}
+                </TableHead>
+                <TableHead className="text-muted-foreground hidden md:table-cell">
+                  SLA
+                </TableHead>
+                <TableHead className="text-muted-foreground hidden md:table-cell">
+                  Assigned To
+                </TableHead>
+                <TableHead className="text-muted-foreground hidden md:table-cell">
+                  {t('tableColumns.tags')}
+                </TableHead>
+                <TableHead className="text-muted-foreground hidden lg:table-cell">
+                  {t('tableColumns.createdAt')}
+                </TableHead>
+                <TableHead className="text-muted-foreground w-12" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading ? (
+                Array.from({ length: 10 }).map((_, i) => (
+                  <TableRow key={i} className="border-border">
+                    <TableCell className="w-10">
+                      <Skeleton className="h-4 w-4" />
+                    </TableCell>
+                    <TableCell>
+                      <Skeleton className="h-5 w-[150px]" />
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell">
+                      <Skeleton className="h-4 w-[120px]" />
+                    </TableCell>
+                    <TableCell className="hidden xl:table-cell">
+                      <Skeleton className="h-5 w-[100px]" />
+                    </TableCell>
+                    <TableCell className="hidden 2xl:table-cell">
+                      <Skeleton className="h-5 w-[180px]" />
+                    </TableCell>
+                    <TableCell className="hidden xl:table-cell">
+                      <Skeleton className="h-5 w-16" />
+                    </TableCell>
+                    <TableCell className="hidden lg:table-cell">
+                      <Skeleton className="h-4 w-[100px]" />
+                    </TableCell>
+                    <TableCell className="hidden lg:table-cell">
+                      <Skeleton className="h-4 w-[120px]" />
+                    </TableCell>
+                    <TableCell />
+                  </TableRow>
+                ))
+              ) : contacts.length === 0 ? (
+                <TableRow className="border-border">
+                  <TableCell colSpan={10} className="py-12 text-center">
+                    <div className="flex flex-col items-center gap-2">
+                      <Users className="text-muted-foreground size-8" />
+                      <p className="text-muted-foreground text-sm">
+                        {hasActiveFilters
+                          ? t('noContactsMatch')
+                          : t('noContactsYet')}
+                      </p>
+                      {!hasActiveFilters && (
+                        <GatedButton
+                          canAct={canEdit}
+                          gateReason="add or import contacts"
+                          variant="outline"
+                          size="sm"
+                          onClick={openAddForm}
+                          className="border-border text-muted-foreground hover:bg-muted mt-2"
+                        >
+                          <Plus className="size-3.5" />
+                          {t('addFirstContact')}
+                        </GatedButton>
+                      )}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                contacts.map((contact) => (
+                  <TableRow
+                    key={contact.id}
+                    className="border-border hover:bg-muted/50 cursor-pointer"
+                    onClick={() => openDetail(contact.id)}
+                  >
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      <Checkbox
+                        checked={selected.has(contact.id)}
+                        onCheckedChange={() => toggleSelect(contact.id)}
+                        aria-label={`Select ${contact.name || contact.phone}`}
+                      />
+                    </TableCell>
+                    <TableCell className="text-foreground font-medium">
                       {contact.name || (
                         <span className="text-muted-foreground italic">
                           {t('unnamed')}
                         </span>
                       )}
-                    </p>
-                    <p className="text-muted-foreground truncate text-xs">
+                    </TableCell>
+                    <TableCell className="text-muted-foreground font-mono text-xs">
                       {contact.phone}
-                    </p>
-                    {contact.tags && contact.tags.length > 0 && (
-                      <div className="mt-1.5 flex flex-wrap gap-1">
-                        {contact.tags.slice(0, 3).map((tag) => (
-                          <span
-                            key={tag.id}
-                            className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[9px] font-medium"
-                            style={{
-                              backgroundColor: tag.color + '20',
-                              color: tag.color,
-                            }}
-                          >
-                            {tag.name}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <div className="mt-1 flex flex-col items-start gap-1">
-                    {contact.first_unanswered_at && (
-                      <SlaBadge
-                        firstUnansweredAt={contact.first_unanswered_at}
-                      />
-                    )}
-                    {contact.assignee && (
-                      <span className="text-muted-foreground bg-muted border-border inline-flex items-center rounded border px-1.5 py-0.5 text-[10px]">
-                        {contact.assignee.full_name}
-                      </span>
-                    )}
-                  </div>
-                </div>
-                {/* Swipe Actions */}
-                <div className="divide-border flex flex-none snap-end divide-x">
-                  <button
-                    onClick={() => openEditForm(contact)}
-                    className="bg-muted hover:bg-muted/80 flex items-center justify-center px-4 transition-colors"
-                    aria-label={t('editAction')}
-                  >
-                    <Pencil className="text-foreground size-4" />
-                  </button>
-                  <button
-                    onClick={() => confirmDelete(contact)}
-                    className="bg-destructive/10 hover:bg-destructive/20 flex items-center justify-center px-4 transition-colors"
-                    aria-label={t('deleteAction')}
-                  >
-                    <Trash2 className="text-destructive size-4" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-
-      {/* Desktop Table View */}
-      <div className="border-border hidden overflow-hidden rounded-lg border md:block">
-        <Table>
-          <TableHeader>
-            <TableRow className="border-border hover:bg-transparent">
-              <TableHead className="w-10">
-                <Checkbox
-                  checked={allOnPageSelected}
-                  indeterminate={!allOnPageSelected && someOnPageSelected}
-                  onCheckedChange={toggleSelectAll}
-                  disabled={contacts.length === 0}
-                  aria-label={t('selectAllOnPage')}
-                />
-              </TableHead>
-              <TableHead className="text-muted-foreground">
-                {t('tableColumns.name')}
-              </TableHead>
-              <TableHead className="text-muted-foreground">
-                {t('tableColumns.phone')}
-              </TableHead>
-              <TableHead className="text-muted-foreground hidden md:table-cell">
-                {t('tableColumns.email')}
-              </TableHead>
-              <TableHead className="text-muted-foreground hidden lg:table-cell">
-                {t('tableColumns.company')}
-              </TableHead>
-              <TableHead className="text-muted-foreground hidden md:table-cell">
-                SLA
-              </TableHead>
-              <TableHead className="text-muted-foreground hidden md:table-cell">
-                Assigned To
-              </TableHead>
-              <TableHead className="text-muted-foreground hidden md:table-cell">
-                {t('tableColumns.tags')}
-              </TableHead>
-              <TableHead className="text-muted-foreground hidden lg:table-cell">
-                {t('tableColumns.createdAt')}
-              </TableHead>
-              <TableHead className="text-muted-foreground w-12" />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading ? (
-              <TableRow className="border-border">
-                <TableCell colSpan={10} className="py-12 text-center">
-                  <div className="flex flex-col items-center gap-2">
-                    <Loader2 className="text-primary size-6 animate-spin" />
-                    <p className="text-muted-foreground text-sm">
-                      {t('loading')}
-                    </p>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ) : contacts.length === 0 ? (
-              <TableRow className="border-border">
-                <TableCell colSpan={10} className="py-12 text-center">
-                  <div className="flex flex-col items-center gap-2">
-                    <Users className="text-muted-foreground size-8" />
-                    <p className="text-muted-foreground text-sm">
-                      {hasActiveFilters
-                        ? t('noContactsMatch')
-                        : t('noContactsYet')}
-                    </p>
-                    {!hasActiveFilters && (
-                      <GatedButton
-                        canAct={canEdit}
-                        gateReason="add or import contacts"
-                        variant="outline"
-                        size="sm"
-                        onClick={openAddForm}
-                        className="border-border text-muted-foreground hover:bg-muted mt-2"
-                      >
-                        <Plus className="size-3.5" />
-                        {t('addFirstContact')}
-                      </GatedButton>
-                    )}
-                  </div>
-                </TableCell>
-              </TableRow>
-            ) : (
-              contacts.map((contact) => (
-                <TableRow
-                  key={contact.id}
-                  className="border-border hover:bg-muted/50 cursor-pointer"
-                  onClick={() => openDetail(contact.id)}
-                >
-                  <TableCell onClick={(e) => e.stopPropagation()}>
-                    <Checkbox
-                      checked={selected.has(contact.id)}
-                      onCheckedChange={() => toggleSelect(contact.id)}
-                      aria-label={`Select ${contact.name || contact.phone}`}
-                    />
-                  </TableCell>
-                  <TableCell className="text-foreground font-medium">
-                    {contact.name || (
-                      <span className="text-muted-foreground italic">
-                        {t('unnamed')}
-                      </span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground font-mono text-xs">
-                    {contact.phone}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground hidden text-sm md:table-cell">
-                    {contact.email || (
-                      <span className="text-muted-foreground">-</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground hidden text-sm lg:table-cell">
-                    {contact.company || (
-                      <span className="text-muted-foreground">-</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="hidden md:table-cell">
-                    {contact.first_unanswered_at && (
-                      <SlaBadge
-                        firstUnansweredAt={contact.first_unanswered_at}
-                      />
-                    )}
-                  </TableCell>
-                  <TableCell className="hidden md:table-cell">
-                    {contact.assignee ? (
-                      <span className="text-muted-foreground bg-muted border-border inline-flex items-center rounded border px-2 py-1 text-xs">
-                        {contact.assignee.full_name}
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground">-</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="hidden md:table-cell">
-                    <div className="flex flex-wrap gap-1">
-                      {contact.tags && contact.tags.length > 0 ? (
-                        contact.tags.slice(0, 3).map((tag) => (
-                          <span
-                            key={tag.id}
-                            className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium"
-                            style={{
-                              backgroundColor: tag.color + '20',
-                              color: tag.color,
-                            }}
-                          >
-                            {tag.name}
-                          </span>
-                        ))
-                      ) : (
-                        <span className="text-muted-foreground text-xs">-</span>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground hidden text-sm md:table-cell">
+                      {contact.email || (
+                        <span className="text-muted-foreground">-</span>
                       )}
-                      {contact.tags && contact.tags.length > 3 && (
-                        <span className="text-muted-foreground text-[10px]">
-                          +{contact.tags.length - 3}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground hidden text-sm lg:table-cell">
+                      {contact.company || (
+                        <span className="text-muted-foreground">-</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell">
+                      {contact.first_unanswered_at && (
+                        <SlaBadge
+                          firstUnansweredAt={contact.first_unanswered_at}
+                        />
+                      )}
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell">
+                      {contact.assignee ? (
+                        <span className="text-muted-foreground bg-muted border-border inline-flex items-center rounded border px-2 py-1 text-xs">
+                          {contact.assignee.full_name}
                         </span>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
                       )}
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground hidden text-xs lg:table-cell">
-                    {new Date(contact.created_at).toLocaleDateString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                      year: 'numeric',
-                    })}
-                  </TableCell>
-                  <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger
-                        render={
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            className="text-muted-foreground hover:text-foreground"
-                            onClick={(e) => e.stopPropagation()}
-                          />
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell">
+                      <div className="flex flex-wrap gap-1">
+                        {contact.tags && contact.tags.length > 0 ? (
+                          contact.tags.slice(0, 3).map((tag) => (
+                            <span
+                              key={tag.id}
+                              className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium"
+                              style={{
+                                backgroundColor: tag.color + '20',
+                                color: tag.color,
+                              }}
+                            >
+                              {tag.name}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="text-muted-foreground text-xs">
+                            -
+                          </span>
+                        )}
+                        {contact.tags && contact.tags.length > 3 && (
+                          <span className="text-muted-foreground text-[10px]">
+                            +{contact.tags.length - 3}
+                          </span>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground hidden text-xs lg:table-cell">
+                      {new Date(contact.created_at).toLocaleDateString(
+                        'en-US',
+                        {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric',
                         }
-                      >
-                        <MoreHorizontal className="size-4" />
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent
-                        align="end"
-                        className="bg-popover border-border"
-                      >
-                        <DropdownMenuItem
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openEditForm(contact);
-                          }}
-                          className="text-popover-foreground focus:bg-muted focus:text-foreground"
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger
+                          render={
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              className="text-muted-foreground hover:text-foreground"
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          }
                         >
-                          <Pencil className="size-4" />
-                          {t('editAction')}
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator className="bg-border" />
-                        <DropdownMenuItem
-                          variant="destructive"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            confirmDelete(contact);
-                          }}
+                          <MoreHorizontal className="size-4" />
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent
+                          align="end"
+                          className="bg-popover border-border"
                         >
-                          <Trash2 className="size-4" />
-                          {t('deleteAction')}
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
-
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between">
-          <p className="text-muted-foreground text-xs">
-            {t('showingPagination', {
-              start: page * PAGE_SIZE + 1,
-              end: Math.min((page + 1) * PAGE_SIZE, totalCount),
-              total: totalCount,
-            })}
-          </p>
-          <div className="flex items-center gap-1">
-            <Button
-              variant="outline"
-              size="icon-sm"
-              disabled={!hasPrev}
-              onClick={() => setPage((p) => p - 1)}
-              className="border-border text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-30"
-            >
-              <ChevronLeft className="size-4" />
-            </Button>
-            <span className="text-muted-foreground px-2 text-xs">
-              {t('pageCount', { page: page + 1, total: totalPages })}
-            </span>
-            <Button
-              variant="outline"
-              size="icon-sm"
-              disabled={!hasNext}
-              onClick={() => setPage((p) => p + 1)}
-              className="border-border text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-30"
-            >
-              <ChevronRight className="size-4" />
-            </Button>
-          </div>
+                          <DropdownMenuItem
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openEditForm(contact);
+                            }}
+                            className="text-popover-foreground focus:bg-muted focus:text-foreground"
+                          >
+                            <Pencil className="size-4" />
+                            {t('editAction')}
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator className="bg-border" />
+                          <DropdownMenuItem
+                            variant="destructive"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              confirmDelete(contact);
+                            }}
+                          >
+                            <Trash2 className="size-4" />
+                            {t('deleteAction')}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
         </div>
-      )}
 
-      {/* Contact Form Dialog */}
-      <ContactForm
-        open={formOpen}
-        onOpenChange={setFormOpen}
-        contact={editContact}
-        contactTags={editContactTags}
-        onSaved={() => {
-          fetchContacts();
-          fetchTags();
-        }}
-        onViewExisting={(id) => {
-          setFormOpen(false);
-          openDetail(id);
-        }}
-      />
-
-      {/* Contact Detail Sheet */}
-      <ContactDetailView
-        open={detailOpen}
-        onOpenChange={setDetailOpen}
-        contactId={detailContactId}
-        onUpdated={fetchContacts}
-      />
-
-      {/* Import Modal */}
-      <ImportModal
-        open={importOpen}
-        onOpenChange={setImportOpen}
-        onImported={fetchContacts}
-      />
-
-      {/* Custom Fields Manager (admin+) */}
-      {canEditSettings && (
-        <CustomFieldsManager
-          open={customFieldsOpen}
-          onOpenChange={setCustomFieldsOpen}
-        />
-      )}
-
-      {/* Delete Confirmation */}
-      <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
-        <DialogContent className="bg-popover border-border text-popover-foreground sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="text-popover-foreground">
-              {t('deleteContactTitle')}
-            </DialogTitle>
-            <DialogDescription className="text-muted-foreground">
-              {t('deleteContactDesc', {
-                name: deleteTarget?.name || deleteTarget?.phone || '',
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between">
+            <p className="text-muted-foreground text-xs">
+              {t('showingPagination', {
+                start: page * PAGE_SIZE + 1,
+                end: Math.min((page + 1) * PAGE_SIZE, totalCount),
+                total: totalCount,
               })}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="bg-popover border-border">
-            <Button
-              variant="outline"
-              onClick={() => setDeleteConfirmOpen(false)}
-              className="border-border text-muted-foreground hover:bg-muted"
-            >
-              {t('cancel')}
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={handleDelete}
-              disabled={deleting}
-            >
-              {deleting && <Loader2 className="size-4 animate-spin" />}
-              {t('deleteBtn')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            </p>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="icon-sm"
+                disabled={!hasPrev}
+                onClick={() => setPage((p) => p - 1)}
+                className="border-border text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-30"
+              >
+                <ChevronLeft className="size-4" />
+              </Button>
+              <span className="text-muted-foreground px-2 text-xs">
+                {t('pageCount', { page: page + 1, total: totalPages })}
+              </span>
+              <Button
+                variant="outline"
+                size="icon-sm"
+                disabled={!hasNext}
+                onClick={() => setPage((p) => p + 1)}
+                className="border-border text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-30"
+              >
+                <ChevronRight className="size-4" />
+              </Button>
+            </div>
+          </div>
+        )}
 
-      {/* Bulk Delete Confirmation */}
-      <Dialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
-        <DialogContent className="bg-popover border-border text-popover-foreground sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="text-popover-foreground">
-              {t('deleteBulkTitle')}
-            </DialogTitle>
-            <DialogDescription className="text-muted-foreground">
-              {t('deleteBulkDesc', { count: selected.size })}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="bg-popover border-border">
-            <Button
-              variant="outline"
-              onClick={() => setBulkDeleteOpen(false)}
-              className="border-border text-muted-foreground hover:bg-muted"
-            >
-              {t('cancel')}
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={handleBulkDelete}
-              disabled={deleting}
-            >
-              {deleting && <Loader2 className="size-4 animate-spin" />}
-              {t('deleteBtn')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
+        {/* Contact Form Dialog */}
+        <ContactForm
+          open={formOpen}
+          onOpenChange={setFormOpen}
+          contact={editContact}
+          contactTags={editContactTags}
+          onSaved={() => {
+            fetchContacts();
+            fetchTags();
+          }}
+          onViewExisting={(id) => {
+            setFormOpen(false);
+            openDetail(id);
+          }}
+        />
+
+        {/* Contact Detail Sheet */}
+        <ContactDetailView
+          open={detailOpen}
+          onOpenChange={setDetailOpen}
+          contactId={detailContactId}
+          onUpdated={fetchContacts}
+        />
+
+        {/* Import Modal */}
+        <ImportModal
+          open={importOpen}
+          onOpenChange={setImportOpen}
+          onImported={fetchContacts}
+        />
+
+        {/* Custom Fields Manager (admin+) */}
+        {canEditSettings && (
+          <CustomFieldsManager
+            open={customFieldsOpen}
+            onOpenChange={setCustomFieldsOpen}
+          />
+        )}
+
+        {/* Delete Confirmation */}
+        <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+          <DialogContent className="bg-popover border-border text-popover-foreground sm:max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="text-popover-foreground">
+                {t('deleteContactTitle')}
+              </DialogTitle>
+              <DialogDescription className="text-muted-foreground">
+                {t('deleteContactDesc', {
+                  name: deleteTarget?.name || deleteTarget?.phone || '',
+                })}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="bg-popover border-border">
+              <Button
+                variant="outline"
+                onClick={() => setDeleteConfirmOpen(false)}
+                className="border-border text-muted-foreground hover:bg-muted"
+              >
+                {t('cancel')}
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={handleDelete}
+                disabled={deleting}
+              >
+                {deleting && <Loader2 className="size-4 animate-spin" />}
+                {t('deleteBtn')}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Bulk Delete Confirmation */}
+        <Dialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+          <DialogContent className="bg-popover border-border text-popover-foreground sm:max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="text-popover-foreground">
+                {t('deleteBulkTitle')}
+              </DialogTitle>
+              <DialogDescription className="text-muted-foreground">
+                {t('deleteBulkDesc', { count: selected.size })}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="bg-popover border-border">
+              <Button
+                variant="outline"
+                onClick={() => setBulkDeleteOpen(false)}
+                className="border-border text-muted-foreground hover:bg-muted"
+              >
+                {t('cancel')}
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={handleBulkDelete}
+                disabled={deleting}
+              >
+                {deleting && <Loader2 className="size-4 animate-spin" />}
+                {t('deleteBtn')}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </PullToRefresh>
   );
 }

@@ -5,6 +5,7 @@ import { Inter } from 'next/font/google';
 import './globals.css';
 import { ThemeProvider } from '@/hooks/use-theme';
 import { ThemedToaster } from '@/components/themed-toaster';
+import { PwaRegistry } from '@/components/pwa-registry';
 import {
   DEFAULT_MODE,
   DEFAULT_THEME,
@@ -110,6 +111,7 @@ export default async function RootLayout({
         />
         <NextIntlClientProvider messages={messages} locale={locale}>
           <ThemeProvider>
+            <PwaRegistry />
             {children}
             <ThemedToaster />
           </ThemeProvider>

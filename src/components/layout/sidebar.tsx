@@ -101,7 +101,7 @@ const navItems: NavItem[] = [
 ];
 
 const bottomNavItems = [
-  { href: '/settings', labelKey: 'settings', icon: Settings },
+  { href: '/settings', labelKey: 'settings', icon: Settings, adminOnly: true },
 ];
 
 interface SidebarProps {
@@ -281,6 +281,13 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
 
           <ul className="flex flex-col gap-1">
             {bottomNavItems.map((item) => {
+              if (
+                item.adminOnly &&
+                accountRole !== 'owner' &&
+                accountRole !== 'admin'
+              ) {
+                return null;
+              }
               const isActive = pathname.startsWith(item.href);
               return (
                 <li key={item.href}>

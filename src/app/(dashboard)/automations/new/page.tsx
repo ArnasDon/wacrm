@@ -1,7 +1,7 @@
 'use client';
 
-import { Suspense, useMemo } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { Suspense, useMemo, useEffect } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 
 import {
   AutomationBuilder,
@@ -26,8 +26,15 @@ export default function NewAutomationPage() {
 }
 
 function NewAutomationPageInner() {
+  const router = useRouter();
   const params = useSearchParams();
   const template = params.get('template') as TemplateSlug | null;
+
+  useEffect(() => {
+    if (window.innerWidth < 768) {
+      router.push('/automations');
+    }
+  }, [router]);
 
   const initial: BuilderInitial = useMemo(() => {
     if (template && AUTOMATION_TEMPLATES[template]) {

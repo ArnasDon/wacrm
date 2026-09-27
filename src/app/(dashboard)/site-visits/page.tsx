@@ -12,6 +12,7 @@ import { useCan } from '@/hooks/use-can';
 import { GatedButton } from '@/components/ui/gated-button';
 import type { SiteVisit, Contact, Property } from '@/types';
 import { ScheduleVisitSheet } from '@/components/site-visits/schedule-visit-sheet';
+import { PullToRefresh } from '@/components/layout/pull-to-refresh';
 
 import { format, isToday, isPast, isFuture } from 'date-fns';
 
@@ -191,7 +192,8 @@ export default function SiteVisitsPage() {
   }
 
   return (
-    <div className="space-y-6 pb-20">
+    <PullToRefresh onRefresh={fetchVisits}>
+      <div className="space-y-6 pb-20">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-foreground text-2xl font-bold">{t('title')}</h1>
@@ -285,5 +287,6 @@ export default function SiteVisitsPage() {
         onSuccess={fetchVisits}
       />
     </div>
+    </PullToRefresh>
   );
 }

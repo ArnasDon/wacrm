@@ -62,14 +62,11 @@ export async function dispatchInboundToAiReply(
   try {
     const db = supabaseAdmin()
 
-    const config = await loadAiConfig(db, accountId)
-    if (!config) return
-
-    // Load conversation state before account-level auto-reply gating.
+    // Load conversation state BEFORE the account-level AI gates.
     // An explicit Flow → AI handoff is an intentional per-conversation
-    // opt-in, so it must work even when the account-wide auto-reply toggle
-    // is off. This is especially important for accounts that use AI only
-    // from selected Flows.
+    // opt-in: it must be able to start the AI agent even when the global
+    // auto-reply/master switches are off. Normal inbound messages still
+    // require both switches through loadAiConfig's default behavior.
     const { data: conv, error: convErr } = await db
       .from('conversations')
       .select('assigned_agent_id, ai_autoreply_disabled, ai_reply_count, ai_handoff_summary')
@@ -77,6 +74,15 @@ export async function dispatchInboundToAiReply(
       .maybeSingle()
     if (convErr || !conv) return
     const flowAiHandoff = conv.ai_handoff_summary === FLOW_AI_HANDOFF_MARKER
+
+    // Playground/test mode intentionally permits an inactive AI config.
+    // Flow → AI is the same explicit opt-in, so load the stored provider
+    // configuration without requiring is_active for that path. For ordinary
+    // inbound auto-replies, preserve the account's master switch behavior.
+    const config = await loadAiConfig(db, accountId, {
+      requireActive: !flowAiHandoff,
+    })
+    if (!config) return
 
     if (!config.autoReplyEnabled && !flowAiHandoff) return
     if (conv.assigned_agent_id) return // a human owns this thread

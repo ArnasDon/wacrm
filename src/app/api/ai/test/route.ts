@@ -50,7 +50,7 @@ export async function POST(request: Request) {
         .select('api_key, provider, base_url')
         .eq('account_id', accountId)
         .maybeSingle()
-      existing = data as typeof existing
+      existing = data as unknown as { api_key: string; provider: AiProvider; base_url: string | null } | null
     }
     if (!apiKeyPlain) {
       if (!existing?.api_key) {

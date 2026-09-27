@@ -196,15 +196,42 @@ export function NodeConfigForm({
         />
       );
 
-    case "handoff":
+    case "handoff": {
+      const handoffCfg = cfg as {
+        target?: "human" | "ai";
+        note?: string;
+      };
+      const target = handoffCfg.target ?? "human";
       return (
-        <TextRow
-          label={t("internalNote")}
-          value={(cfg as { note?: string }).note ?? ""}
-          onChange={(v) => onUpdateConfig({ note: v })}
-          rows={2}
-        />
+        <>
+          <div>
+            <label className="mb-1 block text-xs text-muted-foreground">
+              Handoff target
+            </label>
+            <Select
+              value={target}
+              onValueChange={(v) =>
+                onUpdateConfig({ target: v as "human" | "ai" })
+              }
+            >
+              <SelectTrigger className="bg-muted">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="human">Human agent</SelectItem>
+                <SelectItem value="ai">AI agent</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <TextRow
+            label={t("internalNote")}
+            value={handoffCfg.note ?? ""}
+            onChange={(v) => onUpdateConfig({ note: v })}
+            rows={2}
+          />
+        </>
       );
+    }
 
     case "end":
       return (

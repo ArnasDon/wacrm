@@ -222,13 +222,12 @@ export async function dispatchInboundToAiReply(
       aiGenerated: true,
     })
 
-    if (flowAiHandoff) {
-      await db
-        .from('conversations')
-        .update({ ai_handoff_summary: null })
-        .eq('id', conversationId)
-        .eq('ai_handoff_summary', FLOW_AI_HANDOFF_MARKER)
-    }
+    // Keep the Flow → AI marker on the conversation. It is the
+    // persistent state that tells later inbound messages that this
+    // conversation is in the AI-agent mode. Clearing it here made only
+    // the first "Hi" message eligible when account-level auto-reply was
+    // disabled, so every subsequent customer message was silently
+    // skipped.
   } catch (err) {
     console.error('[ai auto-reply] dispatch failed:', err)
   }

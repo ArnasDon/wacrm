@@ -194,99 +194,103 @@ export default function SiteVisitsPage() {
   return (
     <PullToRefresh onRefresh={fetchVisits}>
       <div className="space-y-6 pb-20">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-foreground text-2xl font-bold">{t('title')}</h1>
-          <p className="text-muted-foreground mt-1 text-sm">{t('subtitle')}</p>
-        </div>
-        <GatedButton
-          canAct={canEdit}
-          gateReason="schedule visits"
-          onClick={() => setScheduleOpen(true)}
-          className="bg-primary hover:bg-primary/90 text-primary-foreground"
-        >
-          <Plus className="mr-1 size-4" />
-          {t('scheduleBtn')}
-        </GatedButton>
-      </div>
-
-      <div className="relative">
-        <Search className="text-muted-foreground absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
-        <Input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search visits..."
-          className="bg-card border-border text-foreground placeholder:text-muted-foreground pl-8"
-        />
-      </div>
-
-      {loading ? (
-        <div className="flex flex-col items-center justify-center py-12">
-          <Loader2 className="text-primary size-6 animate-spin" />
-          <p className="text-muted-foreground mt-2 text-sm">{t('loading')}</p>
-        </div>
-      ) : visits.length === 0 ? (
-        <div className="flex flex-col items-center py-12">
-          <Calendar className="text-muted-foreground size-8" />
-          <p className="text-muted-foreground mt-2 text-sm">{t('noVisits')}</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-foreground text-2xl font-bold">{t('title')}</h1>
+            <p className="text-muted-foreground mt-1 text-sm">
+              {t('subtitle')}
+            </p>
+          </div>
           <GatedButton
             canAct={canEdit}
             gateReason="schedule visits"
-            variant="outline"
-            size="sm"
             onClick={() => setScheduleOpen(true)}
-            className="mt-4"
+            className="bg-primary hover:bg-primary/90 text-primary-foreground"
           >
+            <Plus className="mr-1 size-4" />
             {t('scheduleBtn')}
           </GatedButton>
         </div>
-      ) : (
-        <div className="space-y-6">
-          {todayVisits.length > 0 && (
-            <div>
-              <h2 className="text-foreground mb-3 text-lg font-semibold">
-                {t('today')}
-              </h2>
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {todayVisits.map((v) => (
-                  <VisitCard key={v.id} visit={v} />
-                ))}
-              </div>
-            </div>
-          )}
-          {upcomingVisits.length > 0 && (
-            <div>
-              <h2 className="text-foreground mb-3 text-lg font-semibold">
-                {t('upcoming')}
-              </h2>
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {upcomingVisits.map((v) => (
-                  <VisitCard key={v.id} visit={v} />
-                ))}
-              </div>
-            </div>
-          )}
-          {pastVisits.length > 0 && (
-            <div>
-              <h2 className="text-foreground mb-3 text-lg font-semibold">
-                {t('past')}
-              </h2>
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {pastVisits.map((v) => (
-                  <VisitCard key={v.id} visit={v} />
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
 
-      <ScheduleVisitSheet
-        open={scheduleOpen}
-        onOpenChange={setScheduleOpen}
-        onSuccess={fetchVisits}
-      />
-    </div>
+        <div className="relative">
+          <Search className="text-muted-foreground absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search visits..."
+            className="bg-card border-border text-foreground placeholder:text-muted-foreground pl-8"
+          />
+        </div>
+
+        {loading ? (
+          <div className="flex flex-col items-center justify-center py-12">
+            <Loader2 className="text-primary size-6 animate-spin" />
+            <p className="text-muted-foreground mt-2 text-sm">{t('loading')}</p>
+          </div>
+        ) : visits.length === 0 ? (
+          <div className="flex flex-col items-center py-12">
+            <Calendar className="text-muted-foreground size-8" />
+            <p className="text-muted-foreground mt-2 text-sm">
+              {t('noVisits')}
+            </p>
+            <GatedButton
+              canAct={canEdit}
+              gateReason="schedule visits"
+              variant="outline"
+              size="sm"
+              onClick={() => setScheduleOpen(true)}
+              className="mt-4"
+            >
+              {t('scheduleBtn')}
+            </GatedButton>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {todayVisits.length > 0 && (
+              <div>
+                <h2 className="text-foreground mb-3 text-lg font-semibold">
+                  {t('today')}
+                </h2>
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {todayVisits.map((v) => (
+                    <VisitCard key={v.id} visit={v} />
+                  ))}
+                </div>
+              </div>
+            )}
+            {upcomingVisits.length > 0 && (
+              <div>
+                <h2 className="text-foreground mb-3 text-lg font-semibold">
+                  {t('upcoming')}
+                </h2>
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {upcomingVisits.map((v) => (
+                    <VisitCard key={v.id} visit={v} />
+                  ))}
+                </div>
+              </div>
+            )}
+            {pastVisits.length > 0 && (
+              <div>
+                <h2 className="text-foreground mb-3 text-lg font-semibold">
+                  {t('past')}
+                </h2>
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {pastVisits.map((v) => (
+                    <VisitCard key={v.id} visit={v} />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        <ScheduleVisitSheet
+          open={scheduleOpen}
+          onOpenChange={setScheduleOpen}
+          onSuccess={fetchVisits}
+        />
+      </div>
     </PullToRefresh>
   );
 }

@@ -443,12 +443,14 @@ function FlowCard({
           <Switch
             checked={flow.status === 'active'}
             onCheckedChange={(v) => onToggle(!!v)}
-            aria-label={flow.status === 'active' ? t('statusDraft') : t('statusActive')}
+            aria-label={
+              flow.status === 'active' ? t('statusDraft') : t('statusActive')
+            }
           />
           <Badge
             variant="outline"
             className={cn(
-              'shrink-0 gap-1 text-[10px] hidden sm:flex',
+              'hidden shrink-0 gap-1 text-[10px] sm:flex',
               STATUS_COLORS[flow.status]
             )}
           >

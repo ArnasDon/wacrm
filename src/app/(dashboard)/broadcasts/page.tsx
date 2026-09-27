@@ -156,151 +156,153 @@ export default function BroadcastsPage() {
       <div className="space-y-6">
         {/* Top indeterminate progress bar: only visible while a broadcast
           is mid-send. Pure CSS animation so no extra deps. */}
-      {anySending && (
-        <div
-          role="progressbar"
-          aria-label={t('broadcastInProgress')}
-          className="broadcast-indeterminate bg-muted fixed inset-x-0 top-0 z-40 h-0.5 overflow-hidden"
-        >
-          <div className="broadcast-indeterminate-bar bg-primary h-0.5" />
-          <style jsx>{`
-            .broadcast-indeterminate-bar {
-              width: 33%;
-              transform: translateX(-100%);
-              animation: broadcast-slide 1.6s cubic-bezier(0.4, 0, 0.2, 1)
-                infinite;
-            }
-            @keyframes broadcast-slide {
-              0% {
+        {anySending && (
+          <div
+            role="progressbar"
+            aria-label={t('broadcastInProgress')}
+            className="broadcast-indeterminate bg-muted fixed inset-x-0 top-0 z-40 h-0.5 overflow-hidden"
+          >
+            <div className="broadcast-indeterminate-bar bg-primary h-0.5" />
+            <style jsx>{`
+              .broadcast-indeterminate-bar {
+                width: 33%;
                 transform: translateX(-100%);
+                animation: broadcast-slide 1.6s cubic-bezier(0.4, 0, 0.2, 1)
+                  infinite;
               }
-              100% {
-                transform: translateX(400%);
+              @keyframes broadcast-slide {
+                0% {
+                  transform: translateX(-100%);
+                }
+                100% {
+                  transform: translateX(400%);
+                }
               }
-            }
-          `}</style>
-        </div>
-      )}
+            `}</style>
+          </div>
+        )}
 
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-foreground text-2xl font-bold">{t('title')}</h1>
-          <p className="text-muted-foreground mt-1 text-sm">{t('subtitle')}</p>
-        </div>
-        <GatedButton
-          canAct={canCreate}
-          gateReason="create broadcasts"
-          onClick={() => router.push('/broadcasts/new')}
-          className="bg-primary text-primary-foreground hover:bg-primary/90"
-        >
-          <Plus className="h-4 w-4" />
-          {t('newBroadcast')}
-        </GatedButton>
-      </div>
-
-      {broadcasts.length === 0 ? (
-        <div className="border-border bg-card flex h-64 flex-col items-center justify-center rounded-xl border">
-          <Radio className="text-muted-foreground mb-3 h-10 w-10" />
-          <p className="text-foreground text-sm font-medium">
-            {t('noBroadcastsYet')}
-          </p>
-          <p className="text-muted-foreground mt-1 text-xs">
-            {t('createFirst')}
-          </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-foreground text-2xl font-bold">{t('title')}</h1>
+            <p className="text-muted-foreground mt-1 text-sm">
+              {t('subtitle')}
+            </p>
+          </div>
           <GatedButton
             canAct={canCreate}
             gateReason="create broadcasts"
             onClick={() => router.push('/broadcasts/new')}
-            className="bg-primary text-primary-foreground hover:bg-primary/90 mt-4"
+            className="bg-primary text-primary-foreground hover:bg-primary/90"
           >
             <Plus className="h-4 w-4" />
             {t('newBroadcast')}
           </GatedButton>
         </div>
-      ) : (
-        <div className="border-border bg-card overflow-x-auto rounded-xl border">
-          <Table>
-            <TableHeader>
-              <TableRow className="border-border hover:bg-transparent">
-                <TableHead className="text-muted-foreground">
-                  {t('table.name')}
-                </TableHead>
-                <TableHead className="text-muted-foreground hidden md:table-cell">
-                  {t('table.template')}
-                </TableHead>
-                <TableHead className="text-muted-foreground hidden text-right sm:table-cell">
-                  {t('table.recipients')}
-                </TableHead>
-                <TableHead className="text-muted-foreground hidden lg:table-cell">
-                  {t('table.delivery')}
-                </TableHead>
-                <TableHead className="text-muted-foreground hidden lg:table-cell">
-                  {t('table.read')}
-                </TableHead>
-                <TableHead className="text-muted-foreground">
-                  {t('table.status')}
-                </TableHead>
-                <TableHead className="text-muted-foreground hidden sm:table-cell">
-                  {t('table.date')}
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {broadcasts.map((broadcast) => {
-                const status = getBroadcastStatus(broadcast.status);
-                return (
-                  <TableRow
-                    key={broadcast.id}
-                    className="border-border hover:bg-muted/50 cursor-pointer"
-                    onClick={() => router.push(`/broadcasts/${broadcast.id}`)}
-                  >
-                    <TableCell className="text-foreground font-medium">
-                      {broadcast.name}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground hidden md:table-cell">
-                      {broadcast.template_name}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground hidden text-right tabular-nums sm:table-cell">
-                      {broadcast.total_recipients}
-                    </TableCell>
-                    <TableCell className="hidden lg:table-cell">
-                      <RateCell
-                        value={broadcast.delivered_count}
-                        total={broadcast.total_recipients}
-                        color="bg-primary"
-                      />
-                    </TableCell>
-                    <TableCell className="hidden lg:table-cell">
-                      <RateCell
-                        value={broadcast.read_count}
-                        total={broadcast.total_recipients}
-                        color="bg-blue-500"
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <span
-                        className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium ${status.classes}`}
-                      >
-                        {status.pulse && (
-                          <span className="relative flex h-1.5 w-1.5">
-                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-yellow-400 opacity-75" />
-                            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-yellow-400" />
-                          </span>
-                        )}
-                        {tStatus(status.label)}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground hidden sm:table-cell">
-                      {new Date(broadcast.created_at).toLocaleDateString()}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </div>
-      )}
-    </div>
+
+        {broadcasts.length === 0 ? (
+          <div className="border-border bg-card flex h-64 flex-col items-center justify-center rounded-xl border">
+            <Radio className="text-muted-foreground mb-3 h-10 w-10" />
+            <p className="text-foreground text-sm font-medium">
+              {t('noBroadcastsYet')}
+            </p>
+            <p className="text-muted-foreground mt-1 text-xs">
+              {t('createFirst')}
+            </p>
+            <GatedButton
+              canAct={canCreate}
+              gateReason="create broadcasts"
+              onClick={() => router.push('/broadcasts/new')}
+              className="bg-primary text-primary-foreground hover:bg-primary/90 mt-4"
+            >
+              <Plus className="h-4 w-4" />
+              {t('newBroadcast')}
+            </GatedButton>
+          </div>
+        ) : (
+          <div className="border-border bg-card overflow-x-auto rounded-xl border">
+            <Table>
+              <TableHeader>
+                <TableRow className="border-border hover:bg-transparent">
+                  <TableHead className="text-muted-foreground">
+                    {t('table.name')}
+                  </TableHead>
+                  <TableHead className="text-muted-foreground hidden md:table-cell">
+                    {t('table.template')}
+                  </TableHead>
+                  <TableHead className="text-muted-foreground hidden text-right sm:table-cell">
+                    {t('table.recipients')}
+                  </TableHead>
+                  <TableHead className="text-muted-foreground hidden lg:table-cell">
+                    {t('table.delivery')}
+                  </TableHead>
+                  <TableHead className="text-muted-foreground hidden lg:table-cell">
+                    {t('table.read')}
+                  </TableHead>
+                  <TableHead className="text-muted-foreground">
+                    {t('table.status')}
+                  </TableHead>
+                  <TableHead className="text-muted-foreground hidden sm:table-cell">
+                    {t('table.date')}
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {broadcasts.map((broadcast) => {
+                  const status = getBroadcastStatus(broadcast.status);
+                  return (
+                    <TableRow
+                      key={broadcast.id}
+                      className="border-border hover:bg-muted/50 cursor-pointer"
+                      onClick={() => router.push(`/broadcasts/${broadcast.id}`)}
+                    >
+                      <TableCell className="text-foreground font-medium">
+                        {broadcast.name}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground hidden md:table-cell">
+                        {broadcast.template_name}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground hidden text-right tabular-nums sm:table-cell">
+                        {broadcast.total_recipients}
+                      </TableCell>
+                      <TableCell className="hidden lg:table-cell">
+                        <RateCell
+                          value={broadcast.delivered_count}
+                          total={broadcast.total_recipients}
+                          color="bg-primary"
+                        />
+                      </TableCell>
+                      <TableCell className="hidden lg:table-cell">
+                        <RateCell
+                          value={broadcast.read_count}
+                          total={broadcast.total_recipients}
+                          color="bg-blue-500"
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <span
+                          className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium ${status.classes}`}
+                        >
+                          {status.pulse && (
+                            <span className="relative flex h-1.5 w-1.5">
+                              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-yellow-400 opacity-75" />
+                              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-yellow-400" />
+                            </span>
+                          )}
+                          {tStatus(status.label)}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground hidden sm:table-cell">
+                        {new Date(broadcast.created_at).toLocaleDateString()}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </div>
     </PullToRefresh>
   );
 }

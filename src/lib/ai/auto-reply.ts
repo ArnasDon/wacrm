@@ -73,6 +73,7 @@ export async function dispatchInboundToAiReply(
     // avoid double-texting the customer. (Relationship triggers like
     // `first_inbound_message` don't count — they're not per-message
     // auto-responders.)
+
     const { data: autoResponders } = await db
       .from('automations')
       .select('id')

@@ -196,11 +196,18 @@ export async function dispatchInboundToAiReply(
     // another inbound just took the last slot, `claimed` is false and we
     // skip the send. (We consume a slot slightly before the send lands —
     // fail-safe: under-reply rather than over-reply.)
+    // An explicit Flow → AI handoff is an ongoing AI chat. The normal
+    // auto-reply cap is for passive account-wide auto-replies, so do not
+    // stop an explicitly started AI conversation after three messages.
+    const replyCap = flowAiHandoff
+      ? 2_147_483_647
+      : config.autoReplyMaxPerConversation
+
     const { data: claimed, error: claimErr } = await db.rpc(
       'claim_ai_reply_slot',
       {
         conversation_id: conversationId,
-        max_replies: config.autoReplyMaxPerConversation,
+        max_replies: replyCap,
       },
     )
     if (claimErr) {

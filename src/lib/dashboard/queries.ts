@@ -453,3 +453,173 @@ export async function loadActivity(
     .sort((a, b) => (a.at > b.at ? -1 : a.at < b.at ? 1 : 0))
     .slice(0, limit);
 }
+
+// --- 6. Team Performance -----------------------------------------------
+
+import type { AgentPerformance } from './types';
+
+export async function loadTeamPerformance(
+  db: DB,
+  rangeDays = 30
+): Promise<AgentPerformance[]> {
+  const start = daysAgoStart(rangeDays - 1).toISOString();
+
+  // 1. Fetch agents
+  const { data: profilesRes, error: pErr } = await db
+    .from('profiles')
+    .select('user_id, full_name, avatar_url, account_role');
+  if (pErr) throw pErr;
+
+  const agents = (profilesRes ?? []) as {
+    user_id: string;
+    full_name: string;
+    avatar_url: string | null;
+    account_role: string;
+  }[];
+
+  // 2. Fetch conversations to link contacts to agents (leads worked)
+  const { data: convosRes, error: cErr } = await db
+    .from('conversations')
+    .select('assigned_agent_id, contact_id')
+    .not('assigned_agent_id', 'is', null);
+  if (cErr) throw cErr;
+
+  const contactToAgent = new Map<string, string>();
+  const leadsWorkedByAgent = new Map<string, number>();
+
+  for (const c of (convosRes ?? []) as {
+    assigned_agent_id: string;
+    contact_id: string;
+  }[]) {
+    contactToAgent.set(c.contact_id, c.assigned_agent_id);
+    leadsWorkedByAgent.set(
+      c.assigned_agent_id,
+      (leadsWorkedByAgent.get(c.assigned_agent_id) ?? 0) + 1
+    );
+  }
+
+  // 3. Fetch site visits
+  const { data: visitsRes, error: vErr } = await db
+    .from('site_visits')
+    .select('status, contact_id')
+    .gte('created_at', start);
+  if (vErr) throw vErr;
+
+  const visitsByAgent = new Map<
+    string,
+    { completed: number; noShow: number }
+  >();
+  for (const v of (visitsRes ?? []) as {
+    status: string;
+    contact_id: string;
+  }[]) {
+    const agentId = contactToAgent.get(v.contact_id);
+    if (!agentId) continue;
+
+    const stats = visitsByAgent.get(agentId) ?? { completed: 0, noShow: 0 };
+    if (v.status === 'completed') stats.completed++;
+    else if (v.status === 'no_show') stats.noShow++;
+    visitsByAgent.set(agentId, stats);
+  }
+
+  // 4. Fetch deals (conversion rate)
+  const { data: dealsRes, error: dErr } = await db
+    .from('deals')
+    .select('assigned_to, status')
+    .not('assigned_to', 'is', null);
+  if (dErr) throw dErr;
+
+  const dealsByAgent = new Map<string, { won: number; closed: number }>();
+  for (const d of (dealsRes ?? []) as {
+    assigned_to: string;
+    status: string;
+  }[]) {
+    if (d.status !== 'won' && d.status !== 'lost') continue;
+
+    const stats = dealsByAgent.get(d.assigned_to) ?? { won: 0, closed: 0 };
+    stats.closed++;
+    if (d.status === 'won') stats.won++;
+    dealsByAgent.set(d.assigned_to, stats);
+  }
+
+  // 5. Fetch messages (response time)
+  // Re-use logic from loadResponseTime to pair customer message with agent reply
+  const { data: msgsRes, error: mErr } = await db
+    .from('messages')
+    .select('conversation_id, sender_type, sender_id, created_at')
+    .gte('created_at', start)
+    .order('conversation_id', { ascending: true })
+    .order('created_at', { ascending: true });
+  if (mErr) throw mErr;
+
+  const msgs = (msgsRes ?? []) as {
+    conversation_id: string;
+    sender_type: string;
+    sender_id: string | null;
+    created_at: string;
+  }[];
+
+  const responseTimesByAgent = new Map<string, number[]>();
+  let currentConv = '';
+  let pendingCustomer: Date | null = null;
+
+  for (const row of msgs) {
+    if (row.conversation_id !== currentConv) {
+      currentConv = row.conversation_id;
+      pendingCustomer = null;
+    }
+    const ts = new Date(row.created_at);
+    if (row.sender_type === 'customer') {
+      if (!pendingCustomer) pendingCustomer = ts;
+    } else if (
+      pendingCustomer &&
+      row.sender_type === 'agent' &&
+      row.sender_id
+    ) {
+      const diffMin = (ts.getTime() - pendingCustomer.getTime()) / 60_000;
+      if (diffMin >= 0) {
+        const arr = responseTimesByAgent.get(row.sender_id) ?? [];
+        arr.push(diffMin);
+        responseTimesByAgent.set(row.sender_id, arr);
+      }
+      pendingCustomer = null;
+    } else if (pendingCustomer && row.sender_type === 'bot') {
+      // bot replied, reset pending so we don't attribute bot's speed to an agent later
+      pendingCustomer = null;
+    }
+  }
+
+  // Assemble the result
+  return agents.map((agent) => {
+    const visits = visitsByAgent.get(agent.user_id) ?? {
+      completed: 0,
+      noShow: 0,
+    };
+    const deals = dealsByAgent.get(agent.user_id) ?? { won: 0, closed: 0 };
+    const responseTimes = responseTimesByAgent.get(agent.user_id) ?? [];
+
+    const avgResponseTimeMin =
+      responseTimes.length > 0
+        ? responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length
+        : null;
+
+    const totalVisits = visits.completed + visits.noShow;
+    const noShowRate =
+      totalVisits > 0 ? (visits.noShow / totalVisits) * 100 : null;
+
+    const conversionRate =
+      deals.closed > 0 ? (deals.won / deals.closed) * 100 : null;
+
+    return {
+      agentId: agent.user_id,
+      name: agent.full_name || 'Unknown',
+      avatarUrl: agent.avatar_url,
+      role: agent.account_role,
+      avgResponseTimeMin,
+      leadsWorked: leadsWorkedByAgent.get(agent.user_id) ?? 0,
+      visitsCompleted: visits.completed,
+      noShowRate,
+      conversionRate,
+    };
+  });
+}

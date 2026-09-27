@@ -61,3 +61,15 @@ export interface ActivityItem {
   /** Optional deep-link for the whole row (not all items have a target). */
   href?: string;
 }
+
+export interface AgentPerformance {
+  agentId: string;
+  name: string;
+  avatarUrl: string | null;
+  role: string;
+  avgResponseTimeMin: number | null;
+  leadsWorked: number;
+  visitsCompleted: number;
+  noShowRate: number | null;
+  conversionRate: number | null;
+}

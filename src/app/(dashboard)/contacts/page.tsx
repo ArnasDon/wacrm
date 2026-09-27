@@ -56,12 +56,15 @@ import { ImportModal } from '@/components/contacts/import-modal';
 import { CustomFieldsManager } from '@/components/contacts/custom-fields-manager';
 import { useCan } from '@/hooks/use-can';
 import { GatedButton } from '@/components/ui/gated-button';
+import { SlaBadge } from '@/components/ui/sla-badge';
 import { useTranslations } from 'next-intl';
 
 const PAGE_SIZE = 25;
 
 interface ContactWithTags extends Contact {
   tags?: Tag[];
+  first_unanswered_at?: string | null;
+  assignee?: { id: string; full_name: string } | null;
 }
 
 export default function ContactsPage() {
@@ -192,6 +195,29 @@ export default function ContactsPage() {
       .from('contact_tags')
       .select('contact_id, tag_id')
       .in('contact_id', contactIds);
+
+    const { data: convData } = await supabase
+      .from('conversations')
+      .select('contact_id, first_unanswered_at, assigned_agent_id')
+      .in('contact_id', contactIds);
+
+    // Fetch profiles for assigned agents
+    const assignedAgentIds = Array.from(
+      new Set(convData?.map((c) => c.assigned_agent_id).filter(Boolean))
+    ) as string[];
+    const agentsMap: Record<string, { id: string; full_name: string }> = {};
+    if (assignedAgentIds.length > 0) {
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('user_id, full_name')
+        .in('user_id', assignedAgentIds);
+      if (profiles) {
+        profiles.forEach((p) => {
+          agentsMap[p.user_id] = { id: p.user_id, full_name: p.full_name };
+        });
+      }
+    }
+
     if (seq !== fetchSeq.current) return; // superseded by a newer fetch
 
     const tagsByContact: Record<string, string[]> = {};
@@ -200,12 +226,30 @@ export default function ContactsPage() {
       tagsByContact[ct.contact_id].push(ct.tag_id);
     });
 
-    const enriched: ContactWithTags[] = contactRows.map((c) => ({
-      ...c,
-      tags: (tagsByContact[c.id] ?? [])
-        .map((tid) => tagsMap[tid])
-        .filter(Boolean),
-    }));
+    const convByContact: Record<
+      string,
+      { first_unanswered_at: string | null; assigned_agent_id: string | null }
+    > = {};
+    convData?.forEach((c) => {
+      convByContact[c.contact_id] = {
+        first_unanswered_at: c.first_unanswered_at,
+        assigned_agent_id: c.assigned_agent_id,
+      };
+    });
+
+    const enriched: ContactWithTags[] = contactRows.map((c) => {
+      const conv = convByContact[c.id];
+      return {
+        ...c,
+        tags: (tagsByContact[c.id] ?? [])
+          .map((tid) => tagsMap[tid])
+          .filter(Boolean),
+        first_unanswered_at: conv?.first_unanswered_at,
+        assignee: conv?.assigned_agent_id
+          ? agentsMap[conv.assigned_agent_id]
+          : null,
+      };
+    });
 
     setContacts(enriched);
     setLoading(false);
@@ -611,6 +655,18 @@ export default function ContactsPage() {
                       </div>
                     )}
                   </div>
+                  <div className="mt-1 flex flex-col items-start gap-1">
+                    {contact.first_unanswered_at && (
+                      <SlaBadge
+                        firstUnansweredAt={contact.first_unanswered_at}
+                      />
+                    )}
+                    {contact.assignee && (
+                      <span className="text-muted-foreground bg-muted border-border inline-flex items-center rounded border px-1.5 py-0.5 text-[10px]">
+                        {contact.assignee.full_name}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 {/* Swipe Actions */}
                 <div className="divide-border flex flex-none snap-end divide-x">
@@ -662,6 +718,12 @@ export default function ContactsPage() {
                 {t('tableColumns.company')}
               </TableHead>
               <TableHead className="text-muted-foreground hidden md:table-cell">
+                SLA
+              </TableHead>
+              <TableHead className="text-muted-foreground hidden md:table-cell">
+                Assigned To
+              </TableHead>
+              <TableHead className="text-muted-foreground hidden md:table-cell">
                 {t('tableColumns.tags')}
               </TableHead>
               <TableHead className="text-muted-foreground hidden lg:table-cell">
@@ -673,7 +735,7 @@ export default function ContactsPage() {
           <TableBody>
             {loading ? (
               <TableRow className="border-border">
-                <TableCell colSpan={8} className="py-12 text-center">
+                <TableCell colSpan={10} className="py-12 text-center">
                   <div className="flex flex-col items-center gap-2">
                     <Loader2 className="text-primary size-6 animate-spin" />
                     <p className="text-muted-foreground text-sm">
@@ -684,7 +746,7 @@ export default function ContactsPage() {
               </TableRow>
             ) : contacts.length === 0 ? (
               <TableRow className="border-border">
-                <TableCell colSpan={8} className="py-12 text-center">
+                <TableCell colSpan={10} className="py-12 text-center">
                   <div className="flex flex-col items-center gap-2">
                     <Users className="text-muted-foreground size-8" />
                     <p className="text-muted-foreground text-sm">
@@ -739,6 +801,22 @@ export default function ContactsPage() {
                   </TableCell>
                   <TableCell className="text-muted-foreground hidden text-sm lg:table-cell">
                     {contact.company || (
+                      <span className="text-muted-foreground">-</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="hidden md:table-cell">
+                    {contact.first_unanswered_at && (
+                      <SlaBadge
+                        firstUnansweredAt={contact.first_unanswered_at}
+                      />
+                    )}
+                  </TableCell>
+                  <TableCell className="hidden md:table-cell">
+                    {contact.assignee ? (
+                      <span className="text-muted-foreground bg-muted border-border inline-flex items-center rounded border px-2 py-1 text-xs">
+                        {contact.assignee.full_name}
+                      </span>
+                    ) : (
                       <span className="text-muted-foreground">-</span>
                     )}
                   </TableCell>

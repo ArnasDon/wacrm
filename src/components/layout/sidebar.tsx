@@ -25,6 +25,7 @@ import {
   Workflow,
   X,
   Zap,
+  Building,
 } from 'lucide-react';
 import type { AccountRole } from '@/lib/auth/roles';
 
@@ -79,6 +80,10 @@ interface NavItem {
    * Purely informational — doesn't affect routing or access.
    */
   beta?: boolean;
+  /**
+   * When true, only visible to owner and admin roles.
+   */
+  adminOnly?: boolean;
 }
 
 const navItems: NavItem[] = [
@@ -87,10 +92,12 @@ const navItems: NavItem[] = [
   { href: '/notifications', labelKey: 'notifications', icon: Bell },
   { href: '/contacts', labelKey: 'contacts', icon: Users },
   { href: '/pipelines', labelKey: 'pipelines', icon: GitBranch },
+  { href: '/properties', labelKey: 'properties', icon: Building },
   { href: '/broadcasts', labelKey: 'broadcasts', icon: Radio },
   { href: '/automations', labelKey: 'automations', icon: Zap },
   { href: '/flows', labelKey: 'flows', icon: Workflow, beta: true },
   { href: '/agents', labelKey: 'aiAgents', icon: Bot },
+  { href: '/team', labelKey: 'team', icon: UsersRound, adminOnly: true },
 ];
 
 const bottomNavItems = [
@@ -199,6 +206,14 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
         <nav className="flex-1 overflow-y-auto px-3 py-4">
           <ul className="flex flex-col gap-1">
             {navItems.map((item) => {
+              if (
+                item.adminOnly &&
+                accountRole !== 'owner' &&
+                accountRole !== 'admin'
+              ) {
+                return null;
+              }
+
               const isActive =
                 pathname === item.href ||
                 (item.href !== '/dashboard' && pathname.startsWith(item.href));

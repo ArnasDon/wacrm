@@ -78,6 +78,18 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => null)
     if (!body || typeof body !== 'object') return bad('Invalid request body')
 
+    // AI keys are encrypted at rest with the same AES-256-GCM key used by
+    // WhatsApp credentials. Fail clearly if the deployment is missing it
+    // instead of letting Buffer.from(undefined) become an opaque 500.
+    const encryptionKey = process.env.ENCRYPTION_KEY
+    if (!encryptionKey || !/^[0-9a-fA-F]{64}$/.test(encryptionKey)) {
+      console.error('[ai/config POST] ENCRYPTION_KEY is missing or invalid; expected 64 hex characters.')
+      return NextResponse.json(
+        { error: 'Server encryption is not configured. Set ENCRYPTION_KEY to a 64-character hexadecimal key.' },
+        { status: 500 },
+      )
+    }
+
     const provider = body.provider as AiProvider
     if (provider !== 'openai' && provider !== 'anthropic' && provider !== 'openai_compatible') {
       return bad('provider must be "openai", "anthropic", or "openai_compatible"')

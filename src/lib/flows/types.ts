@@ -377,3 +377,7 @@ export interface DispatchInboundResult {
 export function assertNever(x: never): never {
   throw new Error(`Unhandled node type: ${JSON.stringify(x)}`);
 }
+
+
+/** Internal marker used for an explicit Flow → AI handoff. */
+export const FLOW_AI_HANDOFF_MARKER = "__flow_ai_handoff__"

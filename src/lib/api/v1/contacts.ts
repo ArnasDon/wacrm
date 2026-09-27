@@ -74,11 +74,14 @@ export async function resolveAuditUserId(
   db: SupabaseClient,
   accountId: string
 ): Promise<string> {
-  const { data: config } = await db
+  // Oldest channel's owner — stable once several channels exist (043).
+  const { data: configs } = await db
     .from('whatsapp_config')
     .select('user_id')
     .eq('account_id', accountId)
-    .maybeSingle();
+    .order('created_at', { ascending: true })
+    .limit(1);
+  const config = configs?.[0];
   const configOwner = config?.user_id as string | undefined;
   if (configOwner) return configOwner;
 

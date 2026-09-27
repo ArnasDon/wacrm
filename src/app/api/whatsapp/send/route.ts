@@ -11,6 +11,7 @@ import {
   validateSendMessageParams,
   SendMessageError,
 } from '@/lib/whatsapp/send-message'
+import { findLatestConversationId, loadDefaultChannel } from '@/lib/whatsapp/channels'
 
 // The dashboard's outbound-send endpoint. It owns auth, per-user rate
 // limiting, and the two ways the UI targets a thread — an existing
@@ -193,10 +194,11 @@ type SendSupabase = Awaited<ReturnType<typeof createClient>>
 
 /**
  * Return the contact's conversation id in this account, creating one if
- * it doesn't exist yet. Mirrors the webhook's find-or-create so an
- * inbound-then-outbound (or outbound-first) sequence converges on a single
- * thread per contact. Runs under the caller's RLS — the conversations_insert
- * policy requires account agent membership, which the caller already is.
+ * it doesn't exist yet. A contact has one conversation per channel
+ * (migration 043): continue the one they were last active in, else open
+ * one on the account's default channel. Runs under the caller's RLS — the
+ * conversations_insert policy requires account agent membership, which
+ * the caller already is.
  */
 async function findOrCreateConversation(
   supabase: SendSupabase,
@@ -204,14 +206,15 @@ async function findOrCreateConversation(
   userId: string,
   contactId: string,
 ): Promise<string | null> {
-  const { data: existing } = await supabase
-    .from('conversations')
-    .select('id')
-    .eq('account_id', accountId)
-    .eq('contact_id', contactId)
-    .maybeSingle()
+  try {
+    const existingId = await findLatestConversationId(supabase, accountId, contactId)
+    if (existingId) return existingId
+  } catch (err) {
+    console.error('Error finding conversation for contact send:', err)
+    return null
+  }
 
-  if (existing) return existing.id
+  const channel = await loadDefaultChannel(supabase, accountId)
 
   const { data: created, error } = await supabase
     .from('conversations')
@@ -219,6 +222,7 @@ async function findOrCreateConversation(
       account_id: accountId,
       user_id: userId,
       contact_id: contactId,
+      whatsapp_config_id: channel?.id ?? null,
     })
     .select('id')
     .single()

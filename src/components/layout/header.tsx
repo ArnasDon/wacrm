@@ -20,6 +20,8 @@ import { ModeToggle } from "@/components/layout/mode-toggle";
 
 const pageTitles: Record<string, string> = {
   "/dashboard": "dashboard",
+  "/whatsapp": "whatsapp",
+  "/templates": "templates",
   "/inbox": "inbox",
   "/notifications": "notifications",
   "/contacts": "contacts",
@@ -28,6 +30,10 @@ const pageTitles: Record<string, string> = {
   "/automations": "automations",
   "/settings": "settings",
 };
+
+// Pages that render their own heading (PageHero) — the header leaves the
+// title out there instead of showing it twice.
+const HERO_PAGES = ["/whatsapp", "/templates"];
 
 function getPageTitleKey(pathname: string): string {
   if (pageTitles[pathname]) return pageTitles[pathname];
@@ -50,6 +56,7 @@ export function Header({ onOpenSidebar }: HeaderProps) {
   const pathname = usePathname();
   const { profile, signOut } = useAuth();
   const titleKey = getPageTitleKey(pathname);
+  const hasHero = HERO_PAGES.some((p) => pathname.startsWith(p));
 
   const initial =
     profile?.full_name?.charAt(0)?.toUpperCase() ??
@@ -68,9 +75,11 @@ export function Header({ onOpenSidebar }: HeaderProps) {
         >
           <Menu className="h-5 w-5" />
         </button>
-        <h1 className="truncate text-base font-semibold text-foreground sm:text-lg">
-          {t(titleKey as string)}
-        </h1>
+        {hasHero ? null : (
+          <h1 className="truncate text-base font-semibold text-foreground sm:text-lg">
+            {t(titleKey as string)}
+          </h1>
+        )}
       </div>
 
       <div className="flex items-center gap-1 sm:gap-2">
@@ -124,7 +133,7 @@ export function Header({ onOpenSidebar }: HeaderProps) {
           <DropdownMenuItem
             render={
               <Link
-                href="/settings?tab=whatsapp"
+                href="/settings"
                 className="text-popover-foreground focus:bg-accent focus:text-accent-foreground"
               />
             }

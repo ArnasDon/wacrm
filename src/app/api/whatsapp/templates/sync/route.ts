@@ -8,6 +8,7 @@ import {
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { normalizeStatus } from '@/lib/whatsapp/template-status-normalize'
 import type { TemplateButton, TemplateSampleValues } from '@/types'
+import { loadChannelById, loadDefaultChannel } from '@/lib/whatsapp/channels'
 
 /**
  * Sync message templates from Meta → local message_templates table.
@@ -127,7 +128,7 @@ function extractSampleValues(
   return sv
 }
 
-export async function POST() {
+export async function POST(request: Request) {
   try {
     // Syncing rewrites the account-wide template catalog, which is
     // settings-class data: `canEditSettings` and the message_templates
@@ -135,19 +136,22 @@ export async function POST() {
     // Resolving account_id off the profile only proved membership.
     const { supabase, accountId, userId } = await requireRole('admin')
 
-    const { data: config, error: configError } = await supabase
-      .from('whatsapp_config')
-      .select('*')
-      .eq('account_id', accountId)
-      .single()
+    // Sync the WABA of the channel picked on the Templates page
+    // (`?channel_id=`), else of the default channel. Templates live per
+    // WABA (migration 047).
+    const channelId = new URL(request.url).searchParams.get('channel_id')
+    const config = channelId
+      ? await loadChannelById(supabase, accountId, channelId)
+      : await loadDefaultChannel(supabase, accountId)
 
-    if (configError || !config) {
+    if (!config) {
       return NextResponse.json(
         {
-          error:
-            'WhatsApp not configured. Connect your WhatsApp Business account in Settings first.',
+          error: channelId
+            ? 'Channel not found.'
+            : 'WhatsApp not configured. Connect a WhatsApp channel on the WhatsApp page first.',
         },
-        { status: 400 },
+        { status: channelId ? 404 : 400 },
       )
     }
 
@@ -155,7 +159,7 @@ export async function POST() {
       return NextResponse.json(
         {
           error:
-            'WABA (WhatsApp Business Account) ID missing. Re-connect your account in Settings.',
+            'This channel has no WABA (WhatsApp Business Account) ID. Disconnect it and connect it again on the WhatsApp page.',
         },
         { status: 400 },
       )
@@ -222,6 +226,7 @@ export async function POST() {
         // route. account_id is NOT NULL on message_templates
         // post-017, so an INSERT without it errors.
         account_id: accountId,
+        waba_id: config.waba_id,
         user_id: userId,
         name: t.name,
         category: normalizeCategory(t.category),
@@ -243,6 +248,7 @@ export async function POST() {
         .from('message_templates')
         .select('id')
         .eq('account_id', accountId)
+        .eq('waba_id', config.waba_id)
         .eq('name', t.name)
         .eq('language', t.language)
         .maybeSingle()

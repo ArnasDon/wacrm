@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import {
+  MetaApiError,
   deleteMessageTemplate,
   editMessageTemplate,
 } from '@/lib/whatsapp/meta-api'
@@ -11,6 +12,7 @@ import {
 } from '@/lib/whatsapp/template-validators'
 import { buildMetaTemplatePayload } from '@/lib/whatsapp/template-components'
 import { ensureMediaHeaderHandle } from '@/lib/whatsapp/template-header-handle'
+import { loadChannelForWaba } from '@/lib/whatsapp/channels'
 
 /**
  * Per-template lifecycle endpoint.
@@ -91,7 +93,7 @@ export async function PATCH(
     // meta_template_id and status — fetch explicitly.
     const { data: existing, error: lookupErr } = await supabase
       .from('message_templates')
-      .select('id, name, status, meta_template_id, language')
+      .select('id, name, status, meta_template_id, language, waba_id')
       .eq('id', id)
       .eq('account_id', accountId)
       .maybeSingle()
@@ -138,12 +140,9 @@ export async function PATCH(
     }
 
     if (!isDryRun()) {
-      const { data: config, error: configError } = await supabase
-        .from('whatsapp_config')
-        .select('*')
-        .eq('account_id', accountId)
-        .single()
-      if (configError || !config) {
+      // A channel of the template's own WABA (migration 047).
+      const config = await loadChannelForWaba(supabase, accountId, existing.waba_id)
+      if (!config) {
         return NextResponse.json(
           { error: 'WhatsApp not configured.' },
           { status: 400 },
@@ -231,8 +230,21 @@ export async function PATCH(
   }
 }
 
+/**
+ * Meta refuses the delete when the token's system user was given only
+ * partial access to a WABA shared by another business — enough to send
+ * and create templates, not to delete them.
+ */
+function isWabaPermissionError(e: unknown): boolean {
+  return (
+    e instanceof MetaApiError &&
+    e.code === 100 &&
+    /need permission|permission/i.test(e.message)
+  )
+}
+
 export async function DELETE(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
   try {
@@ -270,7 +282,7 @@ export async function DELETE(
 
     const { data: existing, error: lookupErr } = await supabase
       .from('message_templates')
-      .select('id, name, meta_template_id')
+      .select('id, name, meta_template_id, waba_id')
       .eq('id', id)
       .eq('account_id', accountId)
       .maybeSingle()
@@ -278,13 +290,15 @@ export async function DELETE(
       return NextResponse.json({ error: 'Template not found.' }, { status: 404 })
     }
 
-    if (existing.meta_template_id && !isDryRun()) {
-      const { data: config, error: configError } = await supabase
-        .from('whatsapp_config')
-        .select('*')
-        .eq('account_id', accountId)
-        .single()
-      if (configError || !config || !config.waba_id) {
+    // `?local_only=true` removes the row from this app without touching
+    // Meta — offered when Meta refuses the delete (see below). A later
+    // "Sync from Meta" brings the template back while it exists there.
+    const localOnly = new URL(request.url).searchParams.get('local_only') === 'true'
+
+    if (existing.meta_template_id && !isDryRun() && !localOnly) {
+      // A channel of the template's own WABA (migration 047).
+      const config = await loadChannelForWaba(supabase, accountId, existing.waba_id)
+      if (!config || !config.waba_id) {
         return NextResponse.json(
           { error: 'WhatsApp not configured — cannot delete on Meta.' },
           { status: 400 },
@@ -299,8 +313,22 @@ export async function DELETE(
           metaTemplateId: existing.meta_template_id,
         })
       } catch (e) {
+        if (isWabaPermissionError(e)) {
+          return NextResponse.json(
+            {
+              error:
+                'Meta did not allow this delete: the access token of this channel can create and send templates in this WhatsApp Business Account, but not delete them. In Meta Business Settings → Accounts → WhatsApp accounts, give the system user “Full control” of this account, or delete the template in WhatsApp Manager. You can also remove it from this app only.',
+              code: 'waba_permission',
+              can_remove_locally: true,
+            },
+            { status: 403 },
+          )
+        }
         const message = e instanceof Error ? e.message : 'Meta delete failed.'
-        return NextResponse.json({ error: message }, { status: 502 })
+        return NextResponse.json(
+          { error: message, can_remove_locally: true },
+          { status: 502 },
+        )
       }
     }
 

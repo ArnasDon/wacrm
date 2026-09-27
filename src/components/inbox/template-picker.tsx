@@ -34,6 +34,12 @@ interface TemplatePickerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSelect: (template: MessageTemplate, values: TemplateSendValues) => void;
+  /**
+   * The channel the send goes through. Templates live per WABA
+   * (migration 047), so only that channel's WABA's templates are
+   * offered. Omitted: every template of the account.
+   */
+  channelId?: string | null;
 }
 
 function renderBodyPreview(body: string, params: string[]): string {
@@ -78,6 +84,7 @@ export function TemplatePicker({
   open,
   onOpenChange,
   onSelect,
+  channelId,
 }: TemplatePickerProps) {
   const t = useTranslations("Inbox.templatePicker");
 
@@ -111,18 +118,33 @@ export function TemplatePicker({
       // user_id. Templates are account-owned, so filtering on the caller's
       // user_id hid templates that a teammate created — leaving them unable
       // to send approved templates in a shared account.
-      const { data, error } = await supabase
-        .from("message_templates")
-        .select("*")
-        .eq("status", "APPROVED")
-        .order("created_at", { ascending: false });
+      const [{ data, error }, channelRes] = await Promise.all([
+        supabase
+          .from("message_templates")
+          .select("*")
+          .eq("status", "APPROVED")
+          .order("created_at", { ascending: false }),
+        channelId
+          ? supabase
+              .from("whatsapp_config")
+              .select("waba_id")
+              .eq("id", channelId)
+              .maybeSingle()
+          : Promise.resolve({ data: null }),
+      ]);
 
       if (cancelled) return;
       if (error) {
         console.error("Failed to fetch templates:", error);
         setTemplates([]);
       } else {
-        setTemplates((data as MessageTemplate[]) ?? []);
+        const rows = (data as MessageTemplate[]) ?? [];
+        // Only the channel's WABA can send its templates — Meta rejects
+        // another WABA's. Unknown WABA (legacy row, no channel): show all.
+        const wabaId = (channelRes.data as { waba_id?: string | null } | null)?.waba_id;
+        setTemplates(
+          wabaId ? rows.filter((r) => !r.waba_id || r.waba_id === wabaId) : rows,
+        );
       }
       setLoading(false);
     })();
@@ -130,7 +152,7 @@ export function TemplatePicker({
     return () => {
       cancelled = true;
     };
-  }, [open]);
+  }, [open, channelId]);
 
   function resetSelection() {
     setSelected(null);

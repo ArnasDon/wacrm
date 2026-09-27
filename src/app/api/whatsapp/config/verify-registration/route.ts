@@ -5,6 +5,7 @@ import {
   getSubscribedApps,
   verifyPhoneNumber,
 } from '@/lib/whatsapp/meta-api'
+import { loadChannelById, loadDefaultChannel } from '@/lib/whatsapp/channels'
 
 /**
  * GET /api/whatsapp/config/verify-registration
@@ -28,7 +29,7 @@ import {
  * rather than a generic error toast. The combined `live` flag is
  * what the UI badges on.
  */
-export async function GET() {
+export async function GET(request?: Request) {
   const supabase = await createClient()
   const {
     data: { user },
@@ -55,11 +56,12 @@ export async function GET() {
     })
   }
 
-  const { data: config } = await supabase
-    .from('whatsapp_config')
-    .select('*')
-    .eq('account_id', accountId)
-    .maybeSingle()
+  // `?channel_id=` checks one channel (migration 043); without it, the
+  // account's default channel.
+  const channelId = request ? new URL(request.url).searchParams.get('channel_id') : null
+  const config = channelId
+    ? await loadChannelById(supabase, accountId, channelId)
+    : await loadDefaultChannel(supabase, accountId)
 
   if (!config) {
     return NextResponse.json({

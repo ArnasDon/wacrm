@@ -110,8 +110,15 @@ function makeSupabaseMock() {
     })
     b.single = vi.fn(terminal)
     b.maybeSingle = vi.fn(terminal)
-    b.then = (resolve: (v: unknown) => unknown) =>
-      resolve(didInsert ? insertResult() : selectResult())
+    b.then = (resolve: (v: unknown) => unknown) => {
+      // List reads — the account's channels (loadDefaultChannel) and the
+      // contact's latest conversation (findLatestConversationId) — get rows.
+      if ((table === 'whatsapp_config' || table === 'conversations') && !didInsert) {
+        const row = selectResult().data
+        return resolve({ data: row ? [row] : [], error: null })
+      }
+      return resolve(didInsert ? insertResult() : selectResult())
+    }
     return b
   }
 

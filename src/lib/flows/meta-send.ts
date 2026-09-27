@@ -9,6 +9,7 @@ import {
 } from '@/lib/whatsapp/meta-api'
 import type { InteractiveMessagePayload } from '@/lib/whatsapp/interactive'
 import { decrypt } from '@/lib/whatsapp/encryption'
+import { loadChannelForConversation } from '@/lib/whatsapp/channels'
 import {
   phoneVariants,
   isRecipientNotAllowedError,
@@ -40,13 +41,12 @@ import { supabaseAdmin } from './admin-client'
 export async function loadAccountMetaCredentials(
   db: ReturnType<typeof supabaseAdmin>,
   accountId: string,
+  // The channel (migration 043) is the one this conversation replies
+  // through; without a conversation, the account's default channel.
+  conversationId?: string,
 ): Promise<{ phoneNumberId: string; accessToken: string }> {
-  const { data: config, error: configErr } = await db
-    .from('whatsapp_config')
-    .select('phone_number_id, access_token')
-    .eq('account_id', accountId)
-    .single()
-  if (configErr || !config) {
+  const config = await loadChannelForConversation(db, accountId, conversationId)
+  if (!config) {
     throw new Error('WhatsApp not configured for this account')
   }
   return {
@@ -113,6 +113,7 @@ export async function engineSendText(
   const { phoneNumberId, accessToken } = await loadAccountMetaCredentials(
     db,
     args.accountId,
+    args.conversationId,
   )
 
   const attempt = async (phone: string): Promise<string> => {
@@ -222,6 +223,7 @@ export async function engineSendMedia(
   const { phoneNumberId, accessToken } = await loadAccountMetaCredentials(
     db,
     args.accountId,
+    args.conversationId,
   )
 
   const attempt = async (phone: string): Promise<string> => {
@@ -373,6 +375,7 @@ async function sendInteractiveViaMeta(
   const { phoneNumberId, accessToken } = await loadAccountMetaCredentials(
     db,
     input.accountId,
+    input.conversationId,
   )
 
   const attempt = async (phone: string): Promise<string> => {

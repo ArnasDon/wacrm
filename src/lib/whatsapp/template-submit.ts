@@ -1,0 +1,199 @@
+// ============================================================
+// Submit a template to Meta for approval and persist it locally.
+//
+// Shared by POST /api/whatsapp/templates/submit (create) and
+// POST /api/whatsapp/templates/:id/clone. Templates belong to a WABA
+// (migration 047): the row is keyed on (account_id, waba_id, name,
+// language) and submitted through a channel of that WABA.
+//
+// When WHATSAPP_TEMPLATES_DRY_RUN=true, the Meta call is skipped and the
+// row gets a synthetic `dry-run-<uuid>` meta_template_id so CI / local
+// dev can exercise the full UI without a real Meta App.
+// ============================================================
+
+import { NextResponse } from 'next/server';
+import type { SupabaseClient } from '@supabase/supabase-js';
+
+import { decrypt } from '@/lib/whatsapp/encryption';
+import { submitMessageTemplate } from '@/lib/whatsapp/meta-api';
+import type { TemplatePayload } from '@/lib/whatsapp/template-validators';
+import { buildMetaTemplatePayload } from '@/lib/whatsapp/template-components';
+import { ensureMediaHeaderHandle } from '@/lib/whatsapp/template-header-handle';
+import { normalizeStatus } from '@/lib/whatsapp/template-status-normalize';
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ChannelRow = Record<string, any>;
+
+export function isTemplatesDryRun(): boolean {
+  return (
+    process.env.WHATSAPP_TEMPLATES_DRY_RUN === 'true' ||
+    process.env.WHATSAPP_TEMPLATES_DRY_RUN === '1'
+  );
+}
+
+/**
+ * Shared upsert payload builder — the Meta-failure and Meta-success
+ * paths write nearly identical rows.
+ */
+function buildUpsertRow(
+  accountId: string,
+  userId: string,
+  wabaId: string | null,
+  payload: TemplatePayload,
+  extras: {
+    status: 'DRAFT' | string;
+    metaTemplateId: string | null;
+    submissionError: string | null;
+  }
+) {
+  return {
+    // Account tenancy (NOT NULL since 017) + the WABA it lives in (047).
+    account_id: accountId,
+    waba_id: wabaId,
+    // Original author — audit only.
+    user_id: userId,
+    name: payload.name,
+    category: payload.category,
+    language: payload.language,
+    header_type: payload.header_type ?? null,
+    header_content: payload.header_content ?? null,
+    header_media_url: payload.header_media_url ?? null,
+    header_handle: payload.header_handle ?? null,
+    body_text: payload.body_text,
+    footer_text: payload.footer_text ?? null,
+    buttons: payload.buttons ?? null,
+    sample_values: payload.sample_values ?? null,
+    status: extras.status,
+    meta_template_id: extras.metaTemplateId,
+    submission_error: extras.submissionError,
+    // Cleared on every (re-)submit; the webhook sets it again if Meta
+    // still rejects.
+    rejection_reason: null,
+    last_submitted_at: new Date().toISOString(),
+  };
+}
+
+async function upsertTemplateRow(
+  supabase: SupabaseClient,
+  row: ReturnType<typeof buildUpsertRow>
+) {
+  return supabase
+    .from('message_templates')
+    .upsert(row, { onConflict: 'account_id,waba_id,name,language' })
+    .select()
+    .single();
+}
+
+/**
+ * Submit `payload` (already validated) through `channel` and save the
+ * row. Returns the route's response: `{ success, template, dry_run }`
+ * or `{ error }` with 400 (header media), 429 (Meta rate limit), 502
+ * (Meta refused) or 500 (saved on Meta but not locally).
+ */
+export async function submitAndSaveTemplate(args: {
+  supabase: SupabaseClient;
+  accountId: string;
+  userId: string;
+  payload: TemplatePayload;
+  channel: ChannelRow | null;
+}): Promise<NextResponse> {
+  const { supabase, accountId, userId, payload, channel } = args;
+  const dryRun = isTemplatesDryRun();
+
+  let metaTemplateId: string;
+  let metaStatus: string;
+  const wabaId: string | null = channel?.waba_id ?? null;
+
+  if (dryRun) {
+    metaTemplateId = `dry-run-${crypto.randomUUID()}`;
+    metaStatus = 'PENDING';
+  } else {
+    if (!channel) {
+      return NextResponse.json(
+        {
+          error:
+            'WhatsApp not configured. Connect a WhatsApp channel on the WhatsApp page first.',
+        },
+        { status: 400 }
+      );
+    }
+    if (!wabaId) {
+      return NextResponse.json(
+        {
+          error:
+            'This channel has no WABA (WhatsApp Business Account) ID. Disconnect it and connect it again on the WhatsApp page.',
+        },
+        { status: 400 }
+      );
+    }
+
+    const accessToken = decrypt(channel.access_token);
+
+    // Media headers (image/video/document) need a Resumable-Upload
+    // handle — Meta rejects a plain URL at creation. Derived from
+    // header_media_url; a 400 names what to fix (missing META_APP_ID,
+    // unreachable URL, wrong type/size).
+    try {
+      await ensureMediaHeaderHandle(payload, accessToken);
+    } catch (e) {
+      return NextResponse.json(
+        { error: e instanceof Error ? e.message : 'Header media upload failed.' },
+        { status: 400 }
+      );
+    }
+
+    try {
+      const meta = await submitMessageTemplate({
+        wabaId,
+        accessToken,
+        payload: buildMetaTemplatePayload(payload),
+      });
+      metaTemplateId = meta.id;
+      metaStatus = meta.status;
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Meta submit failed.';
+      // Persist the failure so the user can retry; the row stays DRAFT
+      // until they fix and re-submit.
+      await upsertTemplateRow(
+        supabase,
+        buildUpsertRow(accountId, userId, wabaId, payload, {
+          status: 'DRAFT',
+          metaTemplateId: null,
+          submissionError: message,
+        })
+      );
+      const isRateLimit = /\b429\b/.test(message);
+      return NextResponse.json(
+        {
+          error: isRateLimit
+            ? 'Meta rate limit hit (100 template creates per hour). Try again later.'
+            : message,
+        },
+        { status: isRateLimit ? 429 : 502 }
+      );
+    }
+  }
+
+  const { data: row, error: upsertErr } = await upsertTemplateRow(
+    supabase,
+    buildUpsertRow(accountId, userId, wabaId, payload, {
+      status: normalizeStatus(metaStatus),
+      metaTemplateId,
+      submissionError: null,
+    })
+  );
+
+  if (upsertErr) {
+    // Submitted on Meta's side but not saved locally — surface the
+    // meta_template_id so "Sync from Meta" can recover it.
+    return NextResponse.json(
+      {
+        error: `Submitted to Meta but failed to save locally: ${upsertErr.message}. Run "Sync from Meta" to recover.`,
+        meta_template_id: metaTemplateId,
+      },
+      { status: 500 }
+    );
+  }
+
+  return NextResponse.json({ success: true, template: row, dry_run: dryRun });
+}

@@ -19,6 +19,10 @@ import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
 import {
+  recordTestSendStatus,
+  type MetaStatusEvent,
+} from '@/lib/whatsapp/template-test-sends'
+import {
   handleTemplateWebhookChange,
   isTemplateWebhookField,
 } from '@/lib/whatsapp/template-webhook'
@@ -294,6 +298,9 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
       if (value.statuses) {
         for (const status of value.statuses) {
           await handleStatusUpdate(status)
+          // Template test sends have no message row — record their
+          // status for the Templates page's test tool (migration 048).
+          await recordTestSendStatus(supabaseAdmin(), status as unknown as MetaStatusEvent)
         }
       }
 
@@ -359,7 +366,10 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
           // Default ON: the column is NOT NULL DEFAULT TRUE, but a row
           // read before migration 039 lands would have it undefined,
           // and losing attachments is the failure mode worth avoiding.
-          config.mirror_inbound_media !== false
+          config.mirror_inbound_media !== false,
+          // The channel (migration 043) the customer wrote to — replies
+          // go back out through the same number.
+          config.id
         )
       }
     }
@@ -664,7 +674,8 @@ async function processMessage(
   accessToken: string,
   // Per-account opt-out for the inbound-media mirror (migration 039).
   // See parseMessageContent for what it turns off.
-  mirrorMedia: boolean
+  mirrorMedia: boolean,
+  channelId: string
 ) {
   // Phone number OR business-scoped user ID — Meta sends only the
   // latter for a sender who has adopted a WhatsApp username (#519).
@@ -693,7 +704,8 @@ async function processMessage(
   const convResult = await findOrCreateConversation(
     accountId,
     configOwnerUserId,
-    contactRecord.id
+    contactRecord.id,
+    channelId
   )
   if (!convResult) return
   const conversation = convResult.conversation
@@ -1379,27 +1391,30 @@ async function findOrCreateConversation(
   accountId: string,
   configOwnerUserId: string,
   contactId: string,
+  channelId: string,
 ) {
-  // Look for an existing conversation in this account, oldest-first.
+  // One conversation per (contact, channel) since migration 043: a
+  // customer who writes to two of the account's numbers — often two
+  // different brands — gets two threads, each replying from its own
+  // number. The unique index idx_conversations_account_contact_config
+  // enforces it.
   //
   // We deliberately do NOT use `.single()` here. `.single()` errors on
   // *both* 0 rows and ≥2 rows, and the old code treated any error as
-  // "none found" and inserted a new row. So once two conversations
-  // existed for a contact (from a race — Meta retries a delivery, or a
-  // batch fans out to concurrent runs), every subsequent inbound
-  // message errored on the lookup and created yet another conversation,
-  // snowballing into a wall of duplicate chats (issue #363).
-  //
-  // Ordering oldest-first and taking one row makes the lookup resolve to
-  // the same canonical survivor the dedup migration (036) keeps, so any
-  // pre-existing duplicates converge instead of compounding.
-  const { data: existingRows, error: findError } = await supabaseAdmin()
-    .from('conversations')
-    .select('*')
-    .eq('account_id', accountId)
-    .eq('contact_id', contactId)
-    .order('created_at', { ascending: true })
-    .limit(1)
+  // "none found" and inserted a new row — snowballing into a wall of
+  // duplicate chats (issue #363). Ordering oldest-first and taking one
+  // row makes any pre-existing duplicates converge instead of compounding.
+  const lookup = () =>
+    supabaseAdmin()
+      .from('conversations')
+      .select('*')
+      .eq('account_id', accountId)
+      .eq('contact_id', contactId)
+      .eq('whatsapp_config_id', channelId)
+      .order('created_at', { ascending: true })
+      .limit(1)
+
+  const { data: existingRows, error: findError } = await lookup()
 
   if (findError) {
     console.error('Error finding conversation:', findError)
@@ -1410,6 +1425,32 @@ async function findOrCreateConversation(
     return { conversation: existingRows[0], created: false }
   }
 
+  // A thread with no channel yet — created before 043, or by an
+  // outbound send before any inbound — becomes this channel's thread
+  // rather than leaving the customer with two.
+  const { data: unassigned } = await supabaseAdmin()
+    .from('conversations')
+    .select('id')
+    .eq('account_id', accountId)
+    .eq('contact_id', contactId)
+    .is('whatsapp_config_id', null)
+    .order('created_at', { ascending: true })
+    .limit(1)
+  if (unassigned && unassigned.length > 0) {
+    const { data: adopted, error: adoptError } = await supabaseAdmin()
+      .from('conversations')
+      .update({ whatsapp_config_id: channelId })
+      .eq('id', unassigned[0].id)
+      .is('whatsapp_config_id', null)
+      .select()
+      .maybeSingle()
+    if (adoptError) {
+      console.error('Error assigning conversation to channel:', adoptError)
+    } else if (adopted) {
+      return { conversation: adopted, created: false }
+    }
+  }
+
   // Create new conversation. Same tenancy + audit split as
   // findOrCreateContact above.
   const { data: newConv, error: createError } = await supabaseAdmin()
@@ -1418,6 +1459,7 @@ async function findOrCreateConversation(
       account_id: accountId,
       user_id: configOwnerUserId,
       contact_id: contactId,
+      whatsapp_config_id: channelId,
     })
     .select()
     .single()
@@ -1425,16 +1467,10 @@ async function findOrCreateConversation(
   if (createError) {
     // Lost a race: a concurrent inbound delivery created the
     // conversation between our lookup and insert, and the unique index
-    // (migration 036) rejected the duplicate. Re-resolve the winning
-    // row instead of dropping the message — mirrors findOrCreateContact.
+    // rejected the duplicate. Re-resolve the winning row instead of
+    // dropping the message — mirrors findOrCreateContact.
     if (isUniqueViolation(createError)) {
-      const { data: raced } = await supabaseAdmin()
-        .from('conversations')
-        .select('*')
-        .eq('account_id', accountId)
-        .eq('contact_id', contactId)
-        .order('created_at', { ascending: true })
-        .limit(1)
+      const { data: raced } = await lookup()
       if (raced && raced.length > 0) {
         return { conversation: raced[0], created: false }
       }

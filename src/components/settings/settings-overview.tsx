@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState, type ReactNode } from 'react';
-import { ChevronRight, Loader2 } from 'lucide-react';
+import { ChevronRight, FileText, Loader2, PlugZap } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 
 import { createClient } from '@/lib/supabase/client';
@@ -39,6 +40,7 @@ export function SettingsOverview({
   const { user, profile, accountId, accountRole, defaultCurrency, canManageMembers } =
     useAuth();
   const { mode, theme } = useTheme();
+  const router = useRouter();
   const t = useTranslations('Settings.overview');
   const tRoles = useTranslations('Settings.roles');
   const tSections = useTranslations('Settings.sections');
@@ -121,16 +123,16 @@ export function SettingsOverview({
     (async () => {
       setWhatsappLoading(true);
       const [row, health] = await Promise.allSettled([
+        // Any channel counts — an account can connect several (043).
         supabase
           .from('whatsapp_config')
-          .select('phone_number_id')
-          .eq('account_id', acctId)
-          .maybeSingle(),
+          .select('id', { count: 'exact', head: true })
+          .eq('account_id', acctId),
         fetch('/api/whatsapp/config', { cache: 'no-store' }).then((r) => r.json()),
       ]);
       if (cancelled) return;
       setWhatsapp({
-        configured: row.status === 'fulfilled' && !!row.value.data?.phone_number_id,
+        configured: row.status === 'fulfilled' && (row.value.count ?? 0) > 0,
         connected: health.status === 'fulfilled' && !!health.value?.connected,
       });
       setWhatsappLoading(false);
@@ -153,8 +155,10 @@ export function SettingsOverview({
 
   // Per-tile loading + subtitle. `null` counts render as a graceful
   // fallback so a single failed query never blanks a tile.
+  // 'whatsapp' and 'templates' are no longer settings sections — their
+  // tiles open their own pages instead.
   const tiles: {
-    section: SettingsSection;
+    section: SettingsSection | 'whatsapp' | 'templates';
     loading: boolean;
     subtitle: ReactNode;
   }[] = [
@@ -252,13 +256,21 @@ export function SettingsOverview({
       {/* Status tiles */}
       <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {tiles.map(({ section, loading, subtitle }) => {
-          const meta = SECTION_META[section];
-          const Icon = meta.icon;
+          const Icon =
+            section === 'whatsapp'
+              ? PlugZap
+              : section === 'templates'
+                ? FileText
+                : SECTION_META[section].icon;
           return (
             <button
               key={section}
               type="button"
-              onClick={() => onSelect(section)}
+              onClick={() =>
+                section === 'whatsapp' || section === 'templates'
+                  ? router.push(`/${section}`)
+                  : onSelect(section)
+              }
               className={cn(
                 'group flex items-start gap-3.5 rounded-xl border border-border bg-card p-4 text-left transition-colors',
                 'hover:border-primary-soft-2 hover:bg-card-2',

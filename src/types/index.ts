@@ -192,6 +192,8 @@ export interface Conversation {
   ai_autoreply_disabled?: boolean;
   ai_reply_count?: number;
   ai_handoff_summary?: string | null;
+  /** The channel (whatsapp_config) this thread runs on — migration 043. */
+  whatsapp_config_id?: string | null;
 }
 
 // ============================================================
@@ -354,6 +356,8 @@ export interface MessageTemplate {
   header_content?: string;
   header_handle?: string;
   header_media_url?: string;
+  /** The WABA this template lives in (migration 047). */
+  waba_id?: string | null;
   body_text: string;
   footer_text?: string;
   buttons?: TemplateButton[];

@@ -9,8 +9,8 @@
 //
 // It deliberately reuses the exact find-or-create logic the inbound
 // webhook uses (the `findExistingContact` dedupe helper, the
-// one-conversation-per-(account, contact) convention, the
-// account_id-tenancy / user_id-audit split) so a contact created via
+// one-conversation-per-(contact, channel) convention from migration
+// 043, the account_id-tenancy / user_id-audit split) so a contact created via
 // the API is indistinguishable from one created by an inbound message.
 //
 // Audit user: created rows need a NOT NULL `user_id`. As with the
@@ -24,6 +24,7 @@ import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe';
 import { parseInternationalPhone } from '@/lib/whatsapp/phone-utils';
 import { SendMessageError } from '@/lib/whatsapp/send-message';
 import { resolveAuditUserId, ContactError } from '@/lib/api/v1/contacts';
+import { findLatestConversationId, loadDefaultChannel } from '@/lib/whatsapp/channels';
 
 export interface ResolvedConversation {
   conversationId: string;
@@ -58,11 +59,7 @@ export async function resolveConversationByPhone(
 
   // Fail fast (and create nothing) when the account has no WhatsApp
   // connected — the same error the send would raise anyway.
-  const { data: config } = await db
-    .from('whatsapp_config')
-    .select('id')
-    .eq('account_id', accountId)
-    .maybeSingle();
+  const config = await loadDefaultChannel(db, accountId);
   if (!config) {
     throw new SendMessageError(
       'whatsapp_not_configured',
@@ -140,48 +137,43 @@ export async function resolveConversationByPhone(
   }
 
   // ---- conversation -------------------------------------------
-  // One conversation per (account, contact) — same convention as the
-  // webhook. Order oldest-first and take one row rather than
-  // `.maybeSingle()`, which errors on ≥2 rows: if duplicates predate the
-  // unique index (migration 036), we resolve to the canonical survivor
-  // instead of falling through and creating yet another (issue #363).
+  // A contact has one conversation per channel (migration 043). Continue
+  // the one they were last active in; with none yet, open one on the
+  // account's default channel.
   const conversationId = await findOrCreateConversationRow(
     db,
     accountId,
     contactId,
-    ownerUserId
+    ownerUserId,
+    config.id
   );
 
   return { conversationId, contactId, contactCreated };
 }
 
 /**
- * Find (oldest-first) or create the single conversation for
- * `(accountId, contactId)`. Handles the unique-index race the same way
- * the inbound webhook does: on a 23505 from a concurrent create,
- * re-resolve the winning row rather than failing the send.
+ * The contact's most recent conversation, or a new one on `channelId`.
+ * Handles the unique-index race the same way the inbound webhook does:
+ * on a 23505 from a concurrent create, re-resolve the winning row
+ * rather than failing the send.
  */
 async function findOrCreateConversationRow(
   db: SupabaseClient,
   accountId: string,
   contactId: string,
-  ownerUserId: string
+  ownerUserId: string,
+  channelId: string
 ): Promise<string> {
-  const { data: existing, error: findErr } = await db
-    .from('conversations')
-    .select('id')
-    .eq('account_id', accountId)
-    .eq('contact_id', contactId)
-    .order('created_at', { ascending: true })
-    .limit(1);
-
-  if (findErr) {
+  let existingId: string | null;
+  try {
+    existingId = await findLatestConversationId(db, accountId, contactId);
+  } catch (findErr) {
     console.error('[resolve-conversation] conversation lookup error:', findErr);
     throw new SendMessageError('db_error', 'Failed to resolve conversation', 500);
   }
 
-  if (existing && existing.length > 0) {
-    return existing[0].id;
+  if (existingId) {
+    return existingId;
   }
 
   const { data: newConv, error: convErr } = await db
@@ -190,21 +182,18 @@ async function findOrCreateConversationRow(
       account_id: accountId,
       user_id: ownerUserId,
       contact_id: contactId,
+      whatsapp_config_id: channelId,
     })
     .select('id')
     .single();
 
   if (convErr || !newConv) {
     if (isUniqueViolation(convErr)) {
-      const { data: raced } = await db
-        .from('conversations')
-        .select('id')
-        .eq('account_id', accountId)
-        .eq('contact_id', contactId)
-        .order('created_at', { ascending: true })
-        .limit(1);
-      if (raced && raced.length > 0) {
-        return raced[0].id;
+      const raced = await findLatestConversationId(db, accountId, contactId).catch(
+        () => null
+      );
+      if (raced) {
+        return raced;
       }
     }
     console.error('[resolve-conversation] conversation create error:', convErr);

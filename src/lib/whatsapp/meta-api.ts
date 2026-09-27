@@ -34,6 +34,13 @@ interface MetaErrorResponse {
     fbtrace_id?: string
     /** WhatsApp-specific envelope — `details` is the human-readable part. */
     error_data?: { messaging_product?: string; details?: string }
+    /**
+     * The explanation Meta writes for end users — e.g. "Parameters words
+     * ratio exceeds limit" / "This template has too many variables for
+     * its length…" behind a bare "Invalid parameter" `message`.
+     */
+    error_user_title?: string
+    error_user_msg?: string
   }
 }
 
@@ -89,6 +96,14 @@ async function readMetaError(response: Response, fallback: string): Promise<Meta
     const data = (await response.json()) as MetaErrorResponse
     envelope = data.error
     if (envelope?.message) message = envelope.message
+    // Prefer Meta's user-facing explanation: template creation answers
+    // most rule violations with message "Invalid parameter" and puts the
+    // actual reason here.
+    if (envelope?.error_user_msg) {
+      message = envelope.error_user_title
+        ? `${envelope.error_user_title}: ${envelope.error_user_msg}`
+        : envelope.error_user_msg
+    }
   } catch {
     // response body wasn't JSON — keep the fallback
   }
@@ -131,6 +146,118 @@ export async function verifyPhoneNumber(
     await throwMetaError(response, `Meta API error: ${response.status}`)
   }
   return response.json()
+}
+
+export interface MetaPhoneDetails extends MetaPhoneInfo {
+  /** Meta's state for the number: CONNECTED, PENDING, FLAGGED, RESTRICTED, ... */
+  status?: string
+  /** VERIFIED / NOT_VERIFIED / EXPIRED */
+  code_verification_status?: string
+  /** Display-name review: APPROVED, PENDING_REVIEW, DECLINED, ... */
+  name_status?: string
+  /** LIVE or SANDBOX */
+  account_mode?: string
+  is_official_business_account?: boolean
+  country_code?: string
+  country_dial_code?: string
+  /**
+   * Portfolio-level messaging limit, shared by every number in the
+   * business portfolio: TIER_250, TIER_2K, TIER_10K, TIER_100K,
+   * TIER_UNLIMITED.
+   */
+  whatsapp_business_manager_messaging_limit?: string
+  /** Legacy per-number tier — only when the portfolio limit is absent. */
+  messaging_limit_tier?: string
+  /** Messages-per-second class: STANDARD, HIGH, NOT_APPLICABLE */
+  throughput?: { level?: string }
+  /**
+   * Where Meta sends this number's webhooks. `phone_number` and
+   * `whatsapp_business_account` are overrides set by an integration and
+   * win over the app's own callback (`application`).
+   */
+  webhook_configuration?: {
+    phone_number?: string
+    whatsapp_business_account?: string
+    application?: string
+  }
+}
+
+// The channel details call pins v23.0: `whatsapp_business_manager_messaging_limit`
+// is not available on the older version the rest of this file uses.
+const PHONE_DETAILS_URL = 'https://graph.facebook.com/v23.0'
+const PHONE_DETAILS_FIELDS = [
+  'id',
+  'display_phone_number',
+  'verified_name',
+  'quality_rating',
+  'code_verification_status',
+  'name_status',
+  'account_mode',
+  'is_official_business_account',
+  'status',
+  'country_code',
+  'country_dial_code',
+  'whatsapp_business_manager_messaging_limit',
+  'throughput',
+  'webhook_configuration',
+].join(',')
+
+/**
+ * Everything the channel list shows about a number — used when a
+ * channel is verified, created and refreshed. Throws a MetaApiError
+ * (bad token, wrong id, missing permission) the same way
+ * `verifyPhoneNumber` does.
+ */
+export async function getPhoneNumberDetails(
+  args: VerifyPhoneNumberArgs
+): Promise<MetaPhoneDetails> {
+  const { phoneNumberId, accessToken } = args
+  const url = `${PHONE_DETAILS_URL}/${phoneNumberId}?fields=${PHONE_DETAILS_FIELDS}`
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  if (!response.ok) {
+    await throwMetaError(response, `Meta API error: ${response.status}`)
+  }
+  return response.json()
+}
+
+/**
+ * The Meta App an access token belongs to — used when META_APP_ID is not
+ * configured (e.g. for the Resumable Upload behind media-header
+ * templates). Null when Meta won't say.
+ */
+export async function getTokenAppId(accessToken: string): Promise<string | null> {
+  try {
+    const response = await fetch(`${META_API_BASE}/app?fields=id`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+    if (!response.ok) return null
+    const data = (await response.json()) as { id?: string }
+    return data.id ?? null
+  } catch {
+    return null
+  }
+}
+
+export interface GetWabaNameArgs {
+  wabaId: string
+  accessToken: string
+}
+
+/** The WhatsApp Business Account's display name; null if unreadable. */
+export async function getWabaName(args: GetWabaNameArgs): Promise<string | null> {
+  const { wabaId, accessToken } = args
+  try {
+    const response = await fetch(`${META_API_BASE}/${wabaId}?fields=name`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+    if (!response.ok) return null
+    const data = (await response.json()) as { name?: string }
+    return data.name ?? null
+  } catch {
+    return null
+  }
 }
 
 // ============================================================
@@ -496,12 +623,16 @@ export interface SendTemplateMessageArgs {
  *     The full components array is built from the row so media
  *     headers + URL buttons land correctly.
  */
-export async function sendTemplateMessage(
-  args: SendTemplateMessageArgs
-): Promise<MetaSendResult> {
+/**
+ * The Graph API request a template send makes — URL and JSON body —
+ * without sending it. Exposed so the template test tool can show the
+ * exact payload it sends.
+ */
+export function buildTemplateMessageRequest(
+  args: Omit<SendTemplateMessageArgs, 'accessToken'>
+): { url: string; body: Record<string, unknown> } {
   const {
     phoneNumberId,
-    accessToken,
     to,
     templateName,
     language = 'en_US',
@@ -549,6 +680,15 @@ export async function sendTemplateMessage(
   if (contextMessageId) {
     body.context = { message_id: contextMessageId }
   }
+
+  return { url, body }
+}
+
+export async function sendTemplateMessage(
+  args: SendTemplateMessageArgs
+): Promise<MetaSendResult> {
+  const { url, body } = buildTemplateMessageRequest(args)
+  const { accessToken } = args
 
   const response = await fetch(url, {
     method: 'POST',

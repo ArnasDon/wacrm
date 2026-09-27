@@ -24,6 +24,7 @@ import { MAX_TAG_CHAIN_DEPTH, getTagChainDepth } from '@/lib/contacts/tag-chain'
 import { engineSendText, engineSendTemplate, engineSendInteractive } from './meta-send'
 import { validateInteractivePayload } from '@/lib/whatsapp/interactive'
 import { isDeliverableUrl } from '@/lib/webhooks/ssrf'
+import { findLatestConversationId } from '@/lib/whatsapp/channels'
 
 // ------------------------------------------------------------
 // Public API
@@ -639,20 +640,27 @@ async function resolveConversationId(args: ExecuteArgs): Promise<string> {
   const fromCtx = args.context.conversation_id
   if (fromCtx) return fromCtx
   if (!args.contactId) throw new Error('cannot resolve conversation: no contact')
-  const { data, error } = await supabaseAdmin()
-    .from('conversations')
-    .select('id')
-    .eq('account_id', args.automation.account_id)
-    .eq('contact_id', args.contactId)
-    .maybeSingle()
-  if (error) throw new Error(`conversation lookup failed: ${error.message}`)
-  if (!data?.id) {
+  // A contact has one conversation per channel (migration 043) — send
+  // into the one they were last active in.
+  let conversationId: string | null
+  try {
+    conversationId = await findLatestConversationId(
+      supabaseAdmin(),
+      args.automation.account_id,
+      args.contactId,
+    )
+  } catch (err) {
+    throw new Error(
+      `conversation lookup failed: ${err instanceof Error ? err.message : String(err)}`,
+    )
+  }
+  if (!conversationId) {
     const prefix = args.triggerEvent === 'tag_added'
       ? 'tag_added automation cannot send'
       : 'cannot send'
     throw new Error(`${prefix}: contact has no existing conversation`)
   }
-  return data.id as string
+  return conversationId
 }
 
 /** Letter, digit or underscore in any script — the "inside a word" test. */

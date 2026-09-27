@@ -4,14 +4,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import {
   Plus,
-  Trash2,
   Loader2,
   RefreshCw,
   AlertCircle,
   X,
-  Pencil,
-  RotateCcw,
   Upload,
+  FileText,
+  Search,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import {
@@ -28,10 +27,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Badge } from '@/components/ui/badge';
 import { useTranslations } from 'next-intl';
-import { Card, CardContent } from '@/components/ui/card';
-import { SettingsPanelHead } from './settings-panel-head';
 import {
   Dialog,
   DialogContent,
@@ -52,7 +48,12 @@ import type {
   TemplateButton,
   TemplateSampleValues,
 } from '@/types';
-import { templateStatusConfig } from '@/lib/template-status';
+import { PageHero } from '@/components/layout/page-hero';
+import { CloneTemplateDialog } from './clone-template-dialog';
+import { TestTemplateDialog } from './test-template-dialog';
+import { TemplateCard } from './template-card';
+import { TemplatePreview, fillVariables } from './template-preview';
+import { LanguagePicker } from './language-picker';
 import {
   extractVariableIndices,
   TEMPLATE_LIMITS,
@@ -61,12 +62,6 @@ import {
 const CATEGORIES = ['Marketing', 'Utility', 'Authentication'] as const;
 type HeaderFormat = 'none' | 'text' | 'image' | 'video' | 'document';
 const HEADER_FORMATS: HeaderFormat[] = ['none', 'text', 'image', 'video', 'document'];
-
-const categoryColors: Record<string, string> = {
-  Marketing: 'bg-purple-600/20 text-purple-400 border-purple-600/30',
-  Utility: 'bg-blue-600/20 text-blue-400 border-blue-600/30',
-  Authentication: 'bg-amber-600/20 text-amber-400 border-amber-600/30',
-};
 
 interface TemplateFormData {
   name: string;
@@ -96,25 +91,41 @@ const emptyForm: TemplateFormData = {
   buttons: [],
 };
 
-const COMMON_LANGUAGE_CODES = [
-  'en_US',
-  'en_GB',
-  'en',
-  'es',
-  'es_ES',
-  'es_MX',
-  'fr',
-  'fr_FR',
-  'de',
-  'it',
-  'pt_BR',
-  'pt_PT',
-  'nl',
-  'pl',
-  'ru',
-  'tr',
-  'lt',
-];
+
+const STATUS_FILTERS = ['all', 'approved', 'pending', 'rejected'] as const;
+type StatusFilter = (typeof STATUS_FILTERS)[number];
+
+/** Which status chip a template counts under (drafts etc. only in "All"). */
+function statusFilterOf(t: MessageTemplate): Exclude<StatusFilter, 'all'> | null {
+  switch (t.status) {
+    case 'APPROVED':
+      return 'approved';
+    case 'PENDING':
+    case 'IN_APPEAL':
+      return 'pending';
+    case 'REJECTED':
+    case 'PAUSED':
+    case 'DISABLED':
+      return 'rejected';
+    default:
+      return null;
+  }
+}
+
+/**
+ * Meta rejects a body with too many variables for its length
+ * ("Parameters words ratio exceeds limit", subcode 2388293). The exact
+ * ratio isn't published; flag bodies with fewer plain words than
+ * variables + 2 so the author can pad them before submitting.
+ */
+function tooManyVariablesForLength(body: string, varCount: number): boolean {
+  if (varCount === 0) return false;
+  const words = body
+    .replace(/\{\{\d+\}\}/g, ' ')
+    .split(/\s+/)
+    .filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
+  return words < varCount + 2;
+}
 
 function emptyButton(type: TemplateButton['type']): TemplateButton {
   switch (type) {
@@ -129,13 +140,41 @@ function emptyButton(type: TemplateButton['type']): TemplateButton {
   }
 }
 
+/** The channel fields the Templates page needs (GET /api/whatsapp/channels). */
+interface TemplateChannel {
+  id: string;
+  name: string | null;
+  color: string;
+  is_default: boolean;
+  waba_id: string | null;
+  display_phone_number: string | null;
+  verified_name: string | null;
+}
+
+function channelLabel(c: TemplateChannel): string {
+  const name = c.name || c.verified_name || c.display_phone_number || c.id;
+  return c.display_phone_number && c.display_phone_number !== name
+    ? `${name} · ${c.display_phone_number}`
+    : name;
+}
+
 export function TemplateManager() {
   const t = useTranslations('Settings.templates');
   const supabase = createClient();
-  const { user, loading: authLoading } = useAuth();
+  const { user, accountId, loading: authLoading } = useAuth();
 
   const [loading, setLoading] = useState(true);
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
+  // Templates live per WABA (migration 047); the page shows the selected
+  // channel's WABA. Channels sharing a WABA share its templates.
+  const [channels, setChannels] = useState<TemplateChannel[]>([]);
+  const [channelId, setChannelId] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  // The template open in the clone dialog (null = closed).
+  const [cloneSource, setCloneSource] = useState<MessageTemplate | null>(null);
+  // The approved template open in the test-send dialog (null = closed).
+  const [testTemplate, setTestTemplate] = useState<MessageTemplate | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -150,6 +189,11 @@ export function TemplateManager() {
   // doesn't take the template off Meta as well as locally.
   const [templateToDelete, setTemplateToDelete] =
     useState<MessageTemplate | null>(null);
+  // Why the last delete attempt failed — shown in the confirm dialog.
+  const [deleteError, setDeleteError] = useState<{
+    message: string;
+    canRemoveLocally: boolean;
+  } | null>(null);
   // Header-media upload (image #230; video/document #562). Uploads to the
   // account-scoped chat-media bucket and stores the public URL in
   // header_media_url; the submit route turns that into a Meta
@@ -185,31 +229,83 @@ export function TemplateManager() {
 
   useEffect(() => {
     if (authLoading) return;
-    if (!user) {
+    if (!user || !accountId) {
       setLoading(false);
       return;
     }
-    fetchTemplates(user.id);
+    void Promise.all([fetchTemplates(accountId), fetchChannels()]).finally(() =>
+      setLoading(false),
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authLoading, user?.id]);
+  }, [authLoading, user?.id, accountId]);
 
-  async function fetchTemplates(userId: string) {
+  // Account-wide, so every teammate sees the same catalogue — not only
+  // the templates they personally created.
+  async function fetchTemplates(acctId: string) {
     try {
-      setLoading(true);
       const { data, error } = await supabase
         .from('message_templates')
         .select('*')
-        .eq('user_id', userId)
+        .eq('account_id', acctId)
         .order('created_at', { ascending: false });
       if (error) throw error;
       setTemplates(data || []);
     } catch (err) {
       console.error('Failed to fetch templates:', err);
       toast.error(t('toastLoadFailed'));
-    } finally {
-      setLoading(false);
     }
   }
+
+  async function fetchChannels() {
+    try {
+      const res = await fetch('/api/whatsapp/channels', { cache: 'no-store' });
+      const body = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(body?.error || `HTTP ${res.status}`);
+      const list = (body.channels ?? []) as TemplateChannel[];
+      setChannels(list);
+      setChannelId((current) =>
+        current && list.some((c) => c.id === current)
+          ? current
+          : (list.find((c) => c.is_default) ?? list[0])?.id ?? null,
+      );
+    } catch (err) {
+      console.error('Failed to fetch channels:', err);
+      toast.error(t('toastChannelsFailed'));
+    }
+  }
+
+  const selectedChannel = channels.find((c) => c.id === channelId) ?? null;
+
+  // Templates per WABA, for the channel selector's counts.
+  const countByWaba = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const tpl of templates) {
+      const key = tpl.waba_id ?? '';
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return counts;
+  }, [templates]);
+
+  // No channel connected yet: show everything (e.g. dry-run templates).
+  const visibleTemplates = selectedChannel
+    ? templates.filter((tpl) => (tpl.waba_id ?? null) === selectedChannel.waba_id)
+    : templates;
+
+  // Status chips + search over the selected channel's templates.
+  const statusCounts = useMemo(() => {
+    const counts: Record<StatusFilter, number> = { all: visibleTemplates.length, approved: 0, pending: 0, rejected: 0 };
+    for (const tpl of visibleTemplates) {
+      const f = statusFilterOf(tpl);
+      if (f) counts[f]++;
+    }
+    return counts;
+  }, [visibleTemplates]);
+  const listTemplates = visibleTemplates.filter((tpl) => {
+    if (statusFilter !== 'all' && statusFilterOf(tpl) !== statusFilter) return false;
+    const q = search.trim().toLowerCase();
+    return !q || tpl.name.toLowerCase().includes(q) || (tpl.body_text ?? '').toLowerCase().includes(q);
+  });
+
 
   function buildSubmitPayload() {
     const sample_values: TemplateSampleValues = {};
@@ -276,7 +372,13 @@ export function TemplateManager() {
       const res = await fetch(url, {
         method: isEdit ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(buildSubmitPayload()),
+        // New templates are created in the selected channel's WABA; an
+        // edit stays in the template's own WABA.
+        body: JSON.stringify(
+          isEdit
+            ? buildSubmitPayload()
+            : { ...buildSubmitPayload(), channel_id: channelId ?? undefined },
+        ),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -286,7 +388,7 @@ export function TemplateManager() {
       }
       // Refresh first, then close — re-opening the dialog
       // immediately should not show a stale list.
-      if (user) await fetchTemplates(user.id);
+      if (accountId) await fetchTemplates(accountId);
       toast.success(
         data.dry_run
           ? isEdit
@@ -311,7 +413,8 @@ export function TemplateManager() {
     if (!user) return;
     setSyncing(true);
     try {
-      const res = await fetch('/api/whatsapp/templates/sync', { method: 'POST' });
+      const query = channelId ? `?channel_id=${encodeURIComponent(channelId)}` : '';
+      const res = await fetch(`/api/whatsapp/templates/sync${query}`, { method: 'POST' });
       const data = await res.json();
       if (!res.ok) {
         throw new Error(data?.error || `Sync failed (HTTP ${res.status})`);
@@ -340,7 +443,7 @@ export function TemplateManager() {
           { duration: 10000 },
         );
       }
-      await fetchTemplates(user.id);
+      if (accountId) await fetchTemplates(accountId);
     } catch (err) {
       console.error('Template sync error:', err);
       toast.error(err instanceof Error ? err.message : t('toastSyncError'));
@@ -349,27 +452,38 @@ export function TemplateManager() {
     }
   }
 
-  async function confirmDelete() {
+  async function confirmDelete(localOnly = false) {
     const target = templateToDelete;
     if (!target || deletingId) return;
     setDeletingId(target.id);
+    setDeleteError(null);
     try {
       // Route handler scopes the Meta delete via hsm_id (so sibling
       // language variants survive) and falls through to remove the
-      // local row. Local-only rows skip the Meta call.
-      const res = await fetch(`/api/whatsapp/templates/${target.id}`, {
-        method: 'DELETE',
-      });
+      // local row. Local-only rows skip the Meta call, as does
+      // `local_only` — offered when Meta refuses the delete.
+      const res = await fetch(
+        `/api/whatsapp/templates/${target.id}${localOnly ? '?local_only=true' : ''}`,
+        { method: 'DELETE' },
+      );
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error(data?.error || `Delete failed (HTTP ${res.status})`);
+        // Shown inside the dialog, with "Remove from app only" when the
+        // failure is on Meta's side.
+        setDeleteError({
+          message: data?.error || t('deleteFailedHttp', { status: res.status }),
+          canRemoveLocally: !!data?.can_remove_locally,
+        });
+        return;
       }
-      toast.success(t('toastDeleteSuccess'));
+      toast.success(localOnly ? t('toastDeleteLocalSuccess') : t('toastDeleteSuccess'));
       setTemplates((prev) => prev.filter((t) => t.id !== target.id));
       setTemplateToDelete(null);
     } catch (err) {
-      console.error('Delete error:', err);
-      toast.error(err instanceof Error ? err.message : t('toastDeleteError'));
+      setDeleteError({
+        message: err instanceof Error ? err.message : t('toastDeleteError'),
+        canRemoveLocally: false,
+      });
     } finally {
       setDeletingId(null);
     }
@@ -463,6 +577,13 @@ export function TemplateManager() {
 
   const headerNeedsMedia =
     form.header_format !== 'none' && form.header_format !== 'text';
+  // The side preview opens for any header type as soon as there is
+  // something to show — header text, body text or an uploaded file — so a
+  // blank form never shows an empty preview column.
+  const showPreview =
+    form.body_text.trim() !== '' ||
+    (form.header_format === 'text' && form.header_content.trim() !== '') ||
+    (headerNeedsMedia && form.header_media_url.trim() !== '');
   const headerMediaKind: MediaHeaderKind | null = isMediaHeaderKind(
     form.header_format,
   )
@@ -519,11 +640,13 @@ export function TemplateManager() {
 
   return (
     <section className="animate-in fade-in-50 space-y-4 duration-200">
-      <SettingsPanelHead
+      <PageHero
+        icon={FileText}
+        iconClassName="bg-violet-500/15 text-violet-500"
         title={t('title')}
         description={t('description')}
-        action={
-          <div className="flex items-center gap-2">
+        actions={
+          <>
             <Button
               variant="outline"
               onClick={handleSyncFromMeta}
@@ -537,130 +660,106 @@ export function TemplateManager() {
               <Plus className="size-4" />
               {t('newTemplate')}
             </Button>
-          </div>
+          </>
         }
-      />
+      >
+        {channels.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-background/60 p-3 backdrop-blur-sm">
+            <Label htmlFor="template-channel" className="text-sm text-muted-foreground">
+              {t('channel')}
+            </Label>
+            <select
+              id="template-channel"
+              value={channelId ?? ''}
+              onChange={(e) => setChannelId(e.target.value || null)}
+              className="h-8 min-w-0 flex-1 rounded-lg border border-input bg-transparent px-2.5 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 sm:max-w-md dark:bg-input/30"
+            >
+              {channels.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {t('channelOption', {
+                    channel: channelLabel(c),
+                    count: countByWaba.get(c.waba_id ?? '') ?? 0,
+                  })}
+                </option>
+              ))}
+            </select>
+            {selectedChannel ? (
+              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <span
+                  className="size-2 rounded-full"
+                  style={{ backgroundColor: selectedChannel.color }}
+                  aria-hidden
+                />
+                {t('templatesInChannel', {
+                  count: countByWaba.get(selectedChannel.waba_id ?? '') ?? 0,
+                })}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+      </PageHero>
 
-      {templates.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-            <p className="text-muted-foreground text-sm">{t('noTemplates')}</p>
-            <p className="text-muted-foreground text-xs mt-1">
-              {t('createFirst')}
-            </p>
-          </CardContent>
-        </Card>
+      {visibleTemplates.length > 0 ? (
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="relative flex-1">
+            <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={t('searchPlaceholder')}
+              aria-label={t('searchPlaceholder')}
+              className="h-9 bg-card pl-8"
+            />
+          </div>
+          <div className="flex flex-wrap gap-1.5" role="group" aria-label={t('statusFilter')}>
+            {STATUS_FILTERS.map((f) => (
+              <button
+                key={f}
+                type="button"
+                onClick={() => setStatusFilter(f)}
+                aria-pressed={statusFilter === f}
+                className={
+                  statusFilter === f
+                    ? 'rounded-full border border-primary bg-primary px-3 py-1 text-xs font-medium text-primary-foreground'
+                    : 'rounded-full border border-border bg-card px-3 py-1 text-xs font-medium text-muted-foreground hover:bg-muted'
+                }
+              >
+                {t(`filter.${f}`)}
+                <span className="ml-1.5 opacity-70">{statusCounts[f]}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {listTemplates.length === 0 ? (
+        <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-card px-6 py-14 text-center">
+          <div className="mb-3 flex size-12 items-center justify-center rounded-full bg-violet-500/15 text-violet-500">
+            <FileText className="size-6" />
+          </div>
+          <p className="text-sm font-medium text-foreground">
+            {visibleTemplates.length === 0 ? t('noTemplates') : t('noMatches')}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {visibleTemplates.length === 0 ? t('createFirst') : t('noMatchesHint')}
+          </p>
+        </div>
       ) : (
-        <div className="grid gap-3 xl:grid-cols-2">
-          {templates.map((template) => {
-            const statusKey = template.status || 'DRAFT';
-            const status = templateStatusConfig[statusKey];
-            return (
-              <Card key={template.id}>
-                <CardContent className="flex items-start justify-between pt-4">
-                  <div className="space-y-2 min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="font-medium text-foreground">{template.name}</h3>
-                      <Badge
-                        className={`text-xs border ${categoryColors[template.category] || ''}`}
-                      >
-                        {template.category}
-                      </Badge>
-                      <Badge className={`text-xs border ${status.classes}`}>
-                        {status.label}
-                      </Badge>
-                      {template.language && (
-                        <span className="text-xs text-muted-foreground uppercase">
-                          {template.language}
-                        </span>
-                      )}
-                      {template.quality_score && (
-                        <span
-                          className={`text-[10px] uppercase font-medium ${
-                            template.quality_score === 'GREEN'
-                              ? 'text-emerald-400'
-                              : template.quality_score === 'YELLOW'
-                                ? 'text-yellow-400'
-                                : 'text-red-400'
-                          }`}
-                          title={t('qualityScoreTitle')}
-                        >
-                          {template.quality_score}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-sm text-muted-foreground line-clamp-2">
-                      {template.body_text}
-                    </p>
-                    {template.footer_text && (
-                      <p className="text-xs text-muted-foreground italic">
-                        {template.footer_text}
-                      </p>
-                    )}
-                    {(template.rejection_reason || template.submission_error) && (
-                      <div className="flex items-start gap-1.5 text-xs text-red-400 bg-red-950/20 border border-red-900/40 rounded px-2 py-1.5">
-                        <AlertCircle className="size-3.5 mt-0.5 shrink-0" />
-                        <span>
-                          {template.rejection_reason || template.submission_error}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1 shrink-0 ml-2">
-                    {statusKey === 'APPROVED' && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => openEdit(template)}
-                        title={t('editTitle')}
-                        aria-label={t('editLabel')}
-                        className="text-muted-foreground hover:text-primary hover:bg-primary/10 h-8 px-2"
-                      >
-                        <Pencil className="size-3.5" />
-                        {t('edit')}
-                      </Button>
-                    )}
-                    {(statusKey === 'REJECTED' || statusKey === 'PAUSED') && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => openEdit(template)}
-                        title={t('resubmitTitle')}
-                        aria-label={t('resubmitLabel')}
-                        className="text-muted-foreground hover:text-primary hover:bg-primary/10 h-8 px-2"
-                      >
-                        <RotateCcw className="size-3.5" />
-                        {t('resubmit')}
-                      </Button>
-                    )}
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setTemplateToDelete(template)}
-                      disabled={deletingId === template.id}
-                      aria-label={
-                        template.meta_template_id
-                          ? t('deleteMetaLocallyAria')
-                          : t('deleteLocallyAria')
-                      }
-                      title={
-                        template.meta_template_id
-                          ? t('deleteMetaLocallyTitle')
-                          : t('deleteLocallyTitle')
-                      }
-                      className="text-muted-foreground hover:text-red-400 hover:bg-red-950/30 h-8 w-8"
-                    >
-                      {deletingId === template.id ? (
-                        <Loader2 className="size-4 animate-spin" />
-                      ) : (
-                        <Trash2 className="size-4" />
-                      )}
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
+        <div className="flex flex-col gap-3">
+          {listTemplates.map((template) => (
+            <TemplateCard
+              key={template.id}
+              template={template}
+              deleting={deletingId === template.id}
+              onTest={() => setTestTemplate(template)}
+              onEdit={() => openEdit(template)}
+              onClone={() => setCloneSource(template)}
+              onDelete={() => {
+                setDeleteError(null);
+                setTemplateToDelete(template);
+              }}
+            />
+          ))}
         </div>
       )}
 
@@ -674,7 +773,9 @@ export function TemplateManager() {
           }
         }}
       >
-        <DialogContent className="bg-popover border-border sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent
+          className={`bg-popover border-border ${showPreview ? 'sm:max-w-5xl' : 'sm:max-w-2xl'} max-h-[92vh] overflow-y-auto`}
+        >
           <DialogHeader>
             <DialogTitle className="text-popover-foreground">
               {editingId ? t('dialogEditTitle') : t('dialogNewTitle')}
@@ -693,7 +794,12 @@ export function TemplateManager() {
             </div>
           )}
 
-          <div className="space-y-4 py-2">
+          <div
+            className={
+              showPreview ? 'grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]' : 'grid gap-6'
+            }
+          >
+          <div className="min-w-0 space-y-4 py-2">
             <div className="space-y-2">
               <Label className="text-muted-foreground">{t('templateName')}</Label>
               <Input
@@ -741,21 +847,14 @@ export function TemplateManager() {
 
               <div className="space-y-2">
                 <Label className="text-muted-foreground">{t('language')}</Label>
-                <Input
-                  list="template-language-codes"
-                  placeholder="en_US"
+                <LanguagePicker
                   value={form.language}
-                  onChange={(e) =>
-                    setForm({ ...form, language: e.target.value })
-                  }
+                  onChange={(code) => setForm({ ...form, language: code })}
                   disabled={editingId !== null}
-                  className="bg-muted border-border text-foreground placeholder:text-muted-foreground disabled:opacity-60 disabled:cursor-not-allowed"
+                  ariaLabel={t('language')}
+                  searchPlaceholder={t('languageSearch')}
+                  noResults={t('languageNoResults')}
                 />
-                <datalist id="template-language-codes">
-                  {COMMON_LANGUAGE_CODES.map((code) => (
-                    <option key={code} value={code} />
-                  ))}
-                </datalist>
                 <p className="text-[11px] text-muted-foreground">
                   {editingId ? (
                     t('langFixed')
@@ -836,55 +935,98 @@ export function TemplateManager() {
               )}
 
               {headerNeedsMedia && (
-                <div className="space-y-2 mt-2">
-                  {headerMediaKind && (
-                    <div className="flex items-center gap-2">
-                      <input
-                        ref={headerFileRef}
-                        type="file"
-                        accept={MEDIA_HEADER_SPECS[headerMediaKind].mimeTypes.join(',')}
-                        className="hidden"
-                        onChange={(e) => {
-                          const f = e.target.files?.[0];
-                          if (f) void handleHeaderMediaFile(f, headerMediaKind);
-                          e.target.value = '';
-                        }}
+                // For a media header the sample IS the file: Meta's reviewers
+                // look at it to approve the template. Each real send can use
+                // a different file.
+                <div className="mt-2 space-y-3 rounded-lg border border-sky-600/30 bg-sky-500/5 p-3">
+                  <div>
+                    <p className="text-xs font-medium text-foreground">
+                      {t('headerSampleTitle', { format: form.header_format })}
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">
+                      {t('headerSampleHelp')}
+                    </p>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    {/* Thumbnail of the sample, right beside the controls. */}
+                    <button
+                      type="button"
+                      onClick={() => headerFileRef.current?.click()}
+                      disabled={uploadingHeader || !headerMediaKind}
+                      className="flex size-24 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-dashed border-border bg-background text-muted-foreground transition-colors hover:border-primary hover:text-primary"
+                      aria-label={headerMediaKind ? t(uploadLabelKey[headerMediaKind]) : undefined}
+                    >
+                      {uploadingHeader ? (
+                        <Loader2 className="size-5 animate-spin" />
+                      ) : form.header_media_url && form.header_format === 'image' ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={form.header_media_url} alt="" className="size-full object-cover" />
+                      ) : form.header_media_url && form.header_format === 'video' ? (
+                        <video src={form.header_media_url} className="size-full object-cover" muted />
+                      ) : form.header_media_url ? (
+                        <FileText className="size-8 text-red-500" />
+                      ) : (
+                        <Upload className="size-5" />
+                      )}
+                    </button>
+                    <div className="min-w-0 flex-1 space-y-2">
+                      {headerMediaKind && (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <input
+                            ref={headerFileRef}
+                            type="file"
+                            accept={MEDIA_HEADER_SPECS[headerMediaKind].mimeTypes.join(',')}
+                            className="hidden"
+                            onChange={(e) => {
+                              const f = e.target.files?.[0];
+                              if (f) void handleHeaderMediaFile(f, headerMediaKind);
+                              e.target.value = '';
+                            }}
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={uploadingHeader}
+                            onClick={() => headerFileRef.current?.click()}
+                          >
+                            {uploadingHeader ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Upload className="h-3.5 w-3.5" />
+                            )}
+                            {form.header_media_url
+                              ? t('replaceSample')
+                              : t(uploadLabelKey[headerMediaKind])}
+                          </Button>
+                          {form.header_media_url ? (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setForm({ ...form, header_media_url: '' })}
+                              className="text-muted-foreground hover:text-red-400"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                              {t('removeSample')}
+                            </Button>
+                          ) : null}
+                          <span className="text-[11px] text-muted-foreground">
+                            {t(uploadHintKey[headerMediaKind])}
+                          </span>
+                        </div>
+                      )}
+                      <Input
+                        aria-label={t('mediaUrlLabel')}
+                        placeholder={t('mediaUrlPlaceholder', { format: form.header_format })}
+                        value={form.header_media_url}
+                        onChange={(e) =>
+                          setForm({ ...form, header_media_url: e.target.value })
+                        }
+                        className="h-8 bg-background border-border text-foreground placeholder:text-muted-foreground"
                       />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={uploadingHeader}
-                        onClick={() => headerFileRef.current?.click()}
-                      >
-                        {uploadingHeader ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <Upload className="h-3.5 w-3.5" />
-                        )}
-                        {t(uploadLabelKey[headerMediaKind])}
-                      </Button>
-                      <span className="text-[11px] text-muted-foreground">
-                        {t(uploadHintKey[headerMediaKind])}
-                      </span>
                     </div>
-                  )}
-                  <Input
-                    placeholder={t('mediaUrlPlaceholder', { format: form.header_format })}
-                    value={form.header_media_url}
-                    onChange={(e) =>
-                      setForm({ ...form, header_media_url: e.target.value })
-                    }
-                    className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
-                  />
-                  {form.header_format === 'image' && form.header_media_url && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={form.header_media_url}
-                      alt="Header sample"
-                      className="max-h-28 rounded-md border border-border object-contain"
-                    />
-                  )}
+                  </div>
                   <p className="text-[11px] text-muted-foreground leading-relaxed">
                     {form.header_format === 'image'
                       ? t('imageHint')
@@ -913,32 +1055,69 @@ export function TemplateManager() {
               <p className="text-[11px] text-muted-foreground">
                 {t.raw('bodyHint')}
               </p>
+              {tooManyVariablesForLength(form.body_text, bodyVarCount) && (
+                <div className="flex items-start gap-1.5 rounded border border-amber-700/40 bg-amber-950/30 px-2 py-1.5 text-xs text-amber-300">
+                  <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
+                  <span>{t('ratioWarning')}</span>
+                </div>
+              )}
 
-              {bodyVarCount > 0 && (
-                <div className="space-y-1.5 pt-1">
-                  <Label className="text-[11px] text-muted-foreground">
-                    {t('sampleValues')}
-                  </Label>
+              {/* Always visible: the sample rows appear once the body has
+                  {{1}}, {{2}}, … — "Add variable" inserts the next one. */}
+              <div className="space-y-2 rounded-lg border border-sky-600/30 bg-sky-500/5 p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <Label className="text-xs font-medium text-foreground">
+                        {t('sampleValues')}
+                      </Label>
+                      <p className="mt-0.5 text-[11px] text-muted-foreground">
+                        {bodyVarCount > 0 ? t('sampleValuesHelp') : t.raw('sampleValuesEmpty')}
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0"
+                      disabled={bodyVarCount >= 20}
+                      onClick={() =>
+                        setForm((prev) => {
+                          const next = `{{${extractVariableIndices(prev.body_text).length + 1}}}`;
+                          const sep = prev.body_text && !/\s$/.test(prev.body_text) ? ' ' : '';
+                          return { ...prev, body_text: `${prev.body_text}${sep}${next}` };
+                        })
+                      }
+                    >
+                      <Plus className="size-3.5" />
+                      {t('addVariable')}
+                    </Button>
+                  </div>
                   {form.body_samples.map((val, i) => {
                     const inputId = `template-body-sample-${i}`;
                     return (
-                      <Input
-                        key={i}
-                        id={inputId}
-                        aria-label={t('sampleAria', { var: `{{${i + 1}}}` })}
-                        placeholder={t('samplePlaceholder', { var: `{{${i + 1}}}` })}
-                        value={val}
-                        onChange={(e) => {
-                          const next = [...form.body_samples];
-                          next[i] = e.target.value;
-                          setForm({ ...form, body_samples: next });
-                        }}
-                        className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
-                      />
+                      <div key={i} className="flex items-center gap-2">
+                        <label
+                          htmlFor={inputId}
+                          className="w-12 shrink-0 rounded bg-muted px-1.5 py-1 text-center font-mono text-xs text-muted-foreground"
+                        >
+                          {`{{${i + 1}}}`}
+                        </label>
+                        <Input
+                          id={inputId}
+                          aria-label={t('sampleAria', { var: `{{${i + 1}}}` })}
+                          placeholder={t('samplePlaceholder', { var: `{{${i + 1}}}` })}
+                          value={val}
+                          onChange={(e) => {
+                            const next = [...form.body_samples];
+                            next[i] = e.target.value;
+                            setForm({ ...form, body_samples: next });
+                          }}
+                          className="h-8 bg-background border-border text-foreground placeholder:text-muted-foreground"
+                        />
+                      </div>
                     );
                   })}
-                </div>
-              )}
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -1088,6 +1267,27 @@ export function TemplateManager() {
               )}
             </div>
           </div>
+          {/* Live preview for every header type, once there is content
+              (see showPreview); until then the form uses the full width. Sticky,
+              but never taller than the dialog: it scrolls on its own, so
+              the body, footer and buttons under a tall image stay reachable. */}
+          {showPreview ? (
+            <aside className="lg:sticky lg:top-0 lg:self-start lg:max-h-[calc(92vh-9rem)] lg:overflow-y-auto lg:pr-1">
+              <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                {t('previewTitle')}
+              </p>
+              <TemplatePreview
+                headerType={form.header_format === 'none' ? null : form.header_format}
+                headerText={fillVariables(form.header_content, [form.header_sample])}
+                mediaUrl={form.header_media_url.trim() || null}
+                body={fillVariables(form.body_text, form.body_samples)}
+                footer={form.footer_text}
+                buttons={form.buttons}
+              />
+              <p className="mt-2 text-[11px] text-muted-foreground">{t('previewHint')}</p>
+            </aside>
+          ) : null}
+          </div>
 
           <DialogFooter className="bg-popover border-border">
             <Button
@@ -1123,10 +1323,13 @@ export function TemplateManager() {
       <Dialog
         open={templateToDelete !== null}
         onOpenChange={(open) => {
-          if (!open) setTemplateToDelete(null);
+          if (!open) {
+            setTemplateToDelete(null);
+            setDeleteError(null);
+          }
         }}
       >
-        <DialogContent className="bg-popover border-border sm:max-w-sm">
+        <DialogContent className="bg-popover border-border sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="text-popover-foreground">{t('deleteDialogTitle')}</DialogTitle>
             <DialogDescription className="text-muted-foreground">
@@ -1135,17 +1338,39 @@ export function TemplateManager() {
                 : t('deleteLocalDesc', { name: templateToDelete?.name || '' })}
             </DialogDescription>
           </DialogHeader>
+          {deleteError ? (
+            <div
+              role="alert"
+              className="flex items-start gap-1.5 rounded border border-red-900/40 bg-red-950/20 px-2 py-1.5 text-xs text-red-400"
+            >
+              <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
+              <span>{deleteError.message}</span>
+            </div>
+          ) : null}
           <DialogFooter className="bg-popover border-border">
             <Button
               variant="outline"
-              onClick={() => setTemplateToDelete(null)}
+              onClick={() => {
+                setTemplateToDelete(null);
+                setDeleteError(null);
+              }}
               disabled={deletingId !== null}
               className="border-border text-muted-foreground hover:bg-muted"
             >
               {t('cancel')}
             </Button>
+            {deleteError?.canRemoveLocally ? (
+              <Button
+                variant="outline"
+                onClick={() => confirmDelete(true)}
+                disabled={deletingId !== null}
+                title={t('removeLocalTitle')}
+              >
+                {t('removeLocal')}
+              </Button>
+            ) : null}
             <Button
-              onClick={confirmDelete}
+              onClick={() => confirmDelete()}
               disabled={deletingId !== null}
               className="bg-red-600 hover:bg-red-700 text-white"
             >
@@ -1154,6 +1379,8 @@ export function TemplateManager() {
                   <Loader2 className="size-4 animate-spin" />
                   {t('deleting')}
                 </>
+              ) : deleteError ? (
+                t('deleteRetry')
               ) : (
                 t('delete')
               )}
@@ -1161,6 +1388,25 @@ export function TemplateManager() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <TestTemplateDialog
+        template={testTemplate}
+        channels={channels}
+        onClose={() => setTestTemplate(null)}
+      />
+
+      <CloneTemplateDialog
+        source={cloneSource}
+        channels={channels}
+        defaultChannelId={channelId}
+        templates={templates}
+        onClose={() => setCloneSource(null)}
+        onCreated={(target) => {
+          if (accountId) void fetchTemplates(accountId);
+          // Show the copies where they landed.
+          if (target) setChannelId(target);
+        }}
+      />
     </section>
   );
 }

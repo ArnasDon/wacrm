@@ -4,6 +4,7 @@ import {
   engineSendInteractiveButtons,
   engineSendInteractiveList,
 } from '@/lib/flows/meta-send'
+import { loadChannelForConversation } from '@/lib/whatsapp/channels'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import {
   phoneVariants,
@@ -139,12 +140,13 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
   }
   const sanitized = sendTarget.target
 
-  const { data: config, error: configErr } = await db
-    .from('whatsapp_config')
-    .select('*')
-    .eq('account_id', input.accountId)
-    .single()
-  if (configErr || !config) {
+  // The channel this conversation replies through (migration 043).
+  const config = await loadChannelForConversation(
+    db,
+    input.accountId,
+    input.conversationId,
+  )
+  if (!config) {
     throw new Error('WhatsApp not configured for this account')
   }
 
@@ -162,6 +164,7 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
             input.accountId,
             input.templateName,
             input.language,
+            config.waba_id,
           )
         ).row
       : null

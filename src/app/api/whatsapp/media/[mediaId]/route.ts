@@ -48,24 +48,37 @@ export async function GET(
       )
     }
 
-    // Fetch and decrypt WhatsApp config
-    const { data: config, error: configError } = await supabase
+    // A media id is only readable with a token from the WABA that
+    // received it, and the account may run several channels (migration
+    // 043). Try the default channel first, then the rest.
+    const { data: channels, error: configError } = await supabase
       .from('whatsapp_config')
-      .select('*')
+      .select('access_token, is_default, created_at')
       .eq('account_id', accountId)
-      .single()
+      .order('is_default', { ascending: false })
+      .order('created_at', { ascending: true })
 
-    if (configError || !config) {
+    if (configError || !channels || channels.length === 0) {
       return NextResponse.json(
         { error: 'WhatsApp not configured' },
         { status: 400 }
       )
     }
 
-    const accessToken = decrypt(config.access_token)
-
-    // Get the download URL from Meta
-    const mediaInfo = await getMediaUrl({ mediaId, accessToken })
+    let mediaInfo: Awaited<ReturnType<typeof getMediaUrl>> | null = null
+    let accessToken = ''
+    let lastError: unknown = null
+    for (const channel of channels) {
+      try {
+        accessToken = decrypt(channel.access_token)
+        // Get the download URL from Meta
+        mediaInfo = await getMediaUrl({ mediaId, accessToken })
+        break
+      } catch (err) {
+        lastError = err
+      }
+    }
+    if (!mediaInfo) throw lastError
 
     // Download the binary data
     const { buffer, contentType } = await downloadMedia({

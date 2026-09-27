@@ -314,7 +314,15 @@ async function createStubForUnknownTemplate(p: StubParams): Promise<void> {
     )
     return
   }
-  const rows = (configs ?? []) as { account_id: string; user_id: string }[]
+  // Several channels of one account can share a WABA (migration 043) —
+  // collapse to one row per account before checking for ambiguity.
+  const rows = Array.from(
+    new Map(
+      ((configs ?? []) as { account_id: string; user_id: string }[]).map(
+        (r) => [r.account_id, r] as const,
+      ),
+    ).values(),
+  )
   if (rows.length !== 1) {
     console.warn(
       `[template-webhook] ${kind} for unknown template ${where} — ${rows.length === 0 ? 'no' : rows.length} whatsapp_config rows match that WABA id; not creating a stub. Run "Sync from Meta" for the owning account.`,
@@ -329,6 +337,8 @@ async function createStubForUnknownTemplate(p: StubParams): Promise<void> {
   // the event supplied them (status events do, quality events don't).
   const stub = {
     account_id: config.account_id,
+    // The WABA the event came from — templates are per WABA (047).
+    waba_id: wabaId,
     user_id: config.user_id,
     meta_template_id: metaTemplateId,
     name,

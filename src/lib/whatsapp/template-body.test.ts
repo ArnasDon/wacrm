@@ -92,6 +92,28 @@ describe('templateBodyParams', () => {
 });
 
 describe('resolveTemplateRow', () => {
+  it("prefers the sending channel's WABA when two WABAs share the name (047)", async () => {
+    const rows = [
+      row({ id: 'tpl-a', waba_id: 'WABA-A' }),
+      row({ id: 'tpl-b', waba_id: 'WABA-B' }),
+    ];
+    const a = await resolveTemplateRow(dbReturning(rows), 'acct-1', 'order_update', 'en_US', 'WABA-A');
+    const b = await resolveTemplateRow(dbReturning(rows), 'acct-1', 'order_update', 'en_US', 'WABA-B');
+    expect(a.row?.id).toBe('tpl-a');
+    expect(b.row?.id).toBe('tpl-b');
+  });
+
+  it("falls back to any row when none belongs to the channel's WABA", async () => {
+    const resolved = await resolveTemplateRow(
+      dbReturning([row({ id: 'tpl-legacy', waba_id: null })]),
+      'acct-1',
+      'order_update',
+      'en_US',
+      'WABA-A'
+    );
+    expect(resolved.row?.id).toBe('tpl-legacy');
+  });
+
   it('scopes the lookup to the account and template name', async () => {
     const filters: Record<string, unknown> = {};
     await resolveTemplateRow(

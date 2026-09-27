@@ -206,9 +206,11 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
 describe('dispatchInboundToAiReply — typing indicator (#527)', () => {
   it('shows "typing…" on the inbound wamid before calling the LLM', async () => {
     await dispatchInboundToAiReply(ARGS)
+    // Typing goes out through the conversation's own channel (043).
     expect(h.loadAccountMetaCredentials).toHaveBeenCalledWith(
       expect.anything(),
       'acct-1',
+      'conv-1',
     )
     expect(h.sendTypingIndicator).toHaveBeenCalledTimes(1)
     expect(h.sendTypingIndicator).toHaveBeenCalledWith({

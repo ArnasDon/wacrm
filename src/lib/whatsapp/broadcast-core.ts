@@ -28,6 +28,7 @@ import {
 import { resolveTemplateRow } from '@/lib/whatsapp/template-body';
 import type { MessageTemplate } from '@/types';
 import { findOrCreateContact } from '@/lib/api/v1/contacts';
+import { loadDefaultChannel } from '@/lib/whatsapp/channels';
 
 /** Thrown by createBroadcast on a caller-visible failure; route maps it. */
 export class BroadcastError extends Error {
@@ -109,12 +110,9 @@ export async function createBroadcast(
 
   // Config (fail fast + provides the audit trail owner already resolved
   // by the caller). Meta send needs phone_number_id + decrypted token.
-  const { data: config, error: configError } = await db
-    .from('whatsapp_config')
-    .select('*')
-    .eq('account_id', accountId)
-    .single();
-  if (configError || !config) {
+  // Account default channel (migration 043).
+  const config = await loadDefaultChannel(db, accountId);
+  if (!config) {
     throw new BroadcastError(
       'whatsapp_not_configured',
       'WhatsApp not configured. Please set up your WhatsApp integration first.',
@@ -129,7 +127,8 @@ export async function createBroadcast(
     db,
     accountId,
     templateName,
-    params.templateLanguage
+    params.templateLanguage,
+    config.waba_id
   );
   if (resolvedTemplate.malformed) {
     throw new BroadcastError(

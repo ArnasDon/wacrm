@@ -261,6 +261,7 @@ describe('handleTemplateWebhookChange — unknown template stub (#534)', () => {
     expect(calls[1].filter).toEqual({ column: 'waba_id', value: 'WABA-1' });
     expect(calls[2].insert).toEqual({
       account_id: 'acc-1',
+      waba_id: 'WABA-1',
       user_id: 'admin-1',
       meta_template_id: '555',
       name: 'created_in_meta',
@@ -371,6 +372,7 @@ describe('handleTemplateWebhookChange — unknown template stub (#534)', () => {
     expect(calls[0].update).toEqual({ quality_score: 'RED' });
     expect(calls[2].insert).toEqual({
       account_id: 'acc-1',
+      waba_id: 'WABA-1',
       user_id: 'admin-1',
       meta_template_id: '559',
       name: 'created_in_meta',

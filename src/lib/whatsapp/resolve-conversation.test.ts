@@ -12,7 +12,7 @@ import { SendMessageError } from './send-message';
 type ContactRow = { id: string; phone: string; name?: string | null };
 
 interface Script {
-  config?: { user_id: string } | null; // whatsapp_config.maybeSingle
+  config?: { user_id: string } | null; // whatsapp_config channel list
   contactCandidates?: ContactRow[]; // contacts .like (same every call)
   /** Per-call `.like` results — overrides contactCandidates. Lets a
    *  test simulate "miss, then hit" for the unique-race path. */
@@ -56,6 +56,10 @@ function makeDb(script: Script): SupabaseClient {
         convLookupCalls++;
         return Promise.resolve({ data: row ? [row] : [], error: null });
       }
+      // Oldest channel's owner, for the audit user (resolveAuditUserId).
+      if (table === 'whatsapp_config') {
+        return Promise.resolve({ data: script.config ? [script.config] : [], error: null });
+      }
       return Promise.resolve({ data: [], error: null });
     },
     like: () => {
@@ -95,9 +99,14 @@ function makeDb(script: Script): SupabaseClient {
       }
       return Promise.resolve({ data: null, error: null });
     },
-    // Thenable: `await db.from().update().eq()` lands here.
-    then: (resolve: (v: { data: null; error: null }) => void) =>
-      resolve({ data: null, error: null }),
+    // Thenable: `await db.from().update().eq()` lands here, and so does
+    // the channel list read (loadDefaultChannel).
+    then: (resolve: (v: { data: unknown; error: null }) => void) =>
+      resolve(
+        table === 'whatsapp_config' && mode === 'select'
+          ? { data: script.config ? [script.config] : [], error: null }
+          : { data: null, error: null }
+      ),
   };
 
   return {

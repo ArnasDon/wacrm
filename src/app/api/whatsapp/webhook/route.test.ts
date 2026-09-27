@@ -64,6 +64,7 @@ vi.mock('@supabase/supabase-js', () => ({
                 Promise.resolve({
                   data: [
                     {
+                      id: 'cfg-1',
                       account_id: 'acc-1',
                       user_id: 'user-1',
                       access_token: 'enc',
@@ -74,23 +75,28 @@ vi.mock('@supabase/supabase-js', () => ({
                 }),
             }),
           }
-        case 'conversations':
-          // findOrCreateConversation: select().eq().eq().order().limit()
-          return {
-            select: () => ({
-              eq: () => ({
-                eq: () => ({
-                  order: () => ({
-                    limit: () =>
-                      Promise.resolve({
-                        data: [h.state.conversation],
-                        error: null,
-                      }),
-                  }),
-                }),
-              }),
-            }),
+        case 'template_test_sends': {
+          // recordTestSendStatus: no test send matches a real wamid.
+          const chain: Record<string, unknown> = {
+            eq: () => chain,
+            maybeSingle: () => Promise.resolve({ data: null, error: null }),
           }
+          return { select: () => chain }
+        }
+        case 'conversations': {
+          // findOrCreateConversation, per (contact, channel):
+          //   select().eq(account).eq(contact).eq(channel).order().limit()
+          const chain: Record<string, unknown> = {
+            eq: () => chain,
+            order: () => chain,
+            limit: () =>
+              Promise.resolve({
+                data: [h.state.conversation],
+                error: null,
+              }),
+          }
+          return { select: () => chain }
+        }
         case 'broadcast_recipients':
           // Two chains land here:
           //   flagBroadcastReplyIfAny: select().eq().eq().in().order().limit()

@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useMemo, type ReactNode } from 'react';
+import { Suspense, useEffect, useMemo, type ReactNode } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 
@@ -11,8 +11,6 @@ import { SettingsOverview } from '@/components/settings/settings-overview';
 import { ProfileForm } from '@/components/settings/profile-form';
 import { SecurityPanel } from '@/components/settings/security-panel';
 import { AppearancePanel } from '@/components/settings/appearance-panel';
-import { WhatsAppConfig } from '@/components/settings/whatsapp-config';
-import { TemplateManager } from '@/components/settings/template-manager';
 import { QuickRepliesManager } from '@/components/settings/quick-replies-manager';
 import { FieldsAndTagsPanel } from '@/components/settings/fields-and-tags-panel';
 import { DealsSettings } from '@/components/settings/deals-settings';
@@ -28,7 +26,7 @@ import {
 // the "missing Suspense with CSR bailout" error and the whole page bails
 // to client-side rendering — shipping a settings screen whose rail never
 // wires up its click handlers. You land on the section the URL carried
-// (the account-menu Settings link points at `?tab=whatsapp`) and can't
+// (e.g. a deep link like `?tab=members`) and can't
 // navigate away. Mirror the login/signup split: a thin wrapper supplies
 // the boundary; the inner component reads the query string.
 export default function SettingsPage() {
@@ -50,7 +48,15 @@ function SettingsPageInner() {
   // section — deep-linkable, and it keeps the existing links in the
   // app sidebar/header working. Legacy tab values (tags, custom-fields)
   // resolve onto their new home; unknown/empty → the Overview landing.
-  const section = resolveSection(searchParams.get('tab'));
+  const tab = searchParams.get('tab');
+  const section = resolveSection(tab);
+
+  // WhatsApp and Templates moved out of Settings to their own pages
+  // (multi-channel, migrations 043/047) — keep old bookmarks working.
+  useEffect(() => {
+    if (tab === 'whatsapp') router.replace('/whatsapp');
+    if (tab === 'templates') router.replace('/templates');
+  }, [tab, router]);
 
   const go = (next: SettingsSection) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -74,8 +80,6 @@ function SettingsPageInner() {
     profile: <ProfileForm />,
     security: <SecurityPanel />,
     appearance: <AppearancePanel />,
-    whatsapp: <WhatsAppConfig />,
-    templates: <TemplateManager />,
     'quick-replies': <QuickRepliesManager />,
     fields: <FieldsAndTagsPanel />,
     deals: <DealsSettings />,

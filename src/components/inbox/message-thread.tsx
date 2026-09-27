@@ -1192,6 +1192,7 @@ export function MessageThread({
         open={templateModalOpen}
         onOpenChange={setTemplateModalOpen}
         onSelect={handleSendTemplate}
+        channelId={conversation?.whatsapp_config_id}
       />
 
       {/* Full-size viewer for the thread's images/videos. Renders nothing

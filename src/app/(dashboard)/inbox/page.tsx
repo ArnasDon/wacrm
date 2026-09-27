@@ -200,13 +200,15 @@ function InboxPageInner() {
         return;
       }
 
+      // Connected when any of the account's channels is (migration 043).
       const { data } = await supabase
         .from("whatsapp_config")
         .select("status")
         .eq("account_id", accountId)
-        .maybeSingle();
+        .eq("status", "connected")
+        .limit(1);
 
-      setWhatsappConnected(data?.status === "connected");
+      setWhatsappConnected((data?.length ?? 0) > 0);
     };
 
     checkConnection();

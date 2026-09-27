@@ -33,14 +33,29 @@ export function Step1ChooseTemplate({ selectedTemplate, onSelect, onNext, onBack
         // Only APPROVED templates can be sent via Meta — anything else
         // would 400 at broadcast time. Hide them rather than letting
         // the user pick a template that will fail.
-        const { data, error: fetchError } = await supabase
-          .from('message_templates')
-          .select('*')
-          .eq('status', 'APPROVED')
-          .order('created_at', { ascending: false });
+        const [{ data, error: fetchError }, { data: channels }] = await Promise.all([
+          supabase
+            .from('message_templates')
+            .select('*')
+            .eq('status', 'APPROVED')
+            .order('created_at', { ascending: false }),
+          supabase
+            .from('whatsapp_config')
+            .select('waba_id, is_default, status, created_at')
+            .order('created_at', { ascending: true }),
+        ]);
 
         if (fetchError) throw fetchError;
-        setTemplates(data ?? []);
+        // Broadcasts go out through the default channel, which can only
+        // send its own WABA's templates (migration 047).
+        const list = (channels ?? []) as { waba_id: string | null; is_default: boolean; status: string }[];
+        const wabaId = (
+          list.find((c) => c.is_default) ??
+          list.find((c) => c.status === 'connected') ??
+          list[0]
+        )?.waba_id;
+        const rows = (data ?? []) as MessageTemplate[];
+        setTemplates(wabaId ? rows.filter((r) => !r.waba_id || r.waba_id === wabaId) : rows);
       } catch (err) {
         setError(err instanceof Error ? err.message : t('chooseTemplate.errorLoad'));
       } finally {

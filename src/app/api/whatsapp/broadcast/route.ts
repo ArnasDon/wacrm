@@ -15,6 +15,7 @@ import {
   rateLimitResponse,
   RATE_LIMITS,
 } from '@/lib/rate-limit'
+import { loadDefaultChannel } from '@/lib/whatsapp/channels'
 
 interface BroadcastResult {
   phone: string
@@ -120,13 +121,11 @@ export async function POST(request: Request) {
       )
     }
 
-    const { data: config, error: configError } = await supabase
-      .from('whatsapp_config')
-      .select('*')
-      .eq('account_id', accountId)
-      .single()
+    // Account default channel (migration 043).
 
-    if (configError || !config) {
+    const config = await loadDefaultChannel(supabase, accountId)
+
+    if (!config) {
       return NextResponse.json(
         {
           error:
@@ -148,6 +147,7 @@ export async function POST(request: Request) {
       accountId,
       template_name,
       template_language,
+      config.waba_id,
     )
     if (resolvedTemplate.malformed) {
       return NextResponse.json(

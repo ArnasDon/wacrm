@@ -61,12 +61,13 @@ function makeDb(rpcResult: { data: unknown; error: unknown }) {
   const database = {
     from(table: string) {
       if (table === 'whatsapp_config') {
+        // The account's channels, oldest-first (loadDefaultChannel).
         return {
           select: () => ({
             eq: () => ({
-              single: () =>
+              order: () =>
                 Promise.resolve({
-                  data: { phone_number_id: 'pn-1', access_token: 'enc' },
+                  data: [{ phone_number_id: 'pn-1', access_token: 'enc' }],
                   error: null,
                 }),
             }),

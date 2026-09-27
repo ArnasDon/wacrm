@@ -22,6 +22,7 @@ import { BroadcastError, type BroadcastPlan } from '@/lib/whatsapp/broadcast-cor
 import { decrypt } from '@/lib/whatsapp/encryption';
 import { resolveTemplateRow } from '@/lib/whatsapp/template-body';
 import { sanitizePhoneForMeta, isValidE164 } from '@/lib/whatsapp/phone-utils';
+import { loadDefaultChannel } from '@/lib/whatsapp/channels';
 
 /** Which recipients a resume pass picks up. */
 export type ResumeScope = 'pending' | 'failed' | 'all';
@@ -205,12 +206,9 @@ export async function planBroadcastResume(
     );
   }
 
-  const { data: config, error: configError } = await db
-    .from('whatsapp_config')
-    .select('*')
-    .eq('account_id', accountId)
-    .single();
-  if (configError || !config) {
+  // Account default channel (migration 043).
+  const config = await loadDefaultChannel(db, accountId);
+  if (!config) {
     throw new BroadcastError(
       'whatsapp_not_configured',
       'WhatsApp not configured. Please set up your WhatsApp integration first.',
@@ -222,7 +220,8 @@ export async function planBroadcastResume(
     db,
     accountId,
     broadcast.template_name,
-    broadcast.template_language
+    broadcast.template_language,
+    config.waba_id
   );
   if (resolvedTemplate.malformed) {
     throw new BroadcastError(

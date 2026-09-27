@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, type ComponentType } from "react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import { useTotalUnread } from "@/hooks/use-total-unread";
@@ -11,6 +11,7 @@ import {
   Bell,
   Bot,
   Crown,
+  FileText,
   GitBranch,
   LayoutDashboard,
   LogOut,
@@ -27,6 +28,7 @@ import {
   Zap,
 } from "lucide-react";
 import type { AccountRole } from "@/lib/auth/roles";
+import { WhatsAppIcon } from "@/components/icons/whatsapp-icon";
 
 // Per-role chip metadata used in the sidebar's account strip + the
 // Members tab roster. Keeping this near both consumers in a single
@@ -81,7 +83,7 @@ import {
 interface NavItem {
   href: string;
   labelKey: string;
-  icon: typeof LayoutDashboard;
+  icon: ComponentType<{ className?: string }>;
   /**
    * When true, the nav row renders a small "Beta" chip after the label.
    * Purely informational — doesn't affect routing or access.
@@ -91,6 +93,8 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { href: "/dashboard", labelKey: "dashboard", icon: LayoutDashboard },
+  { href: "/whatsapp", labelKey: "whatsapp", icon: WhatsAppIcon },
+  { href: "/templates", labelKey: "templates", icon: FileText },
   { href: "/inbox", labelKey: "inbox", icon: MessageSquare },
   { href: "/notifications", labelKey: "notifications", icon: Bell },
   { href: "/contacts", labelKey: "contacts", icon: Users },
@@ -375,7 +379,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
               <DropdownMenuItem
                 render={
                   <Link
-                    href="/settings?tab=whatsapp"
+                    href="/settings"
                     onClick={onClose}
                     className="text-popover-foreground focus:bg-accent focus:text-accent-foreground"
                   />

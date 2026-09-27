@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // Stub the Meta resumable upload so the helper is tested in isolation.
 vi.mock('./meta-api', () => ({
   uploadResumableMedia: vi.fn(async () => ({ handle: 'HANDLE123' })),
+  getTokenAppId: vi.fn(async () => null),
 }));
 
 // The SSRF guard does a real DNS lookup, so stub it — the fixtures below use
@@ -12,7 +13,7 @@ vi.mock('@/lib/webhooks/ssrf', () => ({
 }));
 
 import { ensureMediaHeaderHandle } from './template-header-handle';
-import { uploadResumableMedia } from './meta-api';
+import { getTokenAppId, uploadResumableMedia } from './meta-api';
 import { isDeliverableUrl } from '@/lib/webhooks/ssrf';
 import type { TemplatePayload } from './template-validators';
 
@@ -70,9 +71,19 @@ describe('ensureMediaHeaderHandle', () => {
     expect(p.header_handle).toBe('existing');
   });
 
-  it('throws an actionable error when META_APP_ID is unset', async () => {
+  it('throws an actionable error when META_APP_ID is unset and Meta names no app', async () => {
     const p = payload();
     await expect(ensureMediaHeaderHandle(p, 'tok')).rejects.toThrow(/META_APP_ID/);
+  });
+
+  it("uses the token's own app when META_APP_ID is unset", async () => {
+    vi.mocked(getTokenAppId).mockResolvedValueOnce('app-from-token');
+    vi.stubGlobal('fetch', vi.fn(async () => mediaResponse()));
+    const p = payload();
+    await ensureMediaHeaderHandle(p, 'tok');
+    expect(getTokenAppId).toHaveBeenCalledWith('tok');
+    expect(vi.mocked(uploadResumableMedia).mock.calls[0][0].appId).toBe('app-from-token');
+    expect(p.header_handle).toBe('HANDLE123');
   });
 
   describe('image headers (unchanged from #230)', () => {

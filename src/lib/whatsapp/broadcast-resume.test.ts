@@ -156,6 +156,10 @@ function planDb(fx: PlanFixture, writes: PlanWrites = {}): SupabaseClient {
           if (table === 'message_templates') {
             return resolve({ data: fx.templates ?? [], error: null });
           }
+          // The account's channels (loadDefaultChannel).
+          if (table === 'whatsapp_config') {
+            return resolve({ data: fx.config ? [fx.config] : [], error: null });
+          }
           return resolve({ data: [], error: null });
         },
       };

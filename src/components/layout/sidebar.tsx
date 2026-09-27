@@ -206,7 +206,11 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
         <nav className="flex-1 overflow-y-auto px-3 py-4">
           <ul className="flex flex-col gap-1">
             {navItems.map((item) => {
-              if (item.adminOnly && accountRole !== 'owner' && accountRole !== 'admin') {
+              if (
+                item.adminOnly &&
+                accountRole !== 'owner' &&
+                accountRole !== 'admin'
+              ) {
                 return null;
               }
 

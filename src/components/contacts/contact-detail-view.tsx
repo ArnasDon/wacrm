@@ -239,20 +239,20 @@ export function ContactDetailView({
   const fetchMatches = useCallback(async () => {
     if (!contactId) return;
     setLoadingMatches(true);
-    
+
     // First fetch lead_details
     const { data: detailData } = await supabase
       .from('lead_details')
       .select('*')
       .eq('contact_id', contactId)
       .maybeSingle();
-      
+
     if (detailData) {
       setLeadDetail(detailData);
-      
+
       // Query properties based on preferences
       let query = supabase.from('properties').select('*');
-      
+
       if (detailData.location_preference) {
         query = query.ilike('location', `%${detailData.location_preference}%`);
       }
@@ -265,17 +265,17 @@ export function ContactDetailView({
       if (detailData.budget_max) {
         query = query.lte('price', detailData.budget_max);
       }
-      
+
       // Limit to top 3
       query = query.limit(3);
-      
+
       const { data: propertiesData } = await query;
       setMatchedProperties(propertiesData ?? []);
     } else {
       setLeadDetail(null);
       setMatchedProperties([]);
     }
-    
+
     setLoadingMatches(false);
   }, [contactId, supabase]);
 
@@ -825,38 +825,45 @@ export function ContactDetailView({
     <>
       {loadingMatches ? (
         <div className="flex items-center justify-center py-8">
-          <Loader2 className="size-5 animate-spin text-primary" />
+          <Loader2 className="text-primary size-5 animate-spin" />
         </div>
       ) : matchedProperties.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-8">
-          <p className="text-xs text-muted-foreground">{t('matchTab.noMatches')}</p>
+          <p className="text-muted-foreground text-xs">
+            {t('matchTab.noMatches')}
+          </p>
         </div>
       ) : (
         <div className="space-y-3">
           {matchedProperties.map((property) => (
-            <div key={property.id} className="border border-border rounded-lg p-3 bg-muted/30">
+            <div
+              key={property.id}
+              className="border-border bg-muted/30 rounded-lg border p-3"
+            >
               <div className="flex items-start justify-between">
                 <div>
-                  <h4 className="font-semibold text-sm">{property.title}</h4>
-                  <p className="text-xs text-muted-foreground mt-1 flex items-center gap-2">
+                  <h4 className="text-sm font-semibold">{property.title}</h4>
+                  <p className="text-muted-foreground mt-1 flex items-center gap-2 text-xs">
                     {property.location && <span>{property.location}</span>}
-                    {property.property_type && <span>• {property.property_type}</span>}
+                    {property.property_type && (
+                      <span>• {property.property_type}</span>
+                    )}
                   </p>
                 </div>
                 {property.price && (
-                  <span className="text-xs font-medium bg-primary/10 text-primary px-2 py-1 rounded">
+                  <span className="bg-primary/10 text-primary rounded px-2 py-1 text-xs font-medium">
                     {formatCurrency(property.price, defaultCurrency)}
                   </span>
                 )}
               </div>
               <div className="mt-3 flex justify-end">
-                <Button 
-                  size="sm" 
-                  variant="outline" 
+                <Button
+                  size="sm"
+                  variant="outline"
                   onClick={() => handleSendPropertyMatch(property)}
                   disabled={sendingTemplate}
                 >
-                  <Send className="size-3 mr-1.5" />
+                  <Send className="mr-1.5 size-3" />
                   {t('matchTab.sendViaWhatsapp')}
                 </Button>
               </div>

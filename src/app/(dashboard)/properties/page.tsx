@@ -7,7 +7,16 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Search, MapPin, Building, DollarSign, Loader2, Plus, Pencil, Trash2 } from 'lucide-react';
+import {
+  Search,
+  MapPin,
+  Building,
+  DollarSign,
+  Loader2,
+  Plus,
+  Pencil,
+  Trash2,
+} from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 
@@ -46,6 +55,7 @@ export default function PropertiesPage() {
   }, [supabase, search, typeFilter]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchProperties();
   }, [fetchProperties]);
 
@@ -53,53 +63,58 @@ export default function PropertiesPage() {
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">{t('title')}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{t('subtitle')}</p>
+          <h1 className="text-foreground text-2xl font-bold">{t('title')}</h1>
+          <p className="text-muted-foreground mt-1 text-sm">{t('subtitle')}</p>
         </div>
         <div className="flex items-center gap-2">
           {/* Add property form not implemented here per plan but could be a dialog */}
         </div>
       </div>
 
-      <div className="sticky top-0 z-10 -mx-4 space-y-2 bg-background/95 px-4 py-2 backdrop-blur sm:static sm:mx-0 sm:bg-transparent sm:px-0 sm:py-0">
+      <div className="bg-background/95 sticky top-0 z-10 -mx-4 space-y-2 px-4 py-2 backdrop-blur sm:static sm:mx-0 sm:bg-transparent sm:px-0 sm:py-0">
         <div className="flex flex-col gap-2 sm:flex-row">
           <div className="relative w-full max-w-sm">
-            <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Search className="text-muted-foreground absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder={t('searchPlaceholder')}
-              className="pl-8 bg-card border-border text-foreground placeholder:text-muted-foreground"
+              className="bg-card border-border text-foreground placeholder:text-muted-foreground pl-8"
             />
           </div>
           <Input
             value={typeFilter}
             onChange={(e) => setTypeFilter(e.target.value)}
             placeholder={t('filterType')}
-            className="w-full max-w-[200px] bg-card border-border text-foreground placeholder:text-muted-foreground"
+            className="bg-card border-border text-foreground placeholder:text-muted-foreground w-full max-w-[200px]"
           />
         </div>
       </div>
 
       {loading ? (
         <div className="flex flex-col items-center justify-center gap-2 py-12">
-          <Loader2 className="size-6 animate-spin text-primary" />
+          <Loader2 className="text-primary size-6 animate-spin" />
         </div>
       ) : properties.length === 0 ? (
         <div className="flex flex-col items-center gap-2 py-12">
-          <Building className="size-8 text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">{t('noProperties')}</p>
+          <Building className="text-muted-foreground size-8" />
+          <p className="text-muted-foreground text-sm">{t('noProperties')}</p>
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {properties.map((property) => (
             <Link key={property.id} href={`/properties/${property.id}`}>
-              <Card className="hover:border-primary/50 transition-colors cursor-pointer h-full">
+              <Card className="hover:border-primary/50 h-full cursor-pointer transition-colors">
                 <CardHeader className="p-4 pb-2">
-                  <div className="flex justify-between items-start">
-                    <CardTitle className="text-base font-semibold line-clamp-1">{property.title}</CardTitle>
+                  <div className="flex items-start justify-between">
+                    <CardTitle className="line-clamp-1 text-base font-semibold">
+                      {property.title}
+                    </CardTitle>
                     {property.price && (
-                      <Badge variant="secondary" className="shrink-0 flex items-center gap-1">
+                      <Badge
+                        variant="secondary"
+                        className="flex shrink-0 items-center gap-1"
+                      >
                         <DollarSign className="size-3" />
                         {property.price.toLocaleString()}
                       </Badge>
@@ -107,7 +122,7 @@ export default function PropertiesPage() {
                   </div>
                 </CardHeader>
                 <CardContent className="p-4 pt-0">
-                  <div className="flex flex-col gap-2 text-sm text-muted-foreground">
+                  <div className="text-muted-foreground flex flex-col gap-2 text-sm">
                     {property.location && (
                       <div className="flex items-center gap-1.5">
                         <MapPin className="size-3.5" />
@@ -119,7 +134,9 @@ export default function PropertiesPage() {
                         <Building className="size-3.5" />
                         <span>{property.property_type}</span>
                         {property.bedrooms && (
-                          <span className="ml-1 border-l pl-2 border-border">{property.bedrooms} Beds</span>
+                          <span className="border-border ml-1 border-l pl-2">
+                            {property.bedrooms} Beds
+                          </span>
                         )}
                       </div>
                     )}
@@ -127,7 +144,10 @@ export default function PropertiesPage() {
                   {property.tags && property.tags.length > 0 && (
                     <div className="mt-3 flex flex-wrap gap-1.5">
                       {property.tags.slice(0, 3).map((tag, i) => (
-                        <span key={i} className="bg-muted text-muted-foreground rounded px-1.5 py-0.5 text-[10px] font-medium">
+                        <span
+                          key={i}
+                          className="bg-muted text-muted-foreground rounded px-1.5 py-0.5 text-[10px] font-medium"
+                        >
                           {tag}
                         </span>
                       ))}

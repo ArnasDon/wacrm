@@ -458,7 +458,10 @@ export async function loadActivity(
 
 import type { AgentPerformance } from './types';
 
-export async function loadTeamPerformance(db: DB, rangeDays = 30): Promise<AgentPerformance[]> {
+export async function loadTeamPerformance(
+  db: DB,
+  rangeDays = 30
+): Promise<AgentPerformance[]> {
   const start = daysAgoStart(rangeDays - 1).toISOString();
 
   // 1. Fetch agents
@@ -466,22 +469,33 @@ export async function loadTeamPerformance(db: DB, rangeDays = 30): Promise<Agent
     .from('profiles')
     .select('user_id, full_name, avatar_url, account_role');
   if (pErr) throw pErr;
-  
-  const agents = (profilesRes ?? []) as { user_id: string; full_name: string; avatar_url: string | null; account_role: string }[];
-  
+
+  const agents = (profilesRes ?? []) as {
+    user_id: string;
+    full_name: string;
+    avatar_url: string | null;
+    account_role: string;
+  }[];
+
   // 2. Fetch conversations to link contacts to agents (leads worked)
   const { data: convosRes, error: cErr } = await db
     .from('conversations')
     .select('assigned_agent_id, contact_id')
     .not('assigned_agent_id', 'is', null);
   if (cErr) throw cErr;
-  
+
   const contactToAgent = new Map<string, string>();
   const leadsWorkedByAgent = new Map<string, number>();
-  
-  for (const c of (convosRes ?? []) as { assigned_agent_id: string; contact_id: string }[]) {
+
+  for (const c of (convosRes ?? []) as {
+    assigned_agent_id: string;
+    contact_id: string;
+  }[]) {
     contactToAgent.set(c.contact_id, c.assigned_agent_id);
-    leadsWorkedByAgent.set(c.assigned_agent_id, (leadsWorkedByAgent.get(c.assigned_agent_id) ?? 0) + 1);
+    leadsWorkedByAgent.set(
+      c.assigned_agent_id,
+      (leadsWorkedByAgent.get(c.assigned_agent_id) ?? 0) + 1
+    );
   }
 
   // 3. Fetch site visits
@@ -490,12 +504,18 @@ export async function loadTeamPerformance(db: DB, rangeDays = 30): Promise<Agent
     .select('status, contact_id')
     .gte('created_at', start);
   if (vErr) throw vErr;
-  
-  const visitsByAgent = new Map<string, { completed: number; noShow: number }>();
-  for (const v of (visitsRes ?? []) as { status: string; contact_id: string }[]) {
+
+  const visitsByAgent = new Map<
+    string,
+    { completed: number; noShow: number }
+  >();
+  for (const v of (visitsRes ?? []) as {
+    status: string;
+    contact_id: string;
+  }[]) {
     const agentId = contactToAgent.get(v.contact_id);
     if (!agentId) continue;
-    
+
     const stats = visitsByAgent.get(agentId) ?? { completed: 0, noShow: 0 };
     if (v.status === 'completed') stats.completed++;
     else if (v.status === 'no_show') stats.noShow++;
@@ -508,11 +528,14 @@ export async function loadTeamPerformance(db: DB, rangeDays = 30): Promise<Agent
     .select('assigned_to, status')
     .not('assigned_to', 'is', null);
   if (dErr) throw dErr;
-  
+
   const dealsByAgent = new Map<string, { won: number; closed: number }>();
-  for (const d of (dealsRes ?? []) as { assigned_to: string; status: string }[]) {
+  for (const d of (dealsRes ?? []) as {
+    assigned_to: string;
+    status: string;
+  }[]) {
     if (d.status !== 'won' && d.status !== 'lost') continue;
-    
+
     const stats = dealsByAgent.get(d.assigned_to) ?? { won: 0, closed: 0 };
     stats.closed++;
     if (d.status === 'won') stats.won++;
@@ -528,13 +551,18 @@ export async function loadTeamPerformance(db: DB, rangeDays = 30): Promise<Agent
     .order('conversation_id', { ascending: true })
     .order('created_at', { ascending: true });
   if (mErr) throw mErr;
-  
-  const msgs = (msgsRes ?? []) as { conversation_id: string; sender_type: string; sender_id: string | null; created_at: string }[];
-  
+
+  const msgs = (msgsRes ?? []) as {
+    conversation_id: string;
+    sender_type: string;
+    sender_id: string | null;
+    created_at: string;
+  }[];
+
   const responseTimesByAgent = new Map<string, number[]>();
   let currentConv = '';
   let pendingCustomer: Date | null = null;
-  
+
   for (const row of msgs) {
     if (row.conversation_id !== currentConv) {
       currentConv = row.conversation_id;
@@ -543,7 +571,11 @@ export async function loadTeamPerformance(db: DB, rangeDays = 30): Promise<Agent
     const ts = new Date(row.created_at);
     if (row.sender_type === 'customer') {
       if (!pendingCustomer) pendingCustomer = ts;
-    } else if (pendingCustomer && row.sender_type === 'agent' && row.sender_id) {
+    } else if (
+      pendingCustomer &&
+      row.sender_type === 'agent' &&
+      row.sender_id
+    ) {
       const diffMin = (ts.getTime() - pendingCustomer.getTime()) / 60_000;
       if (diffMin >= 0) {
         const arr = responseTimesByAgent.get(row.sender_id) ?? [];
@@ -552,25 +584,31 @@ export async function loadTeamPerformance(db: DB, rangeDays = 30): Promise<Agent
       }
       pendingCustomer = null;
     } else if (pendingCustomer && row.sender_type === 'bot') {
-       // bot replied, reset pending so we don't attribute bot's speed to an agent later
-       pendingCustomer = null;
+      // bot replied, reset pending so we don't attribute bot's speed to an agent later
+      pendingCustomer = null;
     }
   }
 
   // Assemble the result
-  return agents.map(agent => {
-    const visits = visitsByAgent.get(agent.user_id) ?? { completed: 0, noShow: 0 };
+  return agents.map((agent) => {
+    const visits = visitsByAgent.get(agent.user_id) ?? {
+      completed: 0,
+      noShow: 0,
+    };
     const deals = dealsByAgent.get(agent.user_id) ?? { won: 0, closed: 0 };
     const responseTimes = responseTimesByAgent.get(agent.user_id) ?? [];
-    
-    const avgResponseTimeMin = responseTimes.length > 0 
-      ? responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length 
-      : null;
-      
+
+    const avgResponseTimeMin =
+      responseTimes.length > 0
+        ? responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length
+        : null;
+
     const totalVisits = visits.completed + visits.noShow;
-    const noShowRate = totalVisits > 0 ? (visits.noShow / totalVisits) * 100 : null;
-    
-    const conversionRate = deals.closed > 0 ? (deals.won / deals.closed) * 100 : null;
+    const noShowRate =
+      totalVisits > 0 ? (visits.noShow / totalVisits) * 100 : null;
+
+    const conversionRate =
+      deals.closed > 0 ? (deals.won / deals.closed) * 100 : null;
 
     return {
       agentId: agent.user_id,

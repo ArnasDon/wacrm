@@ -1012,6 +1012,15 @@ async function handleReplyForActiveRun(
     text_length: message.kind === "text" ? message.text.length : null,
   });
 
+  // Any inbound customer activity keeps the flow alive for another
+  // 15-minute inactivity window, including an unmatched reply that
+  // eventually goes through the fallback policy.
+  await db
+    .from("flow_runs")
+    .update({ last_advanced_at: new Date().toISOString() })
+    .eq("id", run.id)
+    .eq("status", "active");
+
   if (!run.current_node_key) {
     // Defensive — a run with status='active' but no current node is
     // malformed. Fail the run rather than spin.

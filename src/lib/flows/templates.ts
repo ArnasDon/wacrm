@@ -123,7 +123,43 @@ const WELCOME_MENU: FlowTemplate = {
 };
 
 // ============================================================
-// 2. FAQ bot — list-message answers, fully automated
+// 2. AI chat on Hi — direct handoff to the configured AI agent
+// ============================================================
+// This is intentionally a tiny flow: "Hi" is the entry trigger and the
+// AI handoff node marks the conversation for the WhatsApp webhook to run
+// the configured AI agent immediately on that same inbound message.
+const AI_CHAT_ON_HI: FlowTemplate = {
+  slug: "ai_chat_on_hi",
+  name: "AI chat on Hi",
+  description:
+    "When a customer says Hi, immediately hand the conversation to the configured AI agent and let the AI continue the chat.",
+  icon: "MessageSquare",
+  trigger_type: "keyword",
+  trigger_config: {
+    keywords: ["hi"],
+    match_type: "exact",
+    case_sensitive: false,
+  },
+  entry_node_id: "start",
+  nodes: [
+    {
+      node_key: "start",
+      node_type: "start",
+      config: { next_node_key: "ai_handoff" },
+    },
+    {
+      node_key: "ai_handoff",
+      node_type: "handoff",
+      config: {
+        target: "ai",
+        note: "Customer entered the AI chat flow by saying Hi.",
+      } as HandoffNodeConfig,
+    },
+  ],
+};
+
+// ============================================================
+// 3. FAQ bot — list-message answers, fully automated
 // ============================================================
 const FAQ_BOT: FlowTemplate = {
   slug: "faq_bot",
@@ -291,6 +327,7 @@ const LEAD_CAPTURE: FlowTemplate = {
 
 const TEMPLATES: Record<string, FlowTemplate> = {
   welcome_menu: WELCOME_MENU,
+  ai_chat_on_hi: AI_CHAT_ON_HI,
   faq_bot: FAQ_BOT,
   lead_capture: LEAD_CAPTURE,
 };

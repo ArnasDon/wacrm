@@ -7,6 +7,7 @@ function config(overrides: Partial<AiConfig> = {}): AiConfig {
     provider: 'openai',
     model: 'gpt-test',
     apiKey: 'sk-test',
+    baseUrl: null,
     systemPrompt: null,
     isActive: true,
     autoReplyEnabled: false,
@@ -190,5 +191,51 @@ describe('generateReply — Anthropic', () => {
     const body = JSON.parse(fetchMock.mock.calls[0][1].body)
     expect(body.messages[0].role).toBe('user')
     expect(body.messages).toHaveLength(1)
+  })
+})
+
+
+describe('generateReply — OpenAI-compatible', () => {
+  it('uses the configured base URL and max_tokens', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      okResponse({
+        choices: [{ message: { content: 'Gateway reply' } }],
+        usage: { prompt_tokens: 12, completion_tokens: 4, total_tokens: 16 },
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await generateReply({
+      config: config({
+        provider: 'openai_compatible',
+        model: 'llama-3.3-70b',
+        baseUrl: 'https://api.example.com/v1/',
+      }),
+      systemPrompt: 'sys',
+      messages: [{ role: 'user', content: 'Hi' }],
+    })
+
+    expect(result).toEqual({
+      text: 'Gateway reply',
+      handoff: false,
+      usage: { promptTokens: 12, completionTokens: 4, totalTokens: 16 },
+    })
+    const [url, opts] = fetchMock.mock.calls[0]
+    expect(url).toBe('https://api.example.com/v1/chat/completions')
+    expect(opts.headers.Authorization).toBe('Bearer sk-test')
+    expect(JSON.parse(opts.body).max_tokens).toBe(1024)
+  })
+
+  it('rejects an invalid base URL before making a request', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(
+      generateReply({
+        config: config({ provider: 'openai_compatible', baseUrl: 'not-a-url' }),
+        systemPrompt: 'sys',
+        messages: [{ role: 'user', content: 'Hi' }],
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_base_url', status: 400 })
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })

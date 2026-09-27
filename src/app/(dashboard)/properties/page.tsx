@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
+import { PullToRefresh } from '@/components/layout/pull-to-refresh';
 
 export default function PropertiesPage() {
   const t = useTranslations('Properties.page');
@@ -60,8 +61,9 @@ export default function PropertiesPage() {
   }, [fetchProperties]);
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <PullToRefresh onRefresh={fetchProperties}>
+      <div className="space-y-6 pb-20">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-foreground text-2xl font-bold">{t('title')}</h1>
           <p className="text-muted-foreground mt-1 text-sm">{t('subtitle')}</p>
@@ -165,5 +167,6 @@ export default function PropertiesPage() {
         </div>
       )}
     </div>
+    </PullToRefresh>
   );
 }

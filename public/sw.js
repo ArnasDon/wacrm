@@ -35,7 +35,7 @@ self.addEventListener('fetch', (event) => {
 
 self.addEventListener('push', function (event) {
   if (!event.data) return;
-  
+
   try {
     const payload = event.data.json();
     event.waitUntil(
@@ -54,7 +54,7 @@ self.addEventListener('push', function (event) {
 self.addEventListener('notificationclick', function (event) {
   event.notification.close();
   const url = event.notification.data?.url || '/';
-  
+
   event.waitUntil(
     clients.matchAll({ type: 'window' }).then((windowClients) => {
       for (const client of windowClients) {

@@ -35,6 +35,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 
 /**
@@ -197,6 +198,31 @@ export default function FlowsPage() {
     }
   }
 
+  async function toggleActive(f: FlowRow, next: boolean) {
+    const nextStatus = next ? 'active' : 'draft';
+    setFlows(
+      (prev) =>
+        prev?.map((x) => (x.id === f.id ? { ...x, status: nextStatus } : x)) ??
+        prev
+    );
+    const res = await fetch(`/api/flows/${f.id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ status: nextStatus }),
+    });
+    if (!res.ok) {
+      setFlows(
+        (prev) =>
+          prev?.map((x) => (x.id === f.id ? { ...x, status: f.status } : x)) ??
+          prev
+      );
+      const body = await res.json().catch(() => ({}));
+      toast.error(body?.error ?? t('updateError'));
+      return;
+    }
+    toast.success(next ? t('statusActive') : t('statusDraft'));
+  }
+
   if (loading) {
     return (
       <div className="space-y-6 p-6">
@@ -205,7 +231,7 @@ export default function FlowsPage() {
             <Skeleton className="h-8 w-40" />
             <Skeleton className="mt-2 h-4 w-60" />
           </div>
-          <Skeleton className="h-10 w-28 hidden md:block" />
+          <Skeleton className="hidden h-10 w-28 md:block" />
         </header>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           {Array.from({ length: 3 }).map((_, i) => (
@@ -218,134 +244,135 @@ export default function FlowsPage() {
 
   return (
     <PullToRefresh>
-    <div className="space-y-6 p-6">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-foreground text-2xl font-semibold">
-              {t('title')}
-            </h1>
-            <span className="inline-flex items-center rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-amber-300 uppercase">
-              {t('beta')}
-            </span>
+      <div className="space-y-6 p-6">
+        <header className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-foreground text-2xl font-semibold">
+                {t('title')}
+              </h1>
+              <span className="inline-flex items-center rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-amber-300 uppercase">
+                {t('beta')}
+              </span>
+            </div>
+            <p className="text-muted-foreground mt-1 text-sm">
+              {t('description')}
+            </p>
           </div>
-          <p className="text-muted-foreground mt-1 text-sm">
-            {t('description')}
-          </p>
-        </div>
-        <GatedButton
-          canAct={canCreate}
-          gateReason="create flows"
-          onClick={() => setCreateOpen(true)}
-          className="hidden md:inline-flex"
-        >
-          <Plus className="h-4 w-4" />
-          {t('newFlow')}
-        </GatedButton>
-      </header>
+          <GatedButton
+            canAct={canCreate}
+            gateReason="create flows"
+            onClick={() => setCreateOpen(true)}
+            className="hidden md:inline-flex"
+          >
+            <Plus className="h-4 w-4" />
+            {t('newFlow')}
+          </GatedButton>
+        </header>
 
-      {flows.length === 0 ? (
-        <div className="hidden md:block">
-          <EmptyState
-            onCreate={() => setCreateOpen(true)}
-            canCreate={canCreate}
-            t={t}
-          />
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {flows.map((flow) => (
-            <FlowCard
-              key={flow.id}
-              flow={flow}
-              onEdit={() => router.push(`/flows/${flow.id}`)}
-              onDelete={() => handleDelete(flow)}
+        {flows.length === 0 ? (
+          <div className="hidden md:block">
+            <EmptyState
+              onCreate={() => setCreateOpen(true)}
+              canCreate={canCreate}
               t={t}
             />
-          ))}
-        </div>
-      )}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {flows.map((flow) => (
+              <FlowCard
+                key={flow.id}
+                flow={flow}
+                onEdit={() => router.push(`/flows/${flow.id}`)}
+                onDelete={() => handleDelete(flow)}
+                onToggle={(next) => toggleActive(flow, next)}
+                t={t}
+              />
+            ))}
+          </div>
+        )}
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        {/* `sm:max-w-4xl` not `max-w-4xl` — shadcn's DialogContent has
+        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+          {/* `sm:max-w-4xl` not `max-w-4xl` — shadcn's DialogContent has
             `sm:max-w-sm` baked into its default classes. Without the
             sm: prefix our override applies at base only and the
             sm-scoped 384px wins at every real desktop breakpoint. */}
-        <DialogContent className="bg-popover text-popover-foreground sm:max-w-4xl">
-          <DialogHeader>
-            <DialogTitle>{t('createTitle')}</DialogTitle>
-            <DialogDescription className="text-muted-foreground">
-              {t('createDesc')}
-            </DialogDescription>
-          </DialogHeader>
+          <DialogContent className="bg-popover text-popover-foreground sm:max-w-4xl">
+            <DialogHeader>
+              <DialogTitle>{t('createTitle')}</DialogTitle>
+              <DialogDescription className="text-muted-foreground">
+                {t('createDesc')}
+              </DialogDescription>
+            </DialogHeader>
 
-          {templates.length > 0 && (
-            <div className="space-y-3">
-              <p className="text-muted-foreground text-xs tracking-wide uppercase">
-                {t('startTemplate')}
-              </p>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {templates.map((template) => {
-                  const Icon = TEMPLATE_ICONS[template.icon] ?? FileText;
-                  return (
-                    <button
-                      key={template.slug}
-                      type="button"
-                      onClick={() => handleUseTemplate(template.slug)}
-                      disabled={creating}
-                      className="border-border bg-background hover:border-primary/40 hover:bg-muted flex flex-col gap-2.5 rounded-lg border p-4 text-left transition-colors disabled:opacity-50"
-                    >
-                      <Icon className="text-primary h-5 w-5" />
-                      <span className="text-popover-foreground text-sm font-semibold">
-                        {template.name}
-                      </span>
-                      <span className="text-muted-foreground text-xs leading-relaxed">
-                        {template.description}
-                      </span>
-                      <span className="border-border text-muted-foreground mt-auto border-t pt-2 text-[11px]">
-                        {t('nodeCount', { count: template.node_count })}
-                      </span>
-                    </button>
-                  );
-                })}
+            {templates.length > 0 && (
+              <div className="space-y-3">
+                <p className="text-muted-foreground text-xs tracking-wide uppercase">
+                  {t('startTemplate')}
+                </p>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {templates.map((template) => {
+                    const Icon = TEMPLATE_ICONS[template.icon] ?? FileText;
+                    return (
+                      <button
+                        key={template.slug}
+                        type="button"
+                        onClick={() => handleUseTemplate(template.slug)}
+                        disabled={creating}
+                        className="border-border bg-background hover:border-primary/40 hover:bg-muted flex flex-col gap-2.5 rounded-lg border p-4 text-left transition-colors disabled:opacity-50"
+                      >
+                        <Icon className="text-primary h-5 w-5" />
+                        <span className="text-popover-foreground text-sm font-semibold">
+                          {template.name}
+                        </span>
+                        <span className="text-muted-foreground text-xs leading-relaxed">
+                          {template.description}
+                        </span>
+                        <span className="border-border text-muted-foreground mt-auto border-t pt-2 text-[11px]">
+                          {t('nodeCount', { count: template.node_count })}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
+            )}
+
+            <div className="border-border space-y-2 border-t pt-4">
+              <p className="text-muted-foreground text-xs tracking-wide uppercase">
+                {t('startBlank')}
+              </p>
+              <Input
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder={t('placeholderName')}
+                className="bg-muted"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleCreate();
+                }}
+              />
             </div>
-          )}
 
-          <div className="border-border space-y-2 border-t pt-4">
-            <p className="text-muted-foreground text-xs tracking-wide uppercase">
-              {t('startBlank')}
-            </p>
-            <Input
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              placeholder={t('placeholderName')}
-              className="bg-muted"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleCreate();
-              }}
-            />
-          </div>
-
-          <DialogFooter>
-            <Button
-              variant="ghost"
-              onClick={() => setCreateOpen(false)}
-              disabled={creating}
-            >
-              {t('cancel')}
-            </Button>
-            <Button
-              onClick={handleCreate}
-              disabled={!newName.trim() || creating}
-            >
-              {creating && <Loader2 className="h-4 w-4 animate-spin" />}
-              {t('createBlank')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
+            <DialogFooter>
+              <Button
+                variant="ghost"
+                onClick={() => setCreateOpen(false)}
+                disabled={creating}
+              >
+                {t('cancel')}
+              </Button>
+              <Button
+                onClick={handleCreate}
+                disabled={!newName.trim() || creating}
+              >
+                {creating && <Loader2 className="h-4 w-4 animate-spin" />}
+                {t('createBlank')}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
     </PullToRefresh>
   );
 }
@@ -387,11 +414,13 @@ function FlowCard({
   flow,
   onEdit,
   onDelete,
+  onToggle,
   t,
 }: {
   flow: FlowRow;
   onEdit: () => void;
   onDelete: () => void;
+  onToggle: (next: boolean) => void;
   t: ReturnType<typeof useTranslations>;
 }) {
   const triggerSummary = describeTrigger(flow, t);
@@ -410,16 +439,23 @@ function FlowCard({
             {flow.name}
           </h3>
         </div>
-        <Badge
-          variant="outline"
-          className={cn(
-            'shrink-0 gap-1 text-[10px]',
-            STATUS_COLORS[flow.status]
-          )}
-        >
-          <StatusIcon className="h-3 w-3" />
-          {STATUS_LABELS(t)[flow.status]}
-        </Badge>
+        <div className="flex items-center gap-3">
+          <Switch
+            checked={flow.status === 'active'}
+            onCheckedChange={(v) => onToggle(!!v)}
+            aria-label={flow.status === 'active' ? t('statusDraft') : t('statusActive')}
+          />
+          <Badge
+            variant="outline"
+            className={cn(
+              'shrink-0 gap-1 text-[10px] hidden sm:flex',
+              STATUS_COLORS[flow.status]
+            )}
+          >
+            <StatusIcon className="h-3 w-3" />
+            {STATUS_LABELS(t)[flow.status]}
+          </Badge>
+        </div>
       </div>
 
       <p className="text-muted-foreground mt-2 line-clamp-2 text-xs">

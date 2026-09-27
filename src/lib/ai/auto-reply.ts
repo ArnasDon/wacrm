@@ -101,7 +101,10 @@ export async function dispatchInboundToAiReply(
 
     // Cheap early-out; the authoritative cap check is the atomic claim
     // below (this read can race a concurrent inbound).
-    if (conv.ai_reply_count >= config.autoReplyMaxPerConversation) return
+    if (
+      !flowAiHandoff &&
+      conv.ai_reply_count >= config.autoReplyMaxPerConversation
+    ) return
 
     const messages = await buildConversationContext(db, conversationId)
     if (messages.length === 0) return

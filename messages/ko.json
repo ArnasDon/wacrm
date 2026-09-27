@@ -28,6 +28,7 @@
     "automations": "자동화",
     "flows": "플로우",
     "aiAgents": "AI 에이전트",
+    "team": "Team",
     "settings": "설정",
     "beta": "베타",
     "unreadConversations": "읽지 않은 대화 {count}건",
@@ -41,7 +42,8 @@
     "defaultAvatar": "아바타",
     "menuProfile": "프로필",
     "menuSettings": "설정",
-    "menuSignOut": "로그아웃"
+    "menuSignOut": "로그아웃",
+    "properties": "Properties"
   },
   "Header": {
     "dashboard": "대시보드",
@@ -61,7 +63,8 @@
     "menuProfile": "프로필",
     "menuSettings": "설정",
     "menuSignOut": "로그아웃",
-    "visits": "Site Visits"
+    "visits": "Site Visits",
+    "properties": "Properties"
   },
   "ModeToggle": {
     "switchMode": "{mode} 모드로 전환"
@@ -406,6 +409,7 @@
         "notes": "메모",
         "custom": "커스텀 필드",
         "deals": "딜",
+        "match": "Match",
         "tags": "태그",
         "noTags": "태그 없음",
         "noDeals": "딜 없음",
@@ -440,6 +444,15 @@
       },
       "dealsTab": {
         "noDeals": "아직 딜이 없습니다"
+      },
+      "matchTab": {
+        "title": "Property Matches",
+        "sendViaWhatsapp": "Send via WhatsApp",
+        "noMatches": "No properties match this lead's preferences.",
+        "loading": "Finding matches...",
+        "sendConfirmTitle": "Send Property Match",
+        "sendConfirmDesc": "Send property \"{property}\" to this lead via WhatsApp?",
+        "sending": "Sending..."
       },
       "tagsTab": {
         "clickTagDesc": "태그를 클릭해 이 연락처에 추가하거나 제거하세요.",
@@ -2075,6 +2088,25 @@
       "toastError": "Failed to schedule visit.",
       "toastStatusUpdated": "Visit status updated.",
       "toastStatusError": "Failed to update visit status."
+    }
+  },
+  "Properties": {
+    "page": {
+      "title": "Properties",
+      "subtitle": "Manage properties.",
+      "noProperties": "No properties yet",
+      "addProperty": "Add Property",
+      "searchPlaceholder": "Search by title or location...",
+      "filterLocation": "Location",
+      "filterBudget": "Budget",
+      "filterType": "Type"
+    },
+    "detail": {
+      "title": "Property Detail",
+      "price": "Price",
+      "type": "Type",
+      "bedrooms": "Bedrooms",
+      "tags": "Tags"
     }
   }
 }

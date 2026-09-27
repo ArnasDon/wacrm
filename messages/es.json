@@ -28,6 +28,7 @@
     "automations": "Automatizaciones",
     "flows": "Flujos",
     "aiAgents": "Agentes de IA",
+    "team": "Team",
     "settings": "Configuración",
     "beta": "Beta",
     "unreadConversations": "{count} {count, plural, =1 {conversación sin leer} other {conversaciones sin leer}}",
@@ -41,7 +42,8 @@
     "defaultAvatar": "Avatar",
     "menuProfile": "Perfil",
     "menuSettings": "Configuración",
-    "menuSignOut": "Cerrar sesión"
+    "menuSignOut": "Cerrar sesión",
+    "properties": "Properties"
   },
   "Header": {
     "dashboard": "Panel",
@@ -61,7 +63,8 @@
     "menuProfile": "Perfil",
     "menuSettings": "Configuración",
     "menuSignOut": "Cerrar sesión",
-    "visits": "Site Visits"
+    "visits": "Site Visits",
+    "properties": "Properties"
   },
   "ModeToggle": {
     "switchMode": "Cambiar al modo {mode}"
@@ -406,6 +409,7 @@
         "notes": "Notas",
         "custom": "Campos personalizados",
         "deals": "Negocios",
+        "match": "Match",
         "tags": "Etiquetas",
         "noTags": "Sin etiquetas",
         "noDeals": "Sin negocios",
@@ -440,6 +444,15 @@
       },
       "dealsTab": {
         "noDeals": "Aún no hay negocios"
+      },
+      "matchTab": {
+        "title": "Property Matches",
+        "sendViaWhatsapp": "Send via WhatsApp",
+        "noMatches": "No properties match this lead's preferences.",
+        "loading": "Finding matches...",
+        "sendConfirmTitle": "Send Property Match",
+        "sendConfirmDesc": "Send property \"{property}\" to this lead via WhatsApp?",
+        "sending": "Sending..."
       },
       "tagsTab": {
         "clickTagDesc": "Haz clic en una etiqueta para agregarla o quitarla de este contacto.",
@@ -2075,6 +2088,25 @@
       "toastError": "Failed to schedule visit.",
       "toastStatusUpdated": "Visit status updated.",
       "toastStatusError": "Failed to update visit status."
+    }
+  },
+  "Properties": {
+    "page": {
+      "title": "Properties",
+      "subtitle": "Manage properties.",
+      "noProperties": "No properties yet",
+      "addProperty": "Add Property",
+      "searchPlaceholder": "Search by title or location...",
+      "filterLocation": "Location",
+      "filterBudget": "Budget",
+      "filterType": "Type"
+    },
+    "detail": {
+      "title": "Property Detail",
+      "price": "Price",
+      "type": "Type",
+      "bedrooms": "Bedrooms",
+      "tags": "Tags"
     }
   }
 }

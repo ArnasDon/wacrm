@@ -79,6 +79,10 @@ interface NavItem {
    * Purely informational — doesn't affect routing or access.
    */
   beta?: boolean;
+  /**
+   * When true, only visible to owner and admin roles.
+   */
+  adminOnly?: boolean;
 }
 
 const navItems: NavItem[] = [
@@ -91,6 +95,7 @@ const navItems: NavItem[] = [
   { href: '/automations', labelKey: 'automations', icon: Zap },
   { href: '/flows', labelKey: 'flows', icon: Workflow, beta: true },
   { href: '/agents', labelKey: 'aiAgents', icon: Bot },
+  { href: '/team', labelKey: 'team', icon: UsersRound, adminOnly: true },
 ];
 
 const bottomNavItems = [
@@ -199,6 +204,10 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
         <nav className="flex-1 overflow-y-auto px-3 py-4">
           <ul className="flex flex-col gap-1">
             {navItems.map((item) => {
+              if (item.adminOnly && accountRole !== 'owner' && accountRole !== 'admin') {
+                return null;
+              }
+
               const isActive =
                 pathname === item.href ||
                 (item.href !== '/dashboard' && pathname.startsWith(item.href));

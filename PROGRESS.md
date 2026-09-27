@@ -8,7 +8,7 @@ Checked off by the agent as each `IMPLEMENTATION_PLAN.md` section merges. One li
 - [x] Section D — Real Estate Data Model Extensions
 - [x] Section E — Site Visits: UI + No-Show Automation
 - [x] Section F — Response SLA & Lead Ownership Visibility
-- [ ] Section G — Team / Manager Dashboard
+- [x] Section G — Team / Manager Dashboard
 - [ ] Section H — Properties & Lead Matching
 - [ ] Section I — Onboarding Wizard & Real Estate Template
 - [ ] Section J — Automations & Flows: Mobile Simplification

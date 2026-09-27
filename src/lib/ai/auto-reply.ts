@@ -13,6 +13,7 @@ import {
 } from '@/lib/flows/meta-send'
 import { sendTypingIndicator } from '@/lib/whatsapp/meta-api'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
+import { FLOW_AI_HANDOFF_MARKER } from '@/lib/flows/types'
 
 interface DispatchArgs {
   /** Tenancy key — drives config, contact, and whatsapp_config lookups. */
@@ -79,14 +80,15 @@ export async function dispatchInboundToAiReply(
       .eq('is_active', true)
       .in('trigger_type', ['new_message_received', 'keyword_match'])
       .limit(1)
-    if (autoResponders && autoResponders.length > 0) return
+    if (!flowAiHandoff && autoResponders && autoResponders.length > 0) return
 
     const { data: conv, error: convErr } = await db
       .from('conversations')
-      .select('assigned_agent_id, ai_autoreply_disabled, ai_reply_count')
+      .select('assigned_agent_id, ai_autoreply_disabled, ai_reply_count, ai_handoff_summary')
       .eq('id', conversationId)
       .maybeSingle()
     if (convErr || !conv) return
+    const flowAiHandoff = conv.ai_handoff_summary === FLOW_AI_HANDOFF_MARKER
     if (conv.assigned_agent_id) return // a human owns this thread
     if (conv.ai_autoreply_disabled) return // handed off / turned off here
     // Cheap early-out; the authoritative cap check is the atomic claim
@@ -211,6 +213,14 @@ export async function dispatchInboundToAiReply(
       text,
       aiGenerated: true,
     })
+
+    if (flowAiHandoff) {
+      await db
+        .from('conversations')
+        .update({ ai_handoff_summary: null })
+        .eq('id', conversationId)
+        .eq('ai_handoff_summary', FLOW_AI_HANDOFF_MARKER)
+    }
   } catch (err) {
     console.error('[ai auto-reply] dispatch failed:', err)
   }

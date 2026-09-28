@@ -12,8 +12,22 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { ArrowLeft, ArrowRight, Eye, ImageIcon, Loader2 } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowLeft,
+  ArrowRight,
+  Eye,
+  FileText,
+  Loader2,
+} from 'lucide-react';
+import { cn } from '@/lib/utils';
+import {
+  TemplatePreview,
+  fillVariables,
+} from '@/components/templates/template-preview';
+import { MediaField } from '@/components/campaigns/advanced/step-variables';
 import { useTranslations } from 'next-intl';
+import { WizardFooter } from '@/components/campaigns/wizard-shell';
 
 type VariableType = 'static' | 'field' | 'custom_field';
 
@@ -77,6 +91,7 @@ export function Step3Personalize({
   onBack,
 }: Step3Props) {
   const t = useTranslations('Broadcasts.wizard');
+  const tv = useTranslations('Broadcasts.advanced');
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
   const [loadingFields, setLoadingFields] = useState(true);
   const [firstContact, setFirstContact] = useState<Contact | null>(null);
@@ -142,24 +157,14 @@ export function Step3Personalize({
     ? template.header_type
     : null;
 
-  // Seed the field with the template's stored sample URL the first time
-  // we land on a media-header template, so the common "reuse the
-  // approved media" case needs no typing. Only seeds when empty to avoid
-  // clobbering a URL the user already edited.
-  useEffect(() => {
-    if (mediaHeaderType && !headerMediaUrl && template.header_media_url) {
-      onHeaderMediaUrlChange(template.header_media_url);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mediaHeaderType, template.header_media_url]);
-
   const headerMediaError = useMemo<'missing' | 'invalid' | null>(() => {
     if (!mediaHeaderType) return null;
     const value = headerMediaUrl.trim();
-    if (!value) return 'missing';
+    // Empty = the template's own media (the server falls back to it).
+    if (!value) return template.header_media_url ? null : 'missing';
     if (!isValidHttpUrl(value)) return 'invalid';
     return null;
-  }, [mediaHeaderType, headerMediaUrl]);
+  }, [mediaHeaderType, headerMediaUrl, template.header_media_url]);
 
   /**
    * A placeholder is "unmapped" if the user hasn't picked either a
@@ -180,7 +185,10 @@ export function Step3Personalize({
   }, [placeholders, variables]);
 
   function updateVariable(key: string, patch: Partial<VariableMapping>) {
-    const current = variables[key] ?? { type: 'static' as VariableType, value: '' };
+    const current = variables[key] ?? {
+      type: 'static' as VariableType,
+      value: '',
+    };
     onUpdate({
       ...variables,
       [key]: { ...current, ...patch },
@@ -188,130 +196,105 @@ export function Step3Personalize({
   }
 
   /**
-   * Substitute placeholders using the first real contact where
-   * possible. Placeholders keyed by "{{N}}" map to variable key "N".
+   * Value of each {{N}} for the preview, from the first real contact
+   * (sample data when there are none). Unmapped ones stay as {{N}}.
    */
-  const previewText = useMemo(() => {
+  const previewValues = useMemo(() => {
     const contact = firstContact ?? SAMPLE_CONTACT;
     const customValues = firstContact
       ? firstContactCustomValues
       : new Map<string, string>();
-
-    let text = template.body_text;
-    for (const placeholder of placeholders) {
-      const key = placeholder.replace(/^\{\{|\}\}$/g, '');
-      const mapping = variables[key];
-      let replacement = placeholder;
-
-      if (mapping) {
-        if (mapping.type === 'static' && mapping.value) {
-          replacement = mapping.value;
-        } else if (mapping.type === 'field' && mapping.value) {
-          const fieldMap: Record<string, string | undefined> = {
-            name: contact.name,
-            phone: contact.phone,
-            email: contact.email,
-            company: contact.company,
-          };
-          replacement = fieldMap[mapping.value] ?? placeholder;
-        } else if (mapping.type === 'custom_field' && mapping.value) {
-          replacement = customValues.get(mapping.value) || placeholder;
-        }
+    const max = Math.max(
+      0,
+      ...placeholders.map((p) => Number(p.replace(/\D/g, '')))
+    );
+    return Array.from({ length: max }, (_, i) => {
+      const mapping = variables[String(i + 1)];
+      if (!mapping?.value) return undefined;
+      if (mapping.type === 'static') return mapping.value;
+      if (mapping.type === 'field') {
+        const fieldMap: Record<string, string | undefined> = {
+          name: contact.name,
+          phone: contact.phone,
+          email: contact.email,
+          company: contact.company,
+        };
+        return fieldMap[mapping.value];
       }
-      text = text.replaceAll(placeholder, replacement);
-    }
-    return text;
-  }, [
-    template.body_text,
-    variables,
-    placeholders,
-    firstContact,
-    firstContactCustomValues,
-  ]);
+      return customValues.get(mapping.value);
+    });
+  }, [variables, placeholders, firstContact, firstContactCustomValues]);
 
   const previewLabel = firstContact
     ? firstContact.name || firstContact.phone
     : t('personalize.previewSample');
 
+  const selectClass = 'border-border bg-background text-foreground w-full';
+
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-semibold text-foreground">{t('personalize.title')}</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <h2 className="text-foreground text-lg font-semibold">
+          {t('personalize.title')}
+        </h2>
+        <p className="text-muted-foreground mt-1 text-sm">
           {t('personalize.subtitle')}
         </p>
       </div>
 
-      {mediaHeaderType && (
-        <div className="rounded-xl border border-border bg-card/50 p-4">
-          <div className="mb-3 flex items-center gap-2">
-            <ImageIcon className="h-4 w-4 text-primary" />
-            <p className="text-sm font-medium text-foreground">{t('personalize.headerImage')}</p>
-            <span className="inline-flex items-center rounded-md bg-primary/10 px-2 py-0.5 text-xs font-medium uppercase text-primary">
-              {mediaHeaderType}
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
+        <section className="border-border bg-card overflow-hidden rounded-xl border">
+          <header className="border-border flex flex-wrap items-center gap-2 border-b px-5 py-3">
+            <FileText className="text-primary size-4" />
+            <p className="text-foreground font-medium">{template.name}</p>
+            <span className="text-muted-foreground font-mono text-xs">
+              {template.language ?? 'en_US'}
             </span>
-          </div>
-          <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-            {t('personalize.imageUrl')}
-          </label>
-          <Input
-            type="url"
-            value={headerMediaUrl}
-            onChange={(e) => onHeaderMediaUrlChange(e.target.value)}
-            placeholder={t('personalize.imageUrlPlaceholder')}
-            className="border-border bg-muted text-foreground placeholder:text-muted-foreground"
-          />
-          <p className="mt-1.5 text-xs text-muted-foreground">
-            {t('personalize.headerImageDesc')}
-          </p>
-          {mediaHeaderType === 'image' &&
-            headerMediaError === null &&
-            headerMediaUrl.trim() && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={headerMediaUrl.trim()}
-                alt={t('personalize.headerPreviewAlt')}
-                className="mt-3 max-h-40 rounded-lg border border-border object-contain"
+            <span className="bg-muted text-muted-foreground ml-auto rounded-full px-2 py-0.5 text-xs">
+              {template.category}
+            </span>
+          </header>
+
+          <div className="space-y-5 p-5">
+            {mediaHeaderType ? (
+              <MediaField
+                label={t('personalize.headerImage')}
+                hint={t('personalize.headerImageDesc')}
+                kind={mediaHeaderType}
+                value={headerMediaUrl}
+                fallback={template.header_media_url}
+                onChange={onHeaderMediaUrlChange}
               />
-            )}
-          {headerMediaError && (
-            <p className="mt-1.5 text-xs text-amber-300">
-              {headerMediaError === 'missing'
-                ? t('personalize.mediaUrlRequired')
-                : t('personalize.mediaUrlInvalid')}
-            </p>
-          )}
-        </div>
-      )}
+            ) : null}
+            {headerMediaError ? (
+              <p className="-mt-3 text-xs text-amber-700 dark:text-amber-400">
+                {headerMediaError === 'missing'
+                  ? t('personalize.mediaUrlRequired')
+                  : t('personalize.mediaUrlInvalid')}
+              </p>
+            ) : null}
 
-      {placeholders.length === 0 && !mediaHeaderType ? (
-        <div className="rounded-xl border border-border bg-card/50 p-6 text-center">
-          <p className="text-sm text-muted-foreground">
-            {t('personalize.noPreview')}
-          </p>
-        </div>
-      ) : placeholders.length === 0 ? null : (
-        <div className="space-y-4">
-          {placeholders.map((placeholder) => {
-            const key = placeholder.replace(/^\{\{|\}\}$/g, '');
-            const mapping = variables[key] ?? { type: 'static', value: '' };
+            {placeholders.length === 0 && !mediaHeaderType ? (
+              <p className="text-muted-foreground text-sm">
+                {t('personalize.noPreview')}
+              </p>
+            ) : null}
 
-            return (
-              <div
-                key={placeholder}
-                className="rounded-xl border border-border bg-card/50 p-4"
-              >
-                <div className="mb-3 flex items-center gap-2">
-                  <span className="inline-flex items-center rounded-md bg-primary/10 px-2 py-0.5 text-xs font-mono font-medium text-primary">
-                    {placeholder}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div>
-                    <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                      {t('personalize.type')}
-                    </label>
+            {placeholders.map((placeholder) => {
+              const key = placeholder.replace(/^\{\{|\}\}$/g, '');
+              const mapping = variables[key] ?? { type: 'static', value: '' };
+              const missing = !mapping.value?.trim();
+              return (
+                <div key={placeholder}>
+                  <div className="mb-1.5 flex items-center gap-2">
+                    <span className="text-foreground text-sm font-medium">
+                      {tv('variables.variable', { n: key })}
+                    </span>
+                    <code className="bg-primary/10 text-primary rounded px-1.5 py-px font-mono text-xs">
+                      {placeholder}
+                    </code>
+                  </div>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-[14rem_minmax(0,1fr)]">
                     <Select
                       value={mapping.type}
                       onValueChange={(val) =>
@@ -321,23 +304,22 @@ export function Step3Personalize({
                         })
                       }
                     >
-                      <SelectTrigger className="w-full border-border bg-muted text-foreground">
+                      <SelectTrigger className={selectClass}>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent className="border-border bg-popover">
-                        <SelectItem value="static">{t('personalize.typeStatic')}</SelectItem>
-                        <SelectItem value="field">{t('personalize.typeContact')}</SelectItem>
+                        <SelectItem value="static">
+                          {t('personalize.typeStatic')}
+                        </SelectItem>
+                        <SelectItem value="field">
+                          {t('personalize.typeContact')}
+                        </SelectItem>
                         <SelectItem value="custom_field">
                           {t('personalize.typeCustom')}
                         </SelectItem>
                       </SelectContent>
                     </Select>
-                  </div>
 
-                  <div>
-                    <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                      {mapping.type === 'static' ? t('personalize.staticValue') : t('personalize.contactField')}
-                    </label>
                     {mapping.type === 'static' ? (
                       <Input
                         value={mapping.value}
@@ -345,17 +327,23 @@ export function Step3Personalize({
                           updateVariable(key, { value: e.target.value })
                         }
                         placeholder={t('personalize.enterValue')}
-                        className="border-border bg-muted text-foreground placeholder:text-muted-foreground"
+                        aria-invalid={missing}
+                        className={cn(
+                          'bg-background text-foreground placeholder:text-muted-foreground',
+                          missing ? 'border-amber-500/60' : 'border-border'
+                        )}
                       />
                     ) : mapping.type === 'field' ? (
                       <Select
-                        value={mapping.value || undefined}
+                        value={mapping.value || null}
                         onValueChange={(val) =>
                           updateVariable(key, { value: val || '' })
                         }
                       >
-                        <SelectTrigger className="w-full border-border bg-muted text-foreground">
-                          <SelectValue placeholder={t('personalize.selectContactField')} />
+                        <SelectTrigger className={selectClass}>
+                          <SelectValue
+                            placeholder={t('personalize.selectContactField')}
+                          />
                         </SelectTrigger>
                         <SelectContent className="border-border bg-popover">
                           {contactFields.map((field) => (
@@ -367,12 +355,12 @@ export function Step3Personalize({
                       </Select>
                     ) : (
                       <Select
-                        value={mapping.value || undefined}
+                        value={mapping.value || null}
                         onValueChange={(val) =>
                           updateVariable(key, { value: val || '' })
                         }
                       >
-                        <SelectTrigger className="w-full border-border bg-muted text-foreground">
+                        <SelectTrigger className={selectClass}>
                           <SelectValue
                             placeholder={
                               loadingFields
@@ -394,42 +382,53 @@ export function Step3Personalize({
                     )}
                   </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+              );
+            })}
 
-      {/* Live Preview — rendered as a WhatsApp-style bubble so the user
-          sees approximately what the recipient will see. */}
-      <div className="rounded-xl border border-border bg-card/50 p-4">
-        <div className="mb-3 flex items-center gap-2">
-          <Eye className="h-4 w-4 text-primary" />
-          <p className="text-sm font-medium text-foreground">{t('personalize.preview')}</p>
-          <span className="text-xs text-muted-foreground">({previewLabel})</span>
-          {loadingPreview && (
-            <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
-          )}
-        </div>
-        <div className="rounded-lg bg-[#0e1a12] p-3">
-          <div className="ml-auto max-w-[85%] rounded-lg bg-primary/30 px-3 py-2 shadow-sm">
-            <p className="whitespace-pre-wrap text-sm text-primary">
-              {previewText}
-            </p>
+            {unmappedKeys.length > 0 && (
+              <p className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+                <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+                <span>
+                  {t.rich('personalize.unmappedWarning', {
+                    keys: unmappedKeys.join(', '),
+                    mono: (chunks) => (
+                      <span className="font-mono font-semibold">{chunks}</span>
+                    ),
+                  })}
+                </span>
+              </p>
+            )}
           </div>
-        </div>
+        </section>
+
+        {/* Live preview — the same WhatsApp bubble as the advanced wizard. */}
+        <section className="border-border bg-card rounded-xl border p-4 lg:sticky lg:top-0">
+          <div className="mb-3 flex items-center gap-2">
+            <Eye className="text-primary size-4" />
+            <p className="text-muted-foreground font-mono text-[11px] tracking-[0.15em] uppercase">
+              {t('personalize.preview')}
+            </p>
+            <span className="text-muted-foreground truncate text-xs">
+              · {previewLabel}
+            </span>
+            {loadingPreview && (
+              <Loader2 className="text-primary size-3.5 animate-spin" />
+            )}
+          </div>
+          <TemplatePreview
+            headerType={template.header_type}
+            headerText={
+              template.header_type === 'text' ? template.header_content : null
+            }
+            mediaUrl={headerMediaUrl.trim() || template.header_media_url}
+            body={fillVariables(template.body_text, previewValues)}
+            footer={template.footer_text}
+            buttons={template.buttons}
+          />
+        </section>
       </div>
 
-      {unmappedKeys.length > 0 && (
-        <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
-          {t.rich('personalize.unmappedWarning', {
-            keys: unmappedKeys.join(', '),
-            mono: (chunks) => <span className="font-mono font-semibold">{chunks}</span>,
-          })}
-        </div>
-      )}
-
-      <div className="flex items-center justify-between border-t border-border pt-4">
+      <WizardFooter>
         <Button
           variant="outline"
           onClick={onBack}
@@ -446,7 +445,7 @@ export function Step3Personalize({
           {t('next')}
           <ArrowRight className="h-4 w-4" />
         </Button>
-      </div>
+      </WizardFooter>
     </div>
   );
 }

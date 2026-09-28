@@ -439,6 +439,10 @@ export interface Broadcast {
    * send. Added in migration 038.
    */
   delivery_locked_at?: string | null;
+  /** 'advanced' = multi-channel / template-fallback campaign (migration 050). */
+  kind?: 'standard' | 'advanced';
+  /** Advanced campaign plan — see AdvancedCampaignConfig. */
+  config?: import('@/lib/campaigns/advanced').AdvancedCampaignConfig | null;
   created_at: string;
 }
 
@@ -470,6 +474,10 @@ export interface BroadcastRecipient {
    * Added in migration 038; null on rows created before it.
    */
   template_params?: string[] | null;
+  /** Advanced campaigns: the channel and template that carried it (migration 050). */
+  whatsapp_config_id?: string | null;
+  template_name?: string | null;
+  template_language?: string | null;
   created_at: string;
   contact?: Contact;
 }

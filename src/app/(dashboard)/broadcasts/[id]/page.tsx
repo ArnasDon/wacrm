@@ -1,127 +1,56 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import { Broadcast, BroadcastRecipient, RecipientStatus } from '@/types';
+import { Broadcast, BroadcastRecipient } from '@/types';
 import { Button } from '@/components/ui/button';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import {
+  Activity,
   ArrowLeft,
-  Loader2,
-  Users,
-  Send,
-  CheckCheck,
-  Eye,
-  AlertCircle,
-  MessageCircle,
-  Filter,
+  BarChart3,
+  ChevronRight,
   Download,
-  ChevronDown,
-  Trash2,
+  Loader2,
   PlayCircle,
   RotateCcw,
+  ScrollText,
+  Trash2,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useFormatter, useTranslations } from 'next-intl';
+
+import { cn } from '@/lib/utils';
 import {
-  getBroadcastStatus,
-  getRecipientStatus,
-} from '@/lib/broadcast-status';
-import { useTranslations } from 'next-intl';
+  averageThroughput,
+  currentThroughput,
+  etaSeconds,
+} from '@/lib/campaigns/metrics';
+import { LiveMonitor } from '@/components/campaigns/live-monitor';
+import { CampaignAnalytics } from '@/components/campaigns/campaign-analytics';
+import { CampaignLogs } from '@/components/campaigns/campaign-logs';
+import { AdvancedBreakdown } from '@/components/campaigns/advanced-breakdown';
+import { LOCK_STALE_MS } from '@/lib/campaigns/advanced';
 
-interface StatCardProps {
-  label: string;
-  value: number;
-  total: number;
-  icon: React.ReactNode;
-  color: string;
-}
-
-function StatCard({ label, value, total, icon, color }: StatCardProps) {
-  const pct = total > 0 ? Math.round((value / total) * 100) : 0;
-  return (
-    <div className="rounded-xl border border-border bg-card p-4">
-      <div className="flex items-center justify-between">
-        <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${color}`}>
-          {icon}
-        </div>
-        <span className="text-xs text-muted-foreground">{pct}%</span>
-      </div>
-      <p className="mt-3 text-2xl font-bold text-foreground">{value.toLocaleString()}</p>
-      <p className="text-xs text-muted-foreground">{label}</p>
-    </div>
-  );
-}
-
-interface FunnelStep {
-  label: string;
-  value: number;
-  color: string;
-}
-
-/**
- * Pure-CSS funnel chart: decreasing-width rounded bars.
- * Width is relative to the largest step (typically Sent) so we
- * always render a full bar at the top and proportional tails.
- */
-function FunnelChart({ steps }: { steps: FunnelStep[] }) {
-  const max = Math.max(...steps.map((s) => s.value), 1);
-  return (
-    <div className="rounded-xl border border-border bg-card p-4">
-      <h3 className="mb-4 text-sm font-medium text-foreground">Funnel</h3>
-      <div className="space-y-2">
-        {steps.map((step) => {
-          const pctOfMax = Math.max(5, Math.round((step.value / max) * 100));
-          const pctOfSent =
-            steps[0].value > 0
-              ? Math.round((step.value / steps[0].value) * 100)
-              : 0;
-          return (
-            <div key={step.label} className="flex items-center gap-3">
-              <span className="w-20 shrink-0 text-xs text-muted-foreground">
-                {step.label}
-              </span>
-              <div className="relative h-7 flex-1 rounded-full bg-muted">
-                <div
-                  className={`h-7 rounded-full ${step.color} transition-[width] duration-500`}
-                  style={{ width: `${pctOfMax}%` }}
-                />
-                <span className="absolute inset-0 flex items-center px-3 text-xs font-medium text-foreground">
-                  {step.value.toLocaleString()}
-                  <span className="ml-2 text-muted-foreground/80">
-                    ({pctOfSent}%)
-                  </span>
-                </span>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-const RECIPIENT_STATUSES: readonly RecipientStatus[] = [
-  'pending',
-  'sent',
-  'delivered',
-  'read',
-  'replied',
-  'failed',
+type Tab = 'monitor' | 'analytics' | 'logs';
+const TABS: { key: Tab; icon: typeof Activity }[] = [
+  { key: 'monitor', icon: Activity },
+  { key: 'analytics', icon: BarChart3 },
+  { key: 'logs', icon: ScrollText },
 ];
+
+// Refresh cadence while the campaign is sending.
+const POLL_INTERVAL_MS = 5_000;
+
+const STATUS_BADGE: Record<Broadcast['status'], string> = {
+  sending:
+    'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
+  scheduled:
+    'border-blue-500/40 bg-blue-500/10 text-blue-700 dark:text-blue-300',
+  draft: 'border-border bg-muted text-muted-foreground',
+  sent: 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300',
+  failed: 'border-red-500/40 bg-red-500/10 text-red-700 dark:text-red-300',
+};
 
 /**
  * CSV export helper — RFC 4180 quoting. Quote every field so
@@ -144,25 +73,44 @@ function downloadBlob(filename: string, content: string) {
   URL.revokeObjectURL(url);
 }
 
+/** 3725 → "1h 2m"; 95 → "1m 35s". */
+function formatDuration(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
+
+interface ChannelInfo {
+  id: string;
+  color: string | null;
+  name: string | null;
+  display_phone_number: string | null;
+  is_default: boolean;
+}
+
 export default function BroadcastDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const t = useTranslations('Broadcasts.detail');
-  const tStatus = useTranslations('Broadcasts.status');
+  const tPage = useTranslations('Broadcasts.page');
+  const format = useFormatter();
   const broadcastId = params.id as string;
 
   const [broadcast, setBroadcast] = useState<Broadcast | null>(null);
   const [recipients, setRecipients] = useState<BroadcastRecipient[]>([]);
+  const [channels, setChannels] = useState<ChannelInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<RecipientStatus | 'all'>(
-    'all',
-  );
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [resumingScope, setResumingScope] = useState<
     'pending' | 'failed' | null
   >(null);
+  const [now, setNow] = useState(() => Date.now());
 
   const fetchData = useCallback(async () => {
     try {
@@ -185,6 +133,7 @@ export default function BroadcastDetailPage() {
 
       if (recsError) throw recsError;
       setRecipients(recs ?? []);
+      setNow(Date.now());
     } catch (err) {
       setError(err instanceof Error ? err.message : t('notFound'));
     } finally {
@@ -196,13 +145,83 @@ export default function BroadcastDetailPage() {
     fetchData();
   }, [fetchData]);
 
-  const filteredRecipients = useMemo(
-    () =>
-      statusFilter === 'all'
-        ? recipients
-        : recipients.filter((r) => r.status === statusFilter),
-    [recipients, statusFilter],
+  // Standard campaigns go out through the account's default channel;
+  // advanced ones through the channels in their config.
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/whatsapp/channels', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((body) => {
+        if (cancelled || !body) return;
+        setChannels((body.channels ?? []) as ChannelInfo[]);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Live refresh while sending; paused while the tab is hidden.
+  const sending = broadcast?.status === 'sending';
+  const live = sending || broadcast?.status === 'scheduled';
+  useEffect(() => {
+    if (!live) return;
+    const id = setInterval(() => {
+      if (document.visibilityState === 'visible') void fetchData();
+    }, POLL_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [live, fetchData]);
+
+  // Running campaigns open on the live monitor, finished ones on
+  // analytics; `?tab=` keeps the choice across reloads.
+  const requestedTab = searchParams.get('tab') as Tab | null;
+  const defaultTab: Tab =
+    broadcast?.status === 'sent' || broadcast?.status === 'failed'
+      ? 'analytics'
+      : 'monitor';
+  const tab: Tab =
+    requestedTab && TABS.some((x) => x.key === requestedTab)
+      ? requestedTab
+      : defaultTab;
+  const selectTab = (next: Tab) => {
+    const q = new URLSearchParams(searchParams.toString());
+    q.set('tab', next);
+    router.replace(`/broadcasts/${broadcastId}?${q.toString()}`, {
+      scroll: false,
+    });
+  };
+
+  const isAdvanced = broadcast?.kind === 'advanced';
+  const channelName = (id?: string | null) => {
+    const c = channels.find((x) => x.id === id);
+    return c ? (c.name ?? c.display_phone_number ?? '') : '';
+  };
+  // A standard campaign records its channel in config (older ones went
+  // through the account default).
+  const chosenChannelId = !isAdvanced
+    ? (broadcast?.config as { channel_id?: string } | null | undefined)
+        ?.channel_id
+    : undefined;
+  const channel =
+    channels.find((c) => c.id === chosenChannelId) ??
+    channels.find((c) => c.is_default) ??
+    channels[0] ??
+    null;
+
+  const pendingCount = useMemo(
+    () => recipients.filter((r) => r.status === 'pending').length,
+    [recipients]
   );
+  const retryableCount = useMemo(
+    () => recipients.filter((r) => r.status === 'failed').length,
+    [recipients]
+  );
+  const startedAt = useMemo(() => {
+    const times = recipients
+      .map((r) => (r.sent_at ? new Date(r.sent_at).getTime() : NaN))
+      .filter(Number.isFinite);
+    return times.length ? Math.min(...times) : null;
+  }, [recipients]);
 
   function handleExport() {
     if (!broadcast) return;
@@ -214,6 +233,9 @@ export default function BroadcastDetailPage() {
       t('table.delivered'),
       t('table.read'),
       t('table.error'),
+      ...(isAdvanced
+        ? [t('advancedInfo.channel'), t('advancedInfo.template')]
+        : []),
     ];
     const rows = recipients.map((r) => [
       r.contact?.name ?? '',
@@ -223,17 +245,22 @@ export default function BroadcastDetailPage() {
       r.delivered_at ?? '',
       r.read_at ?? '',
       r.error_message ?? '',
+      ...(isAdvanced
+        ? [channelName(r.whatsapp_config_id), r.template_name ?? '']
+        : []),
     ]);
     const csv = toCsv([header, ...rows]);
-    const safeName = broadcast.name.replace(/[^a-z0-9-_]+/gi, '-').toLowerCase();
-    downloadBlob(`broadcast-${safeName}-${broadcastId.slice(0, 8)}.csv`, csv);
+    const safeName = broadcast.name
+      .replace(/[^a-z0-9-_]+/gi, '-')
+      .toLowerCase();
+    downloadBlob(`campaign-${safeName}-${broadcastId.slice(0, 8)}.csv`, csv);
   }
 
   /**
    * Hand the leftovers to the server (issue #472).
    *
    * The wizard's send loop lives in the tab that started the campaign,
-   * so navigating away strands the rest as 'pending' with the broadcast
+   * so navigating away strands the rest as 'pending' with the campaign
    * stuck 'sending'. This is the recovery, and the same call retries
    * failed recipients.
    */
@@ -251,7 +278,7 @@ export default function BroadcastDetailPage() {
         toast.error(
           t('toastResumeFailed', {
             error: payload?.error || `HTTP ${res.status}`,
-          }),
+          })
         );
         return;
       }
@@ -262,7 +289,7 @@ export default function BroadcastDetailPage() {
               count: payload.resuming,
               remaining: payload.remaining,
             })
-          : t('toastResumeStarted', { count: payload.resuming }),
+          : t('toastResumeStarted', { count: payload.resuming })
       );
       // Delivery runs server-side after the 202, so the counts here are
       // a snapshot — reload to pick up the first of it.
@@ -271,7 +298,7 @@ export default function BroadcastDetailPage() {
       toast.error(
         t('toastResumeFailed', {
           error: err instanceof Error ? err.message : 'Unknown error',
-        }),
+        })
       );
     } finally {
       setResumingScope(null);
@@ -282,9 +309,7 @@ export default function BroadcastDetailPage() {
     setDeleting(true);
     const supabase = createClient();
     // broadcast_recipients cascades on broadcasts.id (migration 001), so a
-    // single delete is sufficient — the aggregate trigger in migration 003
-    // is defined on broadcast_recipients but fires only on its own row
-    // changes, not on a cascaded drop of the parent row.
+    // single delete is sufficient.
     const { error: delErr } = await supabase
       .from('broadcasts')
       .delete()
@@ -301,7 +326,7 @@ export default function BroadcastDetailPage() {
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+        <Loader2 className="text-primary h-6 w-6 animate-spin" />
       </div>
     );
   }
@@ -317,322 +342,329 @@ export default function BroadcastDetailPage() {
     );
   }
 
-  const status = getBroadcastStatus(broadcast.status);
-
-  const pendingCount = recipients.filter((r) => r.status === 'pending').length;
-  const retryableCount = recipients.filter((r) => r.status === 'failed').length;
   // A campaign whose tab went away sits in 'sending' with recipients
   // still pending and nothing left to move them. Name that state rather
-  // than leaving a permanently pulsing "sending" badge.
-  const isStalled = broadcast.status === 'sending' && pendingCount > 0;
+  // than leaving a permanently pulsing badge.
+  // Advanced campaigns are driven server-side; they're stalled only when
+  // no runner has held the lock recently (the scheduler restarts them).
+  const lockAge = broadcast.delivery_locked_at
+    ? now - new Date(broadcast.delivery_locked_at).getTime()
+    : Infinity;
+  const isStalled =
+    broadcast.status === 'sending' &&
+    pendingCount > 0 &&
+    (!isAdvanced || lockAge > LOCK_STALE_MS);
 
-  const funnelSteps: FunnelStep[] = [
-    { label: t('stats.sent'), value: broadcast.sent_count, color: 'bg-primary' },
-    { label: t('stats.delivered'), value: broadcast.delivered_count, color: 'bg-teal-500' },
-    { label: t('stats.read'), value: broadcast.read_count, color: 'bg-blue-500' },
-    { label: t('stats.replied'), value: broadcast.replied_count, color: 'bg-indigo-500' },
+  // Throughput: live rate over the last minute while sending, otherwise
+  // the campaign's average from first to last send.
+  const liveRate = sending ? currentThroughput(recipients, now) : 0;
+  const rate = sending ? liveRate : averageThroughput(recipients);
+  const eta = sending ? etaSeconds(pendingCount, liveRate) : 0;
+  const deliveryRate =
+    broadcast.sent_count > 0
+      ? Math.round((broadcast.delivered_count / broadcast.sent_count) * 1000) /
+        10
+      : 0;
+
+  const topStats = [
+    {
+      label: t('top.throughput'),
+      value:
+        rate != null && rate > 0
+          ? t('top.perSecond', {
+              rate: rate >= 10 ? Math.round(rate) : Math.round(rate * 10) / 10,
+            })
+          : t('top.unknown'),
+    },
+    {
+      label: t('top.eta'),
+      value:
+        broadcast.status === 'sending'
+          ? eta != null
+            ? formatDuration(eta)
+            : t('top.unknown')
+          : broadcast.status === 'sent'
+            ? t('top.done')
+            : t('top.unknown'),
+    },
+    { label: t('top.deliveryRate'), value: `${deliveryRate}%` },
   ];
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex items-center gap-4">
-          <Button
-            variant="outline"
-            size="icon"
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0 space-y-2">
+          <button
+            type="button"
             onClick={() => router.push('/broadcasts')}
-            className="border-border"
+            className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 text-sm"
           >
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <div>
-            <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold text-foreground">{broadcast.name}</h1>
+            <ArrowLeft className="size-4" />
+            {t('allCampaigns')}
+          </button>
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="text-foreground text-2xl font-bold tracking-tight sm:text-3xl">
+              {broadcast.name}
+            </h1>
+            <span
+              className={cn(
+                'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 font-mono text-xs font-semibold tracking-[0.2em] uppercase',
+                STATUS_BADGE[broadcast.status]
+              )}
+            >
               <span
-                className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${status.classes}`}
-              >
-                {tStatus(status.label)}
-              </span>
-            </div>
-            <div className="mt-1 flex items-center gap-3 text-sm text-muted-foreground">
-              <span>{t('template', { name: broadcast.template_name })}</span>
-              <span>-</span>
-              <span>
-                {t('createdAt', { date: new Date(broadcast.created_at).toLocaleDateString() })}
-              </span>
-            </div>
+                className={cn(
+                  'size-1.5 rounded-full bg-current',
+                  sending && 'animate-pulse'
+                )}
+              />
+              {tPage(`filters.${broadcast.status}`)}
+            </span>
           </div>
+          <p className="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-xs tracking-[0.15em] uppercase">
+            {isAdvanced && broadcast.config ? (
+              <>
+                <span className="border-primary/40 bg-primary/10 text-primary rounded border px-1.5 py-px">
+                  {t('advancedInfo.badge')}
+                </span>
+                <span
+                  title={broadcast.config.templates
+                    .map((x) => x.name)
+                    .join(' → ')}
+                >
+                  {t('advancedInfo.templatesCount', {
+                    count: broadcast.config.templates.length,
+                  })}
+                </span>
+                <ChevronRight className="size-3" />
+                <span
+                  title={broadcast.config.channel_ids
+                    .map(channelName)
+                    .join(', ')}
+                >
+                  {t('advancedInfo.channelsCount', {
+                    count: broadcast.config.channel_ids.length,
+                  })}
+                </span>
+              </>
+            ) : (
+              <span>{broadcast.template_name}</span>
+            )}
+            {channel && !isAdvanced ? (
+              <>
+                <ChevronRight className="size-3" />
+                <span>
+                  {channel.name}
+                  {channel.display_phone_number
+                    ? ` · ${channel.display_phone_number}`
+                    : ''}
+                </span>
+              </>
+            ) : null}
+            <ChevronRight className="size-3" />
+            <span>
+              {broadcast.status === 'scheduled' && broadcast.scheduled_at
+                ? t('advancedInfo.scheduledFor', {
+                    time: format.dateTime(new Date(broadcast.scheduled_at), {
+                      dateStyle: 'medium',
+                      timeStyle: 'short',
+                    }),
+                  })
+                : startedAt
+                  ? t('top.started', {
+                      time: format.dateTime(new Date(startedAt), {
+                        dateStyle: 'medium',
+                        timeStyle: 'short',
+                      }),
+                    })
+                  : t('createdAt', {
+                      date: format.dateTime(new Date(broadcast.created_at), {
+                        dateStyle: 'medium',
+                      }),
+                    })}
+            </span>
+          </p>
         </div>
 
-        {/* Delete — inline-confirm pattern matches the pipeline-settings
-            "Delete Pipeline" flow. Mid-send broadcasts can't be deleted
-            because orphaning in-flight Meta messages would leave the
-            funnel inconsistent. */}
-        {confirmDelete ? (
-          <div className="flex items-center gap-2 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-sm">
-            <span className="text-red-300">{t('deletePrompt')}</span>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setConfirmDelete(false)}
-              disabled={deleting}
-              className="h-7 border-border bg-transparent text-muted-foreground hover:bg-muted"
-            >
-              {t('cancel')}
-            </Button>
-            <Button
-              size="sm"
-              onClick={handleDelete}
-              disabled={deleting}
-              className="h-7 bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
-            >
-              {deleting ? t('deleting') : t('confirm')}
-            </Button>
-          </div>
-        ) : (
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={broadcast.status === 'sending'}
-            onClick={() => setConfirmDelete(true)}
-            title={
-              broadcast.status === 'sending'
-                ? t('cannotDeleteSending')
-                : t('deleteHover')
-            }
-            className="border-red-500/30 bg-transparent text-red-400 hover:bg-red-500/10 disabled:opacity-40"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-            {t('delete')}
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" onClick={handleExport}>
+            <Download className="size-4" />
+            {t('export')}
           </Button>
-        )}
-      </div>
-
-      {/* Resume / retry (issue #472). Only rendered when there is
-          actually something outstanding. */}
-      {(pendingCount > 0 || retryableCount > 0) && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card p-4">
-          <div className="text-sm">
-            <p className="font-medium text-foreground">
-              {isStalled ? t('resumeStalledTitle') : t('resumeTitle')}
-            </p>
-            <p className="mt-0.5 text-muted-foreground">
-              {isStalled
-                ? t('resumeStalledHint', { count: pendingCount })
-                : t('resumeHint', { count: retryableCount })}
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {pendingCount > 0 && (
-              <Button
-                size="sm"
-                onClick={() => handleResume('pending')}
-                disabled={resumingScope !== null}
-              >
-                {resumingScope === 'pending' ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <PlayCircle className="h-3.5 w-3.5" />
-                )}
-                {t('resumePending', { count: pendingCount })}
-              </Button>
-            )}
-            {retryableCount > 0 && (
+          {/* Delete — inline confirm. Mid-send campaigns can't be deleted:
+              orphaning in-flight Meta messages would leave the funnel
+              inconsistent. */}
+          {confirmDelete ? (
+            <div className="flex items-center gap-2 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-sm">
+              <span className="text-red-600 dark:text-red-300">
+                {t('deletePrompt')}
+              </span>
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => handleResume('failed')}
-                disabled={resumingScope !== null}
-                className="border-border text-muted-foreground hover:bg-muted"
+                onClick={() => setConfirmDelete(false)}
+                disabled={deleting}
+                className="h-7"
               >
-                {resumingScope === 'failed' ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <RotateCcw className="h-3.5 w-3.5" />
-                )}
-                {t('retryFailed', { count: retryableCount })}
+                {t('cancel')}
               </Button>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Stats — 6 cards: Total / Sent / Delivered / Read / Replied / Failed */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <StatCard
-          label={t('stats.totalRecipients')}
-          value={broadcast.total_recipients}
-          total={broadcast.total_recipients}
-          icon={<Users className="h-4 w-4" />}
-          color="bg-muted text-muted-foreground"
-        />
-        <StatCard
-          label={t('stats.sent')}
-          value={broadcast.sent_count}
-          total={broadcast.total_recipients}
-          icon={<Send className="h-4 w-4" />}
-          color="bg-primary/10 text-primary"
-        />
-        <StatCard
-          label={t('stats.delivered')}
-          value={broadcast.delivered_count}
-          total={broadcast.total_recipients}
-          icon={<CheckCheck className="h-4 w-4" />}
-          color="bg-teal-500/10 text-teal-400"
-        />
-        <StatCard
-          label={t('stats.read')}
-          value={broadcast.read_count}
-          total={broadcast.total_recipients}
-          icon={<Eye className="h-4 w-4" />}
-          color="bg-blue-500/10 text-blue-400"
-        />
-        <StatCard
-          label={t('stats.replied')}
-          value={broadcast.replied_count}
-          total={broadcast.total_recipients}
-          icon={<MessageCircle className="h-4 w-4" />}
-          color="bg-indigo-500/10 text-indigo-400"
-        />
-        <StatCard
-          label={t('stats.failed')}
-          value={broadcast.failed_count}
-          total={broadcast.total_recipients}
-          icon={<AlertCircle className="h-4 w-4" />}
-          color="bg-red-500/10 text-red-400"
-        />
-      </div>
-
-      <FunnelChart steps={funnelSteps} />
-
-      {/* Recipients Table */}
-      <div className="rounded-xl border border-border bg-card">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
-          <h2 className="text-sm font-medium text-foreground">
-            {statusFilter !== 'all'
-              ? t('recipientsHeader', { filtered: filteredRecipients.length, total: recipients.length })
-              : t('recipientsHeaderAll', { total: recipients.length })}
-          </h2>
-          <div className="flex items-center gap-2">
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="border-border text-muted-foreground hover:bg-muted"
-                  />
-                }
+              <Button
+                size="sm"
+                onClick={handleDelete}
+                disabled={deleting}
+                className="h-7 bg-red-600 text-white hover:bg-red-700"
               >
-                <Filter className="h-3.5 w-3.5" />
-                {statusFilter === 'all'
-                  ? t('allStatuses')
-                  : tStatus(getRecipientStatus(statusFilter).label)}
-                <ChevronDown className="h-3 w-3" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent className="border-border bg-popover">
-                <DropdownMenuItem
-                  onClick={() => setStatusFilter('all')}
-                  className={
-                    statusFilter === 'all' ? 'text-primary' : 'text-popover-foreground'
-                  }
-                >
-                  {t('allStatuses')}
-                </DropdownMenuItem>
-                {RECIPIENT_STATUSES.map((s) => (
-                  <DropdownMenuItem
-                    key={s}
-                    onClick={() => setStatusFilter(s)}
-                    className={
-                      statusFilter === s
-                        ? 'text-primary'
-                        : 'text-popover-foreground'
-                    }
-                  >
-                    {tStatus(getRecipientStatus(s).label)}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-
+                {deleting ? t('deleting') : t('confirm')}
+              </Button>
+            </div>
+          ) : (
             <Button
               variant="outline"
-              size="sm"
-              onClick={handleExport}
-              disabled={recipients.length === 0}
-              className="border-border text-muted-foreground hover:bg-muted"
+              size="icon"
+              disabled={broadcast.status === 'sending'}
+              onClick={() => setConfirmDelete(true)}
+              title={
+                broadcast.status === 'sending'
+                  ? t('cannotDeleteSending')
+                  : t('deleteHover')
+              }
+              aria-label={t('delete')}
+              className="text-red-500 hover:bg-red-500/10 disabled:opacity-40"
             >
-              <Download className="h-3.5 w-3.5" />
-              {t('exportCsv')}
+              <Trash2 className="size-4" />
             </Button>
-          </div>
+          )}
         </div>
+      </div>
 
-        {filteredRecipients.length === 0 ? (
-          <div className="flex h-32 items-center justify-center">
-            <p className="text-sm text-muted-foreground">
-              {recipients.length === 0
-                ? t('noRecipients')
-                : t('noRecipientsFilter')}
-            </p>
+      {/* Resume / retry (issue #472) — only when something is outstanding. */}
+      {broadcast.status !== 'scheduled' &&
+        (isStalled ||
+          retryableCount > 0 ||
+          (!isAdvanced && pendingCount > 0)) && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/5 p-4">
+            <div className="text-sm">
+              <p className="text-foreground font-medium">
+                {isStalled ? t('resumeStalledTitle') : t('resumeTitle')}
+              </p>
+              <p className="text-muted-foreground mt-0.5">
+                {isStalled
+                  ? t('resumeStalledHint', { count: pendingCount })
+                  : t('resumeHint', { count: retryableCount })}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {pendingCount > 0 && (
+                <Button
+                  size="sm"
+                  onClick={() => handleResume('pending')}
+                  disabled={resumingScope !== null}
+                >
+                  {resumingScope === 'pending' ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <PlayCircle className="h-3.5 w-3.5" />
+                  )}
+                  {t('resumePending', { count: pendingCount })}
+                </Button>
+              )}
+              {retryableCount > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleResume('failed')}
+                  disabled={resumingScope !== null}
+                >
+                  {resumingScope === 'failed' ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <RotateCcw className="h-3.5 w-3.5" />
+                  )}
+                  {t('retryFailed', { count: retryableCount })}
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
+
+      {/* Tabs + headline stats */}
+      <div className="border-border flex flex-wrap items-end justify-between gap-4 border-b">
+        <div className="flex" role="tablist">
+          {TABS.map(({ key, icon: Icon }) => {
+            const active = tab === key;
+            return (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => selectTab(key)}
+                className={cn(
+                  '-mb-px inline-flex items-center gap-2 border-b-2 px-4 py-3 font-mono text-xs font-semibold tracking-[0.2em] uppercase transition-colors',
+                  active
+                    ? 'border-primary text-primary'
+                    : 'text-muted-foreground hover:text-foreground border-transparent'
+                )}
+              >
+                <Icon className="size-4" />
+                {t(`tabs.${key}`)}
+              </button>
+            );
+          })}
+        </div>
+        <dl className="flex flex-wrap gap-x-8 gap-y-2 pb-3">
+          {topStats.map((s) => (
+            <div key={s.label} className="text-right">
+              <dt className="text-muted-foreground font-mono text-[11px] tracking-[0.2em] uppercase">
+                {s.label}
+              </dt>
+              <dd className="text-foreground font-mono text-lg tabular-nums">
+                {s.value}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+
+      <div role="tabpanel">
+        {tab === 'monitor' ? (
+          <div className="space-y-6">
+            <LiveMonitor
+              broadcast={broadcast}
+              recipients={recipients}
+              pendingCount={pendingCount}
+              isStalled={isStalled}
+            />
+            {isAdvanced ? (
+              <AdvancedBreakdown
+                broadcast={broadcast}
+                recipients={recipients}
+                channels={channels}
+              />
+            ) : null}
+          </div>
+        ) : tab === 'analytics' ? (
+          <div className="space-y-6">
+            <CampaignAnalytics
+              broadcast={broadcast}
+              recipients={recipients}
+              pendingCount={pendingCount}
+            />
+            {isAdvanced ? (
+              <AdvancedBreakdown
+                broadcast={broadcast}
+                recipients={recipients}
+                channels={channels}
+              />
+            ) : null}
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow className="border-border hover:bg-transparent">
-                  <TableHead className="text-muted-foreground">{t('table.contact')}</TableHead>
-                  <TableHead className="text-muted-foreground">{t('table.phone')}</TableHead>
-                  <TableHead className="text-muted-foreground">{t('table.status')}</TableHead>
-                  <TableHead className="text-muted-foreground">{t('table.sent')}</TableHead>
-                  <TableHead className="text-muted-foreground">{t('table.delivered')}</TableHead>
-                  <TableHead className="text-muted-foreground">{t('table.read')}</TableHead>
-                  <TableHead className="text-muted-foreground">{t('table.error')}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredRecipients.map((recipient) => {
-                  const rStatus = getRecipientStatus(recipient.status);
-                  return (
-                    <TableRow key={recipient.id} className="border-border">
-                      <TableCell className="font-medium text-foreground">
-                        {recipient.contact?.name ?? 'Unknown'}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {recipient.contact?.phone ?? '-'}
-                      </TableCell>
-                      <TableCell>
-                        <span
-                          className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${rStatus.classes}`}
-                        >
-                          {tStatus(rStatus.label)}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {recipient.sent_at
-                          ? new Date(recipient.sent_at).toLocaleString()
-                          : '-'}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {recipient.delivered_at
-                          ? new Date(recipient.delivered_at).toLocaleString()
-                          : '-'}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {recipient.read_at
-                          ? new Date(recipient.read_at).toLocaleString()
-                          : '-'}
-                      </TableCell>
-                      <TableCell className="max-w-xs truncate text-xs text-red-400">
-                        {recipient.error_message ?? '-'}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </div>
+          <CampaignLogs
+            recipients={recipients}
+            onExport={handleExport}
+            channelName={isAdvanced ? channelName : undefined}
+          />
         )}
       </div>
     </div>

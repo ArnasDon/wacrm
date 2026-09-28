@@ -18,11 +18,14 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { BroadcastError, type BroadcastPlan } from '@/lib/whatsapp/broadcast-core';
+import {
+  BroadcastError,
+  type BroadcastPlan,
+} from '@/lib/whatsapp/broadcast-core';
 import { decrypt } from '@/lib/whatsapp/encryption';
 import { resolveTemplateRow } from '@/lib/whatsapp/template-body';
 import { sanitizePhoneForMeta, isValidE164 } from '@/lib/whatsapp/phone-utils';
-import { loadDefaultChannel } from '@/lib/whatsapp/channels';
+import { loadChannelById, loadDefaultChannel } from '@/lib/whatsapp/channels';
 
 /** Which recipients a resume pass picks up. */
 export type ResumeScope = 'pending' | 'failed' | 'all';
@@ -147,7 +150,7 @@ export async function planBroadcastResume(
 ): Promise<ResumePlan> {
   const { data: broadcast, error: bcError } = await db
     .from('broadcasts')
-    .select('id, template_name, template_language')
+    .select('id, template_name, template_language, config')
     .eq('id', broadcastId)
     .eq('account_id', accountId)
     .maybeSingle();
@@ -167,7 +170,10 @@ export async function planBroadcastResume(
     .order('created_at', { ascending: true });
 
   if (recError) {
-    console.error('[broadcast-resume] recipient load failed:', recError.message);
+    console.error(
+      '[broadcast-resume] recipient load failed:',
+      recError.message
+    );
     throw new BroadcastError('internal', 'Failed to load recipients', 500);
   }
 
@@ -206,8 +212,16 @@ export async function planBroadcastResume(
     );
   }
 
-  // Account default channel (migration 043).
-  const config = await loadDefaultChannel(db, accountId);
+  // The channel the campaign was sent through, else the account default.
+  const saved = (
+    broadcast as {
+      config?: { channel_id?: string; header_media_url?: string } | null;
+    }
+  ).config;
+  const chosen = saved?.channel_id;
+  const config = chosen
+    ? await loadChannelById(db, accountId, chosen)
+    : await loadDefaultChannel(db, accountId);
   if (!config) {
     throw new BroadcastError(
       'whatsapp_not_configured',
@@ -246,6 +260,7 @@ export async function planBroadcastResume(
         : [],
     })),
     rejected: 0,
+    headerMediaUrl: saved?.header_media_url || undefined,
   };
 
   return { plan, remaining, unsendable: unsendable.length };

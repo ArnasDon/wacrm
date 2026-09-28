@@ -32,6 +32,7 @@ import {
   type ResumeScope,
 } from '@/lib/whatsapp/broadcast-resume';
 import { supabaseAdmin } from '@/lib/flows/admin-client';
+import { driveCampaign } from '@/lib/campaigns/advanced-scheduler';
 import {
   checkRateLimit,
   rateLimitResponse,
@@ -64,6 +65,20 @@ export async function POST(
     const scope: ResumeScope = RESUME_SCOPES.includes(body?.scope)
       ? body.scope
       : 'pending';
+
+    // Advanced campaigns (migration 050) have their own multi-channel
+    // runner: put the in-scope rows back to pending, give every template
+    // another chance, and let the runner (or the one already running —
+    // it polls for pending rows) send them.
+    const { data: kindRow } = await supabase
+      .from('broadcasts')
+      .select('kind, config')
+      .eq('id', id)
+      .eq('account_id', accountId)
+      .maybeSingle();
+    if (kindRow?.kind === 'advanced') {
+      return resumeAdvanced(id, scope, kindRow.config);
+    }
 
     // Claim BEFORE planning. Two clicks on Resume, or a click while an
     // earlier pass is still running, would otherwise both build a plan
@@ -140,4 +155,42 @@ export async function POST(
     console.error('Error in broadcast resume POST:', error);
     return toErrorResponse(error);
   }
+}
+
+async function resumeAdvanced(id: string, scope: ResumeScope, config: unknown) {
+  // Account ownership was checked by the caller's scoped read.
+  const admin = supabaseAdmin();
+  if (scope !== 'pending') {
+    await admin
+      .from('broadcast_recipients')
+      .update({ status: 'pending', error_message: null, whatsapp_config_id: null, template_name: null, template_language: null })
+      .eq('broadcast_id', id)
+      .eq('status', 'failed');
+  }
+  const { count } = await admin
+    .from('broadcast_recipients')
+    .select('id', { count: 'exact', head: true })
+    .eq('broadcast_id', id)
+    .eq('status', 'pending');
+  if (!count) {
+    return NextResponse.json(
+      {
+        error: scope === 'failed' ? 'This campaign has no failed recipients to retry' : 'This campaign has no recipients left to send',
+        code: 'nothing_to_resume',
+      },
+      { status: 400 },
+    );
+  }
+  await admin
+    .from('broadcasts')
+    .update({
+      status: 'sending',
+      config: { ...(config as Record<string, unknown>), exhausted: {} },
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id);
+  after(async () => {
+    await driveCampaign(admin, id);
+  });
+  return NextResponse.json({ success: true, broadcast_id: id, scope, resuming: count, remaining: 0, unsendable: 0 }, { status: 202 });
 }

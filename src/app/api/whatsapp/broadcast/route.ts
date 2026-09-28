@@ -15,7 +15,7 @@ import {
   rateLimitResponse,
   RATE_LIMITS,
 } from '@/lib/rate-limit'
-import { loadDefaultChannel } from '@/lib/whatsapp/channels'
+import { loadChannelById, loadDefaultChannel } from '@/lib/whatsapp/channels'
 
 interface BroadcastResult {
   phone: string
@@ -90,6 +90,7 @@ export async function POST(request: Request) {
       template_name,
       template_language,
       template_params,
+      channel_id,
     } = body
 
     // Normalize to a list of {phone, params} regardless of shape.
@@ -121,9 +122,11 @@ export async function POST(request: Request) {
       )
     }
 
-    // Account default channel (migration 043).
-
-    const config = await loadDefaultChannel(supabase, accountId)
+    // The campaign's chosen channel, else the account default (migration 043).
+    const config =
+      typeof channel_id === 'string' && channel_id
+        ? await loadChannelById(supabase, accountId, channel_id)
+        : await loadDefaultChannel(supabase, accountId)
 
     if (!config) {
       return NextResponse.json(

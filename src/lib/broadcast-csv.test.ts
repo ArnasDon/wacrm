@@ -68,34 +68,30 @@ describe('parseBroadcastCsv', () => {
       ok: true,
       duplicates: 1,
       invalid: 0,
-      contacts: [{ phone: '+1 (555) 123-0000', name: 'Ada' }],
+      contacts: [{ phone: '+15551230000', name: 'Ada' }],
     });
   });
 
-  // A national-format number has no country code, so Meta reads its
-  // leading digits as one: "4155551212" (US) is delivered to +41
-  // (Switzerland). Rows without a leading `+` are refused and counted,
-  // not silently dropped, so a whole-file export from a spreadsheet that
-  // stripped the `+` is visible to the user before anything is sent
-  // (issue #586).
-  it('rejects rows without a leading + and reports them as invalid', () => {
+  // The file carries the country code; a leading + is optional
+  // (spreadsheets often strip it). Output is always "+digits".
+  it('accepts numbers with the country code but no +', () => {
     const result = parseBroadcastCsv(
-      `phone,name
-4155551212,National US
-+14155551212,Ada
-9876543210,National IN`
+      `Mobile Number;Customer Name
+919812345678;Asha
++91 98123 45678;Asha again
+12345;Too short`
     );
 
     expect(result).toEqual({
       ok: true,
-      duplicates: 0,
-      invalid: 2,
-      contacts: [{ phone: '+14155551212', name: 'Ada' }],
+      duplicates: 1,
+      invalid: 1,
+      contacts: [{ phone: '+919812345678', name: 'Asha' }],
     });
   });
 
-  it('reports no_valid_rows when every number lacks a country code', () => {
-    expect(parseBroadcastCsv(`phone,name\n4155551212,Ada`)).toEqual({
+  it('reports no_valid_rows when no number is usable', () => {
+    expect(parseBroadcastCsv(`phone,name\n123,Ada`)).toEqual({
       ok: false,
       error: 'no_valid_rows',
     });

@@ -1,35 +1,43 @@
 /**
  * CSV → broadcast audience.
  *
- * The broadcast wizard's "Upload CSV" audience type needs a
- * `{ phone, name }[]` list, which is a narrower shape than the
- * contacts importer's. Rather than re-parse, this reuses the shared
- * `parseContactCsv` + `dedupeByPhone` so a CSV that imports cleanly on
- * the Contacts page also broadcasts cleanly (issue #512).
+ * The standard campaign's "Upload CSV" audience needs a `{ phone, name }[]`
+ * list. It reads files the same way the advanced campaign does
+ * (`parseCsvTable` / `normalizeCsvPhone`), so one spreadsheet works in
+ * both:
+ *
+ *   - any delimiter (`,` `;` tab), quoted cells, a BOM;
+ *   - the phone column is found by name ("phone", "mobile", "whatsapp",
+ *     "number"…), the name column likewise and optional;
+ *   - numbers must carry their country code, with or without a leading
+ *     `+` or `00` ("919812345678", "+91 98123 45678"). The file is the
+ *     source of truth for the country code — the wizard doesn't ask.
  *
  * De-duplication happens HERE, on the normalized number, because the
  * downstream contact upsert inserts against a UNIQUE index on
  * (account_id, phone_normalized) (migration 022). Two spellings of the
- * same number in one file ("+1 555-0100" and "15550100") would
- * otherwise reach that index as separate inserts and fail the whole
- * broadcast with a constraint error.
+ * same number in one file would otherwise reach that index as separate
+ * inserts and fail the whole broadcast with a constraint error.
  *
  * Pure and unit-tested: the wizard is a client component and
- * `vitest.config.ts` runs `environment: "node"` with no jsdom, so the
- * logic has to live outside the component to be testable.
+ * `vitest.config.ts` runs `environment: "node"` with no jsdom.
  */
 
-import { dedupeByPhone } from '@/lib/contacts/dedupe';
-import { parseContactCsv } from '@/lib/contacts/parse-contact-csv';
+import {
+  guessColumn,
+  normalizeCsvPhone,
+  parseCsvTable,
+} from '@/lib/campaigns/advanced';
 
 /** The shape the wizard hands to `createAndSendBroadcast`. */
 export interface BroadcastCsvContact {
+  /** `+` and digits, e.g. "+919812345678". */
   phone: string;
   name?: string;
 }
 
 export type BroadcastCsvError =
-  /** No `phone` header — the one column we can't work without. */
+  /** No column that looks like a phone number — the one we can't work without. */
   | 'missing_phone_column'
   /** Header was fine, but not one row carried a usable number. */
   | 'no_valid_rows';
@@ -40,31 +48,43 @@ export type ParseBroadcastCsvResult =
       contacts: BroadcastCsvContact[];
       /** Rows dropped as same-number repeats. */
       duplicates: number;
-      /**
-       * Rows dropped because the number is blank or lacks a leading `+`
-       * and country code (issue #586). The wizard warns about these so
-       * a CSV of national-format numbers doesn't silently shrink.
-       */
+      /** Rows dropped because the number is blank or not a valid number. */
       invalid: number;
     }
   | { ok: false; error: BroadcastCsvError };
 
 export function parseBroadcastCsv(text: string): ParseBroadcastCsvResult {
-  const { rows, hasPhoneColumn } = parseContactCsv(text);
+  const { headers, rows } = parseCsvTable(text);
+  const phoneColumn = guessColumn(headers, 'phone');
+  if (!phoneColumn) return { ok: false, error: 'missing_phone_column' };
+  const phoneIdx = headers.indexOf(phoneColumn);
+  const nameColumn = guessColumn(
+    headers.filter((h) => h !== phoneColumn),
+    'name'
+  );
+  const nameIdx = nameColumn ? headers.indexOf(nameColumn) : -1;
 
-  if (!hasPhoneColumn) return { ok: false, error: 'missing_phone_column' };
+  const seen = new Set<string>();
+  const contacts: BroadcastCsvContact[] = [];
+  let duplicates = 0;
+  let invalid = 0;
+  for (const r of rows) {
+    const digits = normalizeCsvPhone(r[phoneIdx] ?? '');
+    if (!digits) {
+      invalid++;
+      continue;
+    }
+    if (seen.has(digits)) {
+      duplicates++;
+      continue;
+    }
+    seen.add(digits);
+    const name = nameIdx >= 0 ? r[nameIdx]?.trim() : '';
+    contacts.push(
+      name ? { phone: `+${digits}`, name } : { phone: `+${digits}` }
+    );
+  }
 
-  const { unique, duplicates, invalid } = dedupeByPhone(rows);
-  if (unique.length === 0) return { ok: false, error: 'no_valid_rows' };
-
-  return {
-    ok: true,
-    // Drop email/company/tags: the broadcast audience only addresses
-    // people, and `name` is the sole field template variables can map.
-    contacts: unique.map(({ phone, name }) =>
-      name ? { phone, name } : { phone }
-    ),
-    duplicates,
-    invalid,
-  };
+  if (contacts.length === 0) return { ok: false, error: 'no_valid_rows' };
+  return { ok: true, contacts, duplicates, invalid };
 }

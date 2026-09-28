@@ -11,6 +11,11 @@ import {
   Upload,
   FileText,
   Search,
+  Layers,
+  CheckCircle2,
+  Clock,
+  XCircle,
+  ChevronDown,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import {
@@ -92,8 +97,58 @@ const emptyForm: TemplateFormData = {
 };
 
 
-const STATUS_FILTERS = ['all', 'approved', 'pending', 'rejected'] as const;
-type StatusFilter = (typeof STATUS_FILTERS)[number];
+type StatusFilter = 'all' | 'approved' | 'pending' | 'rejected';
+type CategoryFilter = 'all' | (typeof CATEGORIES)[number];
+
+function TemplateStat({
+  icon: Icon,
+  tone,
+  value,
+  label,
+}: {
+  icon: typeof Layers;
+  tone: string;
+  value: number;
+  label: string;
+}) {
+  return (
+    <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-5 py-4">
+      <Icon className={`size-5 shrink-0 ${tone}`} />
+      <span className="text-2xl font-semibold tabular-nums text-foreground">{value}</span>
+      <span className="truncate text-sm text-muted-foreground">{label}</span>
+    </div>
+  );
+}
+
+function FilterSelect({
+  value,
+  onChange,
+  options,
+  label,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: [string, string][];
+  label: string;
+}) {
+  return (
+    <div className="relative sm:w-48">
+      <select
+        aria-label={label}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-10 w-full appearance-none rounded-lg border border-border bg-background pr-9 pl-3 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+      >
+        {options.map(([v, l]) => (
+          <option key={v} value={v}>
+            {l}
+          </option>
+        ))}
+      </select>
+      <ChevronDown className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-muted-foreground" />
+    </div>
+  );
+}
 
 /** Which status chip a template counts under (drafts etc. only in "All"). */
 function statusFilterOf(t: MessageTemplate): Exclude<StatusFilter, 'all'> | null {
@@ -171,6 +226,7 @@ export function TemplateManager() {
   const [channelId, setChannelId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('all');
   // The template open in the clone dialog (null = closed).
   const [cloneSource, setCloneSource] = useState<MessageTemplate | null>(null);
   // The approved template open in the test-send dialog (null = closed).
@@ -302,6 +358,7 @@ export function TemplateManager() {
   }, [visibleTemplates]);
   const listTemplates = visibleTemplates.filter((tpl) => {
     if (statusFilter !== 'all' && statusFilterOf(tpl) !== statusFilter) return false;
+    if (categoryFilter !== 'all' && tpl.category !== categoryFilter) return false;
     const q = search.trim().toLowerCase();
     return !q || tpl.name.toLowerCase().includes(q) || (tpl.body_text ?? '').toLowerCase().includes(q);
   });
@@ -402,7 +459,8 @@ export function TemplateManager() {
       setForm(emptyForm);
       setEditingId(null);
     } catch (err) {
-      console.error('Submit error:', err);
+      // Meta / validation rejections are expected outcomes shown in the
+      // toast — console.error would also raise the dev error overlay.
       toast.error(err instanceof Error ? err.message : t('toastSubmitFailed'));
     } finally {
       setSubmitting(false);
@@ -699,69 +757,80 @@ export function TemplateManager() {
         ) : null}
       </PageHero>
 
-      {visibleTemplates.length > 0 ? (
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+      {/* At-a-glance counts for the selected channel. */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <TemplateStat icon={Layers} tone="text-muted-foreground" value={statusCounts.all} label={t('statTotal')} />
+        <TemplateStat icon={CheckCircle2} tone="text-emerald-500" value={statusCounts.approved} label={t('statApproved')} />
+        <TemplateStat icon={Clock} tone="text-amber-500" value={statusCounts.pending} label={t('statInReview')} />
+        <TemplateStat icon={XCircle} tone="text-red-500" value={statusCounts.rejected} label={t('statRejected')} />
+      </div>
+
+      <div className="overflow-hidden rounded-2xl border border-border bg-card">
+        {/* Search + category + status filters. */}
+        <div className="flex flex-col gap-3 border-b border-border p-4 sm:flex-row sm:items-center sm:p-5">
           <div className="relative flex-1">
-            <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder={t('searchPlaceholder')}
-              aria-label={t('searchPlaceholder')}
-              className="h-9 bg-card pl-8"
+              placeholder={t('searchShort')}
+              aria-label={t('searchShort')}
+              className="h-10 bg-background pl-9"
             />
           </div>
-          <div className="flex flex-wrap gap-1.5" role="group" aria-label={t('statusFilter')}>
-            {STATUS_FILTERS.map((f) => (
-              <button
-                key={f}
-                type="button"
-                onClick={() => setStatusFilter(f)}
-                aria-pressed={statusFilter === f}
-                className={
-                  statusFilter === f
-                    ? 'rounded-full border border-primary bg-primary px-3 py-1 text-xs font-medium text-primary-foreground'
-                    : 'rounded-full border border-border bg-card px-3 py-1 text-xs font-medium text-muted-foreground hover:bg-muted'
-                }
-              >
-                {t(`filter.${f}`)}
-                <span className="ml-1.5 opacity-70">{statusCounts[f]}</span>
-              </button>
+          <FilterSelect
+            value={categoryFilter}
+            onChange={(v) => setCategoryFilter(v as CategoryFilter)}
+            label={t('categoryFilter')}
+            options={[
+              ['all', t('allCategories')],
+              ...CATEGORIES.map((c) => [c, c] as [string, string]),
+            ]}
+          />
+          <FilterSelect
+            value={statusFilter}
+            onChange={(v) => setStatusFilter(v as StatusFilter)}
+            label={t('statusFilter')}
+            options={[
+              ['all', t('allStatus')],
+              ['approved', t('statApproved')],
+              ['pending', t('statInReview')],
+              ['rejected', t('statRejected')],
+            ]}
+          />
+        </div>
+
+        {listTemplates.length === 0 ? (
+          <div className="flex flex-col items-center justify-center px-6 py-14 text-center">
+            <div className="mb-3 flex size-12 items-center justify-center rounded-full bg-violet-500/15 text-violet-500">
+              <FileText className="size-6" />
+            </div>
+            <p className="text-sm font-medium text-foreground">
+              {visibleTemplates.length === 0 ? t('noTemplates') : t('noMatches')}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {visibleTemplates.length === 0 ? t('createFirst') : t('noMatchesHint')}
+            </p>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3 p-4 sm:p-5">
+            {listTemplates.map((template) => (
+              <TemplateCard
+                key={template.id}
+                template={template}
+                deleting={deletingId === template.id}
+                onTest={() => setTestTemplate(template)}
+                onEdit={() => openEdit(template)}
+                onClone={() => setCloneSource(template)}
+                onDelete={() => {
+                  setDeleteError(null);
+                  setTemplateToDelete(template);
+                }}
+              />
             ))}
           </div>
-        </div>
-      ) : null}
-
-      {listTemplates.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-card px-6 py-14 text-center">
-          <div className="mb-3 flex size-12 items-center justify-center rounded-full bg-violet-500/15 text-violet-500">
-            <FileText className="size-6" />
-          </div>
-          <p className="text-sm font-medium text-foreground">
-            {visibleTemplates.length === 0 ? t('noTemplates') : t('noMatches')}
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {visibleTemplates.length === 0 ? t('createFirst') : t('noMatchesHint')}
-          </p>
-        </div>
-      ) : (
-        <div className="flex flex-col gap-3">
-          {listTemplates.map((template) => (
-            <TemplateCard
-              key={template.id}
-              template={template}
-              deleting={deletingId === template.id}
-              onTest={() => setTestTemplate(template)}
-              onEdit={() => openEdit(template)}
-              onClone={() => setCloneSource(template)}
-              onDelete={() => {
-                setDeleteError(null);
-                setTemplateToDelete(template);
-              }}
-            />
-          ))}
-        </div>
-      )}
+        )}
+      </div>
 
       <Dialog
         open={dialogOpen}

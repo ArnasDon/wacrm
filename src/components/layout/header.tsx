@@ -33,7 +33,7 @@ const pageTitles: Record<string, string> = {
 
 // Pages that render their own heading (PageHero) — the header leaves the
 // title out there instead of showing it twice.
-const HERO_PAGES = ["/whatsapp", "/templates"];
+const HERO_PAGES = ["/whatsapp", "/templates", "/broadcasts"];
 
 function getPageTitleKey(pathname: string): string {
   if (pageTitles[pathname]) return pageTitles[pathname];

@@ -10,6 +10,7 @@ import {
   validateTemplateName,
   validateTemplatePayload,
   type TemplatePayload,
+  normalizeTemplateButtons,
 } from './template-validators';
 
 const baseValid: TemplatePayload = {
@@ -273,5 +274,34 @@ describe('validateTemplatePayload — integration', () => {
         body_text: 'Hi {{1}}',
       }),
     ).toThrow(/exactly 1 sample/);
+  });
+});
+
+describe('normalizeTemplateButtons', () => {
+  it('adds https://, trims, and expands a bare {{1}} example to the full URL', () => {
+    expect(
+      normalizeTemplateButtons([
+        { type: 'URL', text: 'Go', url: ' ourl.cn/{{1}} ', example: '5454' },
+        { type: 'URL', text: 'Site', url: 'https://x.test/a' },
+        { type: 'QUICK_REPLY', text: 'Stop' },
+      ]),
+    ).toEqual([
+      { type: 'URL', text: 'Go', url: 'https://ourl.cn/{{1}}', example: 'https://ourl.cn/5454' },
+      { type: 'URL', text: 'Site', url: 'https://x.test/a' },
+      { type: 'QUICK_REPLY', text: 'Stop' },
+    ]);
+  });
+
+  it('keeps a full example as written', () => {
+    const [b] = normalizeTemplateButtons([
+      { type: 'URL', text: 'Go', url: 'https://ourl.cn/{{1}}', example: 'https://ourl.cn/77' },
+    ]);
+    expect(b).toMatchObject({ example: 'https://ourl.cn/77' });
+  });
+
+  it('then rejects {{1}} anywhere but the end', () => {
+    expect(() =>
+      validateButtons([{ type: 'URL', text: 'Go', url: 'https://x.test/{{1}}/page', example: 'https://x.test/a/page' }]),
+    ).toThrow(/very end/);
   });
 });

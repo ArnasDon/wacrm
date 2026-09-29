@@ -781,11 +781,23 @@ async function evaluateCondition(cfg: ConditionStepConfig, args: ExecuteArgs): P
       // contact_tags has no account_id column (its RLS keys off the parent
       // contact), so tenant scoping here relies on the contact-ownership
       // guard in runAutomationsForTrigger.
+      let operandTagId = cfg.operand
+      const UUID_REGEX =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+      if (!UUID_REGEX.test(operandTagId)) {
+        const { data: tagRow } = await db
+          .from('tags')
+          .select('id')
+          .ilike('name', operandTagId.trim())
+          .eq('account_id', args.automation.account_id)
+          .maybeSingle()
+        if (tagRow) operandTagId = tagRow.id
+      }
       const { count } = await db
         .from('contact_tags')
         .select('id', { count: 'exact', head: true })
         .eq('contact_id', args.contactId)
-        .eq('tag_id', cfg.operand)
+        .eq('tag_id', operandTagId)
       return (count ?? 0) > 0
     }
     case 'contact_field': {

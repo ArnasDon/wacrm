@@ -29,6 +29,12 @@ function fakeDb(options: FakeOptions = {}): SupabaseClient {
         eq() {
           return builder;
         },
+        ilike() {
+          return builder;
+        },
+        single() {
+          return builder.maybeSingle();
+        },
         maybeSingle() {
           if (table === 'contacts')
             return Promise.resolve({ data: contact, error: null });

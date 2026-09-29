@@ -12,7 +12,9 @@
     "signingIn": "Entrando...",
     "signIn": "Entrar",
     "noAccount": "Não tem uma conta?",
-    "createAccount": "Criar conta"
+    "createAccount": "Criar conta",
+    "linkExpired": "Esse link expirou. Para redefinir a senha, use “Esqueceu a senha?” para pedir um novo; se estava confirmando seu e-mail, cadastre-se novamente.",
+    "linkInvalid": "Não foi possível entrar com esse link. Se estava confirmando seu e-mail, ele já pode estar verificado — basta entrar abaixo. Para redefinir a senha, peça um novo link e abra-o no mesmo navegador em que o solicitou."
   },
   "Sidebar": {
     "title": "Modelo de CRM para WhatsApp",
@@ -1584,6 +1586,7 @@
       "webhookVerifyToken": "Token de verificação do webhook",
       "webhookVerifyTokenPlaceholder": "Crie um token de verificação personalizado",
       "webhookVerifyTokenHint": "Uma string personalizada criada por você. Deve corresponder ao token definido nas configurações de webhook da Meta.",
+      "webhookVerifyTokenSaved": "Salvo. Deixe como está para mantê-lo ou digite um novo valor para trocá-lo.",
       "twoStepPin": "PIN de verificação em duas etapas",
       "optional": "(opcional)",
       "pinPlaceholder": "PIN de 6 dígitos do Gerenciador do WhatsApp da Meta",
@@ -1816,7 +1819,7 @@
     },
     "aiConfig": {
       "title": "Configuração do agente",
-      "description": "Use sua própria chave da OpenAI ou da Anthropic. O wacrm chama o provedor diretamente com a sua chave — sem taxas de IA por usuário, e seus dados continuam seus. Isso alimenta as respostas redigidas por IA na caixa de entrada, o bot de resposta automática e o Playground.",
+      "description": "Use sua própria chave da OpenAI, Anthropic ou de uma API compatível com OpenAI. O wacrm chama o provedor diretamente com sua chave — sem taxas de IA por assento, e seus dados continuam sob seu controle. Isso alimenta as respostas redigidas por IA, o bot de resposta automática e o Playground.",
       "adminOnlyConfig": "Somente administradores e proprietários podem alterar a configuração de IA.",
       "loadFailed": "Falha ao carregar a configuração de IA",
       "providerAndKey": "Provedor e chave",
@@ -1852,7 +1855,11 @@
       "saveSuccess": "Assistente de IA salvo.",
       "saveFailed": "Falha ao salvar.",
       "removeSuccess": "Configuração de IA removida.",
-      "removeFailed": "Falha ao remover."
+      "removeFailed": "Falha ao remover.",
+      "providerOpenAiCompatible": "API compatível com OpenAI",
+      "baseUrl": "URL base",
+      "baseUrlHint": "URL base da API compatível com OpenAI, por exemplo https://api.groq.com/openai/v1. O caminho /chat/completions é adicionado automaticamente, a menos que você informe esse caminho.",
+      "missingBaseUrl": "Informe a URL base da API compatível com OpenAI."
     },
     "aiKnowledge": {
       "loadFailed": "Falha ao carregar a base de conhecimento",
@@ -1917,6 +1924,26 @@
     "emailPlaceholder": "you@example.com",
     "sending": "Enviando...",
     "sendLink": "Enviar link de redefinição"
+  },
+  "ResetPasswordPage": {
+    "title": "Escolha uma nova senha",
+    "desc": "Informe uma nova senha para a sua conta.",
+    "passwordLabel": "Nova senha",
+    "passwordPlaceholder": "Pelo menos 6 caracteres",
+    "confirmPasswordLabel": "Confirmar nova senha",
+    "confirmPasswordPlaceholder": "Repita a nova senha",
+    "submit": "Atualizar senha",
+    "saving": "Atualizando...",
+    "passwordsMismatch": "As senhas não coincidem",
+    "passwordTooShort": "A senha deve ter pelo menos 6 caracteres",
+    "checking": "Verificando seu link...",
+    "expiredTitle": "Este link não é mais válido",
+    "expiredDesc": "Links de redefinição de senha funcionam uma vez e expiram em pouco tempo. Peça um novo e abra-o no mesmo navegador em que o solicitou.",
+    "requestNewLink": "Pedir um novo link",
+    "backToSignIn": "Voltar ao login",
+    "successTitle": "Senha atualizada",
+    "successDesc": "Você está conectado com a nova senha.",
+    "continueToDashboard": "Ir para o painel"
   },
   "JoinPage": {
     "fail": {

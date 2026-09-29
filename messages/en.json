@@ -12,7 +12,9 @@
     "signingIn": "Signing in...",
     "signIn": "Sign in",
     "noAccount": "Don't have an account?",
-    "createAccount": "Create account"
+    "createAccount": "Create account",
+    "linkExpired": "That link has expired. For a password reset, use “Forgot password?” to request a new one; if you were confirming your email, sign up again.",
+    "linkInvalid": "That link couldn’t be used to sign you in. If you were confirming your email, it may already be verified — just sign in below. For a password reset, request a new link and open it in the same browser you requested it from."
   },
   "Sidebar": {
     "title": "CRM Template for WhatsApp",
@@ -1594,6 +1596,7 @@
       "webhookVerifyToken": "Webhook Verify Token",
       "webhookVerifyTokenPlaceholder": "Create a custom verify token",
       "webhookVerifyTokenHint": "A custom string you create. Must match the token you set in Meta webhook settings.",
+      "webhookVerifyTokenSaved": "Saved. Leave as is to keep it, or enter a new value to rotate.",
       "twoStepPin": "Two-step verification PIN",
       "optional": "(optional)",
       "pinPlaceholder": "6-digit PIN from Meta WhatsApp Manager",
@@ -1828,7 +1831,7 @@
     },
     "aiConfig": {
       "title": "Agent setup",
-      "description": "Bring your own OpenAI or Anthropic key. wacrm calls the provider directly with your key — no per-seat AI fees, and your data stays yours. This powers AI-drafted replies in the inbox, the auto-reply bot, and the Playground.",
+      "description": "Bring your own OpenAI, Anthropic, or OpenAI-compatible API key. wacrm calls the provider directly with your key — no per-seat AI fees, and your data stays yours. This powers AI-drafted replies in the inbox, the auto-reply bot, and the Playground.",
       "adminOnlyConfig": "Only admins and owners can change the AI configuration.",
       "loadFailed": "Failed to load AI configuration",
       "providerAndKey": "Provider & key",
@@ -1864,7 +1867,11 @@
       "saveSuccess": "AI assistant saved.",
       "saveFailed": "Failed to save.",
       "removeSuccess": "AI configuration removed.",
-      "removeFailed": "Failed to remove."
+      "removeFailed": "Failed to remove.",
+      "providerOpenAiCompatible": "OpenAI-compatible API",
+      "baseUrl": "Base URL",
+      "baseUrlHint": "Base URL for the OpenAI-compatible API, for example https://api.groq.com/openai/v1. /chat/completions is added automatically unless you include that path yourself.",
+      "missingBaseUrl": "Enter the Base URL for the OpenAI-compatible API."
     },
     "aiKnowledge": {
       "loadFailed": "Failed to load knowledge base",
@@ -1929,6 +1936,26 @@
     "emailPlaceholder": "you@example.com",
     "sending": "Sending...",
     "sendLink": "Send reset link"
+  },
+  "ResetPasswordPage": {
+    "title": "Choose a new password",
+    "desc": "Enter a new password for your account.",
+    "passwordLabel": "New password",
+    "passwordPlaceholder": "At least 6 characters",
+    "confirmPasswordLabel": "Confirm new password",
+    "confirmPasswordPlaceholder": "Repeat your new password",
+    "submit": "Update password",
+    "saving": "Updating...",
+    "passwordsMismatch": "Passwords do not match",
+    "passwordTooShort": "Password must be at least 6 characters",
+    "checking": "Checking your link...",
+    "expiredTitle": "This link is no longer valid",
+    "expiredDesc": "Password reset links work once and expire after a short while. Request a new one and open it in the same browser you requested it from.",
+    "requestNewLink": "Request a new link",
+    "backToSignIn": "Back to sign in",
+    "successTitle": "Password updated",
+    "successDesc": "You’re signed in with your new password.",
+    "continueToDashboard": "Continue to dashboard"
   },
   "JoinPage": {
     "fail": {

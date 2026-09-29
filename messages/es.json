@@ -12,7 +12,9 @@
     "signingIn": "Iniciando sesión...",
     "signIn": "Iniciar sesión",
     "noAccount": "¿No tienes una cuenta?",
-    "createAccount": "Crear cuenta"
+    "createAccount": "Crear cuenta",
+    "linkExpired": "Ese enlace expiró. Para restablecer la contraseña, usa “¿Olvidaste tu contraseña?” y pide uno nuevo; si estabas confirmando tu correo, regístrate de nuevo.",
+    "linkInvalid": "No se pudo iniciar sesión con ese enlace. Si estabas confirmando tu correo, es posible que ya esté verificado; inicia sesión abajo. Para restablecer la contraseña, pide un enlace nuevo y ábrelo en el mismo navegador desde el que lo solicitaste."
   },
   "Sidebar": {
     "title": "Plantilla de CRM para WhatsApp",
@@ -1584,6 +1586,7 @@
       "webhookVerifyToken": "Token de verificación del webhook",
       "webhookVerifyTokenPlaceholder": "Crea un token de verificación personalizado",
       "webhookVerifyTokenHint": "Una cadena personalizada que tú creas. Debe coincidir con el token que configuraste en los ajustes de webhook de Meta.",
+      "webhookVerifyTokenSaved": "Guardado. Déjalo así para conservarlo o escribe un valor nuevo para rotarlo.",
       "twoStepPin": "PIN de verificación en dos pasos",
       "optional": "(opcional)",
       "pinPlaceholder": "PIN de 6 dígitos del Administrador de WhatsApp de Meta",
@@ -1816,7 +1819,7 @@
     },
     "aiConfig": {
       "title": "Configuración del agente",
-      "description": "Usa tu propia clave de OpenAI o Anthropic. wacrm llama al proveedor directamente con tu clave: sin cargos de IA por usuario, y tus datos siguen siendo tuyos. Esto impulsa las respuestas redactadas con IA en la bandeja de entrada, el bot de respuesta automática y el Playground.",
+      "description": "Usa tu propia clave de OpenAI, Anthropic o de una API compatible con OpenAI. wacrm llama al proveedor directamente con tu clave, sin cargos de IA por puesto, y tus datos siguen siendo tuyos. Esto impulsa las respuestas redactadas por IA, el bot de respuesta automática y el Playground.",
       "adminOnlyConfig": "Solo los administradores y propietarios pueden cambiar la configuración de IA.",
       "loadFailed": "Error al cargar la configuración de IA",
       "providerAndKey": "Proveedor y clave",
@@ -1852,7 +1855,11 @@
       "saveSuccess": "Asistente de IA guardado.",
       "saveFailed": "Error al guardar.",
       "removeSuccess": "Configuración de IA eliminada.",
-      "removeFailed": "Error al eliminar."
+      "removeFailed": "Error al eliminar.",
+      "providerOpenAiCompatible": "API compatible con OpenAI",
+      "baseUrl": "URL base",
+      "baseUrlHint": "URL base de la API compatible con OpenAI, por ejemplo https://api.groq.com/openai/v1. /chat/completions se añade automáticamente, salvo que incluyas esa ruta.",
+      "missingBaseUrl": "Introduce la URL base de la API compatible con OpenAI."
     },
     "aiKnowledge": {
       "loadFailed": "Error al cargar la base de conocimiento",
@@ -1917,6 +1924,26 @@
     "emailPlaceholder": "you@example.com",
     "sending": "Enviando...",
     "sendLink": "Enviar enlace de restablecimiento"
+  },
+  "ResetPasswordPage": {
+    "title": "Elige una nueva contraseña",
+    "desc": "Ingresa una nueva contraseña para tu cuenta.",
+    "passwordLabel": "Nueva contraseña",
+    "passwordPlaceholder": "Al menos 6 caracteres",
+    "confirmPasswordLabel": "Confirmar nueva contraseña",
+    "confirmPasswordPlaceholder": "Repite la nueva contraseña",
+    "submit": "Actualizar contraseña",
+    "saving": "Actualizando...",
+    "passwordsMismatch": "Las contraseñas no coinciden",
+    "passwordTooShort": "La contraseña debe tener al menos 6 caracteres",
+    "checking": "Comprobando tu enlace...",
+    "expiredTitle": "Este enlace ya no es válido",
+    "expiredDesc": "Los enlaces para restablecer la contraseña funcionan una sola vez y expiran pronto. Pide uno nuevo y ábrelo en el mismo navegador desde el que lo solicitaste.",
+    "requestNewLink": "Pedir un enlace nuevo",
+    "backToSignIn": "Volver a iniciar sesión",
+    "successTitle": "Contraseña actualizada",
+    "successDesc": "Has iniciado sesión con tu nueva contraseña.",
+    "continueToDashboard": "Ir al panel"
   },
   "JoinPage": {
     "fail": {

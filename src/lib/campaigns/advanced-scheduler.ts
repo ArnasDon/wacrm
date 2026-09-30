@@ -22,6 +22,10 @@ import {
   type RunOutcome,
 } from '@/lib/campaigns/advanced-runner';
 import { LOCK_STALE_MS } from '@/lib/campaigns/advanced';
+import { dispatchCampaignToKafka } from '@/lib/campaigns/kafka-sender';
+import { claimCampaignStart } from '@/lib/campaigns/start-gate';
+import { refreshCampaignThroughput } from '@/lib/campaigns/throughput-level';
+import { kafkaEnabled } from '@/lib/kafka/config';
 import {
   BroadcastError,
   deliverBroadcast,
@@ -72,6 +76,38 @@ export async function driveCampaign(
 ): Promise<RunOutcome | null> {
   if (!(await claimCampaignRun(db, broadcastId))) return null;
   try {
+    // Campaign interval (delivery settings): wait for this campaign's
+    // turn to start; still gated at the end of the pass → yield.
+    const deadline = Date.now() + passBudgetMs();
+    if (!(await claimCampaignStart(db, broadcastId, deadline)))
+      return 'yielded';
+
+    // Send at each number's current Meta tier (80 or 1 000 msg/s).
+    const { data: bc } = await db
+      .from('broadcasts')
+      .select('account_id, config')
+      .eq('id', broadcastId)
+      .maybeSingle();
+    if (bc?.account_id) {
+      await refreshCampaignThroughput(
+        db,
+        bc.account_id as string,
+        ((bc.config as { channel_ids?: string[] } | null)?.channel_ids ??
+          []) as string[]
+      );
+    }
+
+    // Kafka configured: queue the recipients for the worker fleet. Falls
+    // back to sending in-process if the cluster can't be reached.
+    if (kafkaEnabled()) {
+      const res = await dispatchCampaignToKafka(db, broadcastId);
+      if (res.status !== 'publish_failed') {
+        return res.status === 'failed_all' ? 'finished' : 'yielded';
+      }
+      console.warn(
+        `[advanced-campaign] ${broadcastId}: Kafka unavailable, sending in-process`
+      );
+    }
     return await runAdvancedCampaign(db, broadcastId, {
       budgetMs: passBudgetMs(),
     });

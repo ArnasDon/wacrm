@@ -15,6 +15,11 @@ vi.mock('@/lib/whatsapp/encryption', () => ({
 
 import { MetaApiError } from '@/lib/whatsapp/meta-api';
 import { runAdvancedCampaign } from './advanced-runner';
+import { resetChannelLimiters } from './channel-limiter';
+import { resetWarmupLimiters } from './warmup-limiter';
+
+// These tests are about routing and outcomes, not pacing: no warm-up.
+process.env.WABA_START_TPS = 'off';
 
 // ------------------------------------------------------------
 // Tiny in-memory PostgREST stand-in: enough of the builder for the
@@ -157,6 +162,8 @@ function setup(recipients: number) {
 let seq = 0;
 beforeEach(() => {
   sendTemplateMessage.mockReset();
+  resetChannelLimiters();
+  resetWarmupLimiters();
   seq = 0;
 });
 
@@ -264,5 +271,155 @@ describe('runAdvancedCampaign', () => {
       'stopped'
     );
     expect(sendTemplateMessage).not.toHaveBeenCalled();
+  });
+});
+
+describe('planned distribution', () => {
+  it('sends each recipient on its planned channel and template', async () => {
+    sendTemplateMessage.mockImplementation(async () => ({
+      messageId: `wamid.${seq++}`,
+    }));
+    const { tables, db } = setup(8);
+    tables.broadcast_recipients.forEach((r, i) => {
+      const row = r.row_data as Record<string, string>;
+      row.__channel = i % 2 ? 'c2' : 'c1';
+      row.__template = i % 2 ? 'promo_b:en_US' : 'promo_a:en_US';
+    });
+
+    expect(await runAdvancedCampaign(db, 'b1', { budgetMs: 10_000 })).toBe(
+      'finished'
+    );
+
+    for (const [i, r] of tables.broadcast_recipients.entries()) {
+      expect(r).toMatchObject({
+        status: 'sent',
+        whatsapp_config_id: i % 2 ? 'c2' : 'c1',
+        template_name: i % 2 ? 'promo_b' : 'promo_a',
+      });
+    }
+  });
+
+  it("moves a stopped channel's planned share to the other channel", async () => {
+    sendTemplateMessage.mockImplementation(
+      async (args: { phoneNumberId: string }) => {
+        if (args.phoneNumberId === 'p1')
+          throw new MetaApiError('Invalid token', {
+            code: 190,
+            httpStatus: 401,
+          });
+        return { messageId: `wamid.${seq++}` };
+      }
+    );
+    const { tables, db } = setup(6);
+    tables.broadcast_recipients.forEach(
+      (r) => ((r.row_data as Record<string, string>).__channel = 'c1')
+    );
+
+    expect(await runAdvancedCampaign(db, 'b1', { budgetMs: 10_000 })).toBe(
+      'finished'
+    );
+    expect(
+      tables.broadcast_recipients.every(
+        (r) => r.status === 'sent' && r.whatsapp_config_id === 'c2'
+      )
+    ).toBe(true);
+  });
+});
+
+describe('delivery settings', () => {
+  const metaError = () =>
+    new MetaApiError('(#135000) Generic user error', {
+      code: 135000,
+      httpStatus: 400,
+    });
+
+  it('stop on Meta API error OFF: only that job fails, the campaign continues', async () => {
+    sendTemplateMessage.mockImplementation(async (args: { to: string }) => {
+      if (args.to.endsWith('03')) throw metaError();
+      return { messageId: `wamid.${seq++}` };
+    });
+    const { tables, db } = setup(8);
+
+    expect(await runAdvancedCampaign(db, 'b1', { budgetMs: 10_000 })).toBe(
+      'finished'
+    );
+    const failed = tables.broadcast_recipients.filter(
+      (r) => r.status === 'failed'
+    );
+    expect(failed).toHaveLength(1);
+    expect(failed[0].error_message).toContain('[135000]');
+    expect(
+      tables.broadcast_recipients.filter((r) => r.status === 'sent')
+    ).toHaveLength(7);
+  });
+
+  it('stop on Meta API error ON: the job fails and this campaign pauses; the rest stays pending', async () => {
+    sendTemplateMessage.mockImplementation(async (args: { to: string }) => {
+      if (args.to.endsWith('00')) throw metaError();
+      return { messageId: `wamid.${seq++}` };
+    });
+    const { tables, db } = setup(40);
+    (tables.broadcasts[0].config as Record<string, unknown>).delivery = {
+      stop_on_meta_error: true,
+    };
+    (tables.broadcasts[0].config as Record<string, unknown>).speed = 2; // slow, so the pause lands early
+
+    expect(
+      await runAdvancedCampaign(db, 'b1', { budgetMs: 10_000, maxLanes: 1 })
+    ).toBe('stopped');
+    expect(tables.broadcasts[0].status).toBe('paused');
+    expect(
+      String(
+        (tables.broadcasts[0].config as Record<string, unknown>).paused_reason
+      )
+    ).toContain('135000');
+    const recs = tables.broadcast_recipients;
+    expect(recs.filter((r) => r.status === 'failed')).toHaveLength(1);
+    expect(recs.filter((r) => r.status === 'pending').length).toBeGreaterThan(
+      20
+    );
+  });
+
+  it('held_for_quality_assessment is a successful send; with the setting on it pauses the campaign', async () => {
+    sendTemplateMessage.mockImplementation(async (args: { to: string }) => ({
+      messageId: `wamid.${seq++}`,
+      messageStatus: args.to.endsWith('00')
+        ? 'held_for_quality_assessment'
+        : 'accepted',
+    }));
+    const { tables, db } = setup(40);
+    (tables.broadcasts[0].config as Record<string, unknown>).delivery = {
+      pause_on_quality_hold: true,
+    };
+    (tables.broadcasts[0].config as Record<string, unknown>).speed = 2;
+
+    expect(
+      await runAdvancedCampaign(db, 'b1', { budgetMs: 10_000, maxLanes: 1 })
+    ).toBe('stopped');
+    const held = tables.broadcast_recipients.find(
+      (r) => r.meta_message_status === 'held_for_quality_assessment'
+    );
+    expect(held).toMatchObject({
+      status: 'sent',
+      whatsapp_message_id: expect.stringMatching(/^wamid\./),
+    });
+    expect(
+      tables.broadcast_recipients.filter((r) => r.status === 'failed')
+    ).toHaveLength(0);
+    expect(tables.broadcasts[0].status).toBe('paused');
+  });
+
+  it('held_for_quality_assessment with the setting off: just sent, campaign continues', async () => {
+    sendTemplateMessage.mockImplementation(async () => ({
+      messageId: `wamid.${seq++}`,
+      messageStatus: 'held_for_quality_assessment',
+    }));
+    const { tables, db } = setup(6);
+    expect(await runAdvancedCampaign(db, 'b1', { budgetMs: 10_000 })).toBe(
+      'finished'
+    );
+    expect(tables.broadcast_recipients.every((r) => r.status === 'sent')).toBe(
+      true
+    );
   });
 });

@@ -29,6 +29,7 @@ import { resolveTemplateRow } from '@/lib/whatsapp/template-body';
 import type { MessageTemplate } from '@/types';
 import { findOrCreateContact } from '@/lib/api/v1/contacts';
 import { loadDefaultChannel } from '@/lib/whatsapp/channels';
+import { clearCampaignWarmup } from '@/lib/campaigns/warmup-limiter';
 
 /** Thrown by createBroadcast on a caller-visible failure; route maps it. */
 export class BroadcastError extends Error {
@@ -370,4 +371,6 @@ export async function finalizeBroadcastStatus(
       updated_at: new Date().toISOString(),
     })
     .eq('id', broadcastId);
+  // Done: drop its per-channel warm-up state.
+  await clearCampaignWarmup(broadcastId);
 }

@@ -1,6 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from 'react';
 import { useTranslations } from 'next-intl';
 import {
   AlertTriangle,
@@ -20,6 +27,12 @@ import {
   XCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
+
+import {
+  getChannelSyncState,
+  requestChannelSync,
+  subscribeChannelSync,
+} from '@/lib/whatsapp/channel-sync-client';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -80,6 +93,15 @@ export function ChannelsPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [confirmRemove, setConfirmRemove] = useState<Channel | null>(null);
+  // Background sync with Meta (quality, tier, throughput, status, names,
+  // phone number…): runs on every page change (ChannelAutoSync in the
+  // shell); this page shows its progress and results live.
+  const syncState = useSyncExternalStore(
+    subscribeChannelSync,
+    getChannelSyncState,
+    getChannelSyncState,
+  );
+  const { syncing, lastSync, failed: syncFailed } = syncState;
 
   const load = useCallback(async () => {
     try {
@@ -100,9 +122,21 @@ export function ChannelsPage() {
     }
   }, [t]);
 
+  // Show what's saved at once; the background sync then updates it.
   useEffect(() => {
-    void load();
+    void load().then(() => requestChannelSync());
   }, [load]);
+
+  // Fresh data from any sync (this page, another page, Sync now).
+  useEffect(() => {
+    if (syncState.channels) setChannels(syncState.channels);
+  }, [syncState.channels]);
+
+  async function syncNow() {
+    const result = await requestChannelSync({ force: true });
+    if (result.error) toast.error(t('sync.failed'), { description: result.error });
+    else toast.success(t('sync.done'));
+  }
 
   function replaceChannel(next: Channel) {
     setChannels((prev) =>
@@ -328,6 +362,42 @@ export function ChannelsPage() {
               ]}
               label={t('filters.tier')}
             />
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-2 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1.5">
+              {syncing ? (
+                <>
+                  <Loader2 className="size-3.5 animate-spin" />
+                  {t('sync.syncing')}
+                </>
+              ) : lastSync ? (
+                <>
+                  <CheckCircle2 className="size-3.5 text-emerald-500" />
+                  {t('sync.synced')}
+                </>
+              ) : null}
+              {!syncing && syncFailed.length > 0 ? (
+                <span
+                  className="ml-2 flex items-center gap-1 text-amber-600 dark:text-amber-400"
+                  title={syncFailed
+                    .map((f) => `${channels.find((c) => c.id === f.id)?.name ?? f.id}: ${f.error}`)
+                    .join('\n')}
+                >
+                  <AlertTriangle className="size-3.5" />
+                  {t('sync.someFailed', { count: syncFailed.length })}
+                </span>
+              ) : null}
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              disabled={syncing}
+              onClick={() => void syncNow()}
+            >
+              <RefreshCw className={cn('size-3.5', syncing && 'animate-spin')} />
+              {t('sync.now')}
+            </Button>
           </div>
 
           <div className={cn('hidden px-6 pt-4 pb-2 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase', ROW_GRID)}>

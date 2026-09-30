@@ -38,3 +38,70 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
+
+  # ------------------------------------------------------------------
+  # Kafka (local development / self-hosting) — opt in with:
+  #   docker compose --profile kafka up -d kafka          # broker only
+  #   docker compose --profile kafka up -d                # + app + worker
+  #
+  # Single-node KRaft broker (no ZooKeeper). Two listeners:
+  #   kafka:9092      for containers (set KAFKA_BROKERS=kafka:9092)
+  #   localhost:9094  for `npm run dev` on the host
+  # In production use Amazon MSK instead (see docs/kafka.md).
+  # ------------------------------------------------------------------
+  kafka:
+    image: apache/kafka:3.9.1
+    profiles: ['kafka']
+    ports:
+      - '9094:9094'
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: INTERNAL://:9092,EXTERNAL://:9094,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://localhost:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'false'
+      KAFKA_NUM_PARTITIONS: 6
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    restart: unless-stopped
+
+  # ------------------------------------------------------------------
+  # Redis — one shared speed limit per WhatsApp number across all
+  # campaigns and workers (src/lib/campaigns/channel-limiter.ts).
+  #   redis:6379      for containers (REDIS_URL=redis://redis:6379)
+  #   localhost:6379  for `npm run dev` (REDIS_URL=redis://localhost:6379)
+  # In production use Amazon ElastiCache (see docs/kafka.md).
+  # ------------------------------------------------------------------
+  redis:
+    image: redis:7.4-alpine
+    profiles: ['kafka']
+    ports:
+      - '6379:6379'
+    # Limiter state only (rebuilt in a second) — no persistence needed.
+    command: ['redis-server', '--save', '', '--appendonly', 'no']
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    profiles: ['kafka']
+    env_file:
+      - .env.local
+    environment:
+      KAFKA_BROKERS: kafka:9092
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      - kafka
+      - redis
+    restart: unless-stopped
+
+volumes:
+  kafka-data:

@@ -52,10 +52,53 @@ export interface AdvancedCampaignConfig {
    * deleted), keyed by channel id, with the reason Meta gave.
    */
   exhausted?: Record<string, Record<string, string>>;
+  /** Runtime (Kafka mode): when the pending recipients were last queued. */
+  kafka_dispatched_at?: string | null;
+  /** Wizard mode it was created in (display only). */
+  mode?: 'standard' | 'advanced';
+  /**
+   * Templates chosen per channel, in fallback order. When set, a channel
+   * only sends its own list; `templates` is then their union.
+   */
+  channel_templates?: Record<string, CampaignTemplateRef[]>;
+  /** How the audience was split over channel × template pairs. */
+  distribution?: 'channel' | 'template' | 'matrix';
+  /** Where the audience came from (display only). */
+  audience_source?: 'all' | 'tags' | 'segment' | 'manual' | 'csv';
+  /** A saved draft's wizard state (status 'draft' only). */
+  draft_state?: unknown;
+  /** "Advanced delivery settings" chosen in the wizard. */
+  delivery?: DeliverySettings;
+  /** Runtime: when the campaign first started sending (interval gate). */
+  started_at?: string | null;
+  /** Runtime: why the campaign was paused (status 'paused'). */
+  paused_reason?: string | null;
 }
 
+export interface DeliverySettings {
+  /** Start at least this many seconds after the previous campaign started (0/undefined = off). */
+  interval_seconds?: number;
+  /** Pause when Meta accepts a message as 'held_for_quality_assessment'. */
+  pause_on_quality_hold?: boolean;
+  /** Pause this campaign when a send fails with a Meta API error. */
+  stop_on_meta_error?: boolean;
+}
+
+/** Gap between campaign starts when "Campaign interval" is on. */
+export const CAMPAIGN_INTERVAL_SECONDS = 30;
+/** Meta's message_status for a message held back to check its quality. */
+export const QUALITY_HOLD_STATUS = 'held_for_quality_assessment';
+
+/** Per-recipient row_data keys for the planned channel / template. */
+export const ROW_CHANNEL = '__channel';
+export const ROW_TEMPLATE = '__template';
+
 export const SPEED_MIN = 1;
-export const SPEED_MAX = 80;
+/**
+ * Meta caps each number at 80 msg/s (standard) or 1 000 msg/s (high
+ * throughput tier); the sender also caps each channel at its own tier.
+ */
+export const SPEED_MAX = 1000;
 export const SPEED_DEFAULT = 10;
 export const MAX_CHANNELS = 20;
 export const MAX_TEMPLATES = 10;
@@ -69,6 +112,38 @@ export const LOCK_STALE_MS = 2 * 60 * 1000;
 
 export const templateKey = (t: CampaignTemplateRef) =>
   `${t.name}:${t.language}`;
+
+export interface CampaignTemplateUse extends CampaignTemplateRef {
+  /** Channels sending this template (same Meta account). */
+  channelIds: string[];
+}
+
+/**
+ * The templates a campaign actually sends, one per (Meta business
+ * account, name, language): two channels on different WABAs using a
+ * template of the same name send two different templates; two channels
+ * on the same WABA share one. Channels without a known WABA count on
+ * their own.
+ */
+export function campaignTemplateUses(
+  config: Pick<
+    AdvancedCampaignConfig,
+    'channel_ids' | 'templates' | 'channel_templates'
+  >,
+  channels: { id: string; waba_id?: string | null }[]
+): CampaignTemplateUse[] {
+  const uses = new Map<string, CampaignTemplateUse>();
+  for (const id of config.channel_ids) {
+    const waba = channels.find((c) => c.id === id)?.waba_id || `channel:${id}`;
+    for (const ref of config.channel_templates?.[id] ?? config.templates) {
+      const key = `${waba}|${templateKey(ref)}`;
+      const use = uses.get(key) ?? { ...ref, channelIds: [] };
+      use.channelIds.push(id);
+      uses.set(key, use);
+    }
+  }
+  return [...uses.values()];
+}
 
 // ------------------------------------------------------------
 // CSV

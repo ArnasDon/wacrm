@@ -32,7 +32,19 @@ export function AdvancedBreakdown({
 }) {
   const t = useTranslations('Broadcasts.detail.advancedInfo');
   const format = useFormatter();
-  const config = broadcast.config;
+  // A draft (or an older row) may carry no channels / templates yet.
+  const raw = broadcast.config;
+  const config = useMemo(
+    () =>
+      raw
+        ? {
+            ...raw,
+            channel_ids: raw.channel_ids ?? [],
+            templates: raw.templates ?? [],
+          }
+        : null,
+    [raw]
+  );
 
   const rows = useMemo(() => {
     if (!config) return [];

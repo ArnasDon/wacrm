@@ -64,6 +64,9 @@ const SECURITY_HEADERS = [
 ] as const;
 
 const nextConfig: NextConfig = {
+  // Kafka client, MSK IAM signer (AWS SDK) and Redis client run as plain
+  // Node modules, not bundled.
+  serverExternalPackages: ["kafkajs", "aws-msk-iam-sasl-signer-js", "ioredis"],
   // Emit a self-contained server bundle (.next/standalone) so the
   // Docker image can run without node_modules or the Next CLI.
   // Harmless outside Docker: `next start` keeps working as before.

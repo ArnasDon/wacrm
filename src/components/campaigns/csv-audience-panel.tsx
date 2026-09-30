@@ -6,7 +6,13 @@ import { useFormatter, useTranslations } from 'next-intl';
 
 import { cn } from '@/lib/utils';
 import { MAX_ROWS, guessColumn, parseCsvTable } from '@/lib/campaigns/advanced';
-import type { AudienceStats, CsvData } from './advanced/types';
+import type { CsvData } from './wizard/state';
+
+interface AudienceStats {
+  valid: number;
+  invalid: number;
+  duplicates: number;
+}
 
 const PREVIEW_ROWS = 5;
 
@@ -26,10 +32,13 @@ export function CsvAudiencePanel({
   value,
   onChange,
   stats,
+  hideStats = false,
 }: {
   value: CsvSelection;
   onChange: (patch: Partial<CsvSelection>) => void;
   stats: AudienceStats;
+  /** The caller shows its own audience-health counts. */
+  hideStats?: boolean;
 }) {
   const state = value;
   const t = useTranslations('Broadcasts.advanced.audience');
@@ -181,46 +190,48 @@ export function CsvAudiencePanel({
             <p className="text-muted-foreground -mt-2 text-xs md:col-span-2">
               {t('phoneHint')}
             </p>
-            <div className="grid grid-cols-3 gap-3 md:col-span-2">
-              {[
-                {
-                  label: t('valid'),
-                  value: stats.valid,
-                  tone: 'text-emerald-600 dark:text-emerald-400',
-                },
-                {
-                  label: t('invalid'),
-                  value: stats.invalid,
-                  tone: stats.invalid
-                    ? 'text-red-600 dark:text-red-400'
-                    : 'text-foreground',
-                },
-                {
-                  label: t('duplicates'),
-                  value: stats.duplicates,
-                  tone: stats.duplicates
-                    ? 'text-amber-600 dark:text-amber-400'
-                    : 'text-foreground',
-                },
-              ].map((s) => (
-                <div
-                  key={s.label}
-                  className="border-border bg-background rounded-lg border px-4 py-3"
-                >
-                  <p className="text-muted-foreground font-mono text-[11px] tracking-[0.15em] uppercase">
-                    {s.label}
-                  </p>
-                  <p
-                    className={cn(
-                      'mt-1 font-mono text-2xl tabular-nums',
-                      s.tone
-                    )}
+            {hideStats ? null : (
+              <div className="grid grid-cols-3 gap-3 md:col-span-2">
+                {[
+                  {
+                    label: t('valid'),
+                    value: stats.valid,
+                    tone: 'text-emerald-600 dark:text-emerald-400',
+                  },
+                  {
+                    label: t('invalid'),
+                    value: stats.invalid,
+                    tone: stats.invalid
+                      ? 'text-red-600 dark:text-red-400'
+                      : 'text-foreground',
+                  },
+                  {
+                    label: t('duplicates'),
+                    value: stats.duplicates,
+                    tone: stats.duplicates
+                      ? 'text-amber-600 dark:text-amber-400'
+                      : 'text-foreground',
+                  },
+                ].map((s) => (
+                  <div
+                    key={s.label}
+                    className="border-border bg-background rounded-lg border px-4 py-3"
                   >
-                    {format.number(s.value)}
-                  </p>
-                </div>
-              ))}
-            </div>
+                    <p className="text-muted-foreground font-mono text-[11px] tracking-[0.15em] uppercase">
+                      {s.label}
+                    </p>
+                    <p
+                      className={cn(
+                        'mt-1 font-mono text-2xl tabular-nums',
+                        s.tone
+                      )}
+                    >
+                      {format.number(s.value)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
             {stats.valid === 0 ? (
               <p className="text-sm text-red-600 md:col-span-2 dark:text-red-400">
                 {t('errorNoValid')}

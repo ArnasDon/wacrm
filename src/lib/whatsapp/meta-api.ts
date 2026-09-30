@@ -12,10 +12,19 @@
 import { isBusinessScopedUserId } from './wa-identity'
 
 const META_API_VERSION = 'v21.0'
-const META_API_BASE = `https://graph.facebook.com/${META_API_VERSION}`
+// META_GRAPH_BASE_URL points the client at a stand-in Graph server —
+// only for load tests (scripts/loadtest-meta.ts, scripts/mock-meta.ts).
+// Unset in real use.
+const META_API_BASE = `${(process.env.META_GRAPH_BASE_URL || 'https://graph.facebook.com').replace(/\/$/, '')}/${META_API_VERSION}`
 
 export interface MetaSendResult {
   messageId: string
+  /**
+   * Meta's `message_status` for the accepted message, when it sends one
+   * (e.g. 'accepted', 'held_for_quality_assessment'). An accepted send —
+   * the final delivery status arrives by webhook.
+   */
+  messageStatus?: string | null
 }
 
 export interface MetaPhoneInfo {
@@ -610,6 +619,13 @@ export interface SendTemplateMessageArgs {
   messageParams?: SendTimeParams
   /** Meta's message_id of the message being replied to. */
   contextMessageId?: string
+  /**
+   * HTTP client override — the campaign sender passes a keep-alive /
+   * HTTP/2 pooled fetch (lib/whatsapp/meta-http) for high throughput.
+   */
+  fetchImpl?: typeof fetch
+  /** Abort the request after this long (ms). */
+  timeoutMs?: number
 }
 
 /**
@@ -688,21 +704,44 @@ export async function sendTemplateMessage(
   args: SendTemplateMessageArgs
 ): Promise<MetaSendResult> {
   const { url, body } = buildTemplateMessageRequest(args)
-  const { accessToken } = args
+  const { accessToken, fetchImpl = fetch, timeoutMs } = args
 
-  const response = await fetch(url, {
+  const response = await fetchImpl(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${accessToken}`,
     },
     body: JSON.stringify(body),
+    ...(timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
   })
   if (!response.ok) {
     await throwMetaError(response, `Meta API error: ${response.status}`)
   }
-  const data = await response.json()
-  return { messageId: data.messages[0].id }
+  const data = (await response.json().catch(() => null)) as {
+    messages?: { id?: string; message_status?: string }[]
+    error?: MetaErrorResponse['error']
+  } | null
+  const messageId = data?.messages?.[0]?.id
+  // An error is Meta's `error` object (with its code, e.g. 135000) — not
+  // the mere presence of a `message` field, and never an accepted id.
+  if (!messageId && data?.error) {
+    const e = data.error
+    throw new MetaApiError(e.message ?? `Meta API error: ${response.status}`, {
+      code: e.code ?? null,
+      subcode: e.error_subcode ?? null,
+      type: e.type ?? null,
+      fbtraceId: e.fbtrace_id ?? null,
+      httpStatus: response.status,
+      details: e.error_data?.details ?? null,
+    })
+  }
+  if (!messageId) {
+    throw new MetaApiError('Meta accepted the request but returned no message id', {
+      httpStatus: response.status,
+    })
+  }
+  return { messageId, messageStatus: data?.messages?.[0]?.message_status ?? null }
 }
 
 // ============================================================

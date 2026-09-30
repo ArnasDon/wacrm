@@ -48,8 +48,14 @@ export function PresenceHeartbeat() {
       return "online";
     };
 
+    // Network blips (laptop wake, Wi-Fi switch, dev-server restart) are
+    // expected and fix themselves on the next beat: warn once per outage
+    // instead of raising an error. Real RPC errors still log as errors.
+    let networkDown = false;
+
     const beat = async () => {
       if (cancelled) return;
+      if (typeof navigator !== "undefined" && !navigator.onLine) return;
       // Coalesce bursts: a tab refocus fires visibilitychange AND focus
       // together, so skip a beat within 1s of the last to avoid two RPCs
       // in the same frame. The 30s interval is never affected.
@@ -59,11 +65,24 @@ export function PresenceHeartbeat() {
       const { error } = await supabase.rpc("touch_presence", {
         p_status: currentStatus(),
       });
-      if (error && !cancelled) {
-        // Non-fatal: presence is best-effort. Log once per failure so a
-        // misconfigured RPC is visible without spamming.
-        console.error("[PresenceHeartbeat] touch_presence failed:", error.message);
+      if (cancelled) return;
+      if (!error) {
+        networkDown = false;
+        return;
       }
+      if (/failed to fetch|network|load failed/i.test(error.message)) {
+        if (!networkDown) {
+          networkDown = true;
+          console.warn(
+            "[PresenceHeartbeat] offline, retrying on the next beat:",
+            error.message,
+          );
+        }
+        return;
+      }
+      // Non-fatal: presence is best-effort. Logged so a misconfigured RPC
+      // is visible.
+      console.error("[PresenceHeartbeat] touch_presence failed:", error.message);
     };
 
     // Activity listeners. `passive` so we never block scroll/input.

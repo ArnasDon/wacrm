@@ -1,0 +1,20 @@
+# syntax=docker/dockerfile:1
+#
+# Kafka worker image — consumers + campaign scheduler, no web server.
+# Runs src/workers/kafka-worker.ts with tsx. Deploy it next to the app
+# (e.g. an ECS service in the same VPC as your MSK cluster) and scale the
+# number of tasks with campaign volume.
+#
+#   docker build -f Dockerfile.worker -t wacrm-worker .
+#   docker run --env-file .env.local wacrm-worker
+FROM node:20-alpine
+WORKDIR /app
+ENV NODE_ENV=production
+COPY package.json package-lock.json ./
+# tsx (a devDependency) runs the TypeScript entry point.
+RUN npm ci --include=dev && npm cache clean --force
+COPY tsconfig.json ./
+COPY src ./src
+RUN addgroup -S worker && adduser -S worker -G worker
+USER worker
+CMD ["npm", "run", "worker:kafka"]

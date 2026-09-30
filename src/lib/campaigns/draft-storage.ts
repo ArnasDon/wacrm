@@ -10,6 +10,8 @@
 
 export const STANDARD_DRAFT_KEY = 'wacrm:campaign-draft:standard';
 export const ADVANCED_DRAFT_KEY = 'wacrm:campaign-draft:advanced';
+/** The campaign wizard's autosave (current). */
+export const WIZARD_DRAFT_KEY = 'wacrm:campaign-wizard:v2';
 
 interface Stored<T> {
   v: 1;

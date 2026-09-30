@@ -1,17 +1,18 @@
-'use client';
+import { CampaignWizardClient } from '@/components/campaigns/wizard/campaign-wizard-client';
 
-import dynamic from 'next/dynamic';
-
-// Client-only so the wizard can restore its saved draft on the first
-// render (sessionStorage doesn't exist during server rendering).
-const StandardCampaignWizard = dynamic(
-  () =>
-    import('@/components/campaigns/standard-wizard').then(
-      (m) => m.StandardCampaignWizard
-    ),
-  { ssr: false }
-);
-
-export default function NewBroadcastPage() {
-  return <StandardCampaignWizard />;
+export default async function NewCampaignPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ mode?: string; draft?: string; name?: string }>;
+}) {
+  const { mode, draft, name } = await searchParams;
+  return (
+    <CampaignWizardClient
+      // A new ?draft= opens a different campaign: remount.
+      key={draft ?? 'new'}
+      initialMode={mode === 'standard' ? 'standard' : 'advanced'}
+      initialName={typeof name === 'string' ? name.slice(0, 120) : ''}
+      draftId={typeof draft === 'string' ? draft : null}
+    />
+  );
 }

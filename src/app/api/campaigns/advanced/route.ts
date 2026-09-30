@@ -1,17 +1,23 @@
 // ============================================================
-// POST /api/campaigns/advanced — create an advanced campaign.
+// POST /api/campaigns/advanced — launch (or schedule) a campaign built
+// in the campaign wizard (standard and advanced modes alike).
 //
 // Body:
-//   name, channel_ids[], templates[{name, language}] (priority order),
-//   phone_column, name_column?, country_code?, mappings{templateKey →
-//   TemplateMapping}, speed, schedule {mode: 'now'|'later', at?},
-//   rows[] (CSV rows as {column: value})
+//   name, mode ('standard' | 'advanced'),
+//   channel_ids[], channel_templates { channelId: [{name, language}] },
+//   distribution ('channel' | 'template' | 'matrix'), max_contacts (0 = all),
+//   speed (msg/s per channel),
+//   audience { source: 'all'|'tags'|'segment'|'manual'|'csv', tagIds?,
+//              tagMatch?, segment?, excludeTagIds?, rows?, phoneColumn?,
+//              nameColumn? },
+//   mappings { templateKey: TemplateMapping },
+//   schedule { mode: 'now' | 'later', at? }, draft_id?
 //
-// Validates the plan against the account's channels and approved
-// templates, turns every CSV phone into a contact, persists the
-// campaign + its pending recipients (each carrying only the CSV cells
-// its variables need), then either starts the first runner pass in
-// `after()` ("send now") or leaves it 'scheduled' for the scheduler.
+// Validates everything against the account's channels and approved
+// templates, resolves the audience (lib/campaigns/audience), splits it
+// over channel × template pairs (lib/campaigns/distribution), stamps
+// each recipient with its planned pair, then starts sending in `after()`
+// or leaves it scheduled. The server does all sending.
 // ============================================================
 
 import { NextResponse, after } from 'next/server';
@@ -24,12 +30,14 @@ import {
   RATE_LIMITS,
 } from '@/lib/rate-limit';
 import {
+  CAMPAIGN_INTERVAL_SECONDS,
   MAX_CHANNELS,
   MAX_ROWS,
   MAX_TEMPLATES,
+  ROW_CHANNEL,
+  ROW_TEMPLATE,
   SPEED_MAX,
   SPEED_MIN,
-  normalizeCsvPhone,
   referencedColumns,
   templateKey,
   templateSlots,
@@ -38,6 +46,17 @@ import {
   type TemplateMapping,
   type ValueSource,
 } from '@/lib/campaigns/advanced';
+import {
+  resolveAudience,
+  CONTACT_FIELDS,
+  type AudienceSpec,
+} from '@/lib/campaigns/audience';
+import {
+  assignPairs,
+  buildPairs,
+  planDistribution,
+  type DistributionMode,
+} from '@/lib/campaigns/distribution';
 import { upsertContactsByPhone } from '@/lib/campaigns/contacts';
 import { driveCampaign } from '@/lib/campaigns/advanced-scheduler';
 import type { MessageTemplate } from '@/types';
@@ -46,11 +65,14 @@ export const maxDuration = 300;
 
 const bad = (error: string, status = 400) =>
   NextResponse.json({ error }, { status });
+const isRef = (t: unknown): t is CampaignTemplateRef =>
+  !!t &&
+  typeof (t as CampaignTemplateRef).name === 'string' &&
+  typeof (t as CampaignTemplateRef).language === 'string';
 
 export async function POST(request: Request) {
   try {
     const { accountId, userId } = await requireRole('agent');
-
     const limit = checkRateLimit(
       `campaign-advanced:${userId}`,
       RATE_LIMITS.broadcast
@@ -61,6 +83,8 @@ export async function POST(request: Request) {
     if (!body || typeof body !== 'object') return bad('Invalid JSON body');
 
     const name = typeof body.name === 'string' ? body.name.trim() : '';
+    const mode: 'standard' | 'advanced' =
+      body.mode === 'standard' ? 'standard' : 'advanced';
     const channelIds: string[] = Array.isArray(body.channel_ids)
       ? [
           ...new Set<string>(
@@ -70,55 +94,66 @@ export async function POST(request: Request) {
           ),
         ]
       : [];
-    const templates: CampaignTemplateRef[] = Array.isArray(body.templates)
-      ? body.templates
-          .filter(
-            (t: unknown): t is CampaignTemplateRef =>
-              !!t &&
-              typeof (t as CampaignTemplateRef).name === 'string' &&
-              typeof (t as CampaignTemplateRef).language === 'string'
-          )
-          .map((t: CampaignTemplateRef) => ({
-            name: t.name,
-            language: t.language,
-          }))
-      : [];
-    const phoneColumn =
-      typeof body.phone_column === 'string' ? body.phone_column : '';
-    const nameColumn =
-      typeof body.name_column === 'string' && body.name_column
-        ? body.name_column
-        : null;
-    const countryCode =
-      typeof body.country_code === 'string' ? body.country_code : '';
+    const rawCt =
+      body.channel_templates && typeof body.channel_templates === 'object'
+        ? body.channel_templates
+        : {};
+    const channelTemplates: Record<string, CampaignTemplateRef[]> = {};
+    for (const id of channelIds) {
+      const list = Array.isArray(rawCt[id]) ? rawCt[id].filter(isRef) : [];
+      const seen = new Set<string>();
+      channelTemplates[id] = list
+        .map((t: CampaignTemplateRef) => ({
+          name: t.name,
+          language: t.language,
+        }))
+        .filter(
+          (t: CampaignTemplateRef) =>
+            !seen.has(templateKey(t)) && !!seen.add(templateKey(t))
+        );
+    }
+    const distribution: DistributionMode = [
+      'channel',
+      'template',
+      'matrix',
+    ].includes(body.distribution)
+      ? body.distribution
+      : 'channel';
+    const maxContacts = Math.max(0, Math.floor(Number(body.max_contacts) || 0));
+    const speed = Math.round(Number(body.speed));
     const mappings: Record<string, TemplateMapping> =
       body.mappings && typeof body.mappings === 'object' ? body.mappings : {};
-    const speed = Math.round(Number(body.speed));
-    const rows: Record<string, string>[] = Array.isArray(body.rows)
-      ? body.rows
-      : [];
     const scheduleMode = body.schedule?.mode === 'later' ? 'later' : 'now';
     const scheduledAt =
       scheduleMode === 'later' ? new Date(body.schedule?.at) : null;
+    const draftId = typeof body.draft_id === 'string' ? body.draft_id : null;
+    // Advanced delivery settings (all off unless ticked).
+    const d =
+      body.delivery && typeof body.delivery === 'object' ? body.delivery : {};
+    const delivery = {
+      interval_seconds: d.interval === true ? CAMPAIGN_INTERVAL_SECONDS : 0,
+      pause_on_quality_hold: d.pauseOnQualityHold === true,
+      stop_on_meta_error: d.stopOnMetaError === true,
+    };
 
+    const a = body.audience ?? {};
+    const source = ['all', 'tags', 'segment', 'manual', 'csv'].includes(
+      a.source
+    )
+      ? a.source
+      : null;
     if (!name) return bad('Give the campaign a name');
     if (channelIds.length === 0) return bad('Select at least one channel');
     if (channelIds.length > MAX_CHANNELS)
       return bad(`At most ${MAX_CHANNELS} channels per campaign`);
-    if (templates.length === 0) return bad('Select at least one template');
-    if (templates.length > MAX_TEMPLATES)
-      return bad(`At most ${MAX_TEMPLATES} templates per campaign`);
-    if (!phoneColumn) return bad('Choose the column that holds phone numbers');
+    if (mode === 'standard' && channelIds.length !== 1)
+      return bad('A standard campaign sends from one channel');
+    if (!source) return bad('Choose an audience');
     if (!Number.isFinite(speed) || speed < SPEED_MIN || speed > SPEED_MAX) {
       return bad(
         `Speed must be between ${SPEED_MIN} and ${SPEED_MAX} messages per second`
       );
     }
-    if (rows.length === 0) return bad('The CSV has no rows');
-    if (rows.length > MAX_ROWS)
-      return bad(
-        `A campaign is capped at ${MAX_ROWS.toLocaleString('en')} rows`
-      );
     if (
       scheduledAt &&
       (Number.isNaN(scheduledAt.getTime()) ||
@@ -126,24 +161,36 @@ export async function POST(request: Request) {
     ) {
       return bad('Pick a schedule time in the future');
     }
+    const union: CampaignTemplateRef[] = [];
+    for (const id of channelIds) {
+      if (channelTemplates[id].length === 0)
+        return bad('Choose at least one template for every channel');
+      for (const t of channelTemplates[id]) {
+        if (!union.some((u) => templateKey(u) === templateKey(t)))
+          union.push(t);
+      }
+    }
+    if (union.length > MAX_TEMPLATES)
+      return bad(`At most ${MAX_TEMPLATES} different templates per campaign`);
+    if (mode === 'standard' && union.length !== 1)
+      return bad('A standard campaign sends one template');
 
     const db = supabaseAdmin();
 
-    // ── Channels ───────────────────────────────────────────────────
+    // ── Channels + templates (approved, on each channel's WABA) ────
     const { data: channels } = await db
       .from('whatsapp_config')
-      .select('id, name, verified_name, display_phone_number, waba_id')
+      .select('id, name, verified_name, display_phone_number, waba_id, status')
       .eq('account_id', accountId)
       .in('id', channelIds);
     if (!channels || channels.length !== channelIds.length)
       return bad('One of the selected channels no longer exists');
 
-    // ── Templates: every channel needs at least one approved one ──
     const { data: templateRows } = await db
       .from('message_templates')
       .select('*')
       .eq('account_id', accountId)
-      .in('name', [...new Set(templates.map((t) => t.name))]);
+      .in('name', [...new Set(union.map((t) => t.name))]);
     const approved = ((templateRows ?? []) as MessageTemplate[]).filter(
       (t) => t.status === 'APPROVED'
     );
@@ -152,31 +199,43 @@ export async function POST(request: Request) {
         (t) =>
           t.name === ref.name &&
           (t.language ?? 'en_US') === ref.language &&
-          (wabaId === undefined || t.waba_id === wabaId || !t.waba_id)
+          (wabaId === undefined || !t.waba_id || t.waba_id === wabaId)
       );
-
-    for (const ref of templates) {
-      if (!rowFor(ref))
-        return bad(`Template "${ref.name}" (${ref.language}) is not approved`);
-    }
     for (const ch of channels) {
-      if (!templates.some((ref) => rowFor(ref, ch.waba_id))) {
-        const label = ch.name || ch.verified_name || ch.display_phone_number;
-        return bad(
-          `None of the selected templates is approved on channel "${label}"`
-        );
+      const label = ch.name || ch.verified_name || ch.display_phone_number;
+      for (const ref of channelTemplates[ch.id]) {
+        if (!rowFor(ref, ch.waba_id))
+          return bad(
+            `Template "${ref.name}" isn't approved on channel "${label}"`
+          );
       }
     }
 
-    // ── Mappings: every variable of every template must be filled ─
-    const headers = new Set(Object.keys(rows[0] ?? {}));
-    if (!headers.has(phoneColumn))
-      return bad(`Column "${phoneColumn}" is not in the CSV`);
+    // ── Audience ──────────────────────────────────────────────────
+    const rows: Record<string, string>[] = Array.isArray(a.rows) ? a.rows : [];
+    if ((source === 'csv' || source === 'manual') && rows.length === 0)
+      return bad('The audience has no rows');
+    if (rows.length > MAX_ROWS)
+      return bad(
+        `A campaign is capped at ${MAX_ROWS.toLocaleString('en')} rows`
+      );
+    const phoneColumn =
+      typeof a.phoneColumn === 'string' ? a.phoneColumn : 'phone';
+    const nameColumn =
+      typeof a.nameColumn === 'string' && a.nameColumn ? a.nameColumn : null;
+
+    // ── Variables: every template's slots must be filled ──────────
+    const fromRows = source === 'csv' || source === 'manual';
+    const available = new Set(
+      fromRows ? Object.keys(rows[0] ?? {}) : [...CONTACT_FIELDS]
+    );
     const sourceOk = (s: ValueSource | undefined) =>
       !!s &&
-      (s.type === 'static' ? s.value.trim() !== '' : headers.has(s.value));
+      (s.type === 'static'
+        ? s.value.trim() !== ''
+        : available.has(s.value) || (!fromRows && s.value.startsWith('cf:')));
     const cleanMappings: Record<string, TemplateMapping> = {};
-    for (const ref of templates) {
+    for (const ref of union) {
       const key = templateKey(ref);
       const slots = templateSlots(rowFor(ref)!);
       const m: TemplateMapping = mappings[key] ?? { body: {} };
@@ -188,7 +247,7 @@ export async function POST(request: Request) {
         return bad(`Template "${ref.name}": map the header variable`);
       for (const i of slots.urlButtons) {
         if (!sourceOk(m.buttons?.[String(i)]))
-          return bad(`Template "${ref.name}": map the URL of button ${i + 1}`);
+          return bad(`Template "${ref.name}": map the link of button ${i + 1}`);
       }
       cleanMappings[key] = {
         body: Object.fromEntries(
@@ -208,57 +267,70 @@ export async function POST(request: Request) {
       };
     }
 
+    const keep = referencedColumns({
+      mappings: cleanMappings,
+      name_column: fromRows ? nameColumn : null,
+    });
+    const spec: AudienceSpec = fromRows
+      ? {
+          source: 'rows',
+          rows,
+          phoneColumn,
+          nameColumn,
+          excludeTagIds: a.excludeTagIds,
+        }
+      : {
+          source:
+            source === 'tags'
+              ? 'tags'
+              : source === 'segment'
+                ? 'segment'
+                : 'all',
+          tagIds: Array.isArray(a.tagIds) ? a.tagIds : [],
+          tagMatch: a.tagMatch === 'all' ? 'all' : 'any',
+          segment: a.segment,
+          excludeTagIds: Array.isArray(a.excludeTagIds) ? a.excludeTagIds : [],
+        };
+    const audience = await resolveAudience(db, accountId, spec, keep);
+    let recipients = audience.recipients;
+    if (maxContacts > 0) recipients = recipients.slice(0, maxContacts);
+    if (recipients.length === 0)
+      return bad('No one in this audience has a valid phone number');
+
+    // Uploaded / pasted numbers become contacts (recipients FK contacts).
+    const missing = recipients.filter((r) => !r.contactId);
+    if (missing.length) {
+      const ids = await upsertContactsByPhone(
+        db,
+        accountId,
+        userId,
+        missing.map((r) => ({ phone: r.phone, name: r.name }))
+      );
+      for (const r of missing) r.contactId = ids.get(r.phone) ?? null;
+      recipients = recipients.filter((r) => r.contactId);
+    }
+
+    // ── Split over channel × template pairs ───────────────────────
+    const pairs = buildPairs(channelIds, channelTemplates);
+    const plan = assignPairs(
+      planDistribution(pairs, distribution, recipients.length)
+    );
+
     const config: AdvancedCampaignConfig = {
       version: 1,
+      mode,
       channel_ids: channelIds,
-      templates,
+      templates: union,
+      channel_templates: channelTemplates,
+      distribution,
+      audience_source: source,
       phone_column: phoneColumn,
-      name_column: nameColumn,
+      name_column: fromRows ? nameColumn : null,
       mappings: cleanMappings,
       speed,
+      delivery,
       exhausted: {},
     };
-
-    // ── Rows → recipients ─────────────────────────────────────────
-    const keep = referencedColumns(config);
-    const seen = new Set<string>();
-    let invalid = 0;
-    let duplicates = 0;
-    const planned: {
-      phone: string;
-      name: string | null;
-      data: Record<string, string>;
-    }[] = [];
-    for (const r of rows) {
-      const phone = normalizeCsvPhone(
-        String(r?.[phoneColumn] ?? ''),
-        countryCode
-      );
-      if (!phone) {
-        invalid++;
-        continue;
-      }
-      if (seen.has(phone)) {
-        duplicates++;
-        continue;
-      }
-      seen.add(phone);
-      const data: Record<string, string> = { __phone: phone };
-      for (const c of keep) data[c] = String(r?.[c] ?? '');
-      planned.push({
-        phone,
-        name: nameColumn ? String(r?.[nameColumn] ?? '') || null : null,
-        data,
-      });
-    }
-    if (planned.length === 0) return bad('No row has a valid phone number');
-
-    const contactIds = await upsertContactsByPhone(
-      db,
-      accountId,
-      userId,
-      planned
-    );
 
     const { data: broadcast, error: bcError } = await db
       .from('broadcasts')
@@ -268,17 +340,18 @@ export async function POST(request: Request) {
         name,
         kind: 'advanced',
         config,
-        template_name: templates[0].name,
-        template_language: templates[0].language,
+        template_name: union[0].name,
+        template_language: union[0].language,
         audience_filter: {
-          type: 'csv',
-          rows: rows.length,
-          invalid,
-          duplicates,
+          type: source,
+          total: audience.total,
+          invalid: audience.invalid,
+          duplicates: audience.duplicates,
+          excluded: audience.excluded,
         },
         status: scheduleMode === 'later' ? 'scheduled' : 'sending',
         scheduled_at: scheduledAt ? scheduledAt.toISOString() : null,
-        total_recipients: planned.length,
+        total_recipients: recipients.length,
         sent_count: 0,
         delivered_count: 0,
         read_count: 0,
@@ -288,36 +361,40 @@ export async function POST(request: Request) {
       .select('id')
       .single();
     if (bcError || !broadcast) {
-      console.error('[campaigns/advanced] insert failed:', bcError?.message);
+      console.error('[campaigns] insert failed:', bcError?.message);
       return bad('Failed to create the campaign', 500);
     }
 
-    const recipients = planned
-      .filter((p) => contactIds.has(p.phone))
-      .map((p) => ({
-        broadcast_id: broadcast.id,
-        contact_id: contactIds.get(p.phone)!,
-        status: 'pending',
-        row_data: p.data,
-      }));
-    for (let i = 0; i < recipients.length; i += 1000) {
+    const recipientRows = recipients.map((r, i) => ({
+      broadcast_id: broadcast.id,
+      contact_id: r.contactId!,
+      status: 'pending',
+      row_data: {
+        ...r.data,
+        __phone: r.phone,
+        [ROW_CHANNEL]: plan[i].channelId,
+        [ROW_TEMPLATE]: plan[i].key,
+      },
+    }));
+    for (let i = 0; i < recipientRows.length; i += 1000) {
       const { error } = await db
         .from('broadcast_recipients')
-        .insert(recipients.slice(i, i + 1000));
+        .insert(recipientRows.slice(i, i + 1000));
       if (error) {
-        console.error(
-          '[campaigns/advanced] recipient insert failed:',
-          error.message
-        );
+        console.error('[campaigns] recipient insert failed:', error.message);
         await db.from('broadcasts').delete().eq('id', broadcast.id);
         return bad('Failed to save the recipients', 500);
       }
     }
-    if (recipients.length !== planned.length) {
+
+    // Launched from a saved draft: the draft has become this campaign.
+    if (draftId) {
       await db
         .from('broadcasts')
-        .update({ total_recipients: recipients.length })
-        .eq('id', broadcast.id);
+        .delete()
+        .eq('id', draftId)
+        .eq('account_id', accountId)
+        .eq('status', 'draft');
     }
 
     if (scheduleMode === 'now') {
@@ -331,14 +408,15 @@ export async function POST(request: Request) {
         success: true,
         broadcast_id: broadcast.id,
         recipients: recipients.length,
-        invalid,
-        duplicates,
+        invalid: audience.invalid,
+        duplicates: audience.duplicates,
+        excluded: audience.excluded,
         status: scheduleMode === 'later' ? 'scheduled' : 'sending',
       },
       { status: 201 }
     );
   } catch (error) {
-    console.error('Error in advanced campaign POST:', error);
+    console.error('Error in campaign POST:', error);
     return toErrorResponse(error);
   }
 }

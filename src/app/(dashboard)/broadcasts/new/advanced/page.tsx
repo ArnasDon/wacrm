@@ -1,15 +1,6 @@
-import { AdvancedCampaignWizardClient } from '@/components/campaigns/advanced/advanced-wizard-client';
+import { redirect } from 'next/navigation';
 
-export default async function NewAdvancedCampaignPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ name?: string | string[] }>;
-}) {
-  // The campaign is named on the type chooser (/broadcasts/new).
-  const { name } = await searchParams;
-  return (
-    <AdvancedCampaignWizardClient
-      initialName={typeof name === 'string' ? name.slice(0, 120) : ''}
-    />
-  );
+// The advanced wizard is now a mode of the campaign wizard.
+export default function NewAdvancedCampaignPage() {
+  redirect('/broadcasts/new?mode=advanced');
 }

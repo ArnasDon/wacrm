@@ -13,7 +13,6 @@ import {
   Download,
   Loader2,
   PlayCircle,
-  RotateCcw,
   ScrollText,
   Trash2,
 } from 'lucide-react';
@@ -22,15 +21,21 @@ import { useFormatter, useTranslations } from 'next-intl';
 
 import { cn } from '@/lib/utils';
 import {
-  averageThroughput,
-  currentThroughput,
+  campaignSpeed,
+  channelSpeeds,
   etaSeconds,
 } from '@/lib/campaigns/metrics';
 import { LiveMonitor } from '@/components/campaigns/live-monitor';
 import { CampaignAnalytics } from '@/components/campaigns/campaign-analytics';
 import { CampaignLogs } from '@/components/campaigns/campaign-logs';
+import { CampaignSpeedLog } from '@/components/campaigns/campaign-speed-log';
+import { DraftLaunchPanel } from '@/components/campaigns/draft-launch-panel';
+import {
+  initialState,
+  type WizardState,
+} from '@/components/campaigns/wizard/state';
 import { AdvancedBreakdown } from '@/components/campaigns/advanced-breakdown';
-import { LOCK_STALE_MS } from '@/lib/campaigns/advanced';
+import { LOCK_STALE_MS, campaignTemplateUses } from '@/lib/campaigns/advanced';
 
 type Tab = 'monitor' | 'analytics' | 'logs';
 const TABS: { key: Tab; icon: typeof Activity }[] = [
@@ -41,6 +46,13 @@ const TABS: { key: Tab; icon: typeof Activity }[] = [
 
 // Refresh cadence while the campaign is sending.
 const POLL_INTERVAL_MS = 5_000;
+const RECIPIENT_PAGE = 1000;
+const PARALLEL_PAGES = 4;
+/** What the page, its tabs and the export read — nothing else. */
+const RECIPIENT_COLUMNS =
+  'id, broadcast_id, contact_id, status, created_at, sent_at, delivered_at, read_at, replied_at, error_message, template_name, template_language, whatsapp_config_id, contact:contacts(name, phone)';
+const AFTER_SEND_POLL_MS = 15_000;
+const AFTER_SEND_REFRESH_MS = 30 * 60_000;
 
 const STATUS_BADGE: Record<Broadcast['status'], string> = {
   sending:
@@ -48,6 +60,8 @@ const STATUS_BADGE: Record<Broadcast['status'], string> = {
   scheduled:
     'border-blue-500/40 bg-blue-500/10 text-blue-700 dark:text-blue-300',
   draft: 'border-border bg-muted text-muted-foreground',
+  paused:
+    'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300',
   sent: 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300',
   failed: 'border-red-500/40 bg-red-500/10 text-red-700 dark:text-red-300',
 };
@@ -89,6 +103,7 @@ interface ChannelInfo {
   name: string | null;
   display_phone_number: string | null;
   is_default: boolean;
+  waba_id: string | null;
 }
 
 export default function BroadcastDetailPage() {
@@ -111,6 +126,12 @@ export default function BroadcastDetailPage() {
     'pending' | 'failed' | null
   >(null);
   const [now, setNow] = useState(() => Date.now());
+  const [speedInput, setSpeedInput] = useState<{
+    firstSentAt: string | null;
+    lastSentAt: string | null;
+    recentSends: number;
+    totalSends: number;
+  }>({ firstSentAt: null, lastSentAt: null, recentSends: 0, totalSends: 0 });
 
   const fetchData = useCallback(async () => {
     try {
@@ -125,14 +146,73 @@ export default function BroadcastDetailPage() {
       if (bcError) throw bcError;
       setBroadcast(bc);
 
-      const { data: recs, error: recsError } = await supabase
-        .from('broadcast_recipients')
-        .select('*, contact:contacts(*)')
-        .eq('broadcast_id', broadcastId)
-        .order('created_at', { ascending: false });
+      // Every recipient (a single select is capped at 1 000 rows, which cut
+      // off Analytics and Logs on big campaigns), only the columns the page
+      // uses — not the uploaded CSV row or the whole contact — and a few
+      // pages at a time: this reloads every few seconds.
+      const page = (from: number) =>
+        supabase
+          .from('broadcast_recipients')
+          .select(RECIPIENT_COLUMNS)
+          .eq('broadcast_id', broadcastId)
+          .order('created_at', { ascending: false })
+          .order('id', { ascending: true })
+          .range(from, from + RECIPIENT_PAGE - 1);
+      const expected = Math.max(1, bc.total_recipients ?? 0);
+      const starts: number[] = [];
+      for (let from = 0; from < expected; from += RECIPIENT_PAGE)
+        starts.push(from);
+      const recs: BroadcastRecipient[] = [];
+      for (let i = 0; i < starts.length; i += PARALLEL_PAGES) {
+        const results = await Promise.all(
+          starts.slice(i, i + PARALLEL_PAGES).map(page)
+        );
+        for (const { data, error: recsError } of results) {
+          if (recsError) throw recsError;
+          recs.push(...((data ?? []) as unknown as BroadcastRecipient[]));
+        }
+      }
+      // More rows than total_recipients says (shouldn't happen): keep going.
+      for (
+        let from = starts.length * RECIPIENT_PAGE;
+        ;
+        from += RECIPIENT_PAGE
+      ) {
+        const { data, error: recsError } = await page(from);
+        if (recsError) throw recsError;
+        if (!data?.length) break;
+        recs.push(...(data as unknown as BroadcastRecipient[]));
+        if (data.length < RECIPIENT_PAGE) break;
+      }
 
-      if (recsError) throw recsError;
-      setRecipients(recs ?? []);
+      // Speed from exact counts: first / last send and sends in the last 10 s.
+      const sentAt = () =>
+        supabase
+          .from('broadcast_recipients')
+          .select('sent_at')
+          .eq('broadcast_id', broadcastId)
+          .not('sent_at', 'is', null);
+      const [firstRes, lastRes, recentRes, sentRes] = await Promise.all([
+        sentAt().order('sent_at', { ascending: true }).limit(1),
+        sentAt().order('sent_at', { ascending: false }).limit(1),
+        supabase
+          .from('broadcast_recipients')
+          .select('id', { count: 'exact', head: true })
+          .eq('broadcast_id', broadcastId)
+          .gte('sent_at', new Date(Date.now() - 10_000).toISOString()),
+        supabase
+          .from('broadcast_recipients')
+          .select('id', { count: 'exact', head: true })
+          .eq('broadcast_id', broadcastId)
+          .not('sent_at', 'is', null),
+      ]);
+      setSpeedInput({
+        firstSentAt: firstRes.data?.[0]?.sent_at ?? null,
+        lastSentAt: lastRes.data?.[0]?.sent_at ?? null,
+        recentSends: recentRes.count ?? 0,
+        totalSends: sentRes.count ?? 0,
+      });
+      setRecipients(recs);
       setNow(Date.now());
     } catch (err) {
       setError(err instanceof Error ? err.message : t('notFound'));
@@ -164,13 +244,31 @@ export default function BroadcastDetailPage() {
   // Live refresh while sending; paused while the tab is hidden.
   const sending = broadcast?.status === 'sending';
   const live = sending || broadcast?.status === 'scheduled';
+  // Big campaigns reload every recipient, so refresh them less often.
+  const pollMs =
+    (broadcast?.total_recipients ?? 0) > 5000 ? 15_000 : POLL_INTERVAL_MS;
   useEffect(() => {
     if (!live) return;
     const id = setInterval(() => {
       if (document.visibilityState === 'visible') void fetchData();
-    }, POLL_INTERVAL_MS);
+    }, pollMs);
     return () => clearInterval(id);
-  }, [live, fetchData]);
+  }, [live, fetchData, pollMs]);
+
+  // After it finishes, delivered / read receipts keep arriving from Meta
+  // for a while: keep the counts (delivery rate…) fresh for 30 minutes
+  // after the last send, at a slower pace.
+  const lastSentAt = speedInput.lastSentAt;
+  useEffect(() => {
+    if (live || !lastSentAt) return;
+    const until = Date.parse(lastSentAt) + AFTER_SEND_REFRESH_MS;
+    if (Date.now() >= until) return;
+    const id = setInterval(() => {
+      if (Date.now() >= until) return clearInterval(id);
+      if (document.visibilityState === 'visible') void fetchData();
+    }, AFTER_SEND_POLL_MS);
+    return () => clearInterval(id);
+  }, [live, lastSentAt, fetchData]);
 
   // Running campaigns open on the live monitor, finished ones on
   // analytics; `?tab=` keeps the choice across reloads.
@@ -196,6 +294,35 @@ export default function BroadcastDetailPage() {
     const c = channels.find((x) => x.id === id);
     return c ? (c.name ?? c.display_phone_number ?? '') : '';
   };
+  // One per template actually sent: same-named templates on different
+  // Meta accounts are different templates.
+  // A saved draft keeps the wizard state instead of channel_ids /
+  // templates; the header and the Live Monitor read that instead.
+  const rawDraft =
+    broadcast?.status === 'draft'
+      ? (broadcast.config as { draft_state?: Partial<WizardState> } | null)
+          ?.draft_state
+      : undefined;
+  const draftState: WizardState | undefined = rawDraft
+    ? {
+        ...initialState(rawDraft.mode === 'standard' ? 'standard' : 'advanced'),
+        ...rawDraft,
+      }
+    : undefined;
+  const headerChannelIds: string[] =
+    broadcast?.config?.channel_ids ?? draftState?.channelIds ?? [];
+  const templateUses = broadcast?.config?.channel_ids
+    ? campaignTemplateUses(broadcast.config, channels)
+    : draftState
+      ? campaignTemplateUses(
+          {
+            channel_ids: draftState.channelIds,
+            templates: [],
+            channel_templates: draftState.channelTemplates,
+          },
+          channels
+        )
+      : [];
   // A standard campaign records its channel in config (older ones went
   // through the account default).
   const chosenChannelId = !isAdvanced
@@ -210,10 +337,6 @@ export default function BroadcastDetailPage() {
 
   const pendingCount = useMemo(
     () => recipients.filter((r) => r.status === 'pending').length,
-    [recipients]
-  );
-  const retryableCount = useMemo(
-    () => recipients.filter((r) => r.status === 'failed').length,
     [recipients]
   );
   const startedAt = useMemo(() => {
@@ -350,16 +473,35 @@ export default function BroadcastDetailPage() {
   const lockAge = broadcast.delivery_locked_at
     ? now - new Date(broadcast.delivery_locked_at).getTime()
     : Infinity;
+  const paused = broadcast.status === 'paused';
   const isStalled =
     broadcast.status === 'sending' &&
     pendingCount > 0 &&
     (!isAdvanced || lockAge > LOCK_STALE_MS);
 
-  // Throughput: live rate over the last minute while sending, otherwise
-  // the campaign's average from first to last send.
-  const liveRate = sending ? currentThroughput(recipients, now) : 0;
-  const rate = sending ? liveRate : averageThroughput(recipients);
-  const eta = sending ? etaSeconds(pendingCount, liveRate) : 0;
+  // Throughput: live over the last 10 s while sending, otherwise the
+  // average from first to last send — per channel, then added up (each
+  // number has its own Meta limit: 78 + 80 = 158 msg/s).
+  const fmtRate = (r: number) =>
+    r >= 10 ? Math.round(r) : Math.round(r * 10) / 10;
+  const perChannel = channelSpeeds(recipients, { sending, now });
+  const rate = perChannel.length
+    ? perChannel.reduce((sum, c) => sum + fmtRate(c.rate), 0)
+    : campaignSpeed({ sending, now, ...speedInput });
+  const rateBreakdown =
+    perChannel.length > 1
+      ? perChannel
+          .map(
+            (c) =>
+              `${channelName(c.channelId) || t('top.unknown')}: ${fmtRate(c.rate)} msg/s`
+          )
+          .join(' + ')
+      : undefined;
+  const remaining = Math.max(
+    0,
+    broadcast.total_recipients - broadcast.sent_count - broadcast.failed_count
+  );
+  const eta = sending ? etaSeconds(remaining, rate ?? 0) : 0;
   const deliveryRate =
     broadcast.sent_count > 0
       ? Math.round((broadcast.delivered_count / broadcast.sent_count) * 1000) /
@@ -371,10 +513,9 @@ export default function BroadcastDetailPage() {
       label: t('top.throughput'),
       value:
         rate != null && rate > 0
-          ? t('top.perSecond', {
-              rate: rate >= 10 ? Math.round(rate) : Math.round(rate * 10) / 10,
-            })
+          ? t('top.perSecond', { rate: fmtRate(rate) })
           : t('top.unknown'),
+      title: rateBreakdown,
     },
     {
       label: t('top.eta'),
@@ -425,26 +566,27 @@ export default function BroadcastDetailPage() {
           <p className="text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-xs tracking-[0.15em] uppercase">
             {isAdvanced && broadcast.config ? (
               <>
-                <span className="border-primary/40 bg-primary/10 text-primary rounded border px-1.5 py-px">
-                  {t('advancedInfo.badge')}
-                </span>
+                {broadcast.config.mode !== 'standard' ? (
+                  <span className="border-primary/40 bg-primary/10 text-primary rounded border px-1.5 py-px">
+                    {t('advancedInfo.badge')}
+                  </span>
+                ) : null}
                 <span
-                  title={broadcast.config.templates
-                    .map((x) => x.name)
-                    .join(' → ')}
+                  title={templateUses
+                    .map(
+                      (u) =>
+                        `${u.channelIds.map(channelName).join(', ')}: ${u.name}`
+                    )
+                    .join('\n')}
                 >
                   {t('advancedInfo.templatesCount', {
-                    count: broadcast.config.templates.length,
+                    count: templateUses.length,
                   })}
                 </span>
                 <ChevronRight className="size-3" />
-                <span
-                  title={broadcast.config.channel_ids
-                    .map(channelName)
-                    .join(', ')}
-                >
+                <span title={headerChannelIds.map(channelName).join(', ')}>
                   {t('advancedInfo.channelsCount', {
-                    count: broadcast.config.channel_ids.length,
+                    count: headerChannelIds.length,
                   })}
                 </span>
               </>
@@ -538,20 +680,23 @@ export default function BroadcastDetailPage() {
         </div>
       </div>
 
-      {/* Resume / retry (issue #472) — only when something is outstanding. */}
+      {/* Resume (issue #472) — only when recipients were never sent. Failed
+          sends are final: a finished campaign offers no retry. */}
       {broadcast.status !== 'scheduled' &&
-        (isStalled ||
-          retryableCount > 0 ||
-          (!isAdvanced && pendingCount > 0)) && (
+        (paused || isStalled || (!isAdvanced && pendingCount > 0)) && (
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/5 p-4">
             <div className="text-sm">
               <p className="text-foreground font-medium">
-                {isStalled ? t('resumeStalledTitle') : t('resumeTitle')}
+                {paused ? t('pausedTitle') : t('resumeStalledTitle')}
               </p>
-              <p className="text-muted-foreground mt-0.5">
-                {isStalled
-                  ? t('resumeStalledHint', { count: pendingCount })
-                  : t('resumeHint', { count: retryableCount })}
+              <p className="text-muted-foreground mt-0.5 break-words">
+                {paused
+                  ? t('pausedHint', {
+                      reason:
+                        broadcast.config?.paused_reason ?? t('pausedTitle'),
+                      count: pendingCount,
+                    })
+                  : t('resumeStalledHint', { count: pendingCount })}
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -567,21 +712,6 @@ export default function BroadcastDetailPage() {
                     <PlayCircle className="h-3.5 w-3.5" />
                   )}
                   {t('resumePending', { count: pendingCount })}
-                </Button>
-              )}
-              {retryableCount > 0 && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleResume('failed')}
-                  disabled={resumingScope !== null}
-                >
-                  {resumingScope === 'failed' ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <RotateCcw className="h-3.5 w-3.5" />
-                  )}
-                  {t('retryFailed', { count: retryableCount })}
                 </Button>
               )}
             </div>
@@ -619,7 +749,10 @@ export default function BroadcastDetailPage() {
               <dt className="text-muted-foreground font-mono text-[11px] tracking-[0.2em] uppercase">
                 {s.label}
               </dt>
-              <dd className="text-foreground font-mono text-lg tabular-nums">
+              <dd
+                className="text-foreground font-mono text-lg tabular-nums"
+                title={'title' in s ? s.title : undefined}
+              >
                 {s.value}
               </dd>
             </div>
@@ -628,15 +761,17 @@ export default function BroadcastDetailPage() {
       </div>
 
       <div role="tabpanel">
-        {tab === 'monitor' ? (
+        {tab === 'monitor' && draftState ? (
+          <DraftLaunchPanel draftId={broadcast.id} state={draftState} />
+        ) : tab === 'monitor' ? (
           <div className="space-y-6">
             <LiveMonitor
               broadcast={broadcast}
               recipients={recipients}
               pendingCount={pendingCount}
-              isStalled={isStalled}
+              isStalled={isStalled || paused}
             />
-            {isAdvanced ? (
+            {isAdvanced && !draftState ? (
               <AdvancedBreakdown
                 broadcast={broadcast}
                 recipients={recipients}
@@ -651,7 +786,7 @@ export default function BroadcastDetailPage() {
               recipients={recipients}
               pendingCount={pendingCount}
             />
-            {isAdvanced ? (
+            {isAdvanced && !draftState ? (
               <AdvancedBreakdown
                 broadcast={broadcast}
                 recipients={recipients}
@@ -660,11 +795,18 @@ export default function BroadcastDetailPage() {
             ) : null}
           </div>
         ) : (
-          <CampaignLogs
-            recipients={recipients}
-            onExport={handleExport}
-            channelName={isAdvanced ? channelName : undefined}
-          />
+          <div className="space-y-6">
+            <CampaignSpeedLog
+              broadcastId={broadcastId}
+              live={sending}
+              channelName={channelName}
+            />
+            <CampaignLogs
+              recipients={recipients}
+              onExport={handleExport}
+              channelName={isAdvanced ? channelName : undefined}
+            />
+          </div>
         )}
       </div>
     </div>

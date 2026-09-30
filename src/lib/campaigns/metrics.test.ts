@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import type { BroadcastRecipient } from '@/types';
 import {
   averageThroughput,
+  campaignSpeed,
+  channelSpeeds,
   campaignEvents,
   currentThroughput,
   etaSeconds,
@@ -105,5 +107,145 @@ describe('campaign metrics', () => {
     expect(events[0].kind).toBe('replied');
     expect(events.map((e) => e.kind)).toContain('failed');
     expect(lastEventAt(recs[0])).toBe(T0 + 10_000);
+  });
+});
+
+describe('campaignSpeed', () => {
+  const now = Date.parse('2026-09-29T10:00:30Z');
+  it('live: sends in the last 10 s over the part of the window spent sending', () => {
+    expect(
+      campaignSpeed({
+        sending: true,
+        now,
+        recentSends: 760,
+        totalSends: 5000,
+        firstSentAt: '2026-09-29T09:59:00Z',
+        lastSentAt: null,
+      })
+    ).toBe(76);
+    // Started 4 s ago: 300 sends over 4 s, not over 10 s.
+    expect(
+      campaignSpeed({
+        sending: true,
+        now,
+        recentSends: 300,
+        totalSends: 300,
+        firstSentAt: '2026-09-29T10:00:26Z',
+        lastSentAt: null,
+      })
+    ).toBe(75);
+  });
+  it('finished: the pace between first and last send (N-1 gaps)', () => {
+    expect(
+      campaignSpeed({
+        sending: false,
+        now,
+        recentSends: 0,
+        totalSends: 20000,
+        firstSentAt: '2026-09-29T10:00:00Z',
+        lastSentAt: '2026-09-29T10:00:21Z',
+      })
+    ).toBeCloseTo(952.3, 1);
+    expect(
+      campaignSpeed({
+        sending: false,
+        now,
+        recentSends: 0,
+        totalSends: 50,
+        firstSentAt: '2026-09-29T10:00:00.000Z',
+        lastSentAt: '2026-09-29T10:00:00.612Z',
+      })
+      // 50 sends paced at 80/s: a short run still reads 80, not 50.
+    ).toBeCloseTo(80, 0);
+  });
+  it('nothing to measure → null', () => {
+    expect(
+      campaignSpeed({
+        sending: true,
+        now,
+        recentSends: 0,
+        totalSends: 0,
+        firstSentAt: null,
+        lastSentAt: null,
+      })
+    ).toBeNull();
+    expect(
+      campaignSpeed({
+        sending: false,
+        now,
+        recentSends: 0,
+        totalSends: 1,
+        firstSentAt: '2026-09-29T10:00:00Z',
+        lastSentAt: '2026-09-29T10:00:00Z',
+      })
+    ).toBeNull();
+  });
+});
+
+describe('channelSpeeds', () => {
+  const at = (sec: number) =>
+    new Date(Date.UTC(2026, 8, 29, 10, 0, 0) + sec * 1000).toISOString();
+  const sends = (channel: string, count: number, overSec: number) =>
+    Array.from({ length: count }, (_, i) => ({
+      whatsapp_config_id: channel,
+      sent_at: at((i * overSec) / (count - 1)),
+    }));
+
+  it('finished: each channel over its own sending time, so they add up', () => {
+    const speeds = channelSpeeds(
+      [...sends('a', 781, 10), ...sends('b', 801, 10)],
+      {
+        sending: false,
+        now: Date.now(),
+      }
+    );
+    const byId = Object.fromEntries(speeds.map((s) => [s.channelId, s.rate]));
+    expect(byId.a).toBeCloseTo(78, 1);
+    expect(byId.b).toBeCloseTo(80, 1);
+    expect(byId.a + byId.b).toBeCloseTo(158, 1);
+  });
+
+  it('a channel that finished early is not diluted by the slower one', () => {
+    // a: 100 in 1 s, b: 800 in 10 s — the old whole-campaign average would
+    // give 900 / 10 = 90; per channel it is 100 + 80.
+    const speeds = channelSpeeds(
+      [...sends('a', 101, 1), ...sends('b', 801, 10)],
+      {
+        sending: false,
+        now: Date.now(),
+      }
+    );
+    const total = speeds.reduce((s, c) => s + c.rate, 0);
+    expect(total).toBeCloseTo(180, 0);
+  });
+
+  it('live: sends in the last 10 s per channel', () => {
+    const now = Date.parse(at(20));
+    const recent = (channel: string, count: number) =>
+      Array.from({ length: count }, (_, i) => ({
+        whatsapp_config_id: channel,
+        sent_at: at(10.5 + (i * 9) / count),
+      }));
+    const speeds = channelSpeeds(
+      [
+        ...sends('a', 50, 5),
+        ...recent('a', 780),
+        ...sends('b', 50, 5),
+        ...recent('b', 800),
+      ],
+      { sending: true, now }
+    );
+    const byId = Object.fromEntries(speeds.map((s) => [s.channelId, s.rate]));
+    expect(byId.a).toBe(78);
+    expect(byId.b).toBe(80);
+  });
+
+  it('skips unsent rows and channels with nothing to measure', () => {
+    expect(
+      channelSpeeds([{ whatsapp_config_id: 'a', sent_at: undefined }], {
+        sending: false,
+        now: 0,
+      })
+    ).toEqual([]);
   });
 });

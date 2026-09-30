@@ -163,7 +163,7 @@ async function resumeAdvanced(id: string, scope: ResumeScope, config: unknown) {
   if (scope !== 'pending') {
     await admin
       .from('broadcast_recipients')
-      .update({ status: 'pending', error_message: null, whatsapp_config_id: null, template_name: null, template_language: null })
+      .update({ status: 'pending', error_message: null, whatsapp_config_id: null, template_name: null, template_language: null, claimed_at: null })
       .eq('broadcast_id', id)
       .eq('status', 'failed');
   }
@@ -185,7 +185,9 @@ async function resumeAdvanced(id: string, scope: ResumeScope, config: unknown) {
     .from('broadcasts')
     .update({
       status: 'sending',
-      config: { ...(config as Record<string, unknown>), exhausted: {} },
+      // Every template gets another chance; Kafka mode queues the pending
+      // rows again right away; a pause reason no longer applies.
+      config: { ...(config as Record<string, unknown>), exhausted: {}, kafka_dispatched_at: null, paused_reason: null },
       updated_at: new Date().toISOString(),
     })
     .eq('id', id);

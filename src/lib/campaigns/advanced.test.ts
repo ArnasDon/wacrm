@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  campaignTemplateUses,
   guessColumn,
   isTemplateUnavailable,
   normalizeCsvPhone,
@@ -158,5 +159,45 @@ describe('isTemplateUnavailable', () => {
     expect(isTemplateUnavailable(132001)).toBe(true);
     expect(isTemplateUnavailable(131049)).toBe(false);
     expect(isTemplateUnavailable(null, 'Template is paused')).toBe(true);
+  });
+});
+
+describe('campaignTemplateUses', () => {
+  const tpl = { name: 'missed_call_reschedule', language: 'en_US' };
+  const config = {
+    channel_ids: ['a', 'b'],
+    templates: [tpl],
+    channel_templates: { a: [tpl], b: [tpl] },
+  };
+
+  it('same-named templates on two Meta accounts are two templates', () => {
+    const uses = campaignTemplateUses(config, [
+      { id: 'a', waba_id: 'w1' },
+      { id: 'b', waba_id: 'w2' },
+    ]);
+    expect(uses).toHaveLength(2);
+    expect(uses.map((u) => u.channelIds)).toEqual([['a'], ['b']]);
+  });
+
+  it('channels on one Meta account share the template', () => {
+    const uses = campaignTemplateUses(config, [
+      { id: 'a', waba_id: 'w1' },
+      { id: 'b', waba_id: 'w1' },
+    ]);
+    expect(uses).toHaveLength(1);
+    expect(uses[0].channelIds).toEqual(['a', 'b']);
+  });
+
+  it("counts each channel's own templates (fallback: the shared list)", () => {
+    const uses = campaignTemplateUses(
+      {
+        channel_ids: ['a', 'b'],
+        templates: [tpl, { name: 'promo', language: 'en_US' }],
+        channel_templates: { a: [tpl] },
+      },
+      [{ id: 'a', waba_id: 'w1' }]
+    );
+    // a: 1 template; b (unknown account, no own list): both shared ones.
+    expect(uses).toHaveLength(3);
   });
 });

@@ -206,3 +206,80 @@ export function lastEventAt(r: BroadcastRecipient): number | null {
     .filter(Number.isFinite);
   return times.length ? Math.max(...times) : null;
 }
+
+/**
+ * Campaign speed from database counts (not a loaded list, which is
+ * capped and would under-count large campaigns).
+ *
+ *   sending:  sends in the last `windowMs`, divided by the part of that
+ *             window the campaign has actually been sending — so a run
+ *             that started 3 s ago isn't diluted over 10 s.
+ *   finished: sends ÷ time from first to last send (at least 1 s, so a
+ *             burst of a few messages doesn't read as thousands/s).
+ * Null when there's nothing to measure.
+ */
+export function campaignSpeed(args: {
+  sending: boolean;
+  now: number;
+  windowMs?: number;
+  recentSends: number;
+  totalSends: number;
+  firstSentAt: string | null;
+  lastSentAt: string | null;
+}): number | null {
+  const windowMs = args.windowMs ?? 10_000;
+  const first = args.firstSentAt ? Date.parse(args.firstSentAt) : NaN;
+  if (!Number.isFinite(first)) return null;
+  if (args.sending) {
+    const span = Math.min(windowMs, Math.max(1000, args.now - first)) / 1000;
+    return args.recentSends / span;
+  }
+  const last = args.lastSentAt ? Date.parse(args.lastSentAt) : NaN;
+  if (!Number.isFinite(last) || args.totalSends < 2) return null;
+  // N sends span N-1 gaps: 50 sends paced at 80/s take 49/80 = 0.61 s.
+  // (Dividing N by a 1 s minimum made short runs look slower.)
+  const span = (last - first) / 1000;
+  return span > 0 ? (args.totalSends - 1) / span : null;
+}
+
+export interface ChannelSpeed {
+  /** whatsapp_config_id; null for recipients without a recorded channel. */
+  channelId: string | null;
+  rate: number;
+}
+
+/**
+ * Speed per sending channel, each measured over its own sending time
+ * (same rules as campaignSpeed). Every number has its own Meta limit, so
+ * the campaign's throughput is the sum: 78 + 80 = 158 msg/s.
+ */
+export function channelSpeeds(
+  recipients: Pick<BroadcastRecipient, 'sent_at' | 'whatsapp_config_id'>[],
+  opts: { sending: boolean; now: number; windowMs?: number }
+): ChannelSpeed[] {
+  const windowMs = opts.windowMs ?? 10_000;
+  const byChannel = new Map<string | null, number[]>();
+  for (const r of recipients) {
+    const t = r.sent_at ? Date.parse(r.sent_at) : NaN;
+    if (!Number.isFinite(t)) continue;
+    const key = r.whatsapp_config_id ?? null;
+    const list = byChannel.get(key) ?? [];
+    list.push(t);
+    byChannel.set(key, list);
+  }
+  const out: ChannelSpeed[] = [];
+  for (const [channelId, times] of byChannel) {
+    times.sort((a, b) => a - b);
+    const rate = campaignSpeed({
+      sending: opts.sending,
+      now: opts.now,
+      windowMs,
+      recentSends: times.filter((t) => t > opts.now - windowMs).length,
+      totalSends: times.length,
+      firstSentAt: new Date(times[0]).toISOString(),
+      lastSentAt: new Date(times[times.length - 1]).toISOString(),
+    });
+    if (rate != null && rate > 0) out.push({ channelId, rate });
+  }
+  return out;
+}

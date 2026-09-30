@@ -29,6 +29,36 @@ type DB = SupabaseClient
 
 // --- 1. Metric cards ---------------------------------------------------
 
+/**
+ * Outbound WhatsApp messages in [from, to): inbox replies, automation /
+ * AI messages and campaign sends, each counted once (migration 054).
+ * Until that migration is applied, falls back to adding the two counts —
+ * campaign messages copied into an inbox thread then count twice.
+ */
+async function messagesSent(db: DB, from: string, to?: string): Promise<number> {
+  const { data, error } = await db.rpc('dashboard_messages_sent', {
+    p_from: from,
+    p_to: to ?? null,
+  })
+  if (!error) return Number(data ?? 0)
+
+  let inbox = db
+    .from('messages')
+    .select('id', { count: 'exact', head: true })
+    .in('sender_type', ['agent', 'bot'])
+    .neq('status', 'failed')
+    .gte('created_at', from)
+  if (to) inbox = inbox.lt('created_at', to)
+  let campaign = db
+    .from('broadcast_recipients')
+    .select('id', { count: 'exact', head: true })
+    .in('status', ['sent', 'delivered', 'read', 'replied'])
+    .gte('sent_at', from)
+  if (to) campaign = campaign.lt('sent_at', to)
+  const [a, b] = await Promise.all([inbox, campaign])
+  return (a.count ?? 0) + (b.count ?? 0)
+}
+
 export async function loadMetrics(db: DB): Promise<MetricsBundle> {
   const todayStart = startOfLocalDay().toISOString()
   const yesterdayStart = daysAgoStart(1).toISOString()
@@ -62,17 +92,8 @@ export async function loadMetrics(db: DB): Promise<MetricsBundle> {
       .gte('created_at', yesterdayStart)
       .lt('created_at', todayStart),
     db.from('deals').select('value, status').eq('status', 'open'),
-    db
-      .from('messages')
-      .select('id', { count: 'exact', head: true })
-      .eq('sender_type', 'agent')
-      .gte('created_at', todayStart),
-    db
-      .from('messages')
-      .select('id', { count: 'exact', head: true })
-      .eq('sender_type', 'agent')
-      .gte('created_at', yesterdayStart)
-      .lt('created_at', todayStart),
+    messagesSent(db, todayStart),
+    messagesSent(db, yesterdayStart, todayStart),
   ])
 
   const openDealsRows = (openDeals.data ?? []) as { value: number | null }[]
@@ -93,8 +114,8 @@ export async function loadMetrics(db: DB): Promise<MetricsBundle> {
     openDealsValue,
     openDealsCount: openDealsRows.length,
     messagesSentToday: {
-      current: messagesToday.count ?? 0,
-      previous: messagesYesterday.count ?? 0,
+      current: messagesToday,
+      previous: messagesYesterday,
     },
   }
 }

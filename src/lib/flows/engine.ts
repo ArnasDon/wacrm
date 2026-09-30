@@ -100,12 +100,28 @@ export function matchesKeywordTrigger(
 ): boolean {
   if (!text || !cfg.keywords?.length) return false;
   const matchType = cfg.match_type ?? "contains";
-  const haystack = cfg.case_sensitive ? text : text.toLowerCase();
+  const trimmed = text.trim();
+  const haystack = cfg.case_sensitive ? trimmed : trimmed.toLowerCase();
+
   for (const raw of cfg.keywords) {
     if (!raw) continue;
-    const needle = cfg.case_sensitive ? raw : raw.toLowerCase();
-    if (matchType === "exact" ? haystack === needle : haystack.includes(needle)) {
-      return true;
+    const needle = (cfg.case_sensitive ? raw : raw.toLowerCase()).trim();
+    if (!needle) continue;
+
+    if (matchType === "exact") {
+      if (haystack === needle) return true;
+    } else {
+      // Word boundary matching:
+      // Ensures keywords match distinct words rather than random substrings inside other words
+      // (e.g., prevents "Chilled" or "this" from matching the keyword "hi").
+      const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const regex = new RegExp(
+        `(^|[^a-zA-Z0-9_\u0600-\u06FF])${escaped}([^a-zA-Z0-9_\u0600-\u06FF]|$)`,
+        cfg.case_sensitive ? "" : "i",
+      );
+      if (regex.test(text)) {
+        return true;
+      }
     }
   }
   return false;

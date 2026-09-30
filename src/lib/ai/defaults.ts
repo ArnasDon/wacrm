@@ -11,7 +11,8 @@ import type { AiProvider } from './types'
  * starting point, never a hard allow-list.
  */
 export const AI_PROVIDER_DEFAULT_MODEL: Record<AiProvider, string> = {
-  openai: 'gpt-5.4-mini',
+  gemini: 'gemini-1.5-flash',
+  openai: 'gpt-4o-mini',
   anthropic: 'claude-haiku-4-5-20251001',
 }
 

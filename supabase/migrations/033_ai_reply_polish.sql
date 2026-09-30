@@ -61,7 +61,7 @@ CREATE TABLE IF NOT EXISTS ai_usage_log (
   conversation_id   uuid REFERENCES conversations(id) ON DELETE SET NULL,
   -- 'auto_reply' | 'draft' — which surface spent the tokens.
   mode              text NOT NULL CHECK (mode IN ('auto_reply', 'draft')),
-  provider          text NOT NULL CHECK (provider IN ('openai', 'anthropic')),
+  provider          text NOT NULL CHECK (provider IN ('openai', 'anthropic', 'gemini')),
   model             text NOT NULL,
   prompt_tokens     integer NOT NULL DEFAULT 0,
   completion_tokens integer NOT NULL DEFAULT 0,

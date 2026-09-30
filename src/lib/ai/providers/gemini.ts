@@ -88,6 +88,27 @@ export async function generateGemini(args: ProviderArgs): Promise<ProviderResult
     throw toNetworkError(err)
   }
 
+  if (!res.ok && res.status === 429 && cleanModel !== 'gemini-flash-latest') {
+    // If rate limit (20 req/min free tier) is hit, try fallback model to avoid dropped reply
+    try {
+      const fallbackUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${encodeURIComponent(trimmedKey)}`
+      const fallbackRes = await fetch(fallbackUrl, {
+        method: 'POST',
+        headers: {
+          'x-goog-api-key': trimmedKey,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(timeoutMs),
+      })
+      if (fallbackRes.ok) {
+        res = fallbackRes
+      }
+    } catch {
+      // Fallback failed, continue to standard error handling
+    }
+  }
+
   if (!res.ok) {
     throw await providerHttpError('Google Gemini', res)
   }

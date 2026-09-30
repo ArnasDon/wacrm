@@ -157,13 +157,26 @@ export async function dispatchInboundToAiReply(
     })
 
     if (handoff || !text) {
-      // The model can't (or shouldn't) answer — stop auto-replying on
-      // this thread and hand it to a human. We (a) pause the bot here
-      // (sticky until re-enabled), (b) route the conversation to the
-      // configured handoff agent — null leaves it in the shared queue —
-      // and (c) leave a short internal note so whoever picks it up has
-      // context. Assigning fires the `on_conversation_assigned` trigger,
-      // which notifies the agent.
+      // Send a polite message to the customer if available or use a friendly fallback,
+      // so the customer receives an answer on WhatsApp instead of awkward silence.
+      const handoffText =
+        text?.trim() ||
+        'Thank you! Our customer support team has been notified and a live agent will assist you shortly.'
+      try {
+        await engineSendText({
+          accountId,
+          userId: configOwnerUserId,
+          conversationId,
+          contactId,
+          text: handoffText,
+          aiGenerated: true,
+        })
+      } catch (sendErr) {
+        console.error('[ai auto-reply] handoff send failed:', sendErr)
+      }
+
+      // The model can't (or shouldn't) answer further — pause the bot on
+      // this thread and route it to a human.
       const summary = buildHandoffSummary({
         messages,
         replyCount: conv.ai_reply_count ?? 0,

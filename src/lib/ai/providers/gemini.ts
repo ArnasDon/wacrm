@@ -8,50 +8,72 @@ import {
   type ProviderArgs,
 } from './shared'
 
-const GEMINI_OPENAI_URL =
-  'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions'
-
-interface GeminiChoice {
-  message?: { content?: string }
+interface GeminiCandidate {
+  content?: {
+    parts?: { text?: string }[]
+    role?: string
+  }
+  finishReason?: string
 }
 
 interface GeminiResponse {
-  choices?: GeminiChoice[]
-  usage?: {
-    prompt_tokens?: number
-    completion_tokens?: number
-    total_tokens?: number
+  candidates?: GeminiCandidate[]
+  usageMetadata?: {
+    promptTokenCount?: number
+    candidatesTokenCount?: number
+    totalTokenCount?: number
   }
 }
 
 /**
- * Call Google Gemini via its official OpenAI compatibility endpoint.
- * Accepts Gemini API keys from Google AI Studio (AIzaSy...).
+ * Call Google Gemini via its official native generateContent REST endpoint.
  * Supports gemini-1.5-flash, gemini-2.0-flash, gemini-1.5-pro, etc.
  */
 export async function generateGemini(args: ProviderArgs): Promise<ProviderResult> {
   const { apiKey, model, systemPrompt, messages, timeoutMs } = args
 
-  const cleanModel = model?.trim().replace(/^models\//, '') || 'gemini-1.5-flash'
+  const cleanModel =
+    model?.trim().replace(/^models\//, '') || 'gemini-1.5-flash'
   const trimmedKey = apiKey.trim()
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${cleanModel}:generateContent?key=${encodeURIComponent(trimmedKey)}`
+
+  // Format messages for Gemini API (user / model roles)
+  const contents = mergeConsecutive(messages).map((m) => ({
+    role: m.role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: m.content }],
+  }))
+
+  // Gemini requires the first turn in contents to be with role 'user'
+  if (contents.length > 0 && contents[0].role === 'model') {
+    contents.unshift({ role: 'user', parts: [{ text: 'Hello' }] })
+  }
+  if (contents.length === 0) {
+    contents.push({ role: 'user', parts: [{ text: 'Hello' }] })
+  }
+
+  const payload: Record<string, unknown> = {
+    contents,
+    generationConfig: {
+      maxOutputTokens: MAX_OUTPUT_TOKENS,
+    },
+  }
+
+  if (systemPrompt && systemPrompt.trim()) {
+    payload.system_instruction = {
+      parts: [{ text: systemPrompt.trim() }],
+    }
+  }
 
   let res: Response
   try {
-    res = await fetch(GEMINI_OPENAI_URL, {
+    res = await fetch(url, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${trimmedKey}`,
         'x-goog-api-key': trimmedKey,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        model: cleanModel,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          ...mergeConsecutive(messages),
-        ],
-        max_tokens: MAX_OUTPUT_TOKENS,
-      }),
+      body: JSON.stringify(payload),
       signal: AbortSignal.timeout(timeoutMs),
     })
   } catch (err) {
@@ -63,17 +85,21 @@ export async function generateGemini(args: ProviderArgs): Promise<ProviderResult
   }
 
   const data = (await res.json().catch(() => null)) as GeminiResponse | null
-  const text = data?.choices?.[0]?.message?.content
-  if (!text || typeof text !== 'string' || !text.trim()) {
+  const text = data?.candidates?.[0]?.content?.parts
+    ?.map((p) => p.text || '')
+    .join('')
+    .trim()
+
+  if (!text) {
     throw new AiError('Google Gemini returned an empty response.', {
       code: 'empty_response',
     })
   }
 
   const usage = normalizeUsage({
-    prompt: data?.usage?.prompt_tokens,
-    completion: data?.usage?.completion_tokens,
-    total: data?.usage?.total_tokens,
+    prompt: data?.usageMetadata?.promptTokenCount,
+    completion: data?.usageMetadata?.candidatesTokenCount,
+    total: data?.usageMetadata?.totalTokenCount,
   })
 
   return { text, usage }

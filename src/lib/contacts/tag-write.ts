@@ -23,7 +23,8 @@ export async function resolveTagId(
   db: SupabaseClient,
   accountId: string,
   rawTagId: string,
-  createIfMissing = false
+  createIfMissing = false,
+  contactId?: string
 ): Promise<string> {
   const cleaned = rawTagId?.trim();
   if (!cleaned) {
@@ -58,18 +59,44 @@ export async function resolveTagId(
 
   // 3. If allowed to create when missing (e.g. adding a new tag by name)
   if (createIfMissing) {
-    const { data: newTag, error: createError } = await db
-      .from('tags')
-      .insert({
-        account_id: accountId,
-        name: cleaned,
-        color: '#10B981', // pleasant emerald green default
-      })
-      .select('id')
+    // tags table requires a NOT NULL user_id FK (auth.users)
+    let ownerUserId: string | null = null;
+
+    const { data: profile } = await db
+      .from('profiles')
+      .select('user_id')
+      .eq('account_id', accountId)
+      .limit(1)
       .maybeSingle();
 
-    if (!createError && newTag) {
-      return newTag.id;
+    if (profile?.user_id) {
+      ownerUserId = profile.user_id;
+    } else if (contactId) {
+      const { data: contactRow } = await db
+        .from('contacts')
+        .select('user_id')
+        .eq('id', contactId)
+        .maybeSingle();
+      if (contactRow?.user_id) {
+        ownerUserId = contactRow.user_id;
+      }
+    }
+
+    if (ownerUserId) {
+      const { data: newTag, error: createError } = await db
+        .from('tags')
+        .insert({
+          user_id: ownerUserId,
+          account_id: accountId,
+          name: cleaned,
+          color: '#10B981', // pleasant emerald green default
+        })
+        .select('id')
+        .maybeSingle();
+
+      if (!createError && newTag) {
+        return newTag.id;
+      }
     }
   }
 
@@ -90,7 +117,13 @@ async function assertContactAndTagOwnership(
 
   const [contactResult, resolvedTagId] = await Promise.all([
     contactPromise,
-    resolveTagId(db, input.accountId, input.tagId, createIfMissing),
+    resolveTagId(
+      db,
+      input.accountId,
+      input.tagId,
+      createIfMissing,
+      input.contactId
+    ),
   ]);
 
   if (contactResult.error) {

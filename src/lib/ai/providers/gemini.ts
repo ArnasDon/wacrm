@@ -33,18 +33,20 @@ export async function generateGemini(args: ProviderArgs): Promise<ProviderResult
   const { apiKey, model, systemPrompt, messages, timeoutMs } = args
 
   let cleanModel =
-    model?.trim().replace(/^models\//, '') || 'gemini-2.5-flash'
-  // Auto-upgrade deprecated 1.5 model name to current 2.5 flash
+    model?.trim().replace(/^models\//, '') || 'gemini-3.5-flash'
+  // Auto-upgrade older/throttled models to current gemini-3.5-flash
   if (
     cleanModel === 'gemini-1.5-flash' ||
     cleanModel === 'gemini-1.5-flash-latest' ||
-    cleanModel === 'gemini-1.5-pro'
+    cleanModel === 'gemini-1.5-pro' ||
+    cleanModel === 'gemini-2.0-flash' ||
+    cleanModel === 'gemini-2.5-flash' ||
+    cleanModel === 'gemini-2.5-pro' ||
+    cleanModel === 'gemini-3.8-flash'
   ) {
-    cleanModel = cleanModel.includes('pro') ? 'gemini-2.5-pro' : 'gemini-2.5-flash'
+    cleanModel = 'gemini-3.5-flash'
   }
   const trimmedKey = apiKey.trim()
-
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${cleanModel}:generateContent?key=${encodeURIComponent(trimmedKey)}`
 
   // Format messages for Gemini API (user / model roles)
   const contents = mergeConsecutive(messages).map((m) => ({
@@ -73,26 +75,21 @@ export async function generateGemini(args: ProviderArgs): Promise<ProviderResult
     }
   }
 
-  let res: Response
-  try {
-    res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'x-goog-api-key': trimmedKey,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(timeoutMs),
-    })
-  } catch (err) {
-    throw toNetworkError(err)
-  }
+  // Model cascade for maximum availability on free tier
+  const modelsToTry = [
+    cleanModel,
+    'gemini-3.5-flash',
+    'gemini-3.5-flash-lite',
+    'gemini-flash-lite-latest',
+  ].filter((m, idx, arr) => arr.indexOf(m) === idx)
 
-  if (!res.ok && res.status === 429 && cleanModel !== 'gemini-flash-latest') {
-    // If rate limit (20 req/min free tier) is hit, try fallback model to avoid dropped reply
+  let res: Response | null = null
+  let lastError: unknown = null
+
+  for (const targetModel of modelsToTry) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${encodeURIComponent(trimmedKey)}`
     try {
-      const fallbackUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${encodeURIComponent(trimmedKey)}`
-      const fallbackRes = await fetch(fallbackUrl, {
+      res = await fetch(url, {
         method: 'POST',
         headers: {
           'x-goog-api-key': trimmedKey,
@@ -101,12 +98,28 @@ export async function generateGemini(args: ProviderArgs): Promise<ProviderResult
         body: JSON.stringify(payload),
         signal: AbortSignal.timeout(timeoutMs),
       })
-      if (fallbackRes.ok) {
-        res = fallbackRes
+
+      if (res.ok) {
+        break
       }
-    } catch {
-      // Fallback failed, continue to standard error handling
+
+      // If hit by 429 (rate limit) or 503 (high demand) or 404, try next fallback model
+      if (res.status === 429 || res.status === 503 || res.status === 404) {
+        console.warn(
+          `[gemini] model ${targetModel} returned ${res.status}, trying fallback model...`,
+        )
+        continue
+      }
+
+      // Other client errors (e.g. 401 invalid key) should stop immediately
+      break
+    } catch (err) {
+      lastError = err
     }
+  }
+
+  if (!res) {
+    throw toNetworkError(lastError)
   }
 
   if (!res.ok) {

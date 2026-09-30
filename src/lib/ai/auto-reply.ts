@@ -158,11 +158,35 @@ export async function dispatchInboundToAiReply(
       knowledge,
     })
 
-    const { text, handoff, usage } = await generateReply({
-      config,
-      systemPrompt,
-      messages,
-    })
+    let replyResult: Awaited<ReturnType<typeof generateReply>>
+    try {
+      replyResult = await generateReply({
+        config,
+        systemPrompt,
+        messages,
+      })
+    } catch (llmErr) {
+      console.error('[ai auto-reply] LLM generation failed:', llmErr)
+      try {
+        await engineSendText({
+          accountId,
+          userId: configOwnerUserId,
+          conversationId,
+          contactId,
+          text: 'Thank you for contacting FlyOrder Logistics! We have received your inquiry. A live support agent has been notified and will assist you shortly.',
+          aiGenerated: true,
+        })
+        await db.from('conversations').update({
+          ai_autoreply_disabled: true,
+          ai_handoff_summary: 'AI service temporary issue — handed off to human agent.',
+        }).eq('id', conversationId)
+      } catch (sendErr) {
+        console.error('[ai auto-reply] fallback send failed:', sendErr)
+      }
+      return
+    }
+
+    const { text, handoff, usage } = replyResult
 
     // Record token spend on the account's BYO key. Fire-and-forget so it
     // never adds latency to the customer-facing send: `logAiUsage`

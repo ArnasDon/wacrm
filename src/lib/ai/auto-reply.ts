@@ -89,9 +89,31 @@ export async function dispatchInboundToAiReply(
     if (convErr || !conv) return
     if (conv.assigned_agent_id) return // a human owns this thread
     if (conv.ai_autoreply_disabled) return // handed off / turned off here
-    // Cheap early-out; the authoritative cap check is the atomic claim
-    // below (this read can race a concurrent inbound).
-    if (conv.ai_reply_count >= config.autoReplyMaxPerConversation) return
+    // If the conversation reached the max AI reply limit:
+    if (conv.ai_reply_count >= config.autoReplyMaxPerConversation) {
+      if (!conv.ai_autoreply_disabled) {
+        try {
+          await engineSendText({
+            accountId,
+            userId: configOwnerUserId,
+            conversationId,
+            contactId,
+            text: 'Thank you for reaching out! You have reached our automated assistant limit for this chat. Our commercial team has been notified and will assist you shortly!',
+            aiGenerated: true,
+          })
+          await db
+            .from('conversations')
+            .update({
+              ai_autoreply_disabled: true,
+              ai_handoff_summary: `Reached max reply limit (${config.autoReplyMaxPerConversation} replies). Handed off to live team.`,
+            })
+            .eq('id', conversationId)
+        } catch (err) {
+          console.error('[ai auto-reply] limit wrap-up send failed:', err)
+        }
+      }
+      return
+    }
 
     const messages = await buildConversationContext(db, conversationId)
     if (messages.length === 0) return

@@ -81,6 +81,32 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
     fetchContactData();
   }, [fetchContactData]);
 
+  // Realtime subscription for contact_tags so newly attached tags
+  // appear in the sidebar immediately without needing a manual page refresh.
+  useEffect(() => {
+    if (!contact?.id) return;
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`contact-tags-live-${contact.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'contact_tags',
+          filter: `contact_id=eq.${contact.id}`,
+        },
+        () => {
+          fetchContactData();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [contact?.id, fetchContactData]);
+
   const handleCopyPhone = useCallback(async () => {
     // Copies whatever the row displays — a BSUID-only contact has no
     // phone number to copy, but its @username still identifies them.

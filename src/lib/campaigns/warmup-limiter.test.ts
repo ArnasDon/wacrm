@@ -15,7 +15,7 @@ vi.mock('@/lib/whatsapp/meta-api', async (orig) => {
 import { setRedisForTests } from '@/lib/redis/client';
 import type { MessageTemplate } from '@/types';
 import { ChannelSender } from './channel-sender';
-import { pauseCampaign } from './pause';
+import { stopCampaign } from './pause';
 import { AdaptiveRateLimiter } from './rate-limiter';
 import {
   DEFAULT_WARMUP,
@@ -270,7 +270,7 @@ describe('pause / cancel', () => {
     expect(r.rate).toBe(40);
   });
 
-  it('8b. pausing a campaign clears its warm-up', async () => {
+  it('8b. stopping a campaign clears its warm-up', async () => {
     const redis = workerOn(newHost());
     setRedisForTests(redis);
     await warmupLimiter('b-p2', 'pn1', CFG)!.acquire();
@@ -288,7 +288,7 @@ describe('pause / cancel', () => {
       },
     } as unknown as SupabaseClient;
     vi.spyOn(console, 'warn').mockImplementation(() => {});
-    expect(await pauseCampaign(db, 'b-p2', 'test')).toBe(true);
+    expect(await stopCampaign(db, 'b-p2', 'test')).toBe(true);
     expect(await redis.exists(warmupKeys('b-p2', 'pn1').state)).toBe(0);
   });
 });

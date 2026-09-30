@@ -66,9 +66,8 @@ vi.mock("@/lib/supabase/server", () => ({
   createClient: () => createClient(),
 }));
 
-const { getCurrentAccount, UnauthorizedError, ForbiddenError } = await import(
-  "./account"
-);
+const { getCurrentAccount, requireMainUser, UnauthorizedError, ForbiddenError } =
+  await import("./account");
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -173,4 +172,36 @@ describe("getCurrentAccount", () => {
       "Profile is not linked to an account",
     );
   });
+});
+
+describe("partner roles (migration 058)", () => {
+  function clientFor(profile: Record<string, unknown>) {
+    return makeClient({
+      user: { id: "user-1" },
+      byTable: {
+        profiles: { data: { account_id: "acct-1", account_role: "owner", ...profile }, error: null },
+        accounts: { data: { id: "acct-1", name: "Acme" }, error: null },
+      },
+    }).client;
+  }
+
+  it("rejects a DISABLED user everywhere getCurrentAccount is used", async () => {
+    createClient.mockReturnValue(clientFor({ role: "SubUser", status: "DISABLED" }));
+    const err = await getCurrentAccount().catch((e) => e);
+    expect(err).toBeInstanceOf(ForbiddenError);
+    expect(err.message).toBe("This account has been disabled");
+  });
+
+  it("requireMainUser admits role = 'User'", async () => {
+    createClient.mockReturnValue(clientFor({ role: "User", status: "ACTIVE" }));
+    await expect(requireMainUser()).resolves.toMatchObject({ userRole: "User" });
+  });
+
+  it.each(["SubUser", null, "user", "PARTNER"])(
+    "requireMainUser rejects role = %s",
+    async (role) => {
+      createClient.mockReturnValue(clientFor({ role, status: "ACTIVE" }));
+      await expect(requireMainUser()).rejects.toBeInstanceOf(ForbiddenError);
+    },
+  );
 });

@@ -30,6 +30,11 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { createClient } from "@/lib/supabase/server";
 import { hasMinRole, isAccountRole, type AccountRole } from "./roles";
+import {
+  canManagePartners,
+  isUserRole,
+  type UserRole,
+} from "./user-roles";
 
 // ------------------------------------------------------------
 // Errors
@@ -89,6 +94,12 @@ export interface AccountContext {
   role: AccountRole;
   /** Lightweight account meta — id + name. */
   account: { id: string; name: string };
+  /**
+   * Partner hierarchy role from `profiles.role` (migration 058):
+   * 'User' (Main User) or 'SubUser' (Partner). Null only for rows the
+   * migration hasn't touched — treated as least-privileged.
+   */
+  userRole: UserRole | null;
 }
 
 /**
@@ -116,7 +127,7 @@ export async function getCurrentAccount(): Promise<AccountContext> {
 
   const { data, error } = await supabase
     .from("profiles")
-    .select("account_id, account_role")
+    .select("account_id, account_role, role, status")
     .eq("user_id", user.id)
     .maybeSingle();
 
@@ -129,6 +140,12 @@ export async function getCurrentAccount(): Promise<AccountContext> {
     // signup trigger. The user is authenticated but the app has
     // no way to scope their queries — treat as forbidden.
     throw new ForbiddenError("Profile is not linked to an account");
+  }
+  if (data.status === "DISABLED") {
+    // Disabled by their Main User (Partners → Disable). The database
+    // denies them too (is_account_member checks status); this gives
+    // API routes a clean 403 instead of empty RLS results.
+    throw new ForbiddenError("This account has been disabled");
   }
   if (!isAccountRole(data.account_role)) {
     // The DB enum should make this impossible, but a future
@@ -169,6 +186,7 @@ export async function getCurrentAccount(): Promise<AccountContext> {
     accountId: data.account_id,
     role: data.account_role,
     account: { id: account.id, name: account.name },
+    userRole: isUserRole(data.role) ? data.role : null,
   };
 }
 
@@ -185,6 +203,21 @@ export async function requireRole(min: AccountRole): Promise<AccountContext> {
     throw new ForbiddenError(
       `This action requires the '${min}' role or higher`,
     );
+  }
+  return ctx;
+}
+
+/**
+ * Resolve the caller's context and require a Main User
+ * (`profiles.role = 'User'`). Guards every Partners endpoint: a
+ * SubUser — or anything the server can't positively identify as a
+ * Main User — gets 403. The role is read from the database for this
+ * request; nothing the client sends can influence it.
+ */
+export async function requireMainUser(): Promise<AccountContext> {
+  const ctx = await getCurrentAccount();
+  if (!canManagePartners(ctx.userRole)) {
+    throw new ForbiddenError("Only main users can manage partners");
   }
   return ctx;
 }

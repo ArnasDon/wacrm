@@ -12,6 +12,7 @@ import {
   ChevronRight,
   Download,
   Loader2,
+  OctagonX,
   PlayCircle,
   ScrollText,
   Trash2,
@@ -717,6 +718,19 @@ export default function BroadcastDetailPage() {
             </div>
           </div>
         )}
+
+      {/* Stopped by a delivery setting — final, no Resume / Retry. */}
+      {broadcast.config?.stopped_reason ? (
+        <div className="flex items-start gap-3 rounded-xl border border-red-500/30 bg-red-500/5 p-4">
+          <OctagonX className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
+          <div className="text-sm">
+            <p className="text-foreground font-medium">{t('stoppedTitle')}</p>
+            <p className="text-muted-foreground mt-0.5 break-words">
+              {t('stoppedHint', { reason: broadcast.config.stopped_reason })}
+            </p>
+          </div>
+        </div>
+      ) : null}
 
       {/* Tabs + headline stats */}
       <div className="border-border flex flex-wrap items-end justify-between gap-4 border-b">

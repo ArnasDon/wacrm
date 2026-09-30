@@ -1,5 +1,6 @@
 {
   "LoginPage": {
+    "accountDisabled": "Tu cuenta ha sido deshabilitada. Contacta a la persona que te invitó para restaurar el acceso.",
     "titleAccept": "Inicia sesión para aceptar",
     "titleWelcome": "Bienvenido de nuevo",
     "descAccept": "Inicia sesión y te llevaremos a la invitación.",
@@ -28,6 +29,7 @@
     "automations": "Automatizaciones",
     "flows": "Flujos",
     "aiAgents": "Agentes de IA",
+    "partners": "Socios",
     "settings": "Configuración",
     "beta": "Beta",
     "unreadConversations": "{count} {count, plural, =1 {conversación sin leer} other {conversaciones sin leer}}",
@@ -53,6 +55,7 @@
     "pipelines": "Pipelines",
     "broadcasts": "Campañas",
     "automations": "Automatizaciones",
+    "partners": "Socios",
     "settings": "Configuración",
     "openMenu": "Abrir menú",
     "openAccountMenu": "Abrir menú de la cuenta",
@@ -773,6 +776,7 @@
       "failures": "Fallos",
       "stalledReason": "Detenida en {done} de {total}: nada la está enviando",
       "failedReason": "Detenida: fallaron todos los destinatarios",
+      "stoppedReason": "Detenida — {reason}",
       "failuresReason": "{count, plural, one {# destinatario falló} other {# destinatarios fallaron}}",
       "resume": "Reanudar",
       "retry": "Reintentar fallidos",
@@ -993,10 +997,10 @@
         "retries": "Los límites de velocidad y los errores temporales se reintentan solos; si Meta pausa una plantilla, ese canal pasa a la siguiente.",
         "deliveryInterval": "Intervalo entre campañas",
         "deliveryIntervalHint": "Inicia esta campaña al menos 30 segundos después de que empezó la anterior. La primera empieza de inmediato. Desactivado: puede ejecutarse junto a otras campañas.",
-        "deliveryQualityHold": "Pausar si Meta retiene un mensaje para evaluar su calidad",
-        "deliveryQualityHoldHint": "Meta acepta el mensaje como “held_for_quality_assessment”: cuenta como enviado. Márcalo para pausar esta campaña cuando ocurra y proteger tu calificación de calidad.",
+        "deliveryQualityHold": "Detener la campaña si Meta retiene un mensaje para evaluar su calidad",
+        "deliveryQualityHoldHint": "Meta acepta el mensaje como “held_for_quality_assessment”: cuenta como enviado. Márcalo para detener esta campaña definitivamente cuando ocurra y proteger tu calificación de calidad. Los destinatarios restantes se marcan como fallidos y la campaña no se puede reanudar.",
         "deliveryStopOnError": "Detener ante un error de la API de Meta",
-        "deliveryStopOnErrorHint": "Desactivado: un error de la API de Meta (p. ej. #135000) solo hace fallar ese mensaje y la campaña continúa. Activado: falla el mensaje y pausa esta campaña; las demás campañas y canales siguen enviando.",
+        "deliveryStopOnErrorHint": "Desactivado: un error de la API de Meta (p. ej. #135000) solo hace fallar ese mensaje y la campaña continúa. Activado: falla el mensaje y detiene esta campaña definitivamente; los destinatarios restantes se marcan como fallidos y no se puede reanudar. Las demás campañas y canales siguen enviando.",
         "deliveryAuto": "Siempre activo: los límites de velocidad y errores temporales se reintentan solos, y una plantilla pausada pasa el relevo a la siguiente del canal. Los tiempos de espera nunca se reintentan, así nadie recibe un mensaje dos veces."
       },
       "duration": {
@@ -1203,7 +1207,9 @@
       "toastResumeStartedCapped": "Enviando a {count} destinatarios en segundo plano. Otros {remaining} necesitarán otra ejecución.",
       "toastResumeFailed": "No se pudo reanudar: {error}",
       "pausedTitle": "Campaña pausada",
-      "pausedHint": "{reason}: reanuda para enviar los {count} restantes."
+      "pausedHint": "{reason}: reanuda para enviar los {count} restantes.",
+      "stoppedTitle": "Campaña detenida",
+      "stoppedHint": "{reason}. La configuración de entrega detuvo esta campaña y no se puede reanudar; crea una nueva campaña para volver a enviar."
     },
     "new": {
       "title": "Nueva campaña",
@@ -2666,5 +2672,147 @@
   },
   "DashboardShell": {
     "loading": "Cargando..."
+  },
+  "Partners": {
+    "title": "Socios",
+    "description": "Invita a empresas socias a WSCRM y administra su acceso.",
+    "createPartner": "Crear socio",
+    "loadFailed": "No se pudieron cargar los socios",
+    "retry": "Reintentar",
+    "emptyTitle": "Aún no hay socios",
+    "emptyDesc": "Invita a tu primer socio: recibirá un correo para configurar su cuenta.",
+    "inviteSent": "Invitación enviada correctamente.",
+    "inviteResent": "Invitación reenviada correctamente.",
+    "emailNotSent": "La invitación se creó, pero no se pudo enviar el correo.",
+    "actionFailed": "Algo salió mal. Inténtalo de nuevo.",
+    "disabled": "Socio deshabilitado.",
+    "enabled": "Socio habilitado.",
+    "revoked": "Invitación revocada.",
+    "linkCopied": "Enlace copiado",
+    "clipboardBlocked": "No se pudo copiar: selecciona el enlace y cópialo manualmente.",
+    "cancel": "Cancelar",
+    "actionsFor": "Acciones para {company}",
+    "col": {
+      "company": "Empresa",
+      "partner": "Socio",
+      "email": "Correo",
+      "phone": "Teléfono",
+      "status": "Estado",
+      "invitation": "Estado de invitación",
+      "sent": "Invitación enviada",
+      "expiry": "Vencimiento",
+      "created": "Creado",
+      "actions": "Acciones"
+    },
+    "status": {
+      "ACTIVE": "Activo",
+      "DISABLED": "Deshabilitado"
+    },
+    "invitationStatus": {
+      "PENDING": "Pendiente",
+      "ACCEPTED": "Aceptada",
+      "EXPIRED": "Vencida",
+      "REVOKED": "Revocada"
+    },
+    "actions": {
+      "resend": "Reenviar invitación",
+      "revoke": "Revocar invitación",
+      "disable": "Deshabilitar",
+      "enable": "Habilitar"
+    },
+    "confirmDisable": {
+      "title": "¿Deshabilitar socio?",
+      "desc": "Este usuario ya no podrá acceder al CRM.",
+      "confirm": "Deshabilitar"
+    },
+    "confirmRevoke": {
+      "title": "¿Revocar invitación?",
+      "desc": "El enlace de invitación dejará de funcionar de inmediato.",
+      "confirm": "Revocar"
+    },
+    "manualLink": {
+      "title": "Comparte el enlace de registro",
+      "desc": "El envío de correos no está disponible. Envía tú mismo este enlace a {email}; solo se muestra una vez.",
+      "copy": "Copiar enlace",
+      "done": "Listo"
+    },
+    "accessDenied": {
+      "title": "Acceso denegado",
+      "desc": "No tienes permiso para ver esta página."
+    },
+    "create": {
+      "title": "Crear socio",
+      "description": "Le enviaremos una invitación por correo para completar la configuración de su cuenta.",
+      "companyNameLabel": "Nombre de la empresa",
+      "companyNamePlaceholder": "Empresa ABC",
+      "emailLabel": "Correo",
+      "emailPlaceholder": "socio@ejemplo.com",
+      "phoneLabel": "Número de teléfono",
+      "phonePlaceholder": "+14155550123",
+      "phoneHint": "Formato internacional, empezando con + y el código de país.",
+      "cancel": "Cancelar",
+      "submit": "Enviar invitación",
+      "sending": "Enviando...",
+      "failed": "No se pudo crear la invitación",
+      "networkError": "Error de red. Inténtalo de nuevo."
+    },
+    "errors": {
+      "required": "Este campo es obligatorio.",
+      "tooLong": "Este valor es demasiado largo.",
+      "invalidEmail": "Ingresa un correo válido.",
+      "invalidPhone": "Ingresa el teléfono en formato internacional, p. ej. +14155550123.",
+      "tooShort": "La contraseña debe tener al menos 8 caracteres.",
+      "mismatch": "Las contraseñas no coinciden.",
+      "accountExists": "Ya existe una cuenta con este correo.",
+      "pendingInvitation": "Ya existe una invitación pendiente para este correo.",
+      "duplicate": "No puedes invitarte a ti mismo.",
+      "weak": "Esta contraseña es demasiado débil."
+    }
+  },
+  "PartnerSignup": {
+    "title": "Completa tu cuenta",
+    "desc": "{inviter} te invitó a unirte a WSCRM.",
+    "companyNameLabel": "Empresa",
+    "emailLabel": "Correo",
+    "phoneLabel": "Teléfono",
+    "firstNameLabel": "Nombre",
+    "lastNameLabel": "Apellido",
+    "passwordLabel": "Contraseña",
+    "passwordPlaceholder": "Al menos 8 caracteres",
+    "confirmPasswordLabel": "Confirmar contraseña",
+    "submit": "Crear cuenta",
+    "creating": "Creando cuenta...",
+    "failed": "No se pudo completar el registro. Inténtalo de nuevo.",
+    "networkError": "Error de red. Inténtalo de nuevo.",
+    "goToSignIn": "Ir a iniciar sesión",
+    "success": {
+      "title": "Cuenta creada",
+      "desc": "Tu cuenta está lista. Inicia sesión con tu correo y tu nueva contraseña.",
+      "signIn": "Iniciar sesión"
+    },
+    "expired": {
+      "title": "Invitación vencida",
+      "desc": "Esta invitación ha vencido. Contacta a la persona que te invitó y solicita una nueva invitación."
+    },
+    "used": {
+      "title": "Invitación ya utilizada",
+      "desc": "Esta invitación ya se utilizó para crear una cuenta."
+    },
+    "revoked": {
+      "title": "Invitación no válida",
+      "desc": "Esta invitación fue retirada. Contacta a la persona que te invitó."
+    },
+    "accountExists": {
+      "title": "La cuenta ya existe",
+      "desc": "Ya existe una cuenta con este correo. Inicia sesión."
+    },
+    "invalid": {
+      "title": "Invitación no válida",
+      "desc": "Este enlace de invitación no es válido. Verifica que copiaste el enlace completo del correo."
+    },
+    "error": {
+      "title": "Algo salió mal",
+      "desc": "No pudimos verificar esta invitación. Inténtalo más tarde."
+    }
   }
 }

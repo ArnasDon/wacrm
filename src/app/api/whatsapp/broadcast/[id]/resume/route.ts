@@ -76,6 +76,20 @@ export async function POST(
       .eq('id', id)
       .eq('account_id', accountId)
       .maybeSingle();
+    // Stopped by a delivery setting ("Stop on Meta API error" / "Pause
+    // on quality hold"): final by design — neither Resume nor Retry
+    // failed may restart it. Create a new campaign instead.
+    const stoppedReason = (kindRow?.config as { stopped_reason?: string | null } | null)
+      ?.stopped_reason;
+    if (stoppedReason) {
+      return NextResponse.json(
+        {
+          error: `This campaign was stopped (${stoppedReason}) and cannot be restarted. Create a new campaign instead.`,
+          code: 'campaign_stopped',
+        },
+        { status: 409 }
+      );
+    }
     if (kindRow?.kind === 'advanced') {
       return resumeAdvanced(id, scope, kindRow.config);
     }

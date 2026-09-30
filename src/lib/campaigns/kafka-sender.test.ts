@@ -332,7 +332,7 @@ describe('templateStatusEvent', () => {
 });
 
 describe('delivery settings (Kafka worker)', () => {
-  it('stop on Meta API error pauses the campaign; queued messages are not sent', async () => {
+  it('stop on Meta API error stops the campaign for good; queued messages are not sent', async () => {
     sendTemplateMessage.mockImplementation(async (a: { to: string }) => {
       if (a.to.endsWith('0')) {
         throw new MetaApiError('(#135000) Generic user error', {
@@ -348,14 +348,20 @@ describe('delivery settings (Kafka worker)', () => {
     };
 
     expect(await handleCampaignSend(db, msg(bId, 0))).toBe('failed');
-    expect(tables.broadcasts[0].status).toBe('paused');
+    expect(tables.broadcasts[0].status).toBe('failed');
+    expect(
+      String((tables.broadcasts[0].config as Record<string, unknown>).stopped_reason)
+    ).toContain('135000');
+    // The triggering recipient keeps its real Meta error…
+    expect(tables.broadcast_recipients[0].error_message).toContain('[135000]');
+    // …and the rest are closed as failed, so nothing can resume them.
+    expect(tables.broadcast_recipients[1]).toMatchObject({ status: 'failed' });
+    expect(String(tables.broadcast_recipients[1].error_message)).toContain(
+      'Campaign stopped'
+    );
     sendTemplateMessage.mockClear();
     expect(await handleCampaignSend(db, msg(bId, 1))).toBe('skipped');
     expect(sendTemplateMessage).not.toHaveBeenCalled();
-    expect(tables.broadcast_recipients[1]).toMatchObject({
-      status: 'pending',
-      claimed_at: null,
-    });
   });
 
   it('stop on Meta API error off: the job fails and the next one still sends', async () => {
@@ -372,5 +378,32 @@ describe('delivery settings (Kafka worker)', () => {
     expect(await handleCampaignSend(db, msg(bId, 0))).toBe('failed');
     expect(await handleCampaignSend(db, msg(bId, 1))).toBe('sent');
     expect(tables.broadcasts[0].status).toBe('sending');
+  });
+
+  it('quality hold ON: the held message stays sent; the campaign stops for good', async () => {
+    sendTemplateMessage.mockImplementation(async () => ({
+      messageId: 'wamid.held',
+      messageStatus: 'held_for_quality_assessment',
+    }));
+    const { db, bId, tables } = setup(3);
+    (tables.broadcasts[0].config as Record<string, unknown>).delivery = {
+      pause_on_quality_hold: true,
+    };
+
+    expect(await handleCampaignSend(db, msg(bId, 0))).toBe('sent');
+    // Written after the stop closed the others — still recorded as sent.
+    expect(tables.broadcast_recipients[0]).toMatchObject({
+      status: 'sent',
+      meta_message_status: 'held_for_quality_assessment',
+    });
+    expect(
+      String((tables.broadcasts[0].config as Record<string, unknown>).stopped_reason)
+    ).toContain('quality assessment');
+    expect(tables.broadcast_recipients.slice(1).map((r) => r.status)).toEqual([
+      'failed',
+      'failed',
+    ]);
+    // One went out → settles as sent (Completed), still not resumable.
+    expect(tables.broadcasts[0].status).toBe('sent');
   });
 });

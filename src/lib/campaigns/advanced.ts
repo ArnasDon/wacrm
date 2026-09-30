@@ -73,14 +73,21 @@ export interface AdvancedCampaignConfig {
   started_at?: string | null;
   /** Runtime: why the campaign was paused (status 'paused'). */
   paused_reason?: string | null;
+  /**
+   * Runtime: why a delivery setting stopped the campaign for good
+   * (status 'failed'). Set → the campaign can never be resumed.
+   */
+  stopped_reason?: string | null;
+  /** Runtime: when that stop happened. */
+  stopped_at?: string | null;
 }
 
 export interface DeliverySettings {
   /** Start at least this many seconds after the previous campaign started (0/undefined = off). */
   interval_seconds?: number;
-  /** Pause when Meta accepts a message as 'held_for_quality_assessment'. */
+  /** Stop (permanently) when Meta accepts a message as 'held_for_quality_assessment'. */
   pause_on_quality_hold?: boolean;
-  /** Pause this campaign when a send fails with a Meta API error. */
+  /** Stop this campaign (permanently) when a send fails with a Meta API error. */
   stop_on_meta_error?: boolean;
 }
 

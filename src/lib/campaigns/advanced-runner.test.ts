@@ -353,7 +353,7 @@ describe('delivery settings', () => {
     ).toHaveLength(7);
   });
 
-  it('stop on Meta API error ON: the job fails and this campaign pauses; the rest stays pending', async () => {
+  it('stop on Meta API error ON: the job fails and this campaign stops for good; the rest are failed', async () => {
     sendTemplateMessage.mockImplementation(async (args: { to: string }) => {
       if (args.to.endsWith('00')) throw metaError();
       return { messageId: `wamid.${seq++}` };
@@ -367,20 +367,24 @@ describe('delivery settings', () => {
     expect(
       await runAdvancedCampaign(db, 'b1', { budgetMs: 10_000, maxLanes: 1 })
     ).toBe('stopped');
-    expect(tables.broadcasts[0].status).toBe('paused');
-    expect(
-      String(
-        (tables.broadcasts[0].config as Record<string, unknown>).paused_reason
-      )
-    ).toContain('135000');
+    const config = tables.broadcasts[0].config as Record<string, unknown>;
+    expect(String(config.stopped_reason)).toContain('135000');
     const recs = tables.broadcast_recipients;
-    expect(recs.filter((r) => r.status === 'failed')).toHaveLength(1);
-    expect(recs.filter((r) => r.status === 'pending').length).toBeGreaterThan(
-      20
-    );
+    // Nothing left pending → nothing a Resume could pick up.
+    expect(recs.filter((r) => r.status === 'pending')).toHaveLength(0);
+    // Exactly one recipient carries Meta's own error (the trigger).
+    expect(
+      recs.filter((r) => String(r.error_message).startsWith('[135000]'))
+    ).toHaveLength(1);
+    expect(
+      recs.filter((r) => String(r.error_message).startsWith('Campaign stopped')).length
+    ).toBeGreaterThan(20);
+    // r0 (…00) is first in line, so nothing went out before the stop:
+    // the campaign settles as failed, with nothing left to resume.
+    expect(tables.broadcasts[0].status).toBe('failed');
   });
 
-  it('held_for_quality_assessment is a successful send; with the setting on it pauses the campaign', async () => {
+  it('held_for_quality_assessment is a successful send; with the setting on it stops the campaign for good', async () => {
     sendTemplateMessage.mockImplementation(async (args: { to: string }) => ({
       messageId: `wamid.${seq++}`,
       messageStatus: args.to.endsWith('00')
@@ -403,10 +407,20 @@ describe('delivery settings', () => {
       status: 'sent',
       whatsapp_message_id: expect.stringMatching(/^wamid\./),
     });
+    // The held message stays sent; everything not yet sent is closed.
     expect(
-      tables.broadcast_recipients.filter((r) => r.status === 'failed')
+      tables.broadcast_recipients.filter((r) => r.status === 'pending')
     ).toHaveLength(0);
-    expect(tables.broadcasts[0].status).toBe('paused');
+    expect(
+      tables.broadcast_recipients
+        .filter((r) => r.status === 'failed')
+        .every((r) => String(r.error_message).startsWith('Campaign stopped'))
+    ).toBe(true);
+    expect(
+      String(
+        (tables.broadcasts[0].config as Record<string, unknown>).stopped_reason
+      )
+    ).toContain('quality assessment');
   });
 
   it('held_for_quality_assessment with the setting off: just sent, campaign continues', async () => {

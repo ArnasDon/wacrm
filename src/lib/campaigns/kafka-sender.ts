@@ -23,7 +23,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { finalizeBroadcastStatus } from '@/lib/whatsapp/broadcast-core';
 import { sanitizePhoneForMeta } from '@/lib/whatsapp/phone-utils';
 import { RecipientResultWriter } from '@/lib/campaigns/result-writer';
-import { pauseCampaign } from '@/lib/campaigns/pause';
+import { closeStoppedRecipients, stopCampaign } from '@/lib/campaigns/pause';
 import {
   CampaignInboxLogger,
   campaignMessageText,
@@ -322,6 +322,14 @@ async function maybeFinalize(db: SupabaseClient, broadcastId: string) {
   const now = Date.now();
   if ((finalizeAt.get(broadcastId) ?? 0) > now) return;
   finalizeAt.set(broadcastId, now + 3000);
+  // Stopped by a delivery setting: sweep rows that went back to pending
+  // after the stop (a reroute's release) — no-op for other campaigns.
+  if (contexts.get(broadcastId)?.status === 'failed') {
+    await closeStoppedRecipients(db, broadcastId, {
+      unclaimedOnly: true,
+      claimStaleMs: CLAIM_STALE_MS,
+    });
+  }
   const { count } = await db
     .from('broadcast_recipients')
     .select('id', { count: 'exact', head: true })
@@ -572,7 +580,12 @@ async function processClaimed(
       );
     }
 
-    // Paused meanwhile (delivery settings): give the recipient back.
+    // Stopped meanwhile (delivery settings): this claimed recipient is
+    // ours to settle — the stop only closes unclaimed rows.
+    if (ctx.status === 'failed') {
+      await markFailed('Campaign stopped before this message was sent');
+      return 'skipped';
+    }
     if (ctx.status !== 'sending') {
       await release();
       return 'skipped';
@@ -619,7 +632,7 @@ async function processClaimed(
         result.messageStatus === QUALITY_HOLD_STATUS &&
         ctx.config.delivery?.pause_on_quality_hold
       ) {
-        await pauseCtx(
+        await stopCtx(
           ctx,
           db,
           msg.broadcastId,
@@ -649,9 +662,9 @@ async function processClaimed(
       template_name: option.row.name,
       template_language: option.row.language ?? 'en_US',
     });
-    // "Stop on Meta API error": pauses this campaign only.
+    // "Stop on Meta API error": stops this campaign only, for good.
     if (result.error.fromMeta && ctx.config.delivery?.stop_on_meta_error) {
-      await pauseCtx(
+      await stopCtx(
         ctx,
         db,
         msg.broadcastId,
@@ -662,14 +675,24 @@ async function processClaimed(
   }
 }
 
-/** Pause the campaign and make this worker's cached copy stop at once. */
-async function pauseCtx(
+/**
+ * Stop the campaign for good and make this worker's cached copy stop at
+ * once. Unclaimed pending rows close now; rows claimed by a worker (this
+ * one included) are settled by that worker, and `maybeFinalize` sweeps
+ * any stragglers.
+ */
+async function stopCtx(
   ctx: CampaignContext,
   db: SupabaseClient,
   broadcastId: string,
   reason: string
 ) {
   if (ctx.status !== 'sending') return;
-  ctx.status = 'paused';
-  await pauseCampaign(db, broadcastId, reason);
+  ctx.status = 'failed';
+  if (await stopCampaign(db, broadcastId, reason)) {
+    await closeStoppedRecipients(db, broadcastId, {
+      unclaimedOnly: true,
+      claimStaleMs: CLAIM_STALE_MS,
+    });
+  }
 }

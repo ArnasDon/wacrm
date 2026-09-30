@@ -1,5 +1,6 @@
 {
   "LoginPage": {
+    "accountDisabled": "Your account has been disabled. Contact the person who invited you to restore access.",
     "titleAccept": "Sign in to accept",
     "titleWelcome": "Welcome back",
     "descAccept": "Sign in and we'll take you to the invitation.",
@@ -28,6 +29,7 @@
     "automations": "Automations",
     "flows": "Flows",
     "aiAgents": "AI Agents",
+    "partners": "Partners",
     "settings": "Settings",
     "beta": "Beta",
     "unreadConversations": "{count} unread {count, plural, =1 {conversation} other {conversations}}",
@@ -53,6 +55,7 @@
     "pipelines": "Pipelines",
     "broadcasts": "Campaigns",
     "automations": "Automations",
+    "partners": "Partners",
     "settings": "Settings",
     "openMenu": "Open menu",
     "openAccountMenu": "Open account menu",
@@ -773,6 +776,7 @@
       "failures": "Failures",
       "stalledReason": "Stopped at {done} of {total} — nothing is sending it",
       "failedReason": "Halted — every recipient failed",
+      "stoppedReason": "Stopped — {reason}",
       "failuresReason": "{count, plural, one {# recipient failed} other {# recipients failed}}",
       "resume": "Resume",
       "retry": "Retry failed",
@@ -993,10 +997,10 @@
         "retries": "Rate-limit and temporary errors are retried automatically; if Meta pauses a template, that channel moves to its next template.",
         "deliveryInterval": "Campaign interval",
         "deliveryIntervalHint": "Start this campaign at least 30 seconds after the previous campaign started. The first one starts immediately. Off: it can run alongside other campaigns.",
-        "deliveryQualityHold": "Pause if Meta holds a message for quality assessment",
-        "deliveryQualityHoldHint": "Meta accepts such a message as “held_for_quality_assessment” — it still counts as sent. Tick to pause this campaign when that happens, to protect your quality rating.",
+        "deliveryQualityHold": "Stop the campaign if Meta holds a message for quality assessment",
+        "deliveryQualityHoldHint": "Meta accepts such a message as “held_for_quality_assessment” — it still counts as sent. Tick to stop this campaign for good when that happens, to protect your quality rating. The remaining recipients are marked failed and the campaign can't be resumed.",
         "deliveryStopOnError": "Stop on Meta API error",
-        "deliveryStopOnErrorHint": "Off: a Meta API error (e.g. #135000) fails only that message and the campaign continues. On: it fails the message and pauses this campaign — other campaigns and channels keep sending.",
+        "deliveryStopOnErrorHint": "Off: a Meta API error (e.g. #135000) fails only that message and the campaign continues. On: it fails the message and stops this campaign for good — the remaining recipients are marked failed and it can't be resumed. Other campaigns and channels keep sending.",
         "deliveryAuto": "Always on: rate limits and temporary errors are retried automatically, and a paused template hands over to the channel’s next template. Timeouts are never retried, so no one gets a message twice."
       },
       "duration": {
@@ -1203,7 +1207,9 @@
       "toastResumeStartedCapped": "Sending {count} recipients in the background. {remaining} more will need another run.",
       "toastResumeFailed": "Could not resume: {error}",
       "pausedTitle": "Campaign paused",
-      "pausedHint": "{reason} — resume to send the {count} remaining."
+      "pausedHint": "{reason} — resume to send the {count} remaining.",
+      "stoppedTitle": "Campaign stopped",
+      "stoppedHint": "{reason}. This campaign was stopped by its delivery settings and can't be resumed — create a new campaign to send again."
     },
     "new": {
       "title": "New Campaign",
@@ -2678,5 +2684,147 @@
   },
   "DashboardShell": {
     "loading": "Loading..."
+  },
+  "Partners": {
+    "title": "Partners",
+    "description": "Invite partner companies to WSCRM and manage their access.",
+    "createPartner": "Create Partner",
+    "loadFailed": "Failed to load partners",
+    "retry": "Retry",
+    "emptyTitle": "No partners yet",
+    "emptyDesc": "Invite your first partner — they'll get an email to set up their account.",
+    "inviteSent": "Invitation sent successfully.",
+    "inviteResent": "Invitation resent successfully.",
+    "emailNotSent": "The invitation was created, but the email could not be sent.",
+    "actionFailed": "Something went wrong. Please try again.",
+    "disabled": "Partner disabled.",
+    "enabled": "Partner enabled.",
+    "revoked": "Invitation revoked.",
+    "linkCopied": "Link copied",
+    "clipboardBlocked": "Couldn't copy — select the link and copy it manually.",
+    "cancel": "Cancel",
+    "actionsFor": "Actions for {company}",
+    "col": {
+      "company": "Company Name",
+      "partner": "Partner Name",
+      "email": "Email",
+      "phone": "Phone",
+      "status": "Status",
+      "invitation": "Invitation Status",
+      "sent": "Invitation Sent",
+      "expiry": "Invitation Expiry",
+      "created": "Created At",
+      "actions": "Actions"
+    },
+    "status": {
+      "ACTIVE": "Active",
+      "DISABLED": "Disabled"
+    },
+    "invitationStatus": {
+      "PENDING": "Pending",
+      "ACCEPTED": "Accepted",
+      "EXPIRED": "Expired",
+      "REVOKED": "Revoked"
+    },
+    "actions": {
+      "resend": "Resend Invitation",
+      "revoke": "Revoke Invitation",
+      "disable": "Disable",
+      "enable": "Enable"
+    },
+    "confirmDisable": {
+      "title": "Disable Partner?",
+      "desc": "This user will no longer be able to access the CRM.",
+      "confirm": "Disable"
+    },
+    "confirmRevoke": {
+      "title": "Revoke invitation?",
+      "desc": "The invitation link will stop working immediately.",
+      "confirm": "Revoke"
+    },
+    "manualLink": {
+      "title": "Share the signup link",
+      "desc": "Email delivery isn't available. Send this link to {email} yourself — it is shown only once.",
+      "copy": "Copy link",
+      "done": "Done"
+    },
+    "accessDenied": {
+      "title": "Access Denied",
+      "desc": "You don't have permission to view this page."
+    },
+    "create": {
+      "title": "Create Partner",
+      "description": "We'll email an invitation to complete their account setup.",
+      "companyNameLabel": "Company Name",
+      "companyNamePlaceholder": "ABC Company",
+      "emailLabel": "Email",
+      "emailPlaceholder": "partner@example.com",
+      "phoneLabel": "Phone Number",
+      "phonePlaceholder": "+14155550123",
+      "phoneHint": "International format, starting with + and the country code.",
+      "cancel": "Cancel",
+      "submit": "Send Invitation",
+      "sending": "Sending...",
+      "failed": "Failed to create invitation",
+      "networkError": "Network error. Please try again."
+    },
+    "errors": {
+      "required": "This field is required.",
+      "tooLong": "This value is too long.",
+      "invalidEmail": "Enter a valid email address.",
+      "invalidPhone": "Enter the phone number in international format, e.g. +14155550123.",
+      "tooShort": "Password must be at least 8 characters.",
+      "mismatch": "Passwords do not match.",
+      "accountExists": "An account with this email already exists.",
+      "pendingInvitation": "A pending invitation for this email already exists.",
+      "duplicate": "You cannot invite yourself.",
+      "weak": "This password is too weak."
+    }
+  },
+  "PartnerSignup": {
+    "title": "Complete Your Account",
+    "desc": "{inviter} invited you to join WSCRM.",
+    "companyNameLabel": "Company Name",
+    "emailLabel": "Email",
+    "phoneLabel": "Phone",
+    "firstNameLabel": "First Name",
+    "lastNameLabel": "Last Name",
+    "passwordLabel": "Password",
+    "passwordPlaceholder": "At least 8 characters",
+    "confirmPasswordLabel": "Confirm Password",
+    "submit": "Create Account",
+    "creating": "Creating account...",
+    "failed": "Could not complete signup. Please try again.",
+    "networkError": "Network error. Please try again.",
+    "goToSignIn": "Go to sign in",
+    "success": {
+      "title": "Account created",
+      "desc": "Your account is ready. Sign in with your email and new password.",
+      "signIn": "Sign in"
+    },
+    "expired": {
+      "title": "Invitation Expired",
+      "desc": "This invitation has expired. Please contact the person who invited you and request a new invitation."
+    },
+    "used": {
+      "title": "Invitation Already Used",
+      "desc": "This invitation has already been used to create an account."
+    },
+    "revoked": {
+      "title": "Invitation No Longer Valid",
+      "desc": "This invitation has been withdrawn. Please contact the person who invited you."
+    },
+    "accountExists": {
+      "title": "Account Already Exists",
+      "desc": "An account with this email already exists. Sign in instead."
+    },
+    "invalid": {
+      "title": "Invalid Invitation",
+      "desc": "This invitation link is invalid. Check that you copied the full link from your email."
+    },
+    "error": {
+      "title": "Something went wrong",
+      "desc": "We couldn't check this invitation. Please try again later."
+    }
   }
 }

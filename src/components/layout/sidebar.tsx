@@ -13,6 +13,7 @@ import {
   Crown,
   FileText,
   GitBranch,
+  Handshake,
   LayoutDashboard,
   LogOut,
   MessageSquare,
@@ -105,6 +106,15 @@ const navItems: NavItem[] = [
   { href: "/agents", labelKey: "aiAgents", icon: Bot },
 ];
 
+// Main Users only (profiles.role = 'User'). Appended after AI Agents
+// once the profile has resolved, so a SubUser never sees it flash in.
+// Server routes enforce the same rule independently.
+const partnersNavItem: NavItem = {
+  href: "/partners",
+  labelKey: "partners",
+  icon: Handshake,
+};
+
 const bottomNavItems = [
   { href: "/settings", labelKey: "settings", icon: Settings },
 ];
@@ -120,7 +130,10 @@ import { useTranslations } from "next-intl";
 export function Sidebar({ open = false, onClose }: SidebarProps) {
   const t = useTranslations("Sidebar");
   const pathname = usePathname();
-  const { profile, profileLoading, account, accountRole, signOut } = useAuth();
+  const { profile, profileLoading, account, accountRole, signOut, canManagePartners } =
+    useAuth();
+  const visibleNavItems =
+    !profileLoading && canManagePartners ? [...navItems, partnersNavItem] : navItems;
   const totalUnread = useTotalUnread();
   const unreadNotifications = useUnreadNotifications();
   // Only surface the account-name strip when it actually carries
@@ -212,7 +225,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
         {/* Main navigation */}
         <nav className="flex-1 overflow-y-auto px-3 py-4">
           <ul className="flex flex-col gap-1">
-            {navItems.map((item) => {
+            {visibleNavItems.map((item) => {
               const isActive =
                 pathname === item.href ||
                 (item.href !== "/dashboard" && pathname.startsWith(item.href));

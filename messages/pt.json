@@ -1,5 +1,6 @@
 {
   "LoginPage": {
+    "accountDisabled": "Sua conta foi desativada. Entre em contato com quem convidou você para restaurar o acesso.",
     "titleAccept": "Entre para aceitar",
     "titleWelcome": "Bem-vindo de volta",
     "descAccept": "Entre e levaremos você até o convite.",
@@ -28,6 +29,7 @@
     "automations": "Automações",
     "flows": "Fluxos",
     "aiAgents": "Agentes de IA",
+    "partners": "Parceiros",
     "settings": "Configurações",
     "beta": "Beta",
     "unreadConversations": "{count} {count, plural, =1 {conversa não lida} other {conversas não lidas}}",
@@ -53,6 +55,7 @@
     "pipelines": "Pipelines",
     "broadcasts": "Campanhas",
     "automations": "Automações",
+    "partners": "Parceiros",
     "settings": "Configurações",
     "openMenu": "Abrir menu",
     "openAccountMenu": "Abrir menu da conta",
@@ -773,6 +776,7 @@
       "failures": "Falhas",
       "stalledReason": "Parou em {done} de {total} — nada está enviando",
       "failedReason": "Interrompida — todos os destinatários falharam",
+      "stoppedReason": "Parada — {reason}",
       "failuresReason": "{count, plural, one {# destinatário falhou} other {# destinatários falharam}}",
       "resume": "Retomar",
       "retry": "Reenviar falhas",
@@ -993,10 +997,10 @@
         "retries": "Limites de velocidade e erros temporários são repetidos automaticamente; se a Meta pausar um modelo, o canal passa para o próximo.",
         "deliveryInterval": "Intervalo entre campanhas",
         "deliveryIntervalHint": "Inicia esta campanha pelo menos 30 segundos depois que a anterior começou. A primeira começa na hora. Desligado: pode rodar junto com outras campanhas.",
-        "deliveryQualityHold": "Pausar se a Meta retiver uma mensagem para avaliar a qualidade",
-        "deliveryQualityHoldHint": "A Meta aceita a mensagem como “held_for_quality_assessment” — ela conta como enviada. Marque para pausar esta campanha quando isso acontecer e proteger sua classificação de qualidade.",
+        "deliveryQualityHold": "Parar a campanha se a Meta retiver uma mensagem para avaliar a qualidade",
+        "deliveryQualityHoldHint": "A Meta aceita a mensagem como “held_for_quality_assessment” — ela conta como enviada. Marque para parar esta campanha de vez quando isso acontecer e proteger sua classificação de qualidade. Os destinatários restantes ficam como falha e a campanha não pode ser retomada.",
         "deliveryStopOnError": "Parar em erro da API da Meta",
-        "deliveryStopOnErrorHint": "Desligado: um erro da API da Meta (ex.: #135000) faz falhar só essa mensagem e a campanha continua. Ligado: a mensagem falha e esta campanha é pausada — outras campanhas e canais continuam enviando.",
+        "deliveryStopOnErrorHint": "Desligado: um erro da API da Meta (ex.: #135000) faz falhar só essa mensagem e a campanha continua. Ligado: a mensagem falha e esta campanha é parada de vez — os destinatários restantes ficam como falha e ela não pode ser retomada. Outras campanhas e canais continuam enviando.",
         "deliveryAuto": "Sempre ligado: limites de velocidade e erros temporários são repetidos automaticamente, e um modelo pausado passa para o próximo do canal. Tempos esgotados nunca são repetidos, então ninguém recebe a mensagem duas vezes."
       },
       "duration": {
@@ -1203,7 +1207,9 @@
       "toastResumeStartedCapped": "Enviando para {count} destinatários em segundo plano. Outros {remaining} precisarão de mais uma execução.",
       "toastResumeFailed": "Não foi possível retomar: {error}",
       "pausedTitle": "Campanha pausada",
-      "pausedHint": "{reason} — retome para enviar as {count} restantes."
+      "pausedHint": "{reason} — retome para enviar as {count} restantes.",
+      "stoppedTitle": "Campanha parada",
+      "stoppedHint": "{reason}. As configurações de entrega pararam esta campanha e ela não pode ser retomada — crie uma nova campanha para enviar de novo."
     },
     "new": {
       "title": "Nova campanha",
@@ -2666,5 +2672,147 @@
   },
   "DashboardShell": {
     "loading": "Carregando..."
+  },
+  "Partners": {
+    "title": "Parceiros",
+    "description": "Convide empresas parceiras para o WSCRM e gerencie o acesso delas.",
+    "createPartner": "Criar parceiro",
+    "loadFailed": "Falha ao carregar parceiros",
+    "retry": "Tentar novamente",
+    "emptyTitle": "Nenhum parceiro ainda",
+    "emptyDesc": "Convide seu primeiro parceiro — ele receberá um e-mail para configurar a conta.",
+    "inviteSent": "Convite enviado com sucesso.",
+    "inviteResent": "Convite reenviado com sucesso.",
+    "emailNotSent": "O convite foi criado, mas o e-mail não pôde ser enviado.",
+    "actionFailed": "Algo deu errado. Tente novamente.",
+    "disabled": "Parceiro desativado.",
+    "enabled": "Parceiro ativado.",
+    "revoked": "Convite revogado.",
+    "linkCopied": "Link copiado",
+    "clipboardBlocked": "Não foi possível copiar — selecione o link e copie manualmente.",
+    "cancel": "Cancelar",
+    "actionsFor": "Ações para {company}",
+    "col": {
+      "company": "Empresa",
+      "partner": "Parceiro",
+      "email": "E-mail",
+      "phone": "Telefone",
+      "status": "Status",
+      "invitation": "Status do convite",
+      "sent": "Convite enviado",
+      "expiry": "Expiração do convite",
+      "created": "Criado em",
+      "actions": "Ações"
+    },
+    "status": {
+      "ACTIVE": "Ativo",
+      "DISABLED": "Desativado"
+    },
+    "invitationStatus": {
+      "PENDING": "Pendente",
+      "ACCEPTED": "Aceito",
+      "EXPIRED": "Expirado",
+      "REVOKED": "Revogado"
+    },
+    "actions": {
+      "resend": "Reenviar convite",
+      "revoke": "Revogar convite",
+      "disable": "Desativar",
+      "enable": "Ativar"
+    },
+    "confirmDisable": {
+      "title": "Desativar parceiro?",
+      "desc": "Este usuário não poderá mais acessar o CRM.",
+      "confirm": "Desativar"
+    },
+    "confirmRevoke": {
+      "title": "Revogar convite?",
+      "desc": "O link do convite deixará de funcionar imediatamente.",
+      "confirm": "Revogar"
+    },
+    "manualLink": {
+      "title": "Compartilhe o link de cadastro",
+      "desc": "O envio de e-mail não está disponível. Envie você mesmo este link para {email} — ele é exibido apenas uma vez.",
+      "copy": "Copiar link",
+      "done": "Concluir"
+    },
+    "accessDenied": {
+      "title": "Acesso negado",
+      "desc": "Você não tem permissão para ver esta página."
+    },
+    "create": {
+      "title": "Criar parceiro",
+      "description": "Enviaremos um convite por e-mail para concluir a configuração da conta.",
+      "companyNameLabel": "Nome da empresa",
+      "companyNamePlaceholder": "Empresa ABC",
+      "emailLabel": "E-mail",
+      "emailPlaceholder": "parceiro@exemplo.com",
+      "phoneLabel": "Telefone",
+      "phonePlaceholder": "+14155550123",
+      "phoneHint": "Formato internacional, começando com + e o código do país.",
+      "cancel": "Cancelar",
+      "submit": "Enviar convite",
+      "sending": "Enviando...",
+      "failed": "Falha ao criar o convite",
+      "networkError": "Erro de rede. Tente novamente."
+    },
+    "errors": {
+      "required": "Este campo é obrigatório.",
+      "tooLong": "Este valor é muito longo.",
+      "invalidEmail": "Informe um e-mail válido.",
+      "invalidPhone": "Informe o telefone no formato internacional, ex.: +14155550123.",
+      "tooShort": "A senha deve ter pelo menos 8 caracteres.",
+      "mismatch": "As senhas não coincidem.",
+      "accountExists": "Já existe uma conta com este e-mail.",
+      "pendingInvitation": "Já existe um convite pendente para este e-mail.",
+      "duplicate": "Você não pode convidar a si mesmo.",
+      "weak": "Esta senha é muito fraca."
+    }
+  },
+  "PartnerSignup": {
+    "title": "Conclua sua conta",
+    "desc": "{inviter} convidou você para o WSCRM.",
+    "companyNameLabel": "Empresa",
+    "emailLabel": "E-mail",
+    "phoneLabel": "Telefone",
+    "firstNameLabel": "Nome",
+    "lastNameLabel": "Sobrenome",
+    "passwordLabel": "Senha",
+    "passwordPlaceholder": "Pelo menos 8 caracteres",
+    "confirmPasswordLabel": "Confirmar senha",
+    "submit": "Criar conta",
+    "creating": "Criando conta...",
+    "failed": "Não foi possível concluir o cadastro. Tente novamente.",
+    "networkError": "Erro de rede. Tente novamente.",
+    "goToSignIn": "Ir para o login",
+    "success": {
+      "title": "Conta criada",
+      "desc": "Sua conta está pronta. Entre com seu e-mail e a nova senha.",
+      "signIn": "Entrar"
+    },
+    "expired": {
+      "title": "Convite expirado",
+      "desc": "Este convite expirou. Entre em contato com quem convidou você e solicite um novo convite."
+    },
+    "used": {
+      "title": "Convite já utilizado",
+      "desc": "Este convite já foi usado para criar uma conta."
+    },
+    "revoked": {
+      "title": "Convite não é mais válido",
+      "desc": "Este convite foi retirado. Entre em contato com quem convidou você."
+    },
+    "accountExists": {
+      "title": "A conta já existe",
+      "desc": "Já existe uma conta com este e-mail. Faça login."
+    },
+    "invalid": {
+      "title": "Convite inválido",
+      "desc": "Este link de convite é inválido. Verifique se você copiou o link completo do e-mail."
+    },
+    "error": {
+      "title": "Algo deu errado",
+      "desc": "Não foi possível verificar este convite. Tente novamente mais tarde."
+    }
   }
 }

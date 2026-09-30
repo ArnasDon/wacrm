@@ -20,13 +20,23 @@ import {
   isAccountRole,
   type AccountRole,
 } from "@/lib/auth/roles";
+import {
+  canManagePartners as canManagePartnersFor,
+  isUserRole,
+  type UserRole,
+  type UserStatus,
+} from "@/lib/auth/user-roles";
 
 interface Profile {
   id: string;
   full_name: string | null;
   email: string;
   avatar_url: string | null;
-  role: string | null;
+  /** Partner hierarchy role: 'User' (Main User) or 'SubUser' (Partner). */
+  role: UserRole | null;
+  /** Main User who invited this SubUser; null for Main Users. */
+  parent_user_id: string | null;
+  status: UserStatus;
   /**
    * Opted-in beta feature keys for this account. No current feature
    * reads this — Flows was the last user and went to soft-GA in PR
@@ -130,6 +140,12 @@ interface AuthContextValue {
   canEditSettings: boolean;
   /** True if the caller can send messages and edit operational data (agent+). */
   canSendMessages: boolean;
+
+  /** 'User' (Main User) or 'SubUser' (Partner). Null while loading. */
+  userRole: UserRole | null;
+  /** True for Main Users — the only role that sees the Partners module.
+   *  UI gate only; every Partners API enforces this server-side. */
+  canManagePartners: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -149,6 +165,8 @@ interface ProfileRow {
   email: string;
   avatar_url: string | null;
   role: string | null;
+  parent_user_id: string | null;
+  status: string | null;
   beta_features: string[] | null;
   account_id: string | null;
   account_role: string | null;
@@ -192,7 +210,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const result = await supabase
           .from("profiles")
           .select(
-            "id, full_name, email, avatar_url, role, beta_features, account_id, account_role",
+            "id, full_name, email, avatar_url, role, parent_user_id, status, beta_features, account_id, account_role",
           )
           .eq("user_id", userId)
           .maybeSingle();
@@ -219,6 +237,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
         lastFetchedUserIdRef.current = null;
         setStatusDetail(error.message);
+        return;
+      }
+
+      if (data && data.status === "DISABLED") {
+        // Disabled by their Main User. The database already denies
+        // them (is_account_member checks status) and Supabase Auth has
+        // them banned; end the lingering session so they aren't left
+        // in a UI where nothing loads.
+        await supabase.auth.signOut();
+        window.location.href = "/login?disabled=1";
         return;
       }
 
@@ -272,7 +300,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           full_name: data.full_name,
           email: data.email,
           avatar_url: data.avatar_url,
-          role: data.role,
+          role: isUserRole(data.role) ? data.role : null,
+          parent_user_id: data.parent_user_id ?? null,
+          status: data.status === "DISABLED" ? "DISABLED" : "ACTIVE",
           // `beta_features` is `NOT NULL DEFAULT ARRAY[]` in the DB, but
           // narrow defensively in case the column hasn't been migrated yet
           // (older deployments running 011 lazily) — `null` reads as no
@@ -413,6 +443,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [profile?.account_role, profile?.account_id]);
 
+  const userRole = profile?.role ?? null;
+  const canManagePartners = canManagePartnersFor(userRole);
+
   // Signed out is not a broken account — the shell redirects to /login
   // before anything reads this.
   const accountStatus: AccountStatus = !user
@@ -439,6 +472,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         accountStatus,
         accountStatusDetail: statusDetail,
         ...derived,
+        userRole,
+        canManagePartners,
       }}
     >
       {children}
@@ -481,6 +516,8 @@ export function useAuth(): AuthContextValue {
       canManageMembers: false,
       canEditSettings: false,
       canSendMessages: false,
+      userRole: null,
+      canManagePartners: false,
     };
   }
   return ctx;

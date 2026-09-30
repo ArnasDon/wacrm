@@ -28,7 +28,7 @@ import { sanitizePhoneForMeta } from '@/lib/whatsapp/phone-utils';
 import { ChannelSender } from '@/lib/campaigns/channel-sender';
 import { channelMaxRate } from '@/lib/campaigns/rate-limiter';
 import { RecipientResultWriter } from '@/lib/campaigns/result-writer';
-import { pauseCampaign } from '@/lib/campaigns/pause';
+import { closeStoppedRecipients, stopCampaign } from '@/lib/campaigns/pause';
 import {
   CampaignInboxLogger,
   campaignMessageText,
@@ -457,12 +457,14 @@ export async function runAdvancedCampaign(
     return refreshing;
   };
 
-  // Pause this campaign (delivery settings) and stop this pass: lanes
-  // stop taking recipients; what's queued stays pending for "Resume".
-  const pauseFor = async (reason: string) => {
+  // Stop this campaign for good (delivery settings) and end this pass:
+  // lanes stop taking recipients; once they drain and results are
+  // flushed, everything still pending is closed as failed (below).
+  let stoppedBySetting = false;
+  const stopFor = async (reason: string) => {
     if (stopped) return;
     stopped = true;
-    await pauseCampaign(db, broadcastId, reason);
+    stoppedBySetting = await stopCampaign(db, broadcastId, reason);
   };
 
   // ── Send one recipient on one channel ──────────────────────────
@@ -587,7 +589,7 @@ export async function runAdvancedCampaign(
         result.messageStatus === QUALITY_HOLD_STATUS &&
         config.delivery?.pause_on_quality_hold
       ) {
-        await pauseFor(
+        await stopFor(
           `Meta held a message for quality assessment (${ch.name})`
         );
       }
@@ -625,7 +627,7 @@ export async function runAdvancedCampaign(
       // "Stop on Meta API error": a real Meta error (not our validation,
       // not an ambiguous timeout) pauses this campaign only.
       if (result.error.fromMeta && config.delivery?.stop_on_meta_error) {
-        await pauseFor(`Meta API error on ${ch.name}: ${text}`);
+        await stopFor(`Meta API error on ${ch.name}: ${text}`);
       }
     }
   };
@@ -664,7 +666,15 @@ export async function runAdvancedCampaign(
   }
   await persistExhausted();
 
-  if (stopped) return 'stopped';
+  if (stopped) {
+    if (stoppedBySetting) {
+      // In-flight sends are recorded (flushed above); nobody else sends
+      // for this campaign while we hold its lock — close the rest.
+      await closeStoppedRecipients(db, broadcastId, { unclaimedOnly: false });
+      await finalizeBroadcastStatus(db, broadcastId);
+    }
+    return 'stopped';
+  }
 
   // Nothing queued, nothing pending in the DB → done.
   if (queued() === 0) {

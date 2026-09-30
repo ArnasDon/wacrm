@@ -519,7 +519,9 @@ export default function CampaignsPage() {
                               ),
                               total: format.number(b.total_recipients),
                             })
-                          : t('failedReason')}
+                          : b.config?.stopped_reason
+                            ? t('stoppedReason', { reason: b.config.stopped_reason })
+                            : t('failedReason')}
                     </span>
                     <button
                       type="button"

@@ -40,7 +40,12 @@ function LoginPageInner() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  // Set by the dashboard when it signs out a user whose Main User
+  // disabled them (Partners → Disable).
+  const disabled = searchParams.get("disabled") === "1";
+  const [error, setError] = useState<string | null>(
+    disabled ? t("accountDisabled") : null,
+  );
   const [loading, setLoading] = useState(false);
   const supabase = createClient();
 
@@ -55,7 +60,9 @@ function LoginPageInner() {
     });
 
     if (error) {
-      setError(error.message);
+      // Supabase Auth bans disabled SubUsers; say so plainly instead
+      // of surfacing the raw "User is banned".
+      setError(error.code === "user_banned" ? t("accountDisabled") : error.message);
       setLoading(false);
       return;
     }

@@ -32,8 +32,16 @@ interface GeminiResponse {
 export async function generateGemini(args: ProviderArgs): Promise<ProviderResult> {
   const { apiKey, model, systemPrompt, messages, timeoutMs } = args
 
-  const cleanModel =
-    model?.trim().replace(/^models\//, '') || 'gemini-1.5-flash'
+  let cleanModel =
+    model?.trim().replace(/^models\//, '') || 'gemini-2.5-flash'
+  // Auto-upgrade deprecated 1.5 model name to current 2.5 flash
+  if (
+    cleanModel === 'gemini-1.5-flash' ||
+    cleanModel === 'gemini-1.5-flash-latest' ||
+    cleanModel === 'gemini-1.5-pro'
+  ) {
+    cleanModel = cleanModel.includes('pro') ? 'gemini-2.5-pro' : 'gemini-2.5-flash'
+  }
   const trimmedKey = apiKey.trim()
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${cleanModel}:generateContent?key=${encodeURIComponent(trimmedKey)}`

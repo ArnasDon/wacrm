@@ -24,9 +24,15 @@ import { contactHandle } from "@/lib/whatsapp/wa-identity";
 
 interface ContactSidebarProps {
   contact: Contact | null;
+  resyncToken?: number;
+  lastMessageAt?: string;
 }
 
-export function ContactSidebar({ contact }: ContactSidebarProps) {
+export function ContactSidebar({
+  contact,
+  resyncToken,
+  lastMessageAt,
+}: ContactSidebarProps) {
   const tSidebar = useTranslations("Inbox.sidebar");
   const tThread = useTranslations("Inbox.messageThread");
 
@@ -106,6 +112,46 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
       void supabase.removeChannel(channel);
     };
   }, [contact?.id, fetchContactData]);
+
+  // Re-fetch tags and contact info when a new message arrives in the thread
+  // (Automations and flows typically attach tags within ~500ms of a message)
+  useEffect(() => {
+    if (!lastMessageAt) return;
+    const t1 = setTimeout(() => {
+      fetchContactData();
+    }, 600);
+    const t2 = setTimeout(() => {
+      fetchContactData();
+    }, 2200);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [lastMessageAt, fetchContactData]);
+
+  // Re-fetch when user clicks the manual refresh button or reconnects
+  useEffect(() => {
+    if (resyncToken === undefined) return;
+    fetchContactData();
+  }, [resyncToken, fetchContactData]);
+
+  // Periodic polling every 5s while an active contact sidebar is open
+  useEffect(() => {
+    if (!contact?.id) return;
+    const interval = setInterval(() => {
+      fetchContactData();
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [contact?.id, fetchContactData]);
+
+  // Re-fetch when user switches back to browser tab
+  useEffect(() => {
+    const handleFocus = () => {
+      fetchContactData();
+    };
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
+  }, [fetchContactData]);
 
   const handleCopyPhone = useCallback(async () => {
     // Copies whatever the row displays — a BSUID-only contact has no

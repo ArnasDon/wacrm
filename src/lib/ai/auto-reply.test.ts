@@ -184,14 +184,18 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
     expect(h.engineSendText).not.toHaveBeenCalled()
   })
 
-  it('skips when the per-conversation cap is reached', async () => {
+  it('sends wrap-up notice when the per-conversation cap is reached', async () => {
     h.state.conv = {
       assigned_agent_id: null,
       ai_autoreply_disabled: false,
       ai_reply_count: 3,
     }
     await dispatchInboundToAiReply(ARGS)
-    expect(h.engineSendText).not.toHaveBeenCalled()
+    expect(h.engineSendText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: expect.stringContaining('reached our automated assistant limit'),
+      }),
+    )
   })
 
   it('skips when there is nothing to reply to', async () => {
@@ -268,10 +272,14 @@ describe('dispatchInboundToAiReply — typing indicator (#527)', () => {
 })
 
 describe('dispatchInboundToAiReply — handoff', () => {
-  it('disables auto-reply, writes a summary, and does not send on handoff', async () => {
+  it('disables auto-reply, writes a summary, and sends handoff notice to customer', async () => {
     h.generateReply.mockResolvedValue({ text: '', handoff: true })
     await dispatchInboundToAiReply(ARGS)
-    expect(h.engineSendText).not.toHaveBeenCalled()
+    expect(h.engineSendText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: expect.stringContaining('live agent will assist you shortly'),
+      }),
+    )
     expect(h.state.rpcCalls).toHaveLength(0)
     expect(h.state.updatePayload).toMatchObject({ ai_autoreply_disabled: true })
     expect(h.state.updatePayload?.ai_handoff_summary).toContain(

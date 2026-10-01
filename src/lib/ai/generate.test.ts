@@ -68,6 +68,19 @@ describe('parseGeneration', () => {
       usage,
     })
   })
+
+  it('converts markdown bold and bullets to WhatsApp formatting', () => {
+    const input =
+      '* **For Rates:** Please check *here*\n' +
+      '* **For Tracking:** Share order ID'
+    expect(parseGeneration(input)).toEqual({
+      text:
+        '• *For Rates:* Please check *here*\n' +
+        '• *For Tracking:* Share order ID',
+      handoff: false,
+      usage: null,
+    })
+  })
 })
 
 describe('generateReply — OpenAI', () => {

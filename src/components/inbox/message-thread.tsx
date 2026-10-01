@@ -846,9 +846,16 @@ export function MessageThread({
       if (!conversation) return;
 
       const supabase = createClient();
+      const updateData: Record<string, unknown> = { assigned_agent_id: agentId };
+      if (!agentId) {
+        updateData.ai_autoreply_disabled = false;
+        updateData.ai_reply_count = 0;
+        updateData.ai_handoff_summary = null;
+      }
+
       const { error } = await supabase
         .from("conversations")
-        .update({ assigned_agent_id: agentId })
+        .update(updateData)
         .eq("id", conversation.id);
 
       if (error) {

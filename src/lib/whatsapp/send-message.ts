@@ -505,13 +505,18 @@ export async function sendMessageToConversation(
       ? interactivePayloadPreviewText(interactivePayload!)
       : persistedText || `[${messageType}]`;
 
+  const convUpdate: Record<string, unknown> = {
+    last_message_text: lastMessageText,
+    last_message_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  if (conversation.status === 'pending') {
+    convUpdate.status = 'open';
+  }
+
   await db
     .from('conversations')
-    .update({
-      last_message_text: lastMessageText,
-      last_message_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
+    .update(convUpdate)
     .eq('id', conversationId);
 
   // Pause any active Flow run for this contact — the agent stepping in

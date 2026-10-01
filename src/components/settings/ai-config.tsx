@@ -39,11 +39,13 @@ const MASKED_KEY = '••••••••••••••••';
 const HANDOFF_QUEUE = '__queue__';
 
 const PROVIDER_LABEL: Record<AiProvider, string> = {
+  gemini: 'Google Gemini (Free)',
   openai: 'OpenAI',
   anthropic: 'Anthropic (Claude)',
 };
 
 const KEY_PLACEHOLDER: Record<AiProvider, string> = {
+  gemini: 'AIzaSy...',
   openai: 'sk-...',
   anthropic: 'sk-ant-...',
 };
@@ -131,6 +133,7 @@ export function AiConfig() {
     const isDefaultModel =
       model === AI_PROVIDER_DEFAULT_MODEL.openai ||
       model === AI_PROVIDER_DEFAULT_MODEL.anthropic ||
+      model === AI_PROVIDER_DEFAULT_MODEL.gemini ||
       model.trim() === '';
     if (isDefaultModel) setModel(AI_PROVIDER_DEFAULT_MODEL[next]);
   };
@@ -277,6 +280,7 @@ export function AiConfig() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="gemini">{PROVIDER_LABEL.gemini}</SelectItem>
                     <SelectItem value="openai">{PROVIDER_LABEL.openai}</SelectItem>
                     <SelectItem value="anthropic">
                       {PROVIDER_LABEL.anthropic}

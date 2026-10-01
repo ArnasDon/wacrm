@@ -174,24 +174,59 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
     expect(h.sendTypingIndicator).not.toHaveBeenCalled()
   })
 
-  it('skips when auto-reply was disabled on this conversation', async () => {
+  it('auto-resumes AI when no agent is assigned on a pending conversation', async () => {
     h.state.conv = {
       assigned_agent_id: null,
+      status: 'pending',
       ai_autoreply_disabled: true,
       ai_reply_count: 0,
     }
     await dispatchInboundToAiReply(ARGS)
-    expect(h.engineSendText).not.toHaveBeenCalled()
+    expect(h.engineSendText).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'Hello!' }),
+    )
   })
 
-  it('skips when the per-conversation cap is reached', async () => {
+  it('auto-resumes AI when no agent is assigned on an open conversation', async () => {
+    h.state.conv = {
+      assigned_agent_id: null,
+      status: 'open',
+      ai_autoreply_disabled: true,
+      ai_reply_count: 0,
+    }
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendText).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'Hello!' }),
+    )
+  })
+
+  it('resumes AI and clears stale assignment when the conversation has been inactive for 10+ hours', async () => {
+    const elevenHoursAgo = new Date(Date.now() - 11 * 60 * 60 * 1000).toISOString()
+    h.state.conv = {
+      assigned_agent_id: 'agent-old',
+      status: 'open',
+      ai_autoreply_disabled: true,
+      ai_reply_count: 3,
+      last_message_at: elevenHoursAgo,
+    }
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendText).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'Hello!' }),
+    )
+  })
+
+  it('sends wrap-up notice when the per-conversation cap is reached', async () => {
     h.state.conv = {
       assigned_agent_id: null,
       ai_autoreply_disabled: false,
       ai_reply_count: 3,
     }
     await dispatchInboundToAiReply(ARGS)
-    expect(h.engineSendText).not.toHaveBeenCalled()
+    expect(h.engineSendText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: expect.stringContaining('reached our automated assistant limit'),
+      }),
+    )
   })
 
   it('skips when there is nothing to reply to', async () => {
@@ -268,10 +303,14 @@ describe('dispatchInboundToAiReply — typing indicator (#527)', () => {
 })
 
 describe('dispatchInboundToAiReply — handoff', () => {
-  it('disables auto-reply, writes a summary, and does not send on handoff', async () => {
+  it('disables auto-reply, writes a summary, and sends handoff notice to customer', async () => {
     h.generateReply.mockResolvedValue({ text: '', handoff: true })
     await dispatchInboundToAiReply(ARGS)
-    expect(h.engineSendText).not.toHaveBeenCalled()
+    expect(h.engineSendText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: expect.stringContaining('live agent will assist you shortly'),
+      }),
+    )
     expect(h.state.rpcCalls).toHaveLength(0)
     expect(h.state.updatePayload).toMatchObject({ ai_autoreply_disabled: true })
     expect(h.state.updatePayload?.ai_handoff_summary).toContain(

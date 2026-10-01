@@ -28,9 +28,12 @@ export interface CurrencyOption {
  * list to offer more — nothing else needs to change.
  */
 export const CURRENCIES: CurrencyOption[] = [
+  { code: "SAR", label: "Saudi Riyal", symbol: "ر.س" },
   { code: "USD", label: "US Dollar", symbol: "$" },
   { code: "EUR", label: "Euro", symbol: "€" },
   { code: "GBP", label: "British Pound", symbol: "£" },
+  { code: "SAR", label: "Saudi Riyal", symbol: "ر.س" },
+  { code: "AED", label: "UAE Dirham", symbol: "د.إ" },
   { code: "INR", label: "Indian Rupee", symbol: "₹" },
   { code: "AUD", label: "Australian Dollar", symbol: "A$" },
   { code: "CAD", label: "Canadian Dollar", symbol: "C$" },

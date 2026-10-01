@@ -24,9 +24,15 @@ import { contactHandle } from "@/lib/whatsapp/wa-identity";
 
 interface ContactSidebarProps {
   contact: Contact | null;
+  resyncToken?: number;
+  lastMessageAt?: string;
 }
 
-export function ContactSidebar({ contact }: ContactSidebarProps) {
+export function ContactSidebar({
+  contact,
+  resyncToken,
+  lastMessageAt,
+}: ContactSidebarProps) {
   const tSidebar = useTranslations("Inbox.sidebar");
   const tThread = useTranslations("Inbox.messageThread");
 
@@ -79,6 +85,72 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchContactData();
+  }, [fetchContactData]);
+
+  // Realtime subscription for contact_tags so newly attached tags
+  // appear in the sidebar immediately without needing a manual page refresh.
+  useEffect(() => {
+    if (!contact?.id) return;
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`contact-tags-live-${contact.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'contact_tags',
+          filter: `contact_id=eq.${contact.id}`,
+        },
+        () => {
+          fetchContactData();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [contact?.id, fetchContactData]);
+
+  // Re-fetch tags and contact info when a new message arrives in the thread
+  // (Automations and flows typically attach tags within ~500ms of a message)
+  useEffect(() => {
+    if (!lastMessageAt) return;
+    const t1 = setTimeout(() => {
+      fetchContactData();
+    }, 600);
+    const t2 = setTimeout(() => {
+      fetchContactData();
+    }, 2200);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [lastMessageAt, fetchContactData]);
+
+  // Re-fetch when user clicks the manual refresh button or reconnects
+  useEffect(() => {
+    if (resyncToken === undefined) return;
+    fetchContactData();
+  }, [resyncToken, fetchContactData]);
+
+  // Periodic polling every 5s while an active contact sidebar is open
+  useEffect(() => {
+    if (!contact?.id) return;
+    const interval = setInterval(() => {
+      fetchContactData();
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [contact?.id, fetchContactData]);
+
+  // Re-fetch when user switches back to browser tab
+  useEffect(() => {
+    const handleFocus = () => {
+      fetchContactData();
+    };
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
   }, [fetchContactData]);
 
   const handleCopyPhone = useCallback(async () => {

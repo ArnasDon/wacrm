@@ -329,6 +329,12 @@ function TagSelect({
   t: ReturnType<typeof useTranslations>
 }) {
   const { tags } = useResources()
+  const selected = tags.find(
+    (tg) =>
+      tg.id === value ||
+      tg.name.trim().toLowerCase() === value.trim().toLowerCase()
+  )
+
   if (tags.length === 0) {
     return (
       <Input
@@ -339,7 +345,7 @@ function TagSelect({
       />
     )
   }
-  const selected = tags.find((t) => t.id === value)
+
   return (
     <div className="flex items-center gap-2">
       <span
@@ -348,7 +354,7 @@ function TagSelect({
         aria-hidden
       />
       <select
-        value={value}
+        value={selected ? selected.id : value}
         onChange={(e) => onChange(e.target.value)}
         className={SELECT_CLASS}
       >
@@ -361,7 +367,7 @@ function TagSelect({
         {/* Preserve a saved tag that's since been deleted so editing an
             existing automation doesn't silently drop it. */}
         {value && !selected && (
-          <option value={value}>{t("tags.unknown", { id: value })}</option>
+          <option value={value}>{value}</option>
         )}
       </select>
     </div>

@@ -83,15 +83,85 @@ export async function dispatchInboundToAiReply(
 
     const { data: conv, error: convErr } = await db
       .from('conversations')
-      .select('assigned_agent_id, ai_autoreply_disabled, ai_reply_count')
+      .select('assigned_agent_id, ai_autoreply_disabled, ai_reply_count, last_message_at, updated_at, status')
       .eq('id', conversationId)
       .maybeSingle()
     if (convErr || !conv) return
-    if (conv.assigned_agent_id) return // a human owns this thread
-    if (conv.ai_autoreply_disabled) return // handed off / turned off here
-    // Cheap early-out; the authoritative cap check is the atomic claim
-    // below (this read can race a concurrent inbound).
-    if (conv.ai_reply_count >= config.autoReplyMaxPerConversation) return
+
+    // Inactivity session reset (10+ hours):
+    // If the conversation was inactive for 10+ hours, any prior agent takeover
+    // or pause has expired. Release stale assignment and resume AI for the new session.
+    const lastActivity = conv.last_message_at || conv.updated_at
+    const isStaleSession = Boolean(
+      lastActivity &&
+        Date.now() - new Date(lastActivity).getTime() >= 10 * 60 * 60 * 1000,
+    )
+
+    if (isStaleSession) {
+      if (conv.assigned_agent_id || conv.ai_autoreply_disabled || (conv.ai_reply_count ?? 0) > 0) {
+        await db
+          .from('conversations')
+          .update({
+            assigned_agent_id: null,
+            ai_autoreply_disabled: false,
+            ai_reply_count: 0,
+            ai_handoff_summary: null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', conversationId)
+
+        conv.assigned_agent_id = null
+        conv.ai_autoreply_disabled = false
+        conv.ai_reply_count = 0
+      }
+    }
+
+    // A human agent is actively assigned to this thread (and session is not stale).
+    if (conv.assigned_agent_id) return
+
+    // Unassigned conversation auto-resume:
+    // If no human agent is assigned, resume AI auto-reply so customer inquiries
+    // are never left unanswered.
+    if (!conv.assigned_agent_id) {
+      if (conv.ai_autoreply_disabled) {
+        await db
+          .from('conversations')
+          .update({
+            ai_autoreply_disabled: false,
+            ai_reply_count: 0,
+            ai_handoff_summary: null,
+          })
+          .eq('id', conversationId)
+
+        conv.ai_autoreply_disabled = false
+        conv.ai_reply_count = 0
+      }
+    }
+    // If the conversation reached the max AI reply limit:
+    if (conv.ai_reply_count >= config.autoReplyMaxPerConversation) {
+      if (!conv.ai_autoreply_disabled) {
+        try {
+          await engineSendText({
+            accountId,
+            userId: configOwnerUserId,
+            conversationId,
+            contactId,
+            text: 'Thank you for reaching out! You have reached our automated assistant limit for this chat. Our commercial team has been notified and will assist you shortly!',
+            aiGenerated: true,
+          })
+          await db
+            .from('conversations')
+            .update({
+              ai_autoreply_disabled: true,
+              ai_handoff_summary: `Reached max reply limit (${config.autoReplyMaxPerConversation} replies). Handed off to live team.`,
+            })
+            .eq('id', conversationId)
+        } catch (err) {
+          console.error('[ai auto-reply] limit wrap-up send failed:', err)
+        }
+      }
+      return
+    }
 
     const messages = await buildConversationContext(db, conversationId)
     if (messages.length === 0) return
@@ -136,11 +206,35 @@ export async function dispatchInboundToAiReply(
       knowledge,
     })
 
-    const { text, handoff, usage } = await generateReply({
-      config,
-      systemPrompt,
-      messages,
-    })
+    let replyResult: Awaited<ReturnType<typeof generateReply>>
+    try {
+      replyResult = await generateReply({
+        config,
+        systemPrompt,
+        messages,
+      })
+    } catch (llmErr) {
+      console.error('[ai auto-reply] LLM generation failed:', llmErr)
+      try {
+        await engineSendText({
+          accountId,
+          userId: configOwnerUserId,
+          conversationId,
+          contactId,
+          text: 'Thank you for contacting FlyOrder Logistics! We have received your inquiry. A live support agent has been notified and will assist you shortly.',
+          aiGenerated: true,
+        })
+        await db.from('conversations').update({
+          ai_autoreply_disabled: true,
+          ai_handoff_summary: 'AI service temporary issue — handed off to human agent.',
+        }).eq('id', conversationId)
+      } catch (sendErr) {
+        console.error('[ai auto-reply] fallback send failed:', sendErr)
+      }
+      return
+    }
+
+    const { text, handoff, usage } = replyResult
 
     // Record token spend on the account's BYO key. Fire-and-forget so it
     // never adds latency to the customer-facing send: `logAiUsage`
@@ -157,13 +251,26 @@ export async function dispatchInboundToAiReply(
     })
 
     if (handoff || !text) {
-      // The model can't (or shouldn't) answer — stop auto-replying on
-      // this thread and hand it to a human. We (a) pause the bot here
-      // (sticky until re-enabled), (b) route the conversation to the
-      // configured handoff agent — null leaves it in the shared queue —
-      // and (c) leave a short internal note so whoever picks it up has
-      // context. Assigning fires the `on_conversation_assigned` trigger,
-      // which notifies the agent.
+      // Send a polite message to the customer if available or use a friendly fallback,
+      // so the customer receives an answer on WhatsApp instead of awkward silence.
+      const handoffText =
+        text?.trim() ||
+        'Thank you! Our customer support team has been notified and a live agent will assist you shortly.'
+      try {
+        await engineSendText({
+          accountId,
+          userId: configOwnerUserId,
+          conversationId,
+          contactId,
+          text: handoffText,
+          aiGenerated: true,
+        })
+      } catch (sendErr) {
+        console.error('[ai auto-reply] handoff send failed:', sendErr)
+      }
+
+      // The model can't (or shouldn't) answer further — pause the bot on
+      // this thread and route it to a human.
       const summary = buildHandoffSummary({
         messages,
         replyCount: conv.ai_reply_count ?? 0,

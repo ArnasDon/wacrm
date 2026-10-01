@@ -100,12 +100,28 @@ export function matchesKeywordTrigger(
 ): boolean {
   if (!text || !cfg.keywords?.length) return false;
   const matchType = cfg.match_type ?? "contains";
-  const haystack = cfg.case_sensitive ? text : text.toLowerCase();
+  const trimmed = text.trim();
+  const haystack = cfg.case_sensitive ? trimmed : trimmed.toLowerCase();
+
   for (const raw of cfg.keywords) {
     if (!raw) continue;
-    const needle = cfg.case_sensitive ? raw : raw.toLowerCase();
-    if (matchType === "exact" ? haystack === needle : haystack.includes(needle)) {
-      return true;
+    const needle = (cfg.case_sensitive ? raw : raw.toLowerCase()).trim();
+    if (!needle) continue;
+
+    if (matchType === "exact") {
+      if (haystack === needle) return true;
+    } else {
+      // Word boundary matching:
+      // Ensures keywords match distinct words rather than random substrings inside other words
+      // (e.g., prevents "Chilled" or "this" from matching the keyword "hi").
+      const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const regex = new RegExp(
+        `(^|[^a-zA-Z0-9_\u0600-\u06FF])${escaped}([^a-zA-Z0-9_\u0600-\u06FF]|$)`,
+        cfg.case_sensitive ? "" : "i",
+      );
+      if (regex.test(text)) {
+        return true;
+      }
     }
   }
   return false;
@@ -923,6 +939,38 @@ export async function dispatchInboundToFlows(
 ): Promise<DispatchInboundResult> {
   const db = supabaseAdmin();
   try {
+    // If the conversation is currently assigned to a human agent or has been
+    // handed off to live support (pending queue), do NOT start or advance flows.
+    // The human agent owns this thread.
+    if (input.conversationId) {
+      const { data: conv } = await db
+        .from("conversations")
+        .select("assigned_agent_id, status")
+        .eq("id", input.conversationId)
+        .maybeSingle();
+
+      if (conv) {
+        const hasHumanAgent = Boolean(conv.assigned_agent_id);
+        const isHandedOff = conv.status === "pending";
+
+        if (hasHumanAgent || isHandedOff) {
+          // Pause any active flow run that might still be marked active for this contact
+          await db
+            .from("flow_runs")
+            .update({
+              status: "paused_by_agent",
+              ended_at: new Date().toISOString(),
+              end_reason: hasHumanAgent ? "agent_assigned" : "conversation_pending",
+            })
+            .eq("account_id", input.accountId)
+            .eq("contact_id", input.contactId)
+            .eq("status", "active");
+
+          return { consumed: false, outcome: "no_match" };
+        }
+      }
+    }
+
     const activeRun = await loadActiveRunForContact(
       db,
       input.accountId,

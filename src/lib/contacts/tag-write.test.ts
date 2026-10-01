@@ -29,9 +29,20 @@ function fakeDb(options: FakeOptions = {}): SupabaseClient {
         eq() {
           return builder;
         },
+        ilike() {
+          return builder;
+        },
+        limit() {
+          return builder;
+        },
+        single() {
+          return builder.maybeSingle();
+        },
         maybeSingle() {
           if (table === 'contacts')
             return Promise.resolve({ data: contact, error: null });
+          if (table === 'profiles')
+            return Promise.resolve({ data: { user_id: 'user-1' }, error: null });
           if (table === 'tags')
             return Promise.resolve({ data: tag, error: null });
           if (table === 'contact_tags' && state.operation === 'insert') {

@@ -83,12 +83,62 @@ export async function dispatchInboundToAiReply(
 
     const { data: conv, error: convErr } = await db
       .from('conversations')
-      .select('assigned_agent_id, ai_autoreply_disabled, ai_reply_count')
+      .select('assigned_agent_id, ai_autoreply_disabled, ai_reply_count, last_message_at, updated_at, status')
       .eq('id', conversationId)
       .maybeSingle()
     if (convErr || !conv) return
-    if (conv.assigned_agent_id) return // a human owns this thread
-    if (conv.ai_autoreply_disabled) return // handed off / turned off here
+
+    // Inactivity session reset (10+ hours):
+    // If the conversation was inactive for 10+ hours, any prior agent takeover
+    // or pause has expired. Release stale assignment and resume AI for the new session.
+    const lastActivity = conv.last_message_at || conv.updated_at
+    const isStaleSession = Boolean(
+      lastActivity &&
+        Date.now() - new Date(lastActivity).getTime() >= 10 * 60 * 60 * 1000,
+    )
+
+    if (isStaleSession) {
+      if (conv.assigned_agent_id || conv.ai_autoreply_disabled || (conv.ai_reply_count ?? 0) > 0) {
+        await db
+          .from('conversations')
+          .update({
+            assigned_agent_id: null,
+            ai_autoreply_disabled: false,
+            ai_reply_count: 0,
+            ai_handoff_summary: null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', conversationId)
+
+        conv.assigned_agent_id = null
+        conv.ai_autoreply_disabled = false
+        conv.ai_reply_count = 0
+      }
+    }
+
+    // A human agent is actively assigned to this thread (and session is not stale).
+    if (conv.assigned_agent_id) return
+
+    // Unassigned conversation auto-resume:
+    // If no human agent is assigned, resume AI auto-reply so customer inquiries
+    // are never left unanswered. (Keep paused only if currently waiting in pending queue).
+    if (!conv.assigned_agent_id) {
+      if (conv.status === 'pending') return
+
+      if (conv.ai_autoreply_disabled) {
+        await db
+          .from('conversations')
+          .update({
+            ai_autoreply_disabled: false,
+            ai_reply_count: 0,
+            ai_handoff_summary: null,
+          })
+          .eq('id', conversationId)
+
+        conv.ai_autoreply_disabled = false
+        conv.ai_reply_count = 0
+      }
+    }
     // If the conversation reached the max AI reply limit:
     if (conv.ai_reply_count >= config.autoReplyMaxPerConversation) {
       if (!conv.ai_autoreply_disabled) {

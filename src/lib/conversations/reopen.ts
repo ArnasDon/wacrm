@@ -29,6 +29,9 @@ export async function reopenClosedConversation(
     .update({
       status: 'open',
       assigned_agent_id: null,
+      ai_autoreply_disabled: false,
+      ai_reply_count: 0,
+      ai_handoff_summary: null,
       updated_at: new Date().toISOString(),
     })
     .eq('id', conversation.id)

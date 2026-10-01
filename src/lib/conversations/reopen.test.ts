@@ -55,7 +55,12 @@ describe('reopenClosedConversation', () => {
     expect(reopened).toBe(true)
     expect(calls).toHaveLength(1)
     expect(calls[0].table).toBe('conversations')
-    expect(calls[0].payload).toMatchObject({ status: 'open' })
+    expect(calls[0].payload).toMatchObject({
+      status: 'open',
+      assigned_agent_id: null,
+      ai_autoreply_disabled: false,
+      ai_reply_count: 0,
+    })
     expect(calls[0].payload).toHaveProperty('updated_at')
   })
 

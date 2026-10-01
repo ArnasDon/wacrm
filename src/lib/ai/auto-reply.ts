@@ -121,10 +121,8 @@ export async function dispatchInboundToAiReply(
 
     // Unassigned conversation auto-resume:
     // If no human agent is assigned, resume AI auto-reply so customer inquiries
-    // are never left unanswered. (Keep paused only if currently waiting in pending queue).
+    // are never left unanswered.
     if (!conv.assigned_agent_id) {
-      if (conv.status === 'pending') return
-
       if (conv.ai_autoreply_disabled) {
         await db
           .from('conversations')

@@ -174,7 +174,7 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
     expect(h.sendTypingIndicator).not.toHaveBeenCalled()
   })
 
-  it('skips when auto-reply was disabled during pending live handoff', async () => {
+  it('auto-resumes AI when no agent is assigned on a pending conversation', async () => {
     h.state.conv = {
       assigned_agent_id: null,
       status: 'pending',
@@ -182,7 +182,9 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
       ai_reply_count: 0,
     }
     await dispatchInboundToAiReply(ARGS)
-    expect(h.engineSendText).not.toHaveBeenCalled()
+    expect(h.engineSendText).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'Hello!' }),
+    )
   })
 
   it('auto-resumes AI when no agent is assigned on an open conversation', async () => {

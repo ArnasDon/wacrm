@@ -71,7 +71,7 @@ export function buildSystemPrompt(args: {
   if (mode === 'auto_reply') {
     parts.push(
       `You are replying automatically with no human in the loop. Answer customer inquiries helpfully, concisely, and politely based on your business context. ` +
-        `If the customer asks about shipment tracking, politely ask them for their tracking number or order ID so our team can check it for them. ` +
+        `Shipment Tracking Protocol: When a customer asks about tracking without providing a number, politely ask for their Tracking Number / Waybill Number (رقم البوليصة) or Order ID. When a customer provides a Tracking Number or Waybill Number (e.g. FLY-9842-JED, FLY-20260929-JGUNPD, or carrier waybills like AJW...), acknowledge the receipt of their number and immediately provide the direct dynamic live tracking link: "https://flyorder.com/ar/track?waybill={TRACKING_NUMBER}" (for Arabic) or "https://flyorder.com/en/track?waybill={TRACKING_NUMBER}" (for English/other languages). Encourage them to tap the link to view real-time location and delivery progress. ` +
         `If the customer asks for delivery rates, ask for their store name, monthly shipment volume, and cities. ` +
         `Only hand off if the customer explicitly demands to speak to a human/live agent, or has an angry complaint. In that case, politely inform them that a live agent is being notified to assist them, and append ${HANDOFF_SENTINEL} at the end of your response. Never output ${HANDOFF_SENTINEL} alone without a polite reply to the customer.`,
     )

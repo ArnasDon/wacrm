@@ -56,23 +56,59 @@ export async function generateReply(args: GenerateArgs): Promise<GenerateResult>
 }
 
 /**
+ * Normalizes FlyOrder tracking URLs so query params like ?number=, ?id=, ?tracking=
+ * are mapped to the canonical ?waybill= format used by flyorder.com.
+ */
+export function normalizeFlyOrderTrackingUrls(text: string): string {
+  if (!text) return ''
+  return text.replace(
+    /https?:\/\/flyorder\.com\/(ar|en)\/track\?([^\s\)\*\_]+)/gi,
+    (match, lang, queryString) => {
+      // Isolate any trailing punctuation that was attached to the link
+      const matchPunct = queryString.match(/[.,;:!?]+$/)
+      const trailingPunct = matchPunct ? matchPunct[0] : ''
+      const cleanQuery = queryString.slice(0, queryString.length - trailingPunct.length)
+
+      try {
+        const params = new URLSearchParams(cleanQuery)
+        const waybill =
+          params.get('waybill') ||
+          params.get('number') ||
+          params.get('id') ||
+          params.get('tracking') ||
+          params.get('track') ||
+          params.get('tracking_number') ||
+          params.get('code')
+
+        if (waybill) {
+          return `https://flyorder.com/${lang.toLowerCase()}/track?waybill=${encodeURIComponent(waybill)}${trailingPunct}`
+        }
+      } catch {
+        // Fallback to match if parsing fails
+      }
+      return match
+    },
+  )
+}
+
+/**
  * Format markdown text to WhatsApp-compatible styling.
  * WhatsApp supports *bold*, _italic_, ~strikethrough~, ```code```, and • bullets.
  * Standard markdown uses **bold** and * bullet points, which display as raw asterisks on WhatsApp.
  */
 export function formatForWhatsApp(text: string): string {
   if (!text) return ''
-  return (
-    text
-      // Convert markdown headers (### Header) to bold (*Header*)
-      .replace(/^#{1,6}\s+(.+)$/gm, '*$1*')
-      // Convert markdown bullet points starting with '* ' or '+ ' to '• '
-      .replace(/^[\*\+]\s+/gm, '• ')
-      // Convert markdown bold '**text**' to WhatsApp bold '*text*'
-      .replace(/\*\*([^*]+)\*\*/g, '*$1*')
-      // Clean up multiple asterisks left around words like '***text***' -> '*text*'
-      .replace(/\*{3,}([^*]+)\*{3,}/g, '*$1*')
-  )
+  const formatted = text
+    // Convert markdown headers (### Header) to bold (*Header*)
+    .replace(/^#{1,6}\s+(.+)$/gm, '*$1*')
+    // Convert markdown bullet points starting with '* ' or '+ ' to '• '
+    .replace(/^[\*\+]\s+/gm, '• ')
+    // Convert markdown bold '**text**' to WhatsApp bold '*text*'
+    .replace(/\*\*([^*]+)\*\*/g, '*$1*')
+    // Clean up multiple asterisks left around words like '***text***' -> '*text*'
+    .replace(/\*{3,}([^*]+)\*{3,}/g, '*$1*')
+
+  return normalizeFlyOrderTrackingUrls(formatted)
 }
 
 /**

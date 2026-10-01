@@ -81,6 +81,19 @@ describe('parseGeneration', () => {
       usage: null,
     })
   })
+
+  it('normalizes FlyOrder dynamic tracking URLs to ?waybill=', () => {
+    const input =
+      'Track your shipment here: https://flyorder.com/ar/track?number=FLY-20260929-JGUNPD.\n' +
+      'English tracking: https://flyorder.com/en/track?id=FLY-9842-JED!'
+    expect(parseGeneration(input)).toEqual({
+      text:
+        'Track your shipment here: https://flyorder.com/ar/track?waybill=FLY-20260929-JGUNPD.\n' +
+        'English tracking: https://flyorder.com/en/track?waybill=FLY-9842-JED!',
+      handoff: false,
+      usage: null,
+    })
+  })
 })
 
 describe('generateReply — OpenAI', () => {

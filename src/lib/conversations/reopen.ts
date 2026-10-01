@@ -26,7 +26,11 @@ export async function reopenClosedConversation(
 
   const { error } = await db
     .from('conversations')
-    .update({ status: 'open', updated_at: new Date().toISOString() })
+    .update({
+      status: 'open',
+      assigned_agent_id: null,
+      updated_at: new Date().toISOString(),
+    })
     .eq('id', conversation.id)
     // Re-checked in SQL, not just in the `if` above: the caller's row was
     // read earlier in the request, so two concurrent inbound deliveries

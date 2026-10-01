@@ -939,6 +939,38 @@ export async function dispatchInboundToFlows(
 ): Promise<DispatchInboundResult> {
   const db = supabaseAdmin();
   try {
+    // If the conversation is currently assigned to a human agent or has been
+    // handed off to live support (pending queue), do NOT start or advance flows.
+    // The human agent owns this thread.
+    if (input.conversationId) {
+      const { data: conv } = await db
+        .from("conversations")
+        .select("assigned_agent_id, status")
+        .eq("id", input.conversationId)
+        .maybeSingle();
+
+      if (conv) {
+        const hasHumanAgent = Boolean(conv.assigned_agent_id);
+        const isHandedOff = conv.status === "pending";
+
+        if (hasHumanAgent || isHandedOff) {
+          // Pause any active flow run that might still be marked active for this contact
+          await db
+            .from("flow_runs")
+            .update({
+              status: "paused_by_agent",
+              ended_at: new Date().toISOString(),
+              end_reason: hasHumanAgent ? "agent_assigned" : "conversation_pending",
+            })
+            .eq("account_id", input.accountId)
+            .eq("contact_id", input.contactId)
+            .eq("status", "active");
+
+          return { consumed: false, outcome: "no_match" };
+        }
+      }
+    }
+
     const activeRun = await loadActiveRunForContact(
       db,
       input.accountId,

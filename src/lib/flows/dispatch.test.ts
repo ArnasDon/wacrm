@@ -15,6 +15,8 @@ const h = vi.hoisted(() => ({
     activeRuns: [] as unknown[],
     flows: [] as unknown[],
     nodes: [] as unknown[],
+    conversations: [] as unknown[],
+    updates: [] as { table: string; row: Record<string, unknown> }[],
     inserted: [] as { table: string; row: Record<string, unknown> }[],
     /** Set by the flow_runs INSERT; what its .maybeSingle() returns. */
     insertedRun: null as Record<string, unknown> | null,
@@ -22,11 +24,14 @@ const h = vi.hoisted(() => ({
   },
 }));
 
+type QueryResult = { data: unknown[]; error: null; count: number };
+
 vi.mock("./admin-client", () => {
   function rows(table: string): unknown[] {
     if (table === "flow_runs") return h.state.activeRuns;
     if (table === "flows") return h.state.flows;
     if (table === "flow_nodes") return h.state.nodes;
+    if (table === "conversations") return h.state.conversations;
     return [];
   }
 
@@ -38,7 +43,10 @@ vi.mock("./admin-client", () => {
       filter: () => b,
       order: () => b,
       limit: () => b,
-      update: () => b,
+      update: (row: Record<string, unknown>) => {
+        h.state.updates.push({ table, row });
+        return b;
+      },
       insert: (row: Record<string, unknown>) => {
         h.state.inserted.push({ table, row });
         if (table === "flow_runs") {
@@ -59,13 +67,8 @@ vi.mock("./admin-client", () => {
         error: null,
       }),
       single: async () => ({ data: rows(table)[0] ?? null, error: null }),
-      then: (
-        resolve: (r: {
-          data: unknown[];
-          error: null;
-          count: number;
-        }) => unknown,
-      ) => resolve({ data: rows(table), error: null, count: 0 }),
+      then: (resolve: (res: QueryResult) => unknown) =>
+        resolve({ data: rows(table), error: null, count: 0 }),
     };
     return b;
   }
@@ -146,7 +149,7 @@ function dispatch(message: ParsedInbound) {
 
 /** flow_runs INSERTs made during a dispatch. */
 function startedRuns() {
-  return h.state.inserted.filter((i) => i.table === "flow_runs");
+  return h.state.inserted.filter((i: { table: string }) => i.table === "flow_runs");
 }
 
 beforeEach(() => {
@@ -154,6 +157,8 @@ beforeEach(() => {
   h.state.activeRuns = [];
   h.state.flows = [];
   h.state.nodes = NODES;
+  h.state.conversations = [];
+  h.state.updates = [];
   h.state.inserted = [];
   h.state.insertedRun = null;
   h.state.rpcCalls = [];
@@ -218,7 +223,7 @@ describe("dispatchInboundToFlows — entry triggers (#490)", () => {
     expect(result.consumed).toBe(true);
     expect(result.flow_run_id).toBe("run-1");
     expect(
-      h.state.inserted.filter((i) => i.table === "flow_runs"),
+      h.state.inserted.filter((i: { table: string }) => i.table === "flow_runs"),
     ).toHaveLength(1);
     expect(h.state.rpcCalls).toContain("increment_flow_execution_count");
     // The flow really ran, not just got created.
@@ -270,7 +275,7 @@ describe("dispatchInboundToFlows — entry triggers (#490)", () => {
     // `interactive_reply` automation trigger instead.
     expect(result.consumed).toBe(false);
     expect(result.outcome).toBe("no_match");
-    expect(h.state.inserted.filter((i) => i.table === "flow_runs")).toEqual([]);
+    expect(h.state.inserted.filter((i: { table: string }) => i.table === "flow_runs")).toEqual([]);
   });
 
   it("does not start a manual-trigger flow from a tap", async () => {
@@ -317,3 +322,73 @@ describe("dispatchInboundToFlows — entry triggers (#490)", () => {
     expect(startedRuns()).toHaveLength(1);
   });
 });
+
+describe("dispatchInboundToFlows — agent takeover & pending handoff", () => {
+  it("does not start a flow when conversation has an assigned agent", async () => {
+    h.state.flows = [KEYWORD_FLOW];
+    h.state.conversations = [
+      { id: "cv-1", assigned_agent_id: "agent-123", status: "open" },
+    ];
+
+    const result = await dispatch({
+      kind: "text",
+      text: "order status",
+      meta_message_id: "m1",
+    });
+
+    expect(result.consumed).toBe(false);
+    expect(result.outcome).toBe("no_match");
+    expect(startedRuns()).toHaveLength(0);
+  });
+
+  it("does not start a flow when conversation is pending handoff", async () => {
+    h.state.flows = [KEYWORD_FLOW];
+    h.state.conversations = [
+      { id: "cv-1", assigned_agent_id: null, status: "pending" },
+    ];
+
+    const result = await dispatch({
+      kind: "text",
+      text: "order status",
+      meta_message_id: "m1",
+    });
+
+    expect(result.consumed).toBe(false);
+    expect(result.outcome).toBe("no_match");
+    expect(startedRuns()).toHaveLength(0);
+  });
+
+  it("pauses active run when an assigned agent owns the conversation", async () => {
+    h.state.activeRuns = [
+      {
+        id: "run-active",
+        flow_id: "flow-1",
+        account_id: "acct-1",
+        contact_id: "ct-1",
+        status: "active",
+      },
+    ];
+    h.state.conversations = [
+      { id: "cv-1", assigned_agent_id: "agent-123", status: "open" },
+    ];
+
+    const result = await dispatch({
+      kind: "text",
+      text: "hello",
+      meta_message_id: "m1",
+    });
+
+    expect(result.consumed).toBe(false);
+    expect(result.outcome).toBe("no_match");
+    expect(h.state.updates).toContainEqual(
+      expect.objectContaining({
+        table: "flow_runs",
+        row: expect.objectContaining({
+          status: "paused_by_agent",
+          end_reason: "agent_assigned",
+        }),
+      }),
+    );
+  });
+});
+

@@ -11,6 +11,7 @@ import {
 } from '@/lib/whatsapp/phone-utils'
 import { resolveContactSendTarget } from '@/lib/whatsapp/wa-identity'
 import { assertConversationInAccount } from '@/lib/whatsapp/conversation-scope'
+import { fetchContactForOutboundSend } from '@/lib/whatsapp/outbound-contact'
 import {
   resolveTemplateRow,
   templateContentText,
@@ -120,15 +121,11 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
   // migration moved both tables to account-scoped tenancy, so the
   // check is the same defense-in-depth as before, just keyed on the
   // new tenancy column.
-  const { data: contact, error: contactErr } = await db
-    .from('contacts')
-    .select('id, phone, wa_user_id')
-    .eq('id', input.contactId)
-    .eq('account_id', input.accountId)
-    .maybeSingle()
-  if (contactErr || !contact) {
-    throw new Error('contact not found for this account')
-  }
+  const contact = await fetchContactForOutboundSend(
+    db,
+    input.accountId,
+    input.contactId,
+  )
 
   // Same for the conversation the message lands in — see
   // conversation-scope.ts (GHSA-m4fx-g6pr-hrw8).

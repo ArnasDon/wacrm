@@ -15,6 +15,7 @@ import {
 } from '@/lib/whatsapp/phone-utils'
 import { resolveContactSendTarget } from '@/lib/whatsapp/wa-identity'
 import { assertConversationInAccount } from '@/lib/whatsapp/conversation-scope'
+import { fetchContactForOutboundSend } from '@/lib/whatsapp/outbound-contact'
 import { supabaseAdmin } from './admin-client'
 
 // ------------------------------------------------------------
@@ -91,15 +92,11 @@ export async function engineSendText(
 ): Promise<{ whatsapp_message_id: string }> {
   const db = supabaseAdmin()
 
-  const { data: contact, error: contactErr } = await db
-    .from('contacts')
-    .select('id, phone, wa_user_id')
-    .eq('id', args.contactId)
-    .eq('account_id', args.accountId)
-    .maybeSingle()
-  if (contactErr || !contact) {
-    throw new Error('contact not found for this account')
-  }
+  const contact = await fetchContactForOutboundSend(
+    db,
+    args.accountId,
+    args.contactId,
+  )
 
   // Same for the conversation the message lands in — see
   // conversation-scope.ts (GHSA-m4fx-g6pr-hrw8).
@@ -205,15 +202,11 @@ export async function engineSendMedia(
 ): Promise<{ whatsapp_message_id: string }> {
   const db = supabaseAdmin()
 
-  const { data: contact, error: contactErr } = await db
-    .from('contacts')
-    .select('id, phone, wa_user_id')
-    .eq('id', args.contactId)
-    .eq('account_id', args.accountId)
-    .maybeSingle()
-  if (contactErr || !contact) {
-    throw new Error('contact not found for this account')
-  }
+  const contact = await fetchContactForOutboundSend(
+    db,
+    args.accountId,
+    args.contactId,
+  )
 
   // Same for the conversation the message lands in — see
   // conversation-scope.ts (GHSA-m4fx-g6pr-hrw8).
@@ -361,15 +354,11 @@ async function sendInteractiveViaMeta(
   // Scope the contact + whatsapp_config lookups by account_id —
   // same defense-in-depth rationale as automations/meta-send.ts.
   // Migration 017 moved both tables to account-scoped tenancy.
-  const { data: contact, error: contactErr } = await db
-    .from('contacts')
-    .select('id, phone, wa_user_id')
-    .eq('id', input.contactId)
-    .eq('account_id', input.accountId)
-    .maybeSingle()
-  if (contactErr || !contact) {
-    throw new Error('contact not found for this account')
-  }
+  const contact = await fetchContactForOutboundSend(
+    db,
+    input.accountId,
+    input.contactId,
+  )
 
   // Same for the conversation the message lands in — see
   // conversation-scope.ts (GHSA-m4fx-g6pr-hrw8).

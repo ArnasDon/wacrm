@@ -25,6 +25,7 @@ import { engineSendText, engineSendTemplate, engineSendInteractive } from './met
 import { validateInteractivePayload } from '@/lib/whatsapp/interactive'
 import { isDeliverableUrl } from '@/lib/webhooks/ssrf'
 import { dispatchConversationAssignedAutomations } from './dispatch-conversation-assigned'
+import { ensureConversationForContact } from '@/lib/whatsapp/resolve-conversation'
 
 // ------------------------------------------------------------
 // Public API
@@ -695,10 +696,17 @@ async function resolveConversationId(args: ExecuteArgs): Promise<string> {
     .maybeSingle()
   if (error) throw new Error(`conversation lookup failed: ${error.message}`)
   if (!data?.id) {
-    const prefix = args.triggerEvent === 'tag_added'
-      ? 'tag_added automation cannot send'
-      : 'cannot send'
-    throw new Error(`${prefix}: contact has no existing conversation`)
+    // Imported/tagged contacts often have no WhatsApp thread yet. Match
+    // the inbox composer and POST /api/whatsapp/send: open a conversation
+    // so assign + send steps can run outbound to the contact's number.
+    const conversationId = await ensureConversationForContact(
+      supabaseAdmin(),
+      args.automation.account_id,
+      args.contactId,
+      args.automation.user_id,
+    )
+    args.context.conversation_id = conversationId
+    return conversationId
   }
   return data.id as string
 }

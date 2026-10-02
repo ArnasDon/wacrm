@@ -118,7 +118,7 @@ vi.mock("./dispatch-conversation-assigned", () => ({
 }));
 
 vi.mock("@/lib/whatsapp/resolve-conversation", () => ({
-  ensureConversationForContact: (...args: unknown[]) => ensureConv.fn(...args),
+  ensureConversationForContact: ensureConv.fn,
 }));
 
 import { runAutomationsForTrigger, triggerMatches } from "./engine";

@@ -13,6 +13,7 @@ import {
 } from '@/lib/flows/meta-send'
 import { sendTypingIndicator } from '@/lib/whatsapp/meta-api'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
+import { dispatchConversationAssignedAutomations } from '@/lib/automations/dispatch-conversation-assigned'
 
 interface DispatchArgs {
   /** Tenancy key — drives config, contact, and whatsapp_config lookups. */
@@ -162,8 +163,8 @@ export async function dispatchInboundToAiReply(
       // (sticky until re-enabled), (b) route the conversation to the
       // configured handoff agent — null leaves it in the shared queue —
       // and (c) leave a short internal note so whoever picks it up has
-      // context. Assigning fires the `on_conversation_assigned` trigger,
-      // which notifies the agent.
+      // context. Assignment also fires `conversation_assigned` automations
+      // and the in-app notification for the agent.
       const summary = buildHandoffSummary({
         messages,
         replyCount: conv.ai_reply_count ?? 0,
@@ -174,10 +175,22 @@ export async function dispatchInboundToAiReply(
       }
       // Only set the assignee when a target is configured AND the thread
       // isn't already owned — never stomp an existing human assignment.
-      if (config.handoffAgentId && !conv.assigned_agent_id) {
-        update.assigned_agent_id = config.handoffAgentId
+      const assignOnHandoff =
+        config.handoffAgentId && !conv.assigned_agent_id
+          ? config.handoffAgentId
+          : null
+      if (assignOnHandoff) {
+        update.assigned_agent_id = assignOnHandoff
       }
       await db.from('conversations').update(update).eq('id', conversationId)
+      if (assignOnHandoff) {
+        await dispatchConversationAssignedAutomations({
+          accountId,
+          conversationId,
+          contactId,
+          agentId: assignOnHandoff,
+        })
+      }
       return
     }
 

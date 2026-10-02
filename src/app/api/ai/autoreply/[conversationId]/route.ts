@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
+import { dispatchConversationAssignedAutomations } from '@/lib/automations/dispatch-conversation-assigned'
 
 type Params = { params: Promise<{ conversationId: string }> }
 
@@ -14,7 +15,7 @@ type Params = { params: Promise<{ conversationId: string }> }
  *   - paused: true  → pause the bot here (a human is taking over). When
  *                     `assign_to_me` is set, also assign the thread to the
  *                     caller (the usual "Take over" flow). Assignment
- *                     fires the `on_conversation_assigned` trigger.
+ *                     also fires `conversation_assigned` automations.
  *   - paused: false → hand the thread back to the bot: clear the pause,
  *                     reset the per-conversation reply count so it gets
  *                     fresh slots, and clear the handoff note. If the
@@ -47,7 +48,7 @@ export async function POST(request: Request, { params }: Params) {
     // Confirm the conversation is in the caller's account before writing.
     const { data: conv, error: convErr } = await supabase
       .from('conversations')
-      .select('id')
+      .select('id, contact_id, assigned_agent_id')
       .eq('id', conversationId)
       .eq('account_id', accountId)
       .maybeSingle()
@@ -94,6 +95,15 @@ export async function POST(request: Request, { params }: Params) {
         { error: 'Failed to update conversation' },
         { status: 500 },
       )
+    }
+
+    if (paused && assignToMe) {
+      await dispatchConversationAssignedAutomations({
+        accountId,
+        conversationId,
+        contactId: (conv.contact_id as string | null) ?? null,
+        agentId: userId,
+      })
     }
 
     return NextResponse.json({ success: true, paused })

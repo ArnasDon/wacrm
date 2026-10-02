@@ -24,6 +24,7 @@ import { MAX_TAG_CHAIN_DEPTH, getTagChainDepth } from '@/lib/contacts/tag-chain'
 import { engineSendText, engineSendTemplate, engineSendInteractive } from './meta-send'
 import { validateInteractivePayload } from '@/lib/whatsapp/interactive'
 import { isDeliverableUrl } from '@/lib/webhooks/ssrf'
+import { dispatchConversationAssignedAutomations } from './dispatch-conversation-assigned'
 
 // ------------------------------------------------------------
 // Public API
@@ -522,11 +523,18 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
         agentId = profiles?.[0]?.user_id
       }
       if (!agentId) return 'no agent resolved'
+      const conversationId = await resolveConversationId(args)
       await db
         .from('conversations')
         .update({ assigned_agent_id: agentId })
         .eq('account_id', args.automation.account_id)
-        .eq('contact_id', args.contactId)
+        .eq('id', conversationId)
+      await dispatchConversationAssignedAutomations({
+        accountId: args.automation.account_id,
+        conversationId,
+        contactId: args.contactId,
+        agentId,
+      })
       return `assigned to ${agentId}`
     }
 

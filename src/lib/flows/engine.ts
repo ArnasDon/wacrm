@@ -41,6 +41,7 @@ import {
 } from "./meta-send";
 import { decideFallback, resolveFallbackPolicy } from "./fallback";
 import { addContactTagAndDispatch } from "@/lib/contacts/tag-events";
+import { dispatchConversationAssignedAutomations } from "@/lib/automations/dispatch-conversation-assigned";
 import { removeContactTag } from "@/lib/contacts/tag-write";
 import {
   type CollectInputNodeConfig,
@@ -492,6 +493,14 @@ async function executeHandoff(
       .from("conversations")
       .update(convUpdate)
       .eq("id", run.conversation_id);
+    if (cfg.assign_to) {
+      await dispatchConversationAssignedAutomations({
+        accountId: run.account_id,
+        conversationId: run.conversation_id,
+        contactId: run.contact_id,
+        agentId: cfg.assign_to,
+      });
+    }
   }
   await logEvent(db, run.id, "handoff", node.node_key, {
     note: cfg.note ?? null,

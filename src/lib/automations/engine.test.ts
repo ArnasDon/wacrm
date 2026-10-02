@@ -2,6 +2,10 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 // Shared mock state for the service-role client. Lives in a hoisted block
 // so the vi.mock factory below can close over it.
+const ensureConv = vi.hoisted(() => ({
+  fn: vi.fn(async () => "conv-auto"),
+}));
+
 const h = vi.hoisted(() => ({
   state: {
     owned: null as { id: string } | null,
@@ -107,6 +111,14 @@ vi.mock("./meta-send", () => ({
   engineSendText: vi.fn(async () => ({ whatsapp_message_id: "m1" })),
   engineSendTemplate: vi.fn(async () => ({ whatsapp_message_id: "m1" })),
   engineSendInteractive: vi.fn(async () => ({ whatsapp_message_id: "m1" })),
+}));
+
+vi.mock("./dispatch-conversation-assigned", () => ({
+  dispatchConversationAssignedAutomations: vi.fn(async () => undefined),
+}));
+
+vi.mock("@/lib/whatsapp/resolve-conversation", () => ({
+  ensureConversationForContact: ensureConv.fn,
 }));
 
 import { runAutomationsForTrigger, triggerMatches } from "./engine";
@@ -460,8 +472,10 @@ describe("triggerMatches — tag_added", () => {
 });
 
 describe("tag_added — conversation policy", () => {
-  it("records a clear failed step when the contact has no conversation", async () => {
+  it("opens a conversation when the contact has no inbox thread yet", async () => {
+    ensureConv.fn.mockClear();
     h.state.owned = { id: "c1" };
+    h.state.ownedConversation = null;
     h.state.automations = [{
       id: "a1",
       account_id: ACCOUNT,
@@ -487,10 +501,15 @@ describe("tag_added — conversation policy", () => {
       context: { tag_id: "tag-a" },
     });
 
-    expect(h.state.logUpdates).toContainEqual(expect.objectContaining({
-      status: "failed",
-      error_message: "tag_added automation cannot send: contact has no existing conversation",
-    }));
+    expect(ensureConv.fn).toHaveBeenCalledWith(
+      expect.anything(),
+      ACCOUNT,
+      "c1",
+      "u1",
+    );
+    expect(h.state.logUpdates).toContainEqual(
+      expect.objectContaining({ status: "success" }),
+    );
   });
 });
 

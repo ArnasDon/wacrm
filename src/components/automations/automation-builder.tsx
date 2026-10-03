@@ -4,6 +4,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from "react"
@@ -639,6 +640,10 @@ export function AutomationBuilder({ initial }: { initial: BuilderInitial }) {
   const [state, setState] = useState<BuilderInitial>(initial)
   const [saving, setSaving] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  /** Commits keyword / reply-id drafts that were never blurred before Save. */
+  const triggerConfigFlushRef = useRef<(() => Record<string, unknown>) | null>(
+    null,
+  )
 
   function patchTop<K extends keyof BuilderInitial>(key: K, value: BuilderInitial[K]) {
     setState((s) => ({ ...s, [key]: value }))
@@ -672,11 +677,16 @@ export function AutomationBuilder({ initial }: { initial: BuilderInitial }) {
   async function save() {
     setSaving(true)
     try {
+      const trigger_config =
+        triggerConfigFlushRef.current?.() ?? state.trigger_config
+      if (trigger_config !== state.trigger_config) {
+        setState((s) => ({ ...s, trigger_config }))
+      }
       const payload = {
         name: state.name || t("untitled"),
         description: state.description || null,
         trigger_type: state.trigger_type,
-        trigger_config: state.trigger_config,
+        trigger_config,
         is_active: state.is_active,
         steps: toApiSteps(state.steps),
       }
@@ -766,6 +776,9 @@ export function AutomationBuilder({ initial }: { initial: BuilderInitial }) {
               config={state.trigger_config}
               onTypeChange={(tVal) => patchTop("trigger_type", tVal)}
               onConfigChange={(c) => patchTop("trigger_config", c)}
+              registerTriggerConfigFlush={(fn) => {
+                triggerConfigFlushRef.current = fn
+              }}
               t={t}
             />
             <StepList
@@ -795,15 +808,24 @@ function TriggerCard({
   config,
   onTypeChange,
   onConfigChange,
+  registerTriggerConfigFlush,
   t,
 }: {
   type: AutomationTriggerType
   config: Record<string, unknown>
   onTypeChange: (t: AutomationTriggerType) => void
   onConfigChange: (c: Record<string, unknown>) => void
+  registerTriggerConfigFlush: (fn: () => Record<string, unknown>) => void
   t: ReturnType<typeof useTranslations>
 }) {
   const [open, setOpen] = useState(false)
+
+  useEffect(() => {
+    if (type !== "keyword_match" && type !== "interactive_reply") {
+      registerTriggerConfigFlush(() => config)
+    }
+  }, [type, config, registerTriggerConfigFlush])
+
   return (
     // Card width: full on mobile, fixed 320px on sm+. The canvas wrapper
     // (max-w-2xl + px-4) keeps this tidy on tablet/desktop.
@@ -852,11 +874,17 @@ function TriggerCard({
               <KeywordMatchConfig
                 config={config as unknown as KeywordMatchTriggerConfig}
                 onChange={onConfigChange}
+                registerFlush={registerTriggerConfigFlush}
                 t={t}
               />
             )}
             {type === "interactive_reply" && (
-              <InteractiveReplyConfig config={config} onChange={onConfigChange} t={t} />
+              <InteractiveReplyConfig
+                config={config}
+                onChange={onConfigChange}
+                registerFlush={registerTriggerConfigFlush}
+                t={t}
+              />
             )}
             {type === "tag_added" && (
               <div>
@@ -898,10 +926,12 @@ function TriggerCard({
 function KeywordMatchConfig({
   config,
   onChange,
+  registerFlush,
   t,
 }: {
   config: KeywordMatchTriggerConfig
   onChange: (c: Record<string, unknown>) => void
+  registerFlush: (fn: () => Record<string, unknown>) => void
   t: ReturnType<typeof useTranslations>
 }) {
   const keywords = config?.keywords ?? []
@@ -924,6 +954,20 @@ function KeywordMatchConfig({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    registerFlush(() => {
+      const parsed = draft
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+      return {
+        ...config,
+        keywords: parsed,
+        match_type: config?.match_type ?? "contains",
+      }
+    })
+  }, [draft, config, registerFlush])
 
   function commit() {
     const parsed = draft
@@ -988,16 +1032,28 @@ function KeywordMatchConfig({
 function InteractiveReplyConfig({
   config,
   onChange,
+  registerFlush,
   t,
 }: {
   config: Record<string, unknown>
   onChange: (c: Record<string, unknown>) => void
+  registerFlush: (fn: () => Record<string, unknown>) => void
   t: ReturnType<typeof useTranslations>
 }) {
   const ids = (config?.reply_ids as string[] | undefined) ?? []
   // Same local-draft-then-commit pattern as KeywordMatchConfig so
   // commas + spaces survive keystrokes.
   const [draft, setDraft] = useState(ids.join(", "))
+
+  useEffect(() => {
+    registerFlush(() => {
+      const parsed = draft
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+      return { ...config, reply_ids: parsed }
+    })
+  }, [draft, config, registerFlush])
 
   function commit() {
     const parsed = draft
@@ -1457,20 +1513,31 @@ function StepEditor({
             </select>
           </FieldBlock>
           <FieldBlock label={t("config.operandLabel")}>
-            <Input
-              placeholder={
-                cfg.subject === "time_of_day"
-                  ? t("config.placeholderTime")
-                  : cfg.subject === "contact_field"
-                  ? t("config.placeholderContact")
-                  : cfg.subject === "tag_presence"
-                  ? t("config.placeholderTag")
-                  : ""
-              }
-              value={(cfg.operand as string) ?? ""}
-              onChange={(e) => set({ operand: e.target.value })}
-              className="bg-muted text-foreground"
-            />
+            {cfg.subject === "tag_presence" ? (
+              <>
+                <TagSelect
+                  value={(cfg.operand as string) ?? ""}
+                  onChange={(v) => set({ operand: v })}
+                  t={t}
+                />
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  {t("config.tagPresenceHint")}
+                </p>
+              </>
+            ) : (
+              <Input
+                placeholder={
+                  cfg.subject === "time_of_day"
+                    ? t("config.placeholderTime")
+                    : cfg.subject === "contact_field"
+                      ? t("config.placeholderContact")
+                      : ""
+                }
+                value={(cfg.operand as string) ?? ""}
+                onChange={(e) => set({ operand: e.target.value })}
+                className="bg-muted text-foreground"
+              />
+            )}
           </FieldBlock>
           {(cfg.subject === "contact_field" || cfg.subject === "message_content") && (
             <FieldBlock label={t("config.valueLabel")}>
@@ -1558,10 +1625,19 @@ interface ApiStep {
   branches?: { yes?: ApiStep[]; no?: ApiStep[] }
 }
 
+function normalizeStepConfigForSave(
+  stepType: AutomationStepType,
+  config: Record<string, unknown>,
+): Record<string, unknown> {
+  if (stepType !== "condition") return config
+  const subject = (config.subject as string | undefined)?.trim() || "tag_presence"
+  return { ...config, subject }
+}
+
 export function toApiSteps(steps: BuilderStep[]): ApiStep[] {
   return steps.map((s) => ({
     step_type: s.step_type,
-    step_config: s.step_config,
+    step_config: normalizeStepConfigForSave(s.step_type, s.step_config),
     branches: s.branches
       ? { yes: toApiSteps(s.branches.yes), no: toApiSteps(s.branches.no) }
       : undefined,

@@ -2,6 +2,10 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 // Shared mock state for the service-role client. Lives in a hoisted block
 // so the vi.mock factory below can close over it.
+const ensureConv = vi.hoisted(() => ({
+  fn: vi.fn(async () => "conv-auto"),
+}));
+
 const h = vi.hoisted(() => ({
   state: {
     owned: null as { id: string } | null,
@@ -15,6 +19,9 @@ const h = vi.hoisted(() => ({
     upsertCalls: [] as { table: string; payload: unknown }[],
     logInserts: [] as Record<string, unknown>[],
     logUpdates: [] as Record<string, unknown>[],
+    contactTagCount: 0,
+    tagById: null as { id: string } | null,
+    tagByName: null as { id: string } | null,
   },
 }));
 
@@ -62,7 +69,37 @@ vi.mock("./admin-client", () => {
       }
       return { data: { steps_executed: [], status: "success" }, error: null };
     }
-    if (table === "automation_steps") return { data: state.steps, error: null };
+    if (table === "automation_steps") {
+      let rows = state.steps as {
+        parent_step_id?: string | null;
+        branch?: string | null;
+        position?: number;
+      }[];
+      const parentEq = ops.filters.find((f) => f[0] === "eq" && f[1] === "parent_step_id");
+      const branchEq = ops.filters.find((f) => f[0] === "eq" && f[1] === "branch");
+      const parentIsNull = ops.filters.some((f) => f[0] === "is" && f[1] === "parent_step_id");
+      if (parentIsNull) {
+        rows = rows.filter((r) => r.parent_step_id == null);
+      } else if (parentEq) {
+        rows = rows.filter(
+          (r) =>
+            r.parent_step_id === parentEq[2] &&
+            (!branchEq || r.branch === branchEq[2]),
+        );
+      }
+      const posGte = ops.filters.find((f) => f[0] === "eq" && f[1] === "position");
+      // gte('position', n) stored as gte in filters — we only use startPosition 0 in tests
+      void posGte;
+      return { data: rows, error: null };
+    }
+    if (table === "contact_tags") {
+      return { count: state.contactTagCount, error: null };
+    }
+    if (table === "tags") {
+      const idFilter = ops.filters.find((f) => f[1] === "id");
+      if (idFilter) return { data: state.tagById, error: null };
+      return { data: state.tagByName, error: null };
+    }
     return { data: null, error: null };
   }
 
@@ -80,6 +117,7 @@ vi.mock("./admin-client", () => {
       delete: () => ((ops.type = "delete"), b),
       upsert: (p: unknown) => ((ops.type = "upsert"), (ops.payload = p), b),
       eq: (k: string, v: unknown) => (ops.filters.push(["eq", k, v]), b),
+      ilike: (k: string, v: unknown) => (ops.filters.push(["ilike", k, v]), b),
       gte: () => b,
       is: () => b,
       order: () => b,
@@ -109,6 +147,14 @@ vi.mock("./meta-send", () => ({
   engineSendInteractive: vi.fn(async () => ({ whatsapp_message_id: "m1" })),
 }));
 
+vi.mock("./dispatch-conversation-assigned", () => ({
+  dispatchConversationAssignedAutomations: vi.fn(async () => undefined),
+}));
+
+vi.mock("@/lib/whatsapp/resolve-conversation", () => ({
+  ensureConversationForContact: ensureConv.fn,
+}));
+
 import { runAutomationsForTrigger, triggerMatches } from "./engine";
 import type { Automation, KeywordMatchTriggerConfig } from "@/types";
 
@@ -125,6 +171,9 @@ beforeEach(() => {
   h.state.upsertCalls = [];
   h.state.logInserts = [];
   h.state.logUpdates = [];
+  h.state.contactTagCount = 0;
+  h.state.tagById = null;
+  h.state.tagByName = null;
 });
 
 describe("runAutomationsForTrigger — tenant isolation", () => {
@@ -459,9 +508,88 @@ describe("triggerMatches — tag_added", () => {
   });
 });
 
-describe("tag_added — conversation policy", () => {
-  it("records a clear failed step when the contact has no conversation", async () => {
+describe("tag_presence condition", () => {
+  const TAG = "550e8400-e29b-41d4-a716-446655440000";
+
+  it("takes the yes branch when the contact has the tag (UUID operand)", async () => {
     h.state.owned = { id: "c1" };
+    h.state.tagById = { id: TAG };
+    h.state.contactTagCount = 1;
+    h.state.automations = [{
+      id: "a1",
+      account_id: ACCOUNT,
+      user_id: "u1",
+      name: "tag check",
+      trigger_type: "tag_added",
+      trigger_config: { tag_id: TAG },
+      is_active: true,
+    }];
+    h.state.steps = [{
+      id: "cond",
+      automation_id: "a1",
+      step_type: "condition",
+      position: 0,
+      parent_step_id: null,
+      step_config: { operand: TAG },
+    }];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "tag_added",
+      contactId: "c1",
+      context: { tag_id: TAG },
+    });
+
+    expect(h.state.logUpdates.length).toBeGreaterThan(0);
+    const steps = h.state.logUpdates.flatMap(
+      (u) => (u.steps_executed as { detail?: string }[]) ?? [],
+    );
+    expect(steps.some((s) => s.detail?.includes("branch=yes") && s.detail?.includes(TAG))).toBe(
+      true,
+    );
+  });
+
+  it("defaults subject to tag_presence when omitted in saved config", async () => {
+    h.state.owned = { id: "c1" };
+    h.state.tagByName = { id: TAG };
+    h.state.contactTagCount = 1;
+    h.state.automations = [{
+      id: "a1",
+      account_id: ACCOUNT,
+      user_id: "u1",
+      name: "tag name check",
+      trigger_type: "tag_added",
+      trigger_config: { tag_id: TAG },
+      is_active: true,
+    }];
+    h.state.steps = [{
+      id: "cond",
+      automation_id: "a1",
+      step_type: "condition",
+      position: 0,
+      parent_step_id: null,
+      step_config: { operand: "test" },
+    }];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "tag_added",
+      contactId: "c1",
+      context: { tag_id: TAG },
+    });
+
+    const steps = h.state.logUpdates.flatMap(
+      (u) => (u.steps_executed as { detail?: string }[]) ?? [],
+    );
+    expect(steps.some((s) => s.detail?.includes("branch=yes"))).toBe(true);
+  });
+});
+
+describe("tag_added — conversation policy", () => {
+  it("opens a conversation when the contact has no inbox thread yet", async () => {
+    ensureConv.fn.mockClear();
+    h.state.owned = { id: "c1" };
+    h.state.ownedConversation = null;
     h.state.automations = [{
       id: "a1",
       account_id: ACCOUNT,
@@ -487,10 +615,15 @@ describe("tag_added — conversation policy", () => {
       context: { tag_id: "tag-a" },
     });
 
-    expect(h.state.logUpdates).toContainEqual(expect.objectContaining({
-      status: "failed",
-      error_message: "tag_added automation cannot send: contact has no existing conversation",
-    }));
+    expect(ensureConv.fn).toHaveBeenCalledWith(
+      expect.anything(),
+      ACCOUNT,
+      "c1",
+      "u1",
+    );
+    expect(h.state.logUpdates).toContainEqual(
+      expect.objectContaining({ status: "success" }),
+    );
   });
 });
 

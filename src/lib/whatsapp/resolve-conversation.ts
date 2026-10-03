@@ -145,7 +145,7 @@ export async function resolveConversationByPhone(
   // `.maybeSingle()`, which errors on ≥2 rows: if duplicates predate the
   // unique index (migration 036), we resolve to the canonical survivor
   // instead of falling through and creating yet another (issue #363).
-  const conversationId = await findOrCreateConversationRow(
+  const conversationId = await ensureConversationForContact(
     db,
     accountId,
     contactId,
@@ -161,6 +161,16 @@ export async function resolveConversationByPhone(
  * the inbound webhook does: on a 23505 from a concurrent create,
  * re-resolve the winning row rather than failing the send.
  */
+/** Open the contact's inbox thread, creating it when missing (CRM tags, API, etc.). */
+export async function ensureConversationForContact(
+  db: SupabaseClient,
+  accountId: string,
+  contactId: string,
+  ownerUserId: string
+): Promise<string> {
+  return findOrCreateConversationRow(db, accountId, contactId, ownerUserId);
+}
+
 async function findOrCreateConversationRow(
   db: SupabaseClient,
   accountId: string,

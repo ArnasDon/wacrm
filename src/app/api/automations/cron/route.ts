@@ -1,8 +1,9 @@
-import { timingSafeEqual } from 'node:crypto'
 import { NextResponse } from 'next/server'
+import { verifyCronSecret } from '@/lib/cron-auth'
 import { supabaseAdmin } from '@/lib/automations/admin-client'
 import { resumePendingExecution } from '@/lib/automations/engine'
 import type { AutomationContext } from '@/lib/automations/engine'
+import { runDueTimeBasedAutomations } from '@/lib/automations/time-based-cron'
 
 /**
  * Drain due `automation_pending_executions` rows. Meant to be hit
@@ -20,13 +21,7 @@ export async function GET(request: Request) {
   if (!expected) {
     return NextResponse.json({ error: 'cron not configured' }, { status: 503 })
   }
-  const supplied = request.headers.get('x-cron-secret') ?? ''
-  const suppliedBuf = Buffer.from(supplied)
-  const expectedBuf = Buffer.from(expected)
-  if (
-    suppliedBuf.length !== expectedBuf.length ||
-    !timingSafeEqual(suppliedBuf, expectedBuf)
-  ) {
+  if (!verifyCronSecret(request, expected)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -40,7 +35,12 @@ export async function GET(request: Request) {
     .limit(50)
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  if (!due || due.length === 0) return NextResponse.json({ processed: 0 })
+
+  const scheduled = await runDueTimeBasedAutomations()
+
+  if (!due || due.length === 0) {
+    return NextResponse.json({ processed: 0, scheduled })
+  }
 
   let processed = 0
   for (const row of due) {
@@ -70,5 +70,5 @@ export async function GET(request: Request) {
     processed++
   }
 
-  return NextResponse.json({ processed })
+  return NextResponse.json({ processed, scheduled })
 }

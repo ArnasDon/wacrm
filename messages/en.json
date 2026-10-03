@@ -1055,6 +1055,7 @@
           "time_of_day": "Time of day"
         },
         "operandLabel": "Operand",
+        "tagPresenceHint": "Yes branch runs when the contact has this tag. Use the tag from Tags (tags.id), not contact_tags.id.",
         "placeholderTime": "HH:mm-HH:mm",
         "placeholderContact": "name / email / company",
         "placeholderTag": "tag id",

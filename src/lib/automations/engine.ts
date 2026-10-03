@@ -26,6 +26,12 @@ import { validateInteractivePayload } from '@/lib/whatsapp/interactive'
 import { isDeliverableUrl } from '@/lib/webhooks/ssrf'
 import { dispatchConversationAssignedAutomations } from './dispatch-conversation-assigned'
 import { ensureConversationForContact } from '@/lib/whatsapp/resolve-conversation'
+import {
+  conditionSubject,
+  contactHasTag,
+  resolveTagIdForAccount,
+  tagPresenceOperandRaw,
+} from './condition-tag-presence'
 
 // ------------------------------------------------------------
 // Public API
@@ -335,12 +341,12 @@ async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
     try {
       if (step.step_type === 'condition') {
         const cfg = step.step_config as ConditionStepConfig
-        const taken = await evaluateCondition(cfg, args)
+        const { taken, detail } = await evaluateCondition(cfg, args)
         results.push({
           step_id: step.id,
           step_type: 'condition',
           status: 'success',
-          detail: `branch=${taken ? 'yes' : 'no'}`,
+          detail,
         })
         // Recurse into the chosen branch at position 0 (children use their
         // own ordering within the branch scope).
@@ -789,23 +795,41 @@ export function triggerMatches(automation: Automation, ctx: AutomationContext | 
   return true
 }
 
-async function evaluateCondition(cfg: ConditionStepConfig, args: ExecuteArgs): Promise<boolean> {
+async function evaluateCondition(
+  cfg: ConditionStepConfig,
+  args: ExecuteArgs,
+): Promise<{ taken: boolean; detail: string }> {
   const db = supabaseAdmin()
-  switch (cfg.subject) {
+  const subject = conditionSubject(cfg)
+  switch (subject) {
     case 'tag_presence': {
-      if (!args.contactId || !cfg.operand) return false
+      const raw = tagPresenceOperandRaw(cfg)
+      if (!args.contactId || !raw) {
+        return {
+          taken: false,
+          detail: 'branch=no; tag_presence=missing contact or tag operand',
+        }
+      }
+      const tagId = await resolveTagIdForAccount(db, args.automation.account_id, raw)
+      if (!tagId) {
+        return {
+          taken: false,
+          detail: `branch=no; tag_presence=unknown tag (${raw.slice(0, 36)})`,
+        }
+      }
       // contact_tags has no account_id column (its RLS keys off the parent
       // contact), so tenant scoping here relies on the contact-ownership
       // guard in runAutomationsForTrigger.
-      const { count } = await db
-        .from('contact_tags')
-        .select('id', { count: 'exact', head: true })
-        .eq('contact_id', args.contactId)
-        .eq('tag_id', cfg.operand)
-      return (count ?? 0) > 0
+      const { present, count } = await contactHasTag(db, args.contactId, tagId)
+      return {
+        taken: present,
+        detail: `branch=${present ? 'yes' : 'no'}; tag_id=${tagId}; matches=${count}`,
+      }
     }
     case 'contact_field': {
-      if (!args.contactId || !cfg.operand) return false
+      if (!args.contactId || !cfg.operand) {
+        return { taken: false, detail: 'branch=no; contact_field=missing operand' }
+      }
       // Scope to the account so the condition can't be turned into a
       // cross-tenant read oracle via the service-role client.
       const { data } = await db
@@ -815,17 +839,19 @@ async function evaluateCondition(cfg: ConditionStepConfig, args: ExecuteArgs): P
         .eq('account_id', args.automation.account_id)
         .maybeSingle()
       const v = (data as Record<string, unknown> | null)?.[cfg.operand]
-      return v != null && String(v) === String(cfg.value ?? '')
+      const taken = v != null && String(v) === String(cfg.value ?? '')
+      return { taken, detail: `branch=${taken ? 'yes' : 'no'}` }
     }
     case 'message_content': {
       const text = (args.context.message_text ?? '').toString()
-      return text.toLowerCase().includes((cfg.value ?? '').toLowerCase())
+      const taken = text.toLowerCase().includes((cfg.value ?? '').toLowerCase())
+      return { taken, detail: `branch=${taken ? 'yes' : 'no'}` }
     }
     case 'time_of_day': {
       // operand form "HH:mm-HH:mm" — true if now is within that window
       // (supports over-midnight ranges like "18:00-09:00").
       const [from, to] = (cfg.operand ?? '').split('-')
-      if (!from || !to) return false
+      if (!from || !to) return { taken: false, detail: 'branch=no; time_of_day=invalid range' }
       const now = new Date()
       const mins = now.getHours() * 60 + now.getMinutes()
       const parse = (s: string) => {
@@ -834,10 +860,11 @@ async function evaluateCondition(cfg: ConditionStepConfig, args: ExecuteArgs): P
       }
       const f = parse(from)
       const t = parse(to)
-      return f <= t ? mins >= f && mins < t : mins >= f || mins < t
+      const taken = f <= t ? mins >= f && mins < t : mins >= f || mins < t
+      return { taken, detail: `branch=${taken ? 'yes' : 'no'}` }
     }
     default:
-      return false
+      return { taken: false, detail: `branch=no; unknown subject=${subject}` }
   }
 }
 

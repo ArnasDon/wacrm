@@ -1514,11 +1514,16 @@ function StepEditor({
           </FieldBlock>
           <FieldBlock label={t("config.operandLabel")}>
             {cfg.subject === "tag_presence" ? (
-              <TagSelect
-                value={(cfg.operand as string) ?? ""}
-                onChange={(v) => set({ operand: v })}
-                t={t}
-              />
+              <>
+                <TagSelect
+                  value={(cfg.operand as string) ?? ""}
+                  onChange={(v) => set({ operand: v })}
+                  t={t}
+                />
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  {t("config.tagPresenceHint")}
+                </p>
+              </>
             ) : (
               <Input
                 placeholder={
@@ -1620,10 +1625,19 @@ interface ApiStep {
   branches?: { yes?: ApiStep[]; no?: ApiStep[] }
 }
 
+function normalizeStepConfigForSave(
+  stepType: AutomationStepType,
+  config: Record<string, unknown>,
+): Record<string, unknown> {
+  if (stepType !== "condition") return config
+  const subject = (config.subject as string | undefined)?.trim() || "tag_presence"
+  return { ...config, subject }
+}
+
 export function toApiSteps(steps: BuilderStep[]): ApiStep[] {
   return steps.map((s) => ({
     step_type: s.step_type,
-    step_config: s.step_config,
+    step_config: normalizeStepConfigForSave(s.step_type, s.step_config),
     branches: s.branches
       ? { yes: toApiSteps(s.branches.yes), no: toApiSteps(s.branches.no) }
       : undefined,

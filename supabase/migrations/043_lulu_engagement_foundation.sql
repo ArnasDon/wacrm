@@ -185,22 +185,62 @@ CREATE TABLE IF NOT EXISTS lulu_customer_sync_log (
 );
 
 -- ---------- RLS ----------
-DO $$
-DECLARE t text;
-BEGIN
-  FOREACH t IN ARRAY ARRAY[
-    'lulu_customer_profiles','lulu_offers','lulu_campaigns','lulu_contact_policy',
-    'lulu_customer_next_actions','lulu_campaign_events','lulu_customer_sync_log'
-  ] LOOP
-    EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
-    EXECUTE format('DROP POLICY IF EXISTS %I ON %I', t || '_select', t);
-    EXECUTE format('CREATE POLICY %I ON %I FOR SELECT USING (is_account_member(account_id))', t || '_select', t);
-  END LOOP;
+-- Written as plain statements (not a DO loop) so Supabase's SQL editor
+-- linter can see RLS is enabled on every table. The DROP POLICY IF EXISTS
+-- lines only remove policies this file itself creates (idempotent re-run);
+-- no table or row data is ever dropped.
 
-  -- Config tables: admin+ may write. Queue/events/profiles/sync are
-  -- written by the engagement service (service role) only.
-  FOREACH t IN ARRAY ARRAY['lulu_offers','lulu_campaigns','lulu_contact_policy'] LOOP
-    EXECUTE format('DROP POLICY IF EXISTS %I ON %I', t || '_write', t);
-    EXECUTE format('CREATE POLICY %I ON %I FOR ALL USING (is_account_member(account_id, ''admin'')) WITH CHECK (is_account_member(account_id, ''admin''))', t || '_write', t);
-  END LOOP;
-END $$;
+ALTER TABLE lulu_customer_profiles ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS lulu_customer_profiles_select ON lulu_customer_profiles;
+CREATE POLICY lulu_customer_profiles_select ON lulu_customer_profiles FOR SELECT
+  USING (is_account_member(account_id));
+
+ALTER TABLE lulu_offers ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS lulu_offers_select ON lulu_offers;
+CREATE POLICY lulu_offers_select ON lulu_offers FOR SELECT
+  USING (is_account_member(account_id));
+
+ALTER TABLE lulu_campaigns ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS lulu_campaigns_select ON lulu_campaigns;
+CREATE POLICY lulu_campaigns_select ON lulu_campaigns FOR SELECT
+  USING (is_account_member(account_id));
+
+ALTER TABLE lulu_contact_policy ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS lulu_contact_policy_select ON lulu_contact_policy;
+CREATE POLICY lulu_contact_policy_select ON lulu_contact_policy FOR SELECT
+  USING (is_account_member(account_id));
+
+ALTER TABLE lulu_customer_next_actions ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS lulu_customer_next_actions_select ON lulu_customer_next_actions;
+CREATE POLICY lulu_customer_next_actions_select ON lulu_customer_next_actions FOR SELECT
+  USING (is_account_member(account_id));
+
+ALTER TABLE lulu_campaign_events ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS lulu_campaign_events_select ON lulu_campaign_events;
+CREATE POLICY lulu_campaign_events_select ON lulu_campaign_events FOR SELECT
+  USING (is_account_member(account_id));
+
+ALTER TABLE lulu_customer_sync_log ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS lulu_customer_sync_log_select ON lulu_customer_sync_log;
+CREATE POLICY lulu_customer_sync_log_select ON lulu_customer_sync_log FOR SELECT
+  USING (is_account_member(account_id));
+
+-- Config tables: admin+ may write. Queue/events/profiles/sync are written
+-- by the engagement service (service role) only — no write policy = denied
+-- for anon/authenticated keys.
+
+DROP POLICY IF EXISTS lulu_offers_write ON lulu_offers;
+CREATE POLICY lulu_offers_write ON lulu_offers FOR ALL
+  USING (is_account_member(account_id, 'admin'))
+  WITH CHECK (is_account_member(account_id, 'admin'));
+
+DROP POLICY IF EXISTS lulu_campaigns_write ON lulu_campaigns;
+CREATE POLICY lulu_campaigns_write ON lulu_campaigns FOR ALL
+  USING (is_account_member(account_id, 'admin'))
+  WITH CHECK (is_account_member(account_id, 'admin'));
+
+DROP POLICY IF EXISTS lulu_contact_policy_write ON lulu_contact_policy;
+CREATE POLICY lulu_contact_policy_write ON lulu_contact_policy FOR ALL
+  USING (is_account_member(account_id, 'admin'))
+  WITH CHECK (is_account_member(account_id, 'admin'));
+

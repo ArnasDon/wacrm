@@ -6,6 +6,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Crown, Moon, TrendingDown, UserCheck, UserMinus, Users, BellOff, RefreshCw, ShieldAlert } from "lucide-react";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { MetricCard } from "@/components/dashboard/metric-card";
@@ -152,6 +153,12 @@ export default function EngagementPage() {
             Lifecycle overview of customers synced from BigQuery.
           </p>
         </div>
+        <Link
+          href="/engagement/campaigns"
+          className="ms-auto inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm text-foreground hover:bg-muted"
+        >
+          Campaigns
+        </Link>
         <button
           type="button"
           onClick={() => void load()}

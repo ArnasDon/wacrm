@@ -54,6 +54,7 @@ export interface CustomerProfile {
 export interface CampaignConfig {
   id: string;
   code: string;
+  name?: string;
   type: CampaignType;
   priorityClass: PriorityClass;
   active: boolean;
@@ -65,6 +66,10 @@ export interface CampaignConfig {
     lostDays?: number; // default 60
     secondOrderAfterDays?: number; // default 7
     birthdayWindowDays?: number; // default 0 (today only)
+    secondOrderMaxDays?: number; // default = dormant threshold (30): after that WINBACK_30 takes over
+    atRiskRatio?: number; // cycle-aware multiples of the customer's own interval
+    dormantRatio?: number;
+    lostRatio?: number;
   };
 }
 

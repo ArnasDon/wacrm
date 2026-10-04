@@ -117,3 +117,17 @@ SELECT
   COUNTIF(preferred_store IS NOT NULL) AS with_store,
   ROUND(AVG(IF(suspect_reason IS NULL, total_orders, NULL)), 2) AS avg_orders
 FROM `myecomlulu.jackpot.lulu_customer_master`;
+
+-- 13) Why do only ~4% of customers have a preferred store (expected ~15%+ for the western region)?
+--     Compare matched orders by item job_state, and how many have a store name.
+WITH i AS (
+  SELECT REGEXP_EXTRACT(job_number, r'^Lulu-(\d+)') AS n, job_state,
+         ANY_VALUE(store_name_1) AS store
+  FROM `myecomlulu.jackpot.instaleap_raw`
+  GROUP BY n, job_state
+)
+SELECT i.job_state, COUNT(DISTINCT i.n) AS orders, COUNTIF(i.store IS NULL) AS without_store
+FROM `myecomlulu.jackpot.ksa_jackpot` AS o
+JOIN i ON CAST(o.number AS STRING) = i.n
+WHERE LOWER(o.status) = 'delivered'
+GROUP BY i.job_state ORDER BY orders DESC;

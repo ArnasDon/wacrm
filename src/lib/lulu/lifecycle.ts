@@ -48,6 +48,27 @@ export const DEFAULT_LIFECYCLE: LifecycleThresholds = {
 };
 
 /**
+ * Lifecycle thresholds come from the campaigns' own configurable params
+ * (PRD §100 — no code change for business rules); anything unset falls back
+ * to the defaults above.
+ */
+export function thresholdsFromCampaigns(campaigns: CampaignConfig[]): LifecycleThresholds {
+  const params = (type: CampaignConfig["type"]) => campaigns.find((c) => c.type === type)?.params;
+  const a = params("INACTIVE_15");
+  const w = params("WINBACK_30");
+  const l = params("LOST_60");
+  const d = DEFAULT_LIFECYCLE;
+  return {
+    atRiskDays: a?.inactiveDays ?? d.atRiskDays,
+    dormantDays: w?.winbackDays ?? d.dormantDays,
+    lostDays: l?.lostDays ?? d.lostDays,
+    atRiskRatio: a?.atRiskRatio ?? d.atRiskRatio,
+    dormantRatio: w?.dormantRatio ?? d.dormantRatio,
+    lostRatio: l?.lostRatio ?? d.lostRatio,
+  };
+}
+
+/**
  * NEW → FIRST_ORDER → ACTIVE → AT_RISK → DORMANT → LOST (PRD §34).
  * Uses the customer's own cycle when known, otherwise fixed days. A guard
  * keeps the cycle path from flagging someone inactive after only a few days
@@ -106,8 +127,10 @@ export function matchingCampaigns(
   p: CustomerProfile,
   campaigns: CampaignConfig[],
   now: Date,
+  thresholds: LifecycleThresholds = thresholdsFromCampaigns(campaigns),
 ): { campaign: CampaignConfig; reason: string }[] {
-  const stage = lifecycleStage(p, now);
+  const stage = lifecycleStage(p, now, thresholds);
+  const hasSecondOrder = campaigns.some((c) => c.active && c.type === "SECOND_ORDER");
   const gap = daysSince(p.lastOrderDate, now);
   const ratio = overdueRatio(p, now);
   const out: { campaign: CampaignConfig; reason: string }[] = [];
@@ -121,11 +144,15 @@ export function matchingCampaigns(
         break;
       case "SECOND_ORDER": {
         const after = c.params.secondOrderAfterDays ?? 7;
-        if (p.totalOrders === 1 && gap !== null && gap >= after)
+        // Capped at the dormant threshold: from there the win-back campaign owns the customer.
+        const before = c.params.secondOrderMaxDays ?? thresholds.dormantDays;
+        if (p.totalOrders === 1 && gap !== null && gap >= after && gap < before)
           out.push({ campaign: c, reason: `Single order ${gap} days ago, no second order` });
         break;
       }
       case "INACTIVE_15":
+        // A one-order customer is handled by the more specific SECOND_ORDER campaign when it is on.
+        if (p.totalOrders === 1 && hasSecondOrder) break;
         if (stage === "AT_RISK") out.push({ campaign: c, reason: inactivityReason(gap, ratio, p) });
         break;
       case "WINBACK_30":

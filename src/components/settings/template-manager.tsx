@@ -432,8 +432,17 @@ export function TemplateManager() {
 
   function changeButtonType(index: number, type: TemplateButton['type']) {
     setForm((prev) => {
+      const current = prev.buttons[index];
+      // Base UI Select can re-fire onValueChange with the already-
+      // selected value (open → click same item, or controlled remount).
+      // emptyButton() would wipe text/url and make Save fail with
+      // "Button #N (URL) is missing text" on an otherwise untouched
+      // synced template.
+      if (!current || current.type === type) return prev;
       const next = [...prev.buttons];
-      next[index] = emptyButton(type);
+      // Keep the shared label when switching type so a mis-click
+      // from URL → Phone doesn't force the user to retype it.
+      next[index] = { ...emptyButton(type), text: current.text };
       return { ...prev, buttons: next };
     });
   }
@@ -988,6 +997,10 @@ export function TemplateManager() {
                             // (per PR 148): @base-ui Select fires
                             // onValueChange(null) on deselect.
                             if (!val) return;
+                            // Skip no-op re-selects so we don't wipe
+                            // text/url via emptyButton() (see
+                            // changeButtonType).
+                            if (val === btn.type) return;
                             changeButtonType(i, val as TemplateButton['type']);
                           }}
                         >

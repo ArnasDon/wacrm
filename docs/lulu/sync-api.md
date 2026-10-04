@@ -35,7 +35,10 @@ Optional: `loyalty_id, name, language (ar|en, default ar), birthday, first_order
 total_orders, total_sales, average_order_value (derived if absent), orders_30d, orders_90d,
 median_interval_days, stddev_interval_days, preferred_store, preferred_category, customer_segment,
 rfm_recency/frequency/monetary (1-5), lifetime_value, vip_flag, marketing_opt_in (default true), active_complaint,
-distinct_names, distinct_emails, suspect_reason`.
+distinct_names, distinct_emails, suspect_reason, data_as_of`.
+
+`data_as_of` (ISO time of the newest order in the source data; body-level or per row) is stored on the sync log and shown on
+`/engagement` with a warning when older than 36 h.
 
 `suspect_reason` (non-empty text, e.g. `many_names:796`) flags a suspected shared/fake number: the profile is stored and
 listed on `/engagement`, but excluded from KPIs and never contacted. Sending the customer again without it clears the flag.

@@ -207,7 +207,9 @@ SELECT
      AND s.total_orders >= (SELECT vip_min_orders FROM params)) AS vip_flag,
   s.distinct_names,
   s.distinct_emails,
-  s.suspect_reason
+  s.suspect_reason,
+  -- newest order in the source data; lets the app warn when the feed is stale
+  FORMAT_TIMESTAMP('%Y-%m-%dT%H:%M:%SZ', (SELECT MAX(date_placed) FROM orders_raw)) AS data_as_of
 FROM scored AS s
 LEFT JOIN cycle      AS cy ON cy.phone = s.phone
 LEFT JOIN pref_store AS ps ON ps.phone = s.phone

@@ -7,7 +7,8 @@
 // phone, and (optionally) creates missing contacts.
 //
 // Body:
-//   { "customers": [ { customer_id, mobile, name, language, birthday,
+//   { "data_as_of": "2026-09-30T12:49:53Z",   (optional; else taken from rows)
+//     "customers": [ { customer_id, mobile, name, language, birthday,
 //                      last_order_date, total_orders, total_sales,
 //                      median_interval_days, vip_flag, marketing_opt_in, ... } ],
 //     "create_contacts": false }
@@ -27,6 +28,7 @@ import { findOrCreateContact, resolveAuditUserId } from '@/lib/api/v1/contacts';
 import { normalizePhone } from '@/lib/whatsapp/phone-utils';
 import {
   MAX_SYNC_BATCH,
+  extractDataAsOf,
   parseCustomer,
   type ProfileRow,
   type SyncRowError,
@@ -44,6 +46,7 @@ export async function POST(request: Request) {
     const body = (await request.json().catch(() => null)) as {
       customers?: unknown;
       create_contacts?: unknown;
+      data_as_of?: unknown;
     } | null;
     if (!body || !Array.isArray(body.customers)) {
       return fail('bad_request', "Body must be { customers: [...] }", 400);
@@ -84,6 +87,7 @@ export async function POST(request: Request) {
       .insert({
         account_id: accountId,
         rows_received: body.customers.length,
+        data_as_of: extractDataAsOf(body.data_as_of, body.customers),
       })
       .select('id')
       .single();

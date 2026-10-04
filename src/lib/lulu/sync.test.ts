@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeMobile, parseCustomer } from "./index";
+import { extractDataAsOf, normalizeMobile, parseCustomer } from "./index";
 
 const NOW = new Date("2026-09-24T12:00:00Z");
 
@@ -51,5 +51,18 @@ describe("parseCustomer", () => {
     expect(r.distinct_names).toBe(796);
     expect(r.distinct_emails).toBe(809);
     expect(r.suspect_reason).toBe("many_names:796");
+  });
+});
+
+describe("extractDataAsOf", () => {
+  it("prefers the body value, else the newest per-row value", () => {
+    expect(extractDataAsOf("2026-09-30T12:49:53Z", [])).toBe("2026-09-30T12:49:53.000Z");
+    expect(
+      extractDataAsOf(undefined, [{ data_as_of: "2026-09-29T00:00:00Z" }, { data_as_of: "2026-09-30T12:49:53Z" }, {}]),
+    ).toBe("2026-09-30T12:49:53.000Z");
+  });
+  it("returns null when missing or invalid", () => {
+    expect(extractDataAsOf(undefined, [{}, null])).toBeNull();
+    expect(extractDataAsOf("garbage", [])).toBeNull();
   });
 });

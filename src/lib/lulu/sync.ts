@@ -135,3 +135,24 @@ export function parseCustomer(raw: unknown, now: Date): ProfileRow | string {
   row.lifecycle_stage = lifecycleStage(asProfile, now);
   return row;
 }
+
+/**
+ * Newest-order timestamp of the data being synced: an explicit body-level
+ * `data_as_of`, else the latest per-row `data_as_of` (the BigQuery master
+ * repeats it on every row). Returns an ISO string or null if absent/invalid.
+ */
+export function extractDataAsOf(bodyValue: unknown, rawRows: unknown[]): string | null {
+  const times: number[] = [];
+  const push = (v: unknown) => {
+    if (typeof v !== "string" || !v.trim()) return;
+    const t = Date.parse(v);
+    if (!Number.isNaN(t)) times.push(t);
+  };
+  push(bodyValue);
+  if (times.length === 0) {
+    for (const r of rawRows) {
+      if (r && typeof r === "object") push((r as Record<string, unknown>).data_as_of);
+    }
+  }
+  return times.length ? new Date(Math.max(...times)).toISOString() : null;
+}

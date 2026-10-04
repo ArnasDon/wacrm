@@ -36,12 +36,16 @@ interface Suspect {
 
 interface SyncInfo {
   finished_at: string | null;
+  data_as_of: string | null;
   status: string;
   rows_upserted: number;
   rows_failed: number;
 }
 
 const fmt = (n: number) => n.toLocaleString("en-US");
+
+/** Warn when the newest synced order is older than this (matches the planned live-send gate). */
+const STALE_AFTER_HOURS = 36;
 
 export default function EngagementPage() {
   const { accountId } = useAuth();
@@ -83,7 +87,7 @@ export default function EngagementPage() {
             .not("contact_id", "is", null),
           supabase
             .from("lulu_customer_sync_log")
-            .select("finished_at, status, rows_upserted, rows_failed")
+            .select("finished_at, data_as_of, status, rows_upserted, rows_failed")
             .eq("account_id", accountId)
             .order("started_at", { ascending: false })
             .limit(1),
@@ -164,6 +168,24 @@ export default function EngagementPage() {
           {error}
         </div>
       )}
+
+      {sync?.data_as_of && (() => {
+        const hours = Math.floor((Date.now() - new Date(sync.data_as_of).getTime()) / 3_600_000);
+        const stale = hours > STALE_AFTER_HOURS;
+        return (
+          <div
+            className={`rounded-lg border p-3 text-sm ${
+              stale
+                ? "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400"
+                : "border-border text-muted-foreground"
+            }`}
+          >
+            Order data as of {new Date(sync.data_as_of).toLocaleString()} ({hours}h ago).
+            {stale &&
+              " Customers who ordered since then look inactive — refresh the BigQuery data and re-sync before sending any campaign."}
+          </div>
+        );
+      })()}
 
       {counts && counts.total === 0 && !error && (
         <div className="rounded-xl border border-dashed border-border p-6 text-sm text-muted-foreground">

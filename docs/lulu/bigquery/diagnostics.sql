@@ -103,3 +103,17 @@ GROUP BY city ORDER BY orders DESC LIMIT 20;
 -- 11) Freshness: when did the order table last receive data?
 SELECT MAX(date_placed) AS latest_order, TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), MAX(date_placed), HOUR) AS hours_behind
 FROM `myecomlulu.jackpot.ksa_jackpot`;
+
+-- 12) Summary of the customer master. First save it as a view:
+--       CREATE OR REPLACE VIEW `myecomlulu.jackpot.lulu_customer_master` AS
+--       <paste customer_master.sql here, without the trailing ORDER BY / semicolon>;
+--     (n8n can then simply SELECT * FROM that view.) Then run:
+SELECT
+  COUNT(*) AS customers,
+  COUNTIF(suspect_reason IS NOT NULL) AS suspects,
+  COUNTIF(suspect_reason IS NULL AND total_orders = 1) AS one_order_customers,
+  COUNTIF(suspect_reason IS NULL AND total_orders >= 3) AS three_plus_orders,
+  COUNTIF(vip_flag) AS vips,
+  COUNTIF(preferred_store IS NOT NULL) AS with_store,
+  ROUND(AVG(IF(suspect_reason IS NULL, total_orders, NULL)), 2) AS avg_orders
+FROM `myecomlulu.jackpot.lulu_customer_master`;

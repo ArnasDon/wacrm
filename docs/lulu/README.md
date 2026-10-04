@@ -5,7 +5,8 @@ extension/API integration works.** Everything LuLu lives in:
 
 - `supabase/migrations/043_lulu_engagement_foundation.sql` — `lulu_*` tables only
 - `src/lib/lulu/` — pure decision engine (no I/O, unit-tested)
-- (next) `src/app/(dashboard)/engagement/`, `src/app/api/lulu/`
+- `src/app/(dashboard)/engagement/` — overview page
+- `src/app/api/v1/lulu/` — LuLu API routes
 
 ## Ownership
 BigQuery = ecommerce truth · WACRM = communication truth · `lulu_*` = decision truth.
@@ -17,7 +18,7 @@ BigQuery = ecommerce truth · WACRM = communication truth · `lulu_*` = decision
 
 ## Roadmap (PRD §95 V1)
 1. ✅ Schema + decision engine
-2. Customer sync endpoint (BigQuery → `lulu_customer_profiles`, contact + tag sync)
+2. ✅ Customer sync endpoint (`docs/lulu/sync-api.md`) + `/engagement` overview page · ⏳ tag sync
 3. Action-queue worker (batch ≤1000, 120 req/min, retry/backoff) → WACRM broadcast API
 4. Webhook consumer (status/STOP) → `lulu_campaign_events`
 5. `/engagement` dashboard + campaign/offer admin, dry-run/test mode, approval

@@ -1,0 +1,254 @@
+{
+  "name": "LuLu - BigQuery to WACRM customer sync",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## LuLu customer sync (BigQuery -> WACRM)\n**Before running**\n1. In BigQuery run `docs/lulu/bigquery/create_view.sql` (creates `lulu_customer_master`).\n2. In Supabase run migrations 043-046.\n3. In WACRM: Settings -> API keys -> create a key with scope `contacts:write`.\n4. n8n credentials: *Google BigQuery* (service account with BigQuery Data Viewer + Job User) and *Header Auth* (name `Authorization`, value `Bearer <your key>`).\n5. Edit the URL in **POST to WACRM sync**. If the app is a Vercel *preview* with deployment protection on, add its automation-bypass secret to the `x-vercel-protection-bypass` header (delete the header otherwise).\n\nRun **Manual** first and check `/engagement`. The schedule is off until you activate the workflow.",
+        "height": 330,
+        "width": 520,
+        "color": 4
+      },
+      "id": "n-note",
+      "name": "Setup notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -120,
+        -260
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "n-manual",
+      "name": "Manual run",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 6
+            }
+          ]
+        }
+      },
+      "id": "n-sched",
+      "name": "Daily 06:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "projectId": {
+          "__rl": true,
+          "value": "myecomlulu",
+          "mode": "id"
+        },
+        "sqlQuery": "SELECT * FROM `myecomlulu.jackpot.lulu_customer_master`",
+        "options": {}
+      },
+      "id": "n-bq",
+      "name": "BigQuery customer master",
+      "type": "n8n-nodes-base.googleBigQuery",
+      "typeVersion": 2.1,
+      "position": [
+        260,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Split the customer master into batches of 500 (the sync API limit).\nconst rows = $input.all().map(i => i.json);\nif (rows.length === 0) throw new Error('BigQuery returned 0 customers - check the view and focus_cities');\nconst BATCH = 500;\nconst out = [];\nfor (let i = 0; i < rows.length; i += BATCH) {\n  out.push({ json: { batch: out.length + 1, customers: rows.slice(i, i + BATCH) } });\n}\nreturn out;"
+      },
+      "id": "n-batch",
+      "name": "Build batches of 500",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        520,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "n-loop",
+      "name": "Loop over batches",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        780,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOUR-APP.vercel.app/api/v1/lulu/customers/sync",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-vercel-protection-bypass",
+              "value": "DELETE-THIS-HEADER-IF-NOT-NEEDED"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ customers: $json.customers, create_contacts: false }) }}",
+        "options": {
+          "timeout": 90000
+        }
+      },
+      "id": "n-post",
+      "name": "POST to WACRM sync",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1040,
+        300
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "amount": 1,
+        "unit": "seconds"
+      },
+      "id": "n-wait",
+      "name": "Pause 1s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1300,
+        300
+      ],
+      "webhookId": "lulu-sync-pause"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Totals across all batches. Failed HTTP calls were retried 3x, then kept going.\nconst res = $('POST to WACRM sync').all().map(i => i.json);\nconst sum = k => res.reduce((a, r) => a + (Number(r[k]) || 0), 0);\nconst failedBatches = res.filter(r => r.error || r.received === undefined).length;\nconst dataAsOf = $('Build batches of 500').first().json.customers[0]?.data_as_of ?? null;\nreturn [{ json: {\n  batches: res.length,\n  failed_batches: failedBatches,\n  customers_received: sum('received'),\n  customers_saved: sum('upserted'),\n  customers_failed: sum('failed'),\n  contacts_linked: sum('contacts_linked'),\n  data_as_of: dataAsOf,\n  ok: failedBatches === 0,\n}}];"
+      },
+      "id": "n-sum",
+      "name": "Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        100
+      ]
+    }
+  ],
+  "connections": {
+    "Manual run": {
+      "main": [
+        [
+          {
+            "node": "BigQuery customer master",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Daily 06:00": {
+      "main": [
+        [
+          {
+            "node": "BigQuery customer master",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BigQuery customer master": {
+      "main": [
+        [
+          {
+            "node": "Build batches of 500",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build batches of 500": {
+      "main": [
+        [
+          {
+            "node": "Loop over batches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop over batches": {
+      "main": [
+        [
+          {
+            "node": "Summary",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "POST to WACRM sync",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST to WACRM sync": {
+      "main": [
+        [
+          {
+            "node": "Pause 1s",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pause 1s": {
+      "main": [
+        [
+          {
+            "node": "Loop over batches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Riyadh"
+  },
+  "active": false,
+  "pinData": {}
+}

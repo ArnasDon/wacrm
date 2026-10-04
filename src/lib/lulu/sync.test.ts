@@ -51,6 +51,7 @@ describe("parseCustomer", () => {
     expect(r.distinct_names).toBe(796);
     expect(r.distinct_emails).toBe(809);
     expect(r.suspect_reason).toBe("many_names:796");
+    expect(parseCustomer({ customer_id: "1", mobile: "0500000000", city: " Jeddah " }, NOW)).toMatchObject({ city: "Jeddah" });
   });
 });
 

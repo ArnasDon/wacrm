@@ -35,7 +35,7 @@ Optional: `loyalty_id, name, language (ar|en, default ar), birthday, first_order
 total_orders, total_sales, average_order_value (derived if absent), orders_30d, orders_90d,
 median_interval_days, stddev_interval_days, preferred_store, preferred_category, customer_segment,
 rfm_recency/frequency/monetary (1-5), lifetime_value, vip_flag, marketing_opt_in (default true), active_complaint,
-distinct_names, distinct_emails, suspect_reason, data_as_of`.
+distinct_names, distinct_emails, suspect_reason, city, data_as_of`.
 
 `data_as_of` (ISO time of the newest order in the source data; body-level or per row) is stored on the sync log and shown on
 `/engagement` with a warning when older than 36 h.

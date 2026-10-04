@@ -24,7 +24,9 @@
 --      order *in the data*, not necessarily the customer's true first order.
 --   6. Categories come out as 3-digit department CODES (e.g. '006'); a
 --      code → name lookup table is needed to show names.
---   7. Not available in these tables → not emitted: birthday, loyalty_id,
+--   7. Region: only customers whose latest order city is in `focus_cities` (western province) are
+--      returned; RFM quintiles and the VIP cut-off are computed within that focus group.
+--   8. Not available in these tables → not emitted: birthday, loyalty_id,
 --      marketing_opt_in, language (defaults to 'ar'), active_complaint.
 -- ============================================================
 WITH params AS (
@@ -35,6 +37,9 @@ WITH params AS (
     0.05 AS vip_top_share,             -- top 5% by lifetime sales ...
     3    AS vip_min_orders,            -- ... with at least 3 orders
     180  AS item_lookback_days,        -- window for preferred store/category
+    -- PHASE 1 FOCUS: western province. Customers are kept if their LATEST order's city is in this
+    -- list (case-insensitive). Use [] (empty) to include every city. Check spellings with diagnostic #14.
+    ['jeddah', 'makkah', 'mecca', 'taif', 'madinah', 'medina', 'yanbu', 'tabuk'] AS focus_cities,
     'Asia/Riyadh' AS tz
 ),
 
@@ -47,7 +52,8 @@ orders_raw AS (
     DATE(o.date_placed, p.tz) AS order_date,
     LOWER(TRIM(o.customer__email)) AS email,
     NULLIF(LOWER(TRIM(o.customer__first_name)), '') AS first_name,
-    NULLIF(TRIM(CONCAT(IFNULL(o.customer__first_name, ''), ' ', IFNULL(o.customer__last_name, ''))), '') AS full_name
+    NULLIF(TRIM(CONCAT(IFNULL(o.customer__first_name, ''), ' ', IFNULL(o.customer__last_name, ''))), '') AS full_name,
+    NULLIF(TRIM(o.shipping_address_city_name), '') AS city
   FROM `myecomlulu.jackpot.ksa_jackpot` AS o
   CROSS JOIN params AS p
   WHERE o.shipping_address_phone_number IS NOT NULL
@@ -108,7 +114,8 @@ cust AS (
     MAX(order_date) AS last_order_date,
     COUNTIF(order_date >= DATE_SUB(CURRENT_DATE((SELECT tz FROM params)), INTERVAL 30 DAY)) AS orders_30d,
     COUNTIF(order_date >= DATE_SUB(CURRENT_DATE((SELECT tz FROM params)), INTERVAL 90 DAY)) AS orders_90d,
-    ARRAY_AGG(full_name IGNORE NULLS ORDER BY date_placed DESC LIMIT 1)[SAFE_OFFSET(0)] AS name
+    ARRAY_AGG(full_name IGNORE NULLS ORDER BY date_placed DESC LIMIT 1)[SAFE_OFFSET(0)] AS name,
+    ARRAY_AGG(city IGNORE NULLS ORDER BY date_placed DESC LIMIT 1)[SAFE_OFFSET(0)] AS city
   FROM orders
   GROUP BY phone
 ),
@@ -170,6 +177,8 @@ scored AS (
     PERCENT_RANK() OVER (PARTITION BY q.suspect_reason IS NULL ORDER BY c.total_sales ASC) AS sales_pct
   FROM cust AS c
   JOIN phone_quality AS q ON q.phone = c.phone
+  WHERE ARRAY_LENGTH((SELECT focus_cities FROM params)) = 0
+     OR LOWER(c.city) IN UNNEST((SELECT focus_cities FROM params))
 )
 
 SELECT
@@ -208,6 +217,7 @@ SELECT
   s.distinct_names,
   s.distinct_emails,
   s.suspect_reason,
+  s.city,
   -- newest order in the source data; lets the app warn when the feed is stale
   FORMAT_TIMESTAMP('%Y-%m-%dT%H:%M:%SZ', (SELECT MAX(date_placed) FROM orders_raw)) AS data_as_of
 FROM scored AS s

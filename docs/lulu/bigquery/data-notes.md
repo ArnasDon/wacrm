@@ -12,3 +12,5 @@
 | Feed freshness | newest order 103 h behind when checked | Re-check before every send (`data_as_of` gate) |
 
 Orders ≈ Riyadh 57 %, Jeddah 15 %, Eastern Province ≈ 25 % of the last 30 days.
+
+Decision (Oct 2026): phase 1 focuses on the **western province** — Riyadh/Eastern product data is not updated. `customer_master.sql` filters by `focus_cities`. Order history in BigQuery starts June 2026, so "first order" means first in the data; message copy for second-order / win-back must not claim "your first order".

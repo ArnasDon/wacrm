@@ -41,6 +41,7 @@ export interface ProfileRow {
   distinct_names: number | null;
   distinct_emails: number | null;
   suspect_reason: string | null;
+  city: string | null;
 }
 
 const str = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v.trim() : null);
@@ -114,6 +115,7 @@ export function parseCustomer(raw: unknown, now: Date): ProfileRow | string {
     distinct_names: num(r.distinct_names) === null ? null : int(r.distinct_names),
     distinct_emails: num(r.distinct_emails) === null ? null : int(r.distinct_emails),
     suspect_reason: str(r.suspect_reason),
+    city: str(r.city),
   };
 
   const asProfile: CustomerProfile = {

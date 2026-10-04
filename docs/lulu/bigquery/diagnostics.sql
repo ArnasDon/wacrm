@@ -131,3 +131,16 @@ FROM `myecomlulu.jackpot.ksa_jackpot` AS o
 JOIN i ON CAST(o.number AS STRING) = i.n
 WHERE LOWER(o.status) = 'delivered'
 GROUP BY i.job_state ORDER BY orders DESC;
+
+-- 14) Every city in the delivered orders, with order count and item-table match rate.
+--     Use it to set `focus_cities` (western province) in customer_master.sql — spellings must match.
+WITH i AS (
+  SELECT DISTINCT REGEXP_EXTRACT(job_number, r'^Lulu-(\d+)') AS n FROM `myecomlulu.jackpot.instaleap_raw`
+)
+SELECT o.shipping_address_city_name AS city, COUNT(*) AS orders,
+       COUNT(DISTINCT o.shipping_address_phone_number) AS customers,
+       ROUND(100 * COUNTIF(i.n IS NOT NULL) / COUNT(*), 1) AS item_match_pct
+FROM `myecomlulu.jackpot.ksa_jackpot` AS o
+LEFT JOIN i ON CAST(o.number AS STRING) = i.n
+WHERE LOWER(o.status) = 'delivered'
+GROUP BY city ORDER BY orders DESC;

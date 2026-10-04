@@ -38,6 +38,9 @@ export interface ProfileRow {
   vip_flag: boolean;
   marketing_opt_in: boolean;
   active_complaint: boolean;
+  distinct_names: number | null;
+  distinct_emails: number | null;
+  suspect_reason: string | null;
 }
 
 const str = (v: unknown): string | null => (typeof v === "string" && v.trim() ? v.trim() : null);
@@ -108,6 +111,9 @@ export function parseCustomer(raw: unknown, now: Date): ProfileRow | string {
     vip_flag: bool(r.vip_flag, false),
     marketing_opt_in: bool(r.marketing_opt_in, true),
     active_complaint: bool(r.active_complaint, false),
+    distinct_names: num(r.distinct_names) === null ? null : int(r.distinct_names),
+    distinct_emails: num(r.distinct_emails) === null ? null : int(r.distinct_emails),
+    suspect_reason: str(r.suspect_reason),
   };
 
   const asProfile: CustomerProfile = {
@@ -123,6 +129,7 @@ export function parseCustomer(raw: unknown, now: Date): ProfileRow | string {
     vipFlag: row.vip_flag,
     marketingOptIn: row.marketing_opt_in,
     activeComplaint: row.active_complaint,
+    suspectReason: row.suspect_reason,
     preferredStore: row.preferred_store,
   };
   row.lifecycle_stage = lifecycleStage(asProfile, now);

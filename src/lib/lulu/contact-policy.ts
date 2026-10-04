@@ -30,6 +30,7 @@ export function checkContactPolicy(
   history: PastSend[],
   opts: { isPromo: boolean; lastOrderAt?: Date | null; alreadyReceivedCampaign?: boolean },
 ): PolicyVerdict {
+  if (p.suspectReason) return { allowed: false, reason: "suspected_shared_number" };
   if (!p.marketingOptIn) return { allowed: false, reason: "opted_out" };
   if (p.activeComplaint) return { allowed: false, reason: "active_complaint" };
   if (opts.alreadyReceivedCampaign) return { allowed: false, reason: "already_received_campaign" };

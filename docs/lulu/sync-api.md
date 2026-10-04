@@ -34,7 +34,11 @@ Required: `customer_id`, `mobile` (05XXXXXXXX, 5XXXXXXXX, 9665…, +9665… all 
 Optional: `loyalty_id, name, language (ar|en, default ar), birthday, first_order_date, last_order_date,
 total_orders, total_sales, average_order_value (derived if absent), orders_30d, orders_90d,
 median_interval_days, stddev_interval_days, preferred_store, preferred_category, customer_segment,
-rfm_recency/frequency/monetary (1-5), lifetime_value, vip_flag, marketing_opt_in (default true), active_complaint`.
+rfm_recency/frequency/monetary (1-5), lifetime_value, vip_flag, marketing_opt_in (default true), active_complaint,
+distinct_names, distinct_emails, suspect_reason`.
+
+`suspect_reason` (non-empty text, e.g. `many_names:796`) flags a suspected shared/fake number: the profile is stored and
+listed on `/engagement`, but excluded from KPIs and never contacted. Sending the customer again without it clears the flag.
 
 `lifecycle_stage` is computed by the engine (personal purchase cycle when ≥3 orders and `median_interval_days`
 is given; otherwise 15/30/60-day fallback).

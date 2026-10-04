@@ -5,7 +5,7 @@
 // Reads the synced customer read-model under RLS (any member may read).
 
 import { useCallback, useEffect, useState } from "react";
-import { Crown, Moon, TrendingDown, UserCheck, UserMinus, Users, BellOff, RefreshCw } from "lucide-react";
+import { Crown, Moon, TrendingDown, UserCheck, UserMinus, Users, BellOff, RefreshCw, ShieldAlert } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { MetricCard } from "@/components/dashboard/metric-card";
@@ -20,6 +20,18 @@ interface Counts {
   vip: number;
   optedIn: number;
   campaignEligible: number;
+  suspects: number;
+}
+
+interface Suspect {
+  customer_id: string;
+  mobile: string;
+  total_orders: number;
+  total_sales: number;
+  distinct_names: number | null;
+  distinct_emails: number | null;
+  suspect_reason: string;
+  last_order_date: string | null;
 }
 
 interface SyncInfo {
@@ -35,6 +47,7 @@ export default function EngagementPage() {
   const { accountId } = useAuth();
   const [counts, setCounts] = useState<Counts | null>(null);
   const [sync, setSync] = useState<SyncInfo | null>(null);
+  const [suspects, setSuspects] = useState<Suspect[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -43,14 +56,16 @@ export default function EngagementPage() {
     setLoading(true);
     setError(null);
     const supabase = createClient();
+    // Genuine customers only: suspected shared/fake numbers are excluded from every KPI.
     const base = () =>
       supabase
         .from("lulu_customer_profiles")
         .select("id", { count: "exact", head: true })
-        .eq("account_id", accountId);
+        .eq("account_id", accountId)
+        .is("suspect_reason", null);
 
     try {
-      const [total, active, atRisk, dormant, lost, fresh, first, vip, optedIn, eligible, syncRes] =
+      const [total, active, atRisk, dormant, lost, fresh, first, vip, optedIn, eligible, syncRes, suspectCount, suspectRows] =
         await Promise.all([
           base(),
           base().eq("lifecycle_stage", "ACTIVE"),
@@ -72,9 +87,23 @@ export default function EngagementPage() {
             .eq("account_id", accountId)
             .order("started_at", { ascending: false })
             .limit(1),
+          supabase
+            .from("lulu_customer_profiles")
+            .select("id", { count: "exact", head: true })
+            .eq("account_id", accountId)
+            .not("suspect_reason", "is", null),
+          supabase
+            .from("lulu_customer_profiles")
+            .select(
+              "customer_id, mobile, total_orders, total_sales, distinct_names, distinct_emails, suspect_reason, last_order_date",
+            )
+            .eq("account_id", accountId)
+            .not("suspect_reason", "is", null)
+            .order("total_orders", { ascending: false })
+            .limit(25),
         ]);
 
-      const firstErr = [total, active, atRisk, dormant, lost, fresh, first, vip, optedIn, eligible].find(
+      const firstErr = [total, active, atRisk, dormant, lost, fresh, first, vip, optedIn, eligible, suspectCount, suspectRows].find(
         (r) => r.error,
       )?.error;
       if (firstErr) throw new Error(firstErr.message);
@@ -89,12 +118,14 @@ export default function EngagementPage() {
         vip: vip.count ?? 0,
         optedIn: optedIn.count ?? 0,
         campaignEligible: eligible.count ?? 0,
+        suspects: suspectCount.count ?? 0,
       });
+      setSuspects((suspectRows.data as Suspect[] | null) ?? []);
       setSync((syncRes.data?.[0] as SyncInfo | undefined) ?? null);
     } catch (e) {
       setError(
-        e instanceof Error && /lulu_customer_profiles/.test(e.message)
-          ? "LuLu tables not found — run migration 043 in Supabase."
+        e instanceof Error && /lulu_customer_profiles|suspect_reason/.test(e.message)
+          ? "LuLu tables/columns not found — run migrations 043 and 044 in Supabase."
           : e instanceof Error
             ? e.message
             : "Failed to load engagement data",
@@ -162,11 +193,57 @@ export default function EngagementPage() {
           subtitle="Opted in, no open complaint, linked to WhatsApp contact"
         />
         <MetricCard
+          title="Suspected shared / fake"
+          value={counts ? fmt(counts.suspects) : "—"}
+          icon={ShieldAlert}
+          subtitle="Excluded from all counts and campaigns"
+        />
+        <MetricCard
           title="Opted out"
           value={counts ? fmt(counts.total - counts.optedIn) : "—"}
           icon={BellOff}
         />
       </div>
+
+      {suspects.length > 0 && (
+        <div className="rounded-xl border border-border bg-card">
+          <div className="border-b border-border p-4">
+            <h2 className="text-sm font-semibold text-foreground">Suspected shared / fake numbers</h2>
+            <p className="text-xs text-muted-foreground">
+              Top {suspects.length} by orders. These numbers have many different customer names or an implausible
+              order count, so they are never messaged and are left out of all KPIs.
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="text-xs text-muted-foreground">
+                <tr>
+                  <th className="px-4 py-2 font-medium">Phone</th>
+                  <th className="px-4 py-2 font-medium">Orders</th>
+                  <th className="px-4 py-2 font-medium">Names</th>
+                  <th className="px-4 py-2 font-medium">E-mails</th>
+                  <th className="px-4 py-2 font-medium">Sales (SAR)</th>
+                  <th className="px-4 py-2 font-medium">Last order</th>
+                  <th className="px-4 py-2 font-medium">Reason</th>
+                </tr>
+              </thead>
+              <tbody>
+                {suspects.map((r) => (
+                  <tr key={r.customer_id} className="border-t border-border">
+                    <td className="px-4 py-2 tabular-nums">{r.mobile}</td>
+                    <td className="px-4 py-2 tabular-nums">{fmt(r.total_orders)}</td>
+                    <td className="px-4 py-2 tabular-nums">{r.distinct_names ?? "—"}</td>
+                    <td className="px-4 py-2 tabular-nums">{r.distinct_emails ?? "—"}</td>
+                    <td className="px-4 py-2 tabular-nums">{fmt(Math.round(Number(r.total_sales)))}</td>
+                    <td className="px-4 py-2">{r.last_order_date ?? "—"}</td>
+                    <td className="px-4 py-2 text-muted-foreground">{r.suspect_reason}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       <p className="text-xs text-muted-foreground">
         {sync?.finished_at

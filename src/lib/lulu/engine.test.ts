@@ -68,6 +68,10 @@ describe("checkContactPolicy", () => {
     expect(checkContactPolicy({ ...base, marketingOptIn: false }, DEFAULT_POLICY, NOW, [], opts).reason).toBe("opted_out");
     expect(checkContactPolicy({ ...base, activeComplaint: true }, DEFAULT_POLICY, NOW, [], opts).reason).toBe("active_complaint");
   });
+  it("blocks suspected shared/fake numbers", () => {
+    const v = checkContactPolicy({ ...base, suspectReason: "many_names:796" }, DEFAULT_POLICY, NOW, [], opts);
+    expect(v.reason).toBe("suspected_shared_number");
+  });
   it("blocks within 24h of an order", () => {
     const v = checkContactPolicy(base, DEFAULT_POLICY, NOW, [], { ...opts, lastOrderAt: new Date("2026-09-24T01:00:00Z") });
     expect(v.reason).toBe("ordered_recently");

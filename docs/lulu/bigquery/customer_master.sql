@@ -14,17 +14,24 @@
 --   3. instaleap_raw.job_number = 'Lulu-<order number>INP1' → order number
 --      is extracted and joined to ksa_jackpot.number (used ONLY for
 --      preferred store / category; everything else works without the join).
---   4. Phones used by many different e-mails are shared/dummy numbers and
---      are excluded (otherwise many people collapse into one "customer").
---   5. Categories come out as 3-digit department CODES (e.g. '006'); a
+--   4. A phone used by many different FIRST NAMES, or with an implausible
+--      number of orders, is a shared/dummy number (e.g. 966558052159: 1,268
+--      orders, 796 names). It is KEPT in the output but flagged with
+--      `suspect_reason`, so the app can show it and exclude it from
+--      campaigns, counts and scoring. E-mail count alone is not used as the
+--      rule (one person can have several e-mails); it is reported for review.
+--   5. The data currently starts 2026-06-30, so first_order_date is the first
+--      order *in the data*, not necessarily the customer's true first order.
+--   6. Categories come out as 3-digit department CODES (e.g. '006'); a
 --      code → name lookup table is needed to show names.
---   6. Not available in these tables → not emitted: birthday, loyalty_id,
+--   7. Not available in these tables → not emitted: birthday, loyalty_id,
 --      marketing_opt_in, language (defaults to 'ar'), active_complaint.
 -- ============================================================
 WITH params AS (
   SELECT
     ['delivered'] AS valid_statuses,   -- add other "completed" status values if any
-    5    AS max_emails_per_phone,      -- phones above this are treated as shared
+    3    AS max_names_per_phone,       -- families share a phone; > 3 different first names = suspect
+    60   AS max_orders_per_phone,      -- orders in the whole data window; above this = suspect
     0.05 AS vip_top_share,             -- top 5% by lifetime sales ...
     3    AS vip_min_orders,            -- ... with at least 3 orders
     180  AS item_lookback_days,        -- window for preferred store/category
@@ -39,6 +46,7 @@ orders_raw AS (
     o.date_placed,
     DATE(o.date_placed, p.tz) AS order_date,
     LOWER(TRIM(o.customer__email)) AS email,
+    NULLIF(LOWER(TRIM(o.customer__first_name)), '') AS first_name,
     NULLIF(TRIM(CONCAT(IFNULL(o.customer__first_name, ''), ' ', IFNULL(o.customer__last_name, ''))), '') AS full_name
   FROM `myecomlulu.jackpot.ksa_jackpot` AS o
   CROSS JOIN params AS p
@@ -49,16 +57,24 @@ orders_raw AS (
   QUALIFY ROW_NUMBER() OVER (PARTITION BY o.number ORDER BY o.date_placed DESC) = 1
 ),
 
-shared_phones AS (
-  SELECT phone
+-- Per-phone data-quality stats (computed on ALL delivered orders).
+phone_quality AS (
+  SELECT
+    phone,
+    COUNT(DISTINCT first_name) AS distinct_names,
+    COUNT(DISTINCT email)      AS distinct_emails,
+    NULLIF(ARRAY_TO_STRING([
+      IF(COUNT(DISTINCT first_name) > (SELECT max_names_per_phone FROM params),
+         CONCAT('many_names:', CAST(COUNT(DISTINCT first_name) AS STRING)), NULL),
+      IF(COUNT(*) > (SELECT max_orders_per_phone FROM params),
+         CONCAT('many_orders:', CAST(COUNT(*) AS STRING)), NULL)
+    ], ','), '') AS suspect_reason
   FROM orders_raw
   GROUP BY phone
-  HAVING COUNT(DISTINCT email) > (SELECT max_emails_per_phone FROM params)
 ),
 
 orders AS (
   SELECT * FROM orders_raw
-  WHERE phone NOT IN (SELECT phone FROM shared_phones)
 ),
 
 -- Personal purchase cycle, measured between distinct order DAYS so two
@@ -142,11 +158,17 @@ pref_dept AS (
 scored AS (
   SELECT
     c.*,
-    NTILE(5) OVER (ORDER BY c.last_order_date ASC) AS rfm_recency,   -- 5 = most recent
-    NTILE(5) OVER (ORDER BY c.total_orders ASC)    AS rfm_frequency, -- 5 = most orders
-    NTILE(5) OVER (ORDER BY c.total_sales ASC)     AS rfm_monetary,  -- 5 = highest spend
-    PERCENT_RANK() OVER (ORDER BY c.total_sales ASC) AS sales_pct
+    q.distinct_names,
+    q.distinct_emails,
+    q.suspect_reason,
+    -- Scoring is done only among genuine customers: suspects get their own
+    -- partition so they cannot distort the quintiles or the VIP cut-off.
+    NTILE(5) OVER (PARTITION BY q.suspect_reason IS NULL ORDER BY c.last_order_date ASC) AS rfm_recency,   -- 5 = most recent
+    NTILE(5) OVER (PARTITION BY q.suspect_reason IS NULL ORDER BY c.total_orders ASC)    AS rfm_frequency, -- 5 = most orders
+    NTILE(5) OVER (PARTITION BY q.suspect_reason IS NULL ORDER BY c.total_sales ASC)     AS rfm_monetary,  -- 5 = highest spend
+    PERCENT_RANK() OVER (PARTITION BY q.suspect_reason IS NULL ORDER BY c.total_sales ASC) AS sales_pct
   FROM cust AS c
+  JOIN phone_quality AS q ON q.phone = c.phone
 )
 
 SELECT
@@ -166,6 +188,7 @@ SELECT
   ps.preferred_store,
   pd.preferred_category,
   CASE
+    WHEN s.suspect_reason IS NOT NULL                THEN 'Suspect'
     WHEN s.total_orders = 1                          THEN 'New'
     WHEN s.rfm_recency >= 4 AND s.rfm_frequency >= 4 THEN 'Champions'
     WHEN s.rfm_frequency >= 4                        THEN 'Loyal'
@@ -178,8 +201,12 @@ SELECT
   s.rfm_frequency,
   s.rfm_monetary,
   s.total_sales                             AS lifetime_value,
-  (s.sales_pct >= 1 - (SELECT vip_top_share FROM params)
-     AND s.total_orders >= (SELECT vip_min_orders FROM params)) AS vip_flag
+  (s.suspect_reason IS NULL
+     AND s.sales_pct >= 1 - (SELECT vip_top_share FROM params)
+     AND s.total_orders >= (SELECT vip_min_orders FROM params)) AS vip_flag,
+  s.distinct_names,
+  s.distinct_emails,
+  s.suspect_reason
 FROM scored AS s
 LEFT JOIN cycle      AS cy ON cy.phone = s.phone
 LEFT JOIN pref_store AS ps ON ps.phone = s.phone

@@ -40,5 +40,14 @@ describe("parseCustomer", () => {
     expect(r.language).toBe("ar");
     expect(r.marketing_opt_in).toBe(true);
     expect(r.vip_flag).toBe(true);
+    expect(r.suspect_reason).toBeNull();
+  });
+  it("carries data-quality fields", () => {
+    const r = parseCustomer({ customer_id: "9", mobile: "966558052159", distinct_names: 796, distinct_emails: "809", suspect_reason: "many_names:796" }, NOW);
+    expect(typeof r).toBe("object");
+    if (typeof r === "string") return;
+    expect(r.distinct_names).toBe(796);
+    expect(r.distinct_emails).toBe(809);
+    expect(r.suspect_reason).toBe("many_names:796");
   });
 });

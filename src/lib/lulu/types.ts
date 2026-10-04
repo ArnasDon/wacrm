@@ -46,6 +46,8 @@ export interface CustomerProfile {
   vipFlag: boolean;
   marketingOptIn: boolean;
   activeComplaint: boolean;
+  /** Non-null = suspected shared/fake number; never contacted (see migration 044). */
+  suspectReason?: string | null;
   preferredStore?: string | null;
 }
 

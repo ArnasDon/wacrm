@@ -16,6 +16,9 @@ BigQuery = ecommerce truth · WACRM = communication truth · `lulu_*` = decision
 - `contact-policy.ts` — opt-out, complaint, post-order suppression, frequency caps, quiet hours
 - `next-best-action.ts` — match campaigns → policy gate → configurable priority → idempotent action
 
+## Data
+`docs/lulu/bigquery/` — customer master SQL (built from `ksa_jackpot` + `instaleap_raw`), diagnostics, n8n setup.
+
 ## Roadmap (PRD §95 V1)
 1. ✅ Schema + decision engine
 2. ✅ Customer sync endpoint (`docs/lulu/sync-api.md`) + `/engagement` overview page · ⏳ tag sync

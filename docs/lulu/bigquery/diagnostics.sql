@@ -59,3 +59,47 @@ GROUP BY month ORDER BY month;
 
 -- 5) How many customers will the master produce?
 --    (run customer_master.sql wrapped in SELECT COUNT(*) FROM ( ... ))
+
+-- 8) Shapes of job_number. The customer master only understands 'Lulu-<digits>INP1'.
+--    Any other shape here is a source of unmatched orders.
+SELECT REGEXP_REPLACE(job_number, r'\d{6,}', '<N>') AS shape,
+       COUNT(*) AS item_rows, COUNT(DISTINCT job_number) AS jobs,
+       MIN(created_at) AS first_seen, MAX(created_at) AS last_seen
+FROM `myecomlulu.jackpot.instaleap_raw`
+GROUP BY shape ORDER BY item_rows DESC LIMIT 20;
+
+-- 9a) Which stores does the item table cover? (orders / jobs per store)
+SELECT store_name_1 AS store, COUNT(DISTINCT job_number) AS jobs,
+       MIN(DATE(created_at)) AS first_day, MAX(DATE(created_at)) AS last_day
+FROM `myecomlulu.jackpot.instaleap_raw`
+GROUP BY store ORDER BY jobs DESC LIMIT 30;
+
+-- 9b) Item-table coverage by month vs the order table
+WITH it AS (
+  SELECT DATE_TRUNC(DATE(created_at), MONTH) AS month,
+         COUNT(DISTINCT REGEXP_EXTRACT(job_number, r'(\d{9,})')) AS item_orders
+  FROM `myecomlulu.jackpot.instaleap_raw` GROUP BY month
+),
+od AS (
+  SELECT DATE_TRUNC(DATE(date_placed), MONTH) AS month, COUNT(*) AS orders
+  FROM `myecomlulu.jackpot.ksa_jackpot` WHERE LOWER(status) = 'delivered' GROUP BY month
+)
+SELECT od.month, od.orders, it.item_orders, ROUND(100 * it.item_orders / od.orders, 1) AS pct
+FROM od LEFT JOIN it USING (month) ORDER BY od.month;
+
+-- 10) Which cities are matched / unmatched (last 30 days)?
+WITH i AS (
+  SELECT DISTINCT REGEXP_EXTRACT(job_number, r'(\d{9,})') AS n
+  FROM `myecomlulu.jackpot.instaleap_raw`
+)
+SELECT o.shipping_address_city_name AS city, COUNT(*) AS orders,
+       COUNTIF(i.n IS NOT NULL) AS matched,
+       ROUND(100 * COUNTIF(i.n IS NOT NULL) / COUNT(*), 1) AS match_pct
+FROM `myecomlulu.jackpot.ksa_jackpot` AS o
+LEFT JOIN i ON CAST(o.number AS STRING) = i.n
+WHERE o.date_placed >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 DAY)
+GROUP BY city ORDER BY orders DESC LIMIT 20;
+
+-- 11) Freshness: when did the order table last receive data?
+SELECT MAX(date_placed) AS latest_order, TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), MAX(date_placed), HOUR) AS hours_behind
+FROM `myecomlulu.jackpot.ksa_jackpot`;

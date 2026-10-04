@@ -11,6 +11,8 @@ describe("normalizeMobile", () => {
     ["+966 50 000 0000", "+966500000000"],
     ["00966500000000", "+966500000000"],
     ["+14155550123", "+14155550123"],
+    ["971501234567", "+971501234567"], // UAE, 12 digits (seen in the data)
+    ["97333123456", "+97333123456"], // Bahrain, 11 digits
   ])("%s -> %s", (input, out) => expect(normalizeMobile(input)).toBe(out));
   it("rejects junk", () => {
     expect(normalizeMobile("")).toBeNull();

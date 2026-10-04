@@ -117,9 +117,10 @@ cust AS (
 -- versions of the same item row → keep the latest per id.
 items AS (
   SELECT
-    REGEXP_EXTRACT(i.job_number, r'^Lulu-(\d+)') AS order_number_str,
+    REGEXP_EXTRACT(i.job_number, r'^Lulu-(\d+)') AS order_number_str,  -- strips 'Lulu-' prefix and 'INP1' suffix
     i.store_name_1 AS store,
-    SUBSTR(SAFE.JSON_VALUE(i.attributes, '$.category'), 1, 3) AS dept,
+    -- regex instead of JSON_VALUE: BigQuery has no SAFE.JSON_VALUE and JSON_VALUE errors on malformed JSON
+    SUBSTR(REGEXP_EXTRACT(i.attributes, r'"category"\s*:\s*"(\d+)"'), 1, 3) AS dept,
     IFNULL(i.price, 0) * IFNULL(i.found_quantity, 0) AS item_sales
   FROM `myecomlulu.jackpot.instaleap_raw` AS i
   CROSS JOIN params AS p

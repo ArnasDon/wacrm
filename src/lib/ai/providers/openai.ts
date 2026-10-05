@@ -7,6 +7,9 @@ import {
   toNetworkError,
   type ProviderArgs,
 } from './shared'
+import { getT } from '@/lib/i18n/translate'
+
+const t = getT('LibErrors')
 
 const OPENAI_URL = 'https://api.openai.com/v1/chat/completions'
 
@@ -56,7 +59,7 @@ export async function generateOpenAi(args: ProviderArgs): Promise<ProviderResult
   const data = (await res.json().catch(() => null)) as OpenAiResponse | null
   const text = data?.choices?.[0]?.message?.content
   if (!text || typeof text !== 'string' || !text.trim()) {
-    throw new AiError('OpenAI returned an empty response.', {
+    throw new AiError(t('ai.emptyResponse', { provider: 'OpenAI' }), {
       code: 'empty_response',
     })
   }

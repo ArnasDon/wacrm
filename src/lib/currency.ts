@@ -10,6 +10,8 @@
  * nothing is known.
  */
 
+import { getT } from "@/lib/i18n/translate";
+
 /** App-wide fallback when no account/deal currency is available. */
 export const DEFAULT_CURRENCY = "USD";
 
@@ -22,27 +24,29 @@ export interface CurrencyOption {
   symbol: string;
 }
 
+const t = getT("Currency");
+
 /**
  * The currencies offered in pickers. Codes must be valid ISO-4217 so
  * `Intl.NumberFormat` renders the right symbol/grouping. Extend this
  * list to offer more — nothing else needs to change.
  */
 export const CURRENCIES: CurrencyOption[] = [
-  { code: "USD", label: "US Dollar", symbol: "$" },
-  { code: "EUR", label: "Euro", symbol: "€" },
-  { code: "GBP", label: "British Pound", symbol: "£" },
-  { code: "INR", label: "Indian Rupee", symbol: "₹" },
-  { code: "AUD", label: "Australian Dollar", symbol: "A$" },
-  { code: "CAD", label: "Canadian Dollar", symbol: "C$" },
-  { code: "BRL", label: "Brazilian Real", symbol: "R$" },
-  { code: "JPY", label: "Japanese Yen", symbol: "¥" },
-  { code: "CNY", label: "Chinese Yuan", symbol: "¥" },
-  { code: "AED", label: "UAE Dirham", symbol: "د.إ" },
-  { code: "ZAR", label: "South African Rand", symbol: "R" },
-  { code: "NGN", label: "Nigerian Naira", symbol: "₦" },
-  { code: "SGD", label: "Singapore Dollar", symbol: "S$" },
-  { code: "MXN", label: "Mexican Peso", symbol: "$" },
-  { code: "COP", label: "Colombian Peso", symbol: "$" },
+  { code: "USD", label: t("USD"), symbol: "$" },
+  { code: "EUR", label: t("EUR"), symbol: "€" },
+  { code: "GBP", label: t("GBP"), symbol: "£" },
+  { code: "INR", label: t("INR"), symbol: "₹" },
+  { code: "AUD", label: t("AUD"), symbol: "A$" },
+  { code: "CAD", label: t("CAD"), symbol: "C$" },
+  { code: "BRL", label: t("BRL"), symbol: "R$" },
+  { code: "JPY", label: t("JPY"), symbol: "¥" },
+  { code: "CNY", label: t("CNY"), symbol: "¥" },
+  { code: "AED", label: t("AED"), symbol: "د.إ" },
+  { code: "ZAR", label: t("ZAR"), symbol: "R" },
+  { code: "NGN", label: t("NGN"), symbol: "₦" },
+  { code: "SGD", label: t("SGD"), symbol: "S$" },
+  { code: "MXN", label: t("MXN"), symbol: "$" },
+  { code: "COP", label: t("COP"), symbol: "$" },
 ];
 
 /**

@@ -9,6 +9,9 @@ import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
 import { validateAiCredentials } from '@/lib/ai/validate'
 import { embedTexts } from '@/lib/ai/embeddings'
 import { AiError, type AiProvider } from '@/lib/ai/types'
+import { getT } from '@/lib/i18n/translate'
+
+const t = getT('Api')
 
 function bad(message: string) {
   return NextResponse.json({ error: message }, { status: 400 })
@@ -38,7 +41,7 @@ export async function GET() {
     if (error) {
       console.error('[ai/config GET] fetch error:', error)
       return NextResponse.json(
-        { error: 'Failed to load AI configuration' },
+        { error: t('ai.loadConfigFailed') },
         { status: 500 },
       )
     }
@@ -75,14 +78,14 @@ export async function POST(request: Request) {
     if (!limit.success) return rateLimitResponse(limit)
 
     const body = await request.json().catch(() => null)
-    if (!body || typeof body !== 'object') return bad('Invalid request body')
+    if (!body || typeof body !== 'object') return bad(t('common.invalidRequestBody'))
 
     const provider = body.provider as AiProvider
     if (provider !== 'openai' && provider !== 'anthropic') {
-      return bad('provider must be "openai" or "anthropic"')
+      return bad(t('ai.providerInvalid'))
     }
     const model = typeof body.model === 'string' ? body.model.trim() : ''
-    if (!model) return bad('model is required')
+    if (!model) return bad(t('ai.modelRequired'))
 
     const systemPrompt =
       typeof body.system_prompt === 'string' && body.system_prompt.trim()
@@ -110,7 +113,7 @@ export async function POST(request: Request) {
         .eq('account_id', accountId)
         .eq('user_id', rawHandoff)
         .maybeSingle()
-      if (!member) return bad('handoff_agent_id must be a member of this account')
+      if (!member) return bad(t('ai.handoffNotMember'))
       handoffAgentId = rawHandoff
     }
 
@@ -139,10 +142,10 @@ export async function POST(request: Request) {
       try {
         apiKeyPlain = decrypt(existing.api_key)
       } catch {
-        return bad('Stored API key could not be decrypted — re-enter your key.')
+        return bad(t('ai.storedKeyReenter'))
       }
     } else {
-      return bad('api_key is required')
+      return bad(t('ai.apiKeyRequired'))
     }
 
     // Only spend a provider round-trip when the credentials that affect
@@ -176,7 +179,7 @@ export async function POST(request: Request) {
           )
         }
         console.error('[ai/config POST] validation error:', err)
-        return bad('Could not validate the API key with the provider.')
+        return bad(t('ai.validateWithProviderFailed'))
       }
     }
 
@@ -188,12 +191,12 @@ export async function POST(request: Request) {
       } catch (err) {
         if (err instanceof AiError) {
           return NextResponse.json(
-            { error: `Embeddings key: ${err.message}`, code: err.code },
+            { error: t('ai.embeddingsKeyError', { message: err.message }), code: err.code },
             { status: 400 },
           )
         }
         console.error('[ai/config POST] embeddings validation error:', err)
-        return bad('Could not validate the embeddings key.')
+        return bad(t('ai.validateEmbeddingsFailed'))
       }
     }
 
@@ -223,7 +226,7 @@ export async function POST(request: Request) {
       if (upErr) {
         console.error('[ai/config POST] update error:', upErr)
         return NextResponse.json(
-          { error: 'Failed to save AI configuration' },
+          { error: t('ai.saveConfigFailed') },
           { status: 500 },
         )
       }
@@ -237,7 +240,7 @@ export async function POST(request: Request) {
       if (insErr) {
         console.error('[ai/config POST] insert error:', insErr)
         return NextResponse.json(
-          { error: 'Failed to save AI configuration' },
+          { error: t('ai.saveConfigFailed') },
           { status: 500 },
         )
       }
@@ -265,7 +268,7 @@ export async function DELETE() {
     if (error) {
       console.error('[ai/config DELETE] error:', error)
       return NextResponse.json(
-        { error: 'Failed to delete AI configuration' },
+        { error: t('ai.deleteConfigFailed') },
         { status: 500 },
       )
     }

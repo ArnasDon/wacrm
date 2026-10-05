@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server'
 import { getCurrentAccount, requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/automations/admin-client'
 import { validateInteractivePayload } from '@/lib/whatsapp/interactive'
+import { getT } from '@/lib/i18n/translate'
+
+const t = getT('Api')
 
 // Quick replies — reusable snippets (plain text or a saved interactive
 // message) shared across the account. GET lists; POST creates. Mirrors
@@ -32,12 +35,12 @@ export async function POST(request: Request) {
   }
 
   const body = await request.json().catch(() => null)
-  if (!body) return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+  if (!body) return NextResponse.json({ error: t('common.invalidJson') }, { status: 400 })
 
   const title = typeof body.title === 'string' ? body.title.trim() : ''
   const kind = body.kind === 'interactive' ? 'interactive' : 'text'
   if (!title) {
-    return NextResponse.json({ error: 'title is required' }, { status: 400 })
+    return NextResponse.json({ error: t('quickReplies.titleRequired') }, { status: 400 })
   }
 
   let content_text: string | null = null
@@ -53,7 +56,7 @@ export async function POST(request: Request) {
     const text = typeof body.content_text === 'string' ? body.content_text : ''
     if (!text.trim()) {
       return NextResponse.json(
-        { error: 'content_text is required for text quick replies' },
+        { error: t('quickReplies.contentTextRequired') },
         { status: 400 },
       )
     }

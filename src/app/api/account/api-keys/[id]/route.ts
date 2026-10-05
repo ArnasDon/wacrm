@@ -20,6 +20,9 @@ import {
   rateLimitResponse,
   RATE_LIMITS,
 } from '@/lib/rate-limit';
+import { getT } from '@/lib/i18n/translate';
+
+const t = getT('Api');
 
 export async function DELETE(
   _request: Request,
@@ -52,14 +55,14 @@ export async function DELETE(
     if (error) {
       console.error('[DELETE /api/account/api-keys/[id]] error:', error);
       return NextResponse.json(
-        { error: 'Failed to revoke API key' },
+        { error: t('account.apiKeys.revokeFailed') },
         { status: 500 }
       );
     }
     if (!data) {
       // Either no such key in this account, or it was already revoked.
       return NextResponse.json(
-        { error: 'API key not found or already revoked' },
+        { error: t('account.apiKeys.notFoundOrRevoked') },
         { status: 404 }
       );
     }

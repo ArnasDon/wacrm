@@ -7,6 +7,9 @@ import {
   toNetworkError,
   type ProviderArgs,
 } from './shared'
+import { getT } from '@/lib/i18n/translate'
+
+const t = getT('LibErrors')
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages'
 const ANTHROPIC_VERSION = '2023-06-01'
@@ -74,7 +77,7 @@ export async function generateAnthropic(args: ProviderArgs): Promise<ProviderRes
     .join('')
     .trim()
   if (!text) {
-    throw new AiError('Anthropic returned an empty response.', {
+    throw new AiError(t('ai.emptyResponse', { provider: 'Anthropic' }), {
       code: 'empty_response',
     })
   }

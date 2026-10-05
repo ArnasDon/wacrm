@@ -6,6 +6,9 @@ import {
   ContactTagWriteError,
   removeContactTag,
 } from '@/lib/contacts/tag-write';
+import { getT } from '@/lib/i18n/translate';
+
+const t = getT('Api');
 
 function tagWriteErrorResponse(error: ContactTagWriteError): NextResponse {
   return NextResponse.json({ error: error.message }, { status: error.status });
@@ -29,7 +32,7 @@ export async function POST(
     const { id: contactId } = await params;
     const tagId = await readTagId(request);
     if (!tagId) {
-      return NextResponse.json({ error: 'tag_id required' }, { status: 400 });
+      return NextResponse.json({ error: t('contacts.tagIdRequired') }, { status: 400 });
     }
 
     const result = await addContactTagAndDispatch({
@@ -57,7 +60,7 @@ export async function DELETE(
     const { id: contactId } = await params;
     const tagId = await readTagId(request);
     if (!tagId) {
-      return NextResponse.json({ error: 'tag_id required' }, { status: 400 });
+      return NextResponse.json({ error: t('contacts.tagIdRequired') }, { status: 400 });
     }
 
     await removeContactTag(ctx.supabase, {

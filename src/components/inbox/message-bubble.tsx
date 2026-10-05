@@ -45,6 +45,25 @@ interface MessageBubbleProps {
  * predates migration 042 / Meta sent no reason. Shared by the status
  * icon's tooltip and the line under the bubble.
  */
+/** InteractivePreview with the empty-state labels in the UI language. */
+function LocalizedInteractivePreview({
+  payload,
+}: {
+  payload: NonNullable<Message["interactive_payload"]>;
+}) {
+  const t = useTranslations("Interactive");
+  return (
+    <InteractivePreview
+      payload={payload}
+      labels={{
+        body: t("previewBody"),
+        button: t("previewButton"),
+        menu: t("previewMenu"),
+      }}
+    />
+  );
+}
+
 function failureReason(message: Message): string | null {
   if (message.status !== "failed" || !message.error_title) return null;
   return message.error_details
@@ -207,7 +226,7 @@ function MessageContent({
       //    migration 035 backfilled the column): show the body text plainly —
       //    it is our own message, NOT a customer tap.
       if (message.interactive_payload) {
-        return <InteractivePreview payload={message.interactive_payload} />;
+        return <LocalizedInteractivePreview payload={message.interactive_payload} />;
       }
       if (message.sender_type === "customer") {
         return (

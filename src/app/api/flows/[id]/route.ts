@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
+import { getT } from '@/lib/i18n/translate'
+
+const t = getT('Api')
 
 /**
  * GET   /api/flows/[id]  — fetch one flow with its nodes.
@@ -33,7 +36,7 @@ async function requireOwnership(
     data: { user },
   } = await supabase.auth.getUser()
   if (!user) {
-    return { ok: false, status: 401, body: { error: 'Unauthorized' } }
+    return { ok: false, status: 401, body: { error: t('common.unauthorized') } }
   }
   // RLS scopes this to the caller — a flow owned by another user
   // returns null (404 below).
@@ -43,7 +46,7 @@ async function requireOwnership(
     .eq('id', flowId)
     .maybeSingle()
   if (!flow) {
-    return { ok: false, status: 404, body: { error: 'Not found' } }
+    return { ok: false, status: 404, body: { error: t('common.notFound') } }
   }
   return { ok: true, userId: user.id, supabase }
 }
@@ -66,7 +69,7 @@ export async function GET(
       .order('created_at', { ascending: true }),
   ])
   if (!flow) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    return NextResponse.json({ error: t('common.notFound') }, { status: 404 })
   }
   return NextResponse.json({ flow, nodes: nodes ?? [] })
 }
@@ -107,11 +110,11 @@ export async function PUT(
 
   const body = (await request.json().catch(() => null)) as PutBody | null
   if (!body) {
-    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+    return NextResponse.json({ error: t('common.invalidJson') }, { status: 400 })
   }
   if (body.name !== undefined && !body.name.trim()) {
     return NextResponse.json(
-      { error: 'name cannot be empty' },
+      { error: t('flows.nameEmpty') },
       { status: 400 },
     )
   }

@@ -10,6 +10,9 @@ import {
   validateStepsForActivation,
   validateTriggerForActivation,
 } from '@/lib/automations/validate'
+import { getT } from '@/lib/i18n/translate'
+
+const t = getT('Api')
 
 // ------------------------------------------------------------
 // Tenancy note (GHSA-xvrq-88hg-44q6)
@@ -53,7 +56,7 @@ export async function GET(
     .maybeSingle()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  if (!automation) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  if (!automation) return NextResponse.json({ error: t('common.notFound') }, { status: 404 })
 
   const steps = await loadStepsTree(id)
   return NextResponse.json({ automation, steps })
@@ -77,7 +80,7 @@ export async function PATCH(
   }
 
   const body = await request.json().catch(() => null)
-  if (!body) return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+  if (!body) return NextResponse.json({ error: t('common.invalidJson') }, { status: 400 })
 
   const admin = supabaseAdmin()
 
@@ -90,7 +93,7 @@ export async function PATCH(
     .eq('account_id', accountId)
     .maybeSingle()
   if (!existing) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    return NextResponse.json({ error: t('common.notFound') }, { status: 404 })
   }
 
   const update: Record<string, unknown> = {}
@@ -123,7 +126,7 @@ export async function PATCH(
     if (issues.length > 0) {
       return NextResponse.json(
         {
-          error: 'Cannot keep automation active with invalid configuration',
+          error: t('automations.invalidActiveConfig'),
           issues,
         },
         { status: 400 },

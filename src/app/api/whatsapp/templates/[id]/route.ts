@@ -16,6 +16,9 @@ import {
 } from '@/lib/whatsapp/template-validators'
 import { buildMetaTemplatePayload } from '@/lib/whatsapp/template-components'
 import { ensureMediaHeaderHandle } from '@/lib/whatsapp/template-header-handle'
+import { getT } from '@/lib/i18n/translate'
+
+const t = getT('Api')
 
 /**
  * Per-template lifecycle endpoint.
@@ -63,7 +66,7 @@ export async function PATCH(
     const { id } = await context.params
     if (!UUID_RE.test(id)) {
       return NextResponse.json(
-        { error: 'Invalid template id.' },
+        { error: t('templates.invalidId') },
         { status: 400 },
       )
     }
@@ -75,7 +78,7 @@ export async function PATCH(
     try {
       payload = (await request.json()) as TemplatePayload
     } catch {
-      return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 })
+      return NextResponse.json({ error: t('templates.invalidJsonBody') }, { status: 400 })
     }
 
     // RLS handles ownership, but we need the existing row to read
@@ -87,14 +90,14 @@ export async function PATCH(
       .eq('account_id', accountId)
       .maybeSingle()
     if (lookupErr || !existing) {
-      return NextResponse.json({ error: 'Template not found.' }, { status: 404 })
+      return NextResponse.json({ error: t('templates.notFound') }, { status: 404 })
     }
 
     if (!existing.meta_template_id) {
       return NextResponse.json(
         {
           error:
-            'This template was never submitted to Meta — use New Template to submit it instead.',
+            t('templates.neverSubmitted'),
         },
         { status: 400 },
       )
@@ -103,7 +106,7 @@ export async function PATCH(
     if (!EDITABLE_STATUSES.has(existing.status)) {
       return NextResponse.json(
         {
-          error: `Templates in status ${existing.status} cannot be edited. Allowed: APPROVED, REJECTED, PAUSED.`,
+          error: t('templates.statusNotEditable', { status: String(existing.status) }),
         },
         { status: 400 },
       )
@@ -113,7 +116,7 @@ export async function PATCH(
       return NextResponse.json(
         {
           error:
-            'AUTHENTICATION templates are not editable here — manage them in Meta WhatsApp Manager.',
+            t('templates.authNotEditable'),
         },
         { status: 400 },
       )
@@ -123,7 +126,7 @@ export async function PATCH(
       validateTemplatePayload(payload)
     } catch (e) {
       return NextResponse.json(
-        { error: e instanceof Error ? e.message : 'Validation failed.' },
+        { error: e instanceof Error ? e.message : t('templates.validationFailed') },
         { status: 400 },
       )
     }
@@ -136,7 +139,7 @@ export async function PATCH(
         .single()
       if (configError || !config) {
         return NextResponse.json(
-          { error: 'WhatsApp not configured.' },
+          { error: t('common.whatsappNotConfiguredDot') },
           { status: 400 },
         )
       }
@@ -149,7 +152,7 @@ export async function PATCH(
         await ensureMediaHeaderHandle(payload, accessToken)
       } catch (e) {
         return NextResponse.json(
-          { error: e instanceof Error ? e.message : 'Header media upload failed.' },
+          { error: e instanceof Error ? e.message : t('templates.headerUploadFailed') },
           { status: 400 },
         )
       }
@@ -162,7 +165,7 @@ export async function PATCH(
           components: metaPayload.components,
         })
       } catch (e) {
-        const message = e instanceof Error ? e.message : 'Meta edit failed.'
+        const message = e instanceof Error ? e.message : t('templates.metaEditFailed')
         await supabase
           .from('message_templates')
           .update({
@@ -201,7 +204,7 @@ export async function PATCH(
     if (updErr) {
       return NextResponse.json(
         {
-          error: `Edited on Meta but failed to save locally: ${updErr.message}. Run "Sync from Meta" to recover.`,
+          error: t('templates.editedSaveFailed', { message: updErr.message }),
         },
         { status: 500 },
       )
@@ -220,7 +223,7 @@ export async function PATCH(
     return NextResponse.json(
       {
         error:
-          error instanceof Error ? error.message : 'Failed to edit template.',
+          error instanceof Error ? error.message : t('templates.editFailed'),
       },
       { status: 500 },
     )
@@ -235,7 +238,7 @@ export async function DELETE(
     const { id } = await context.params
     if (!UUID_RE.test(id)) {
       return NextResponse.json(
-        { error: 'Invalid template id.' },
+        { error: t('templates.invalidId') },
         { status: 400 },
       )
     }
@@ -250,7 +253,7 @@ export async function DELETE(
       .eq('account_id', accountId)
       .maybeSingle()
     if (lookupErr || !existing) {
-      return NextResponse.json({ error: 'Template not found.' }, { status: 404 })
+      return NextResponse.json({ error: t('templates.notFound') }, { status: 404 })
     }
 
     if (existing.meta_template_id && !isDryRun()) {
@@ -261,7 +264,7 @@ export async function DELETE(
         .single()
       if (configError || !config || !config.waba_id) {
         return NextResponse.json(
-          { error: 'WhatsApp not configured — cannot delete on Meta.' },
+          { error: t('templates.notConfiguredDelete') },
           { status: 400 },
         )
       }
@@ -274,7 +277,7 @@ export async function DELETE(
           metaTemplateId: existing.meta_template_id,
         })
       } catch (e) {
-        const message = e instanceof Error ? e.message : 'Meta delete failed.'
+        const message = e instanceof Error ? e.message : t('templates.metaDeleteFailed')
         return NextResponse.json({ error: message }, { status: 502 })
       }
     }
@@ -287,7 +290,7 @@ export async function DELETE(
     if (delErr) {
       return NextResponse.json(
         {
-          error: `Deleted on Meta but failed to delete locally: ${delErr.message}.`,
+          error: t('templates.deletedLocalFailed', { message: delErr.message }),
         },
         { status: 500 },
       )
@@ -302,7 +305,7 @@ export async function DELETE(
     return NextResponse.json(
       {
         error:
-          error instanceof Error ? error.message : 'Failed to delete template.',
+          error instanceof Error ? error.message : t('templates.deleteFailed'),
       },
       { status: 500 },
     )

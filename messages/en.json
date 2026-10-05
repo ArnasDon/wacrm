@@ -1068,6 +1068,8 @@
         "matchWord": "Whole word",
         "matchWordHint": "Matches the keyword only as a standalone word, so \"k\" no longer fires on \"thanks\". Best for short keywords in space-separated languages; use Contains for languages written without spaces.",
         "matchExact": "Exact",
+        "waitForReply": "Wait for reply before continuing",
+        "waitForReplyHint": "Pauses here until the customer taps a button or replies (up to 24h). The steps after this one, including If/Else on message content, then use their reply.",
         "closeConversationHint": "Sets the conversation status to \"closed\". No configuration needed."
       }
     }

@@ -178,7 +178,7 @@ export async function resumePendingExecution(pending: {
   }
 
   try {
-    await executeStepsFrom({
+    await runResumed({
       automation: automation as Automation,
       contactId: pending.contact_id,
       context: pending.context ?? {},
@@ -193,6 +193,145 @@ export async function resumePendingExecution(pending: {
     console.error('[automations] resume failed:', err)
     await markPending(pending.id, 'failed')
   }
+}
+
+/** How long a `wait_for_reply` step waits: WhatsApp's 24h service window. */
+export const REPLY_WAIT_MS = 24 * 60 * 60 * 1000
+
+export interface AwaitingReplyInput {
+  accountId: string
+  contactId: string
+  /** The inbound that may be the reply. Overwrites the parked run's
+   *  message fields so the steps after the wait see the reply. */
+  context: Pick<AutomationContext, 'message_text' | 'conversation_id' | 'interactive_reply_id'>
+}
+
+/**
+ * Hand an inbound message to the contact's automation run that is parked
+ * at a `wait_for_reply` step, if there is one.
+ *
+ * Returns true when a parked run took the message — the caller then
+ * skips the content triggers (`new_message_received`, `keyword_match`,
+ * `interactive_reply`) and AI auto-reply for it, the same way a Flow
+ * consuming a message suppresses them.
+ *
+ * Must never throw — it runs inside the webhook's `after()` block.
+ */
+export async function resumeAwaitingReply(input: AwaitingReplyInput): Promise<boolean> {
+  let claimedId: string | null = null
+  try {
+    const db = supabaseAdmin()
+    // Newest first; a park supersedes older waits, so normally there is
+    // at most one. The deadline is checked here rather than trusted to
+    // the cron sweep, so an expired wait is never resumed even when the
+    // cron isn't running.
+    const { data: rows, error } = await db
+      .from('automation_pending_executions')
+      .select('*')
+      .eq('account_id', input.accountId)
+      .eq('contact_id', input.contactId)
+      .eq('status', 'awaiting_reply')
+      .gt('run_at', new Date().toISOString())
+      .order('created_at', { ascending: false })
+      .limit(1)
+    if (error) {
+      console.error('[automations] awaiting-reply lookup failed:', error)
+      return false
+    }
+    const pending = rows?.[0] as PendingRow | undefined
+    if (!pending) return false
+
+    // Claim it. Gated on the CURRENT status so two deliveries racing on
+    // the same parked run can't both resume it.
+    const { data: claim } = await db
+      .from('automation_pending_executions')
+      .update({ status: 'running' })
+      .eq('id', pending.id)
+      .eq('status', 'awaiting_reply')
+      .select('id')
+      .maybeSingle()
+    if (!claim) return false
+    claimedId = pending.id
+
+    const { data: automation } = await db
+      .from('automations')
+      .select('*')
+      .eq('id', pending.automation_id)
+      .eq('account_id', input.accountId)
+      .maybeSingle()
+    if (!automation || !(automation as Automation).is_active) {
+      // Paused or deleted while waiting: drop the wait and let the
+      // message go through the normal triggers instead.
+      await markPending(pending.id, 'expired')
+      await setLogError(pending.log_id, 'automation paused while waiting for reply')
+      return false
+    }
+
+    await runResumed({
+      automation: automation as Automation,
+      contactId: pending.contact_id,
+      context: {
+        ...(pending.context ?? {}),
+        // Always overwrite all three, so a typed reply can't inherit a
+        // stale tap id from the message that started the run.
+        message_text: input.context.message_text ?? '',
+        conversation_id: input.context.conversation_id,
+        interactive_reply_id: input.context.interactive_reply_id,
+      },
+      parentStepId: pending.parent_step_id,
+      branch: pending.branch,
+      startPosition: pending.next_step_position,
+      logId: pending.log_id,
+      triggerEvent: 'resumed_reply',
+    })
+    await markPending(pending.id, 'done')
+    return true
+  } catch (err) {
+    console.error('[automations] awaiting-reply resume failed:', err)
+    if (claimedId) {
+      // The message was already taken by the claim; report it consumed so
+      // it doesn't ALSO fan out to other automations.
+      await markPending(claimedId, 'failed').catch(() => {})
+      return true
+    }
+    return false
+  }
+}
+
+/**
+ * Close out `wait_for_reply` runs whose 24h deadline passed with no
+ * reply. Called from the automations cron. Nothing is sent to the
+ * customer; the log stays `partial` with an explanatory error_message.
+ * Returns how many runs expired.
+ */
+export async function expireAwaitingReplies(now: Date = new Date()): Promise<number> {
+  const db = supabaseAdmin()
+  const { data, error } = await db
+    .from('automation_pending_executions')
+    .update({ status: 'expired' })
+    .eq('status', 'awaiting_reply')
+    .lte('run_at', now.toISOString())
+    .select('id, log_id')
+  if (error) {
+    console.error('[automations] expire awaiting replies failed:', error)
+    return 0
+  }
+  const rows = (data ?? []) as { id: string; log_id: string | null }[]
+  for (const row of rows) {
+    await setLogError(row.log_id, 'no reply within 24h')
+  }
+  return rows.length
+}
+
+interface PendingRow {
+  id: string
+  automation_id: string
+  contact_id: string | null
+  log_id: string | null
+  parent_step_id: string | null
+  branch: 'yes' | 'no' | null
+  next_step_position: number
+  context: AutomationContext | null
 }
 
 // ------------------------------------------------------------
@@ -267,7 +406,14 @@ interface ExecuteArgs {
   triggerEvent: string
 }
 
-async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
+/**
+ * How a scope ended. `suspended` means a `wait` / `wait_for_reply` step
+ * parked the run: every enclosing scope must stop too, or the steps
+ * after a condition would run before the branch's own remaining steps.
+ */
+type ScopeOutcome = 'completed' | 'suspended' | 'failed'
+
+async function executeStepsFrom(args: ExecuteArgs): Promise<ScopeOutcome> {
   const db = supabaseAdmin()
 
   const baseQuery = db
@@ -286,13 +432,13 @@ async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
 
   if (stepsErr) {
     await finalizeLog(args.logId, 'failed', stepsErr.message)
-    return
+    return 'failed'
   }
   if (!steps || steps.length === 0) {
     if (args.parentStepId === null && args.logId) {
       await finalizeLog(args.logId, 'success', null)
     }
-    return
+    return 'completed'
   }
 
   const results: AutomationLogStepResult[] = []
@@ -325,9 +471,7 @@ async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
         status: 'success',
         detail: `waiting ${cfg.amount} ${cfg.unit}`,
       })
-      status = 'partial'
-      await appendResults(args.logId, results, status, errorMessage)
-      return
+      return suspend(args, results, errorMessage)
     }
 
     try {
@@ -342,17 +486,33 @@ async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
         })
         // Recurse into the chosen branch at position 0 (children use their
         // own ordering within the branch scope).
-        await executeStepsFrom({
+        const branchOutcome = await executeStepsFrom({
           ...args,
           parentStepId: step.id,
           branch: taken ? 'yes' : 'no',
           startPosition: 0,
           logId: args.logId,
         })
+        // The branch parked: stop here too. The steps after this
+        // condition run when the branch resumes and climbs back out
+        // (see runResumed).
+        if (branchOutcome === 'suspended') {
+          return suspend(args, results, errorMessage)
+        }
         continue
       }
 
       const detail = await runStep(step, args)
+      if (waitsForReply(step)) {
+        await parkForReply(step, args)
+        results.push({
+          step_id: step.id,
+          step_type: step.step_type,
+          status: 'success',
+          detail: `${detail}; waiting for reply`,
+        })
+        return suspend(args, results, errorMessage)
+      }
       results.push({
         step_id: step.id,
         step_type: step.step_type,
@@ -379,6 +539,99 @@ async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
     // Nested branch — just append results; parent scope decides final status.
     await appendResults(args.logId, results, null, errorMessage)
   }
+  return status === 'failed' ? 'failed' : 'completed'
+}
+
+/** Record a parked scope's results and report the suspension upward. */
+async function suspend(
+  args: ExecuteArgs,
+  results: AutomationLogStepResult[],
+  errorMessage: string | null,
+): Promise<ScopeOutcome> {
+  // Only the outermost scope owns the log status (same rule as below).
+  await appendResults(
+    args.logId,
+    results,
+    args.parentStepId === null ? 'partial' : null,
+    errorMessage,
+  )
+  return 'suspended'
+}
+
+/**
+ * Continue a parked run, then climb out of every enclosing condition
+ * branch. A run can park inside a branch; once that branch's remaining
+ * steps finish, execution has to carry on after the condition that owns
+ * it, in the condition's own scope, all the way back to the root.
+ */
+async function runResumed(args: ExecuteArgs): Promise<void> {
+  const db = supabaseAdmin()
+  let outcome = await executeStepsFrom(args)
+  let owner = args.parentStepId
+
+  while (outcome === 'completed' && owner !== null) {
+    const { data: cond } = await db
+      .from('automation_steps')
+      .select('id, parent_step_id, branch, position')
+      .eq('id', owner)
+      .eq('automation_id', args.automation.id)
+      .maybeSingle()
+    if (!cond) {
+      // The condition was deleted while the run was parked — nothing
+      // left to climb into. What did run, ran successfully.
+      await setLogStatus(args.logId, 'success')
+      return
+    }
+    const c = cond as Pick<AutomationStep, 'parent_step_id' | 'branch' | 'position'>
+    owner = c.parent_step_id ?? null
+    outcome = await executeStepsFrom({
+      ...args,
+      parentStepId: owner,
+      branch: c.branch ?? null,
+      startPosition: c.position + 1,
+    })
+  }
+
+  // A nested scope never sets the log status itself, so a failure there
+  // has to be promoted here or the log stays `partial` forever.
+  if (outcome === 'failed' && owner !== null) {
+    await setLogStatus(args.logId, 'failed')
+  }
+}
+
+function waitsForReply(step: AutomationStep): boolean {
+  if (step.step_type !== 'send_buttons' && step.step_type !== 'send_list') return false
+  return (step.step_config as SendButtonsStepConfig).wait_for_reply === true
+}
+
+/**
+ * Park the run after an interactive send until the contact replies.
+ * The newest menu wins: any other run already waiting on this contact
+ * is superseded, so a reply can never resume a stale menu.
+ */
+async function parkForReply(step: AutomationStep, args: ExecuteArgs): Promise<void> {
+  const db = supabaseAdmin()
+  await db
+    .from('automation_pending_executions')
+    .update({ status: 'superseded' })
+    .eq('account_id', args.automation.account_id)
+    .eq('contact_id', args.contactId)
+    .eq('status', 'awaiting_reply')
+  const { error } = await db.from('automation_pending_executions').insert({
+    automation_id: args.automation.id,
+    account_id: args.automation.account_id,
+    user_id: args.automation.user_id,
+    contact_id: args.contactId,
+    log_id: args.logId,
+    parent_step_id: args.parentStepId,
+    branch: args.branch,
+    next_step_position: step.position + 1,
+    context: args.context,
+    // For awaiting_reply rows run_at is the reply deadline (migration 043).
+    run_at: new Date(Date.now() + REPLY_WAIT_MS).toISOString(),
+    status: 'awaiting_reply',
+  })
+  if (error) throw new Error(`could not park for reply: ${error.message}`)
 }
 
 async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string> {
@@ -877,7 +1130,25 @@ async function finalizeLog(
     .eq('id', logId)
 }
 
-async function markPending(id: string, status: 'done' | 'failed') {
+/** Status-only update, for when error_message must be left as it is. */
+async function setLogStatus(
+  logId: string | null,
+  status: 'success' | 'partial' | 'failed',
+) {
+  if (!logId) return
+  await supabaseAdmin().from('automation_logs').update({ status }).eq('id', logId)
+}
+
+/** Explain why a parked run ended without touching its status. */
+async function setLogError(logId: string | null, errorMessage: string) {
+  if (!logId) return
+  await supabaseAdmin()
+    .from('automation_logs')
+    .update({ error_message: errorMessage })
+    .eq('id', logId)
+}
+
+async function markPending(id: string, status: 'done' | 'failed' | 'expired') {
   await supabaseAdmin()
     .from('automation_pending_executions')
     .update({ status })

@@ -75,6 +75,22 @@ BEGIN
       'messages.error_code/error_title/error_details are missing — migration 042 did not apply';
   END IF;
 
+  -- 043 widens the automation_pending_executions status CHECK. It is a
+  -- DROP + ADD by name, so a wrong constraint name would leave the old
+  -- CHECK in place and every "wait for reply" park would be rejected at
+  -- runtime, not at migration time.
+  IF pg_get_constraintdef(
+       (SELECT oid FROM pg_constraint
+        WHERE conname = 'automation_pending_executions_status_check')
+     ) NOT LIKE '%awaiting_reply%' THEN
+    RAISE EXCEPTION
+      'automation_pending_executions_status_check does not allow awaiting_reply — migration 043 did not apply';
+  END IF;
+  IF to_regclass('public.idx_automation_pending_awaiting_reply') IS NULL THEN
+    RAISE EXCEPTION
+      'idx_automation_pending_awaiting_reply is missing — migration 043 did not apply';
+  END IF;
+
   RAISE NOTICE 'schema verification passed';
 END
 $$;

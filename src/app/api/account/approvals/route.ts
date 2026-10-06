@@ -11,6 +11,19 @@ import { getCurrentAccount, requireRole, toErrorResponse } from "@/lib/auth/acco
 import { isAccountRole, type AccountRole } from "@/lib/auth/roles";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
+function isMissingApprovalStatus(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const anyErr = err as { code?: string; message?: string };
+  const code = String(anyErr.code || "");
+  const message = String(anyErr.message || "").toLowerCase();
+  return (
+    code === "42703" ||
+    code === "PGRST204" ||
+    code === "PGRST200" ||
+    message.includes("approval_status")
+  );
+}
+
 export async function GET() {
   try {
     const ctx = await requireRole("admin");
@@ -31,7 +44,7 @@ export async function GET() {
       .order("created_at", { ascending: false });
 
     // Resilient fallback if migration 045 hasn't been executed in Supabase SQL Editor yet
-    if (error && (error as any).code === "42703") {
+    if (isMissingApprovalStatus(error)) {
       const fallback = await admin
         .from("profiles")
         .select("user_id, full_name, email, created_at, avatar_url, account_id")
@@ -41,7 +54,7 @@ export async function GET() {
       if (fallback.error) {
         console.error("[GET /api/account/approvals] fallback error:", fallback.error);
         return NextResponse.json(
-          { error: "Failed to load pending approvals" },
+          { error: fallback.error.message || "Failed to load pending approvals" },
           { status: 500 },
         );
       }
@@ -56,7 +69,7 @@ export async function GET() {
     } else if (error) {
       console.error("[GET /api/account/approvals] fetch error:", error);
       return NextResponse.json(
-        { error: "Failed to load pending approvals" },
+        { error: error.message || "Failed to load pending approvals" },
         { status: 500 },
       );
     } else {
@@ -112,13 +125,13 @@ export async function POST(request: Request) {
         updated_at: new Date().toISOString(),
       };
 
-      const { error: updateError } = await admin
+      let { error: updateError } = await admin
         .from("profiles")
         .update(payloadWithStatus)
         .eq("user_id", userId);
 
-      if (updateError && (updateError as any).code === "42703") {
-        const { error: fallbackErr } = await admin
+      if (isMissingApprovalStatus(updateError)) {
+        const fallback = await admin
           .from("profiles")
           .update({
             account_id: ctx.accountId,
@@ -127,14 +140,13 @@ export async function POST(request: Request) {
           })
           .eq("user_id", userId);
 
-        if (fallbackErr) {
-          console.error("[POST /api/account/approvals] fallback approve error:", fallbackErr);
-          return NextResponse.json({ error: "Failed to approve user" }, { status: 500 });
-        }
-      } else if (updateError) {
+        updateError = fallback.error;
+      }
+
+      if (updateError) {
         console.error("[POST /api/account/approvals] approve error:", updateError);
         return NextResponse.json(
-          { error: "Failed to approve user" },
+          { error: updateError.message || "Failed to approve user" },
           { status: 500 },
         );
       }
@@ -146,7 +158,7 @@ export async function POST(request: Request) {
     }
 
     if (action === "reject") {
-      const { error: updateError } = await admin
+      let { error: updateError } = await admin
         .from("profiles")
         .update({
           approval_status: "rejected",
@@ -154,15 +166,18 @@ export async function POST(request: Request) {
         })
         .eq("user_id", userId);
 
-      if (updateError && (updateError as any).code === "42703") {
-        await admin
+      if (isMissingApprovalStatus(updateError)) {
+        const fallback = await admin
           .from("profiles")
           .update({ account_id: null, updated_at: new Date().toISOString() })
           .eq("user_id", userId);
-      } else if (updateError) {
+        updateError = fallback.error;
+      }
+
+      if (updateError) {
         console.error("[POST /api/account/approvals] reject error:", updateError);
         return NextResponse.json(
-          { error: "Failed to reject user" },
+          { error: updateError.message || "Failed to reject user" },
           { status: 500 },
         );
       }

@@ -139,6 +139,51 @@ describe("/api/account/approvals", () => {
     );
   });
 
+  it("POST approves gracefully using fallback if approval_status column is missing (PGRST204)", async () => {
+    // First update attempt errors with PGRST204, fallback update succeeds
+    mocks.adminFrom
+      .mockReturnValueOnce({
+        update: vi.fn().mockReturnValue({
+          eq: vi.fn().mockResolvedValue({
+            data: null,
+            error: {
+              code: "PGRST204",
+              message: "Could not find the 'approval_status' column of 'profiles' in the schema cache",
+            },
+          }),
+        }),
+      })
+      .mockReturnValueOnce({
+        update: mocks.update.mockReturnValue({
+          eq: mocks.eq.mockResolvedValue({
+            data: null,
+            error: null,
+          }),
+        }),
+      });
+
+    const req = new Request("http://localhost/api/account/approvals", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userId: "user-pending-1",
+        action: "approve",
+        role: "agent",
+      }),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(mocks.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        account_id: "account-flyorder",
+        account_role: "agent",
+      })
+    );
+  });
+
   it("POST returns 400 when userId is missing", async () => {
     const req = new Request("http://localhost/api/account/approvals", {
       method: "POST",

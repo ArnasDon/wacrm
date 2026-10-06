@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useEffect } from "react";
 import { cn } from "@/lib/utils";
@@ -186,14 +187,26 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
       >
         {/* Logo row. On mobile we put a close button here; on desktop the
             close button is hidden since the sidebar is always-visible. */}
-        <div className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border px-4">
-          <Link href="/dashboard" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <MessageSquare className="h-4 w-4" />
+        <div className="flex h-16 shrink-0 items-center justify-between gap-2 border-b border-border px-3.5">
+          <Link href="/dashboard" className="flex items-center gap-2.5 min-w-0 group">
+            <div className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white p-1 shadow-sm ring-1 ring-border group-hover:ring-cyan-500/40 transition-all">
+              <Image
+                src="/flyorder-logo.png"
+                alt="Fly Order Logo"
+                width={36}
+                height={36}
+                priority
+                className="h-full w-full object-contain"
+              />
             </div>
-            <span className="text-sm font-semibold text-foreground">
-              {t("title")}
-            </span>
+            <div className="flex flex-col min-w-0 leading-tight">
+              <span className="text-sm font-bold tracking-tight text-foreground truncate group-hover:text-cyan-600 dark:group-hover:text-cyan-400 transition-colors">
+                Fly Order
+              </span>
+              <span className="text-[10px] font-semibold tracking-wider text-cyan-600 dark:text-cyan-400 uppercase truncate">
+                Unified CRM
+              </span>
+            </div>
           </Link>
           <button
             type="button"

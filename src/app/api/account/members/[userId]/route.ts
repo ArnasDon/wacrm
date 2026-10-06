@@ -25,10 +25,15 @@ import {
   RATE_LIMITS,
 } from "@/lib/rate-limit";
 
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
+
 // Map known SQLSTATEs from the RPCs (see migration 018) onto HTTP
 // statuses. The `error.code` field is the SQLSTATE; the `message`
 // is the human-readable RAISE message we put in the migration.
-function rpcErrorToResponse(err: PostgrestError): NextResponse {
+function rpcErrorToResponse(
+  err: PostgrestError,
+  defaultMsg = "Failed to update member",
+): NextResponse {
   if (err.code === "42501") {
     return NextResponse.json({ error: err.message }, { status: 403 });
   }
@@ -37,7 +42,7 @@ function rpcErrorToResponse(err: PostgrestError): NextResponse {
   }
   console.error("[members route] unexpected RPC error:", err);
   return NextResponse.json(
-    { error: "Failed to update member" },
+    { error: err.message || defaultMsg },
     { status: 500 },
   );
 }
@@ -113,7 +118,37 @@ export async function DELETE(
       p_user_id: userId,
     });
 
-    if (error) return rpcErrorToResponse(error);
+    if (error) {
+      if (
+        error.code === "23505" ||
+        error.message?.includes("idx_accounts_one_per_owner") ||
+        error.message?.includes("duplicate key")
+      ) {
+        // The user already owns a personal account; re-assign them to it
+        const admin = getSupabaseAdmin();
+        const { data: existingAcc } = await admin
+          .from("accounts")
+          .select("id")
+          .eq("owner_user_id", userId)
+          .maybeSingle();
+
+        if (existingAcc?.id) {
+          const { error: profileErr } = await admin
+            .from("profiles")
+            .update({
+              account_id: existingAcc.id,
+              account_role: "owner",
+              updated_at: new Date().toISOString(),
+            })
+            .eq("user_id", userId);
+
+          if (!profileErr) {
+            return NextResponse.json({ ok: true, newPersonalAccountId: existingAcc.id });
+          }
+        }
+      }
+      return rpcErrorToResponse(error, "Failed to remove member");
+    }
 
     return NextResponse.json({ ok: true, newPersonalAccountId: data });
   } catch (err) {

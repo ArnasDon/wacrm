@@ -32,15 +32,28 @@ export default function PendingApprovalPage() {
       }
       setUserEmail(user.email ?? null);
 
-      const { data: profile } = await supabase
+      let { data: profile, error } = await supabase
         .from("profiles")
         .select("full_name, approval_status, account_id")
         .eq("user_id", user.id)
         .maybeSingle();
 
+      if (
+        error &&
+        (error.code === "42703" || error.message?.includes("approval_status"))
+      ) {
+        const fallback = await supabase
+          .from("profiles")
+          .select("full_name, account_id")
+          .eq("user_id", user.id)
+          .maybeSingle();
+        profile = fallback.data as any;
+      }
+
       if (profile) {
         setUserName(profile.full_name || null);
-        const currentStatus = profile.approval_status ?? (profile.account_id ? "approved" : "pending");
+        const currentStatus =
+          profile.approval_status ?? (profile.account_id ? "approved" : "pending");
         setStatus(currentStatus as "pending" | "approved" | "rejected");
 
         if (currentStatus === "approved") {

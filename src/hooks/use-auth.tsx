@@ -191,13 +191,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       let data: ProfileRow | null = null;
       for (let attempt = 1; ; attempt++) {
-        const result = await supabase
+        let result = await supabase
           .from("profiles")
           .select(
             "id, full_name, email, avatar_url, role, beta_features, account_id, account_role, approval_status",
           )
           .eq("user_id", userId)
           .maybeSingle();
+
+        // Resilient fallback if migration 045 (approval_status column) is not yet applied in Supabase
+        if (
+          result.error &&
+          (result.error.code === "42703" ||
+            result.error.message?.includes("approval_status"))
+        ) {
+          result = await supabase
+            .from("profiles")
+            .select(
+              "id, full_name, email, avatar_url, role, beta_features, account_id, account_role",
+            )
+            .eq("user_id", userId)
+            .maybeSingle();
+        }
 
         if (!result.error) {
           data = result.data;

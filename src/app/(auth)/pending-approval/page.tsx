@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import {
@@ -80,29 +81,36 @@ export default function PendingApprovalPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background px-4">
-        <div className="flex flex-col items-center gap-3">
-          <div className="size-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-          <p className="text-sm text-muted-foreground">Checking account status...</p>
-        </div>
+      <div className="flex flex-col items-center justify-center gap-3 py-12">
+        <div className="size-8 animate-spin rounded-full border-2 border-cyan-500 border-t-transparent" />
+        <p className="text-sm text-muted-foreground">Checking account status...</p>
       </div>
     );
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4 py-8">
-      <Card className="w-full max-w-md border-border bg-card shadow-lg">
-        <CardHeader className="text-center pb-2">
-          <div className="mx-auto mb-4 flex size-16 items-center justify-center rounded-full bg-amber-500/10 text-amber-500">
-            {status === "rejected" ? (
-              <ShieldAlert className="size-8 text-destructive" />
-            ) : status === "approved" ? (
-              <CheckCircle2 className="size-8 text-primary" />
-            ) : (
-              <Clock className="size-8 text-amber-500 animate-pulse" />
-            )}
-          </div>
-          <CardTitle className="text-2xl font-bold tracking-tight text-foreground">
+    <Card className="w-full border-border/80 shadow-2xl bg-card/95 backdrop-blur-xl rounded-2xl overflow-hidden">
+      <CardHeader className="text-center pb-2 pt-6">
+        <div className="mx-auto mb-3 flex size-16 items-center justify-center rounded-2xl bg-white p-2 shadow-lg shadow-cyan-500/10 ring-2 ring-cyan-500/20">
+          <Image
+            src="/flyorder-logo.png"
+            alt="Fly Order Logo"
+            width={52}
+            height={52}
+            priority
+            className="size-full object-contain"
+          />
+        </div>
+        <div className="mx-auto mb-3 flex size-12 items-center justify-center rounded-full bg-amber-500/10 text-amber-500">
+          {status === "rejected" ? (
+            <ShieldAlert className="size-6 text-destructive" />
+          ) : status === "approved" ? (
+            <CheckCircle2 className="size-6 text-emerald-500" />
+          ) : (
+            <Clock className="size-6 text-amber-500 animate-pulse" />
+          )}
+        </div>
+        <CardTitle className="text-2xl font-bold tracking-tight text-foreground">
             {status === "rejected"
               ? "Registration Declined"
               : status === "approved"
@@ -168,6 +176,5 @@ export default function PendingApprovalPage() {
           </div>
         </CardContent>
       </Card>
-    </div>
   );
 }

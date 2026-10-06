@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
@@ -15,10 +16,17 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { MessageSquare, CheckCircle, UsersRound, Clock } from "lucide-react";
+import {
+  User,
+  Mail,
+  Lock,
+  Eye,
+  EyeOff,
+  CheckCircle,
+  Clock,
+  ArrowRight,
+} from "lucide-react";
 
-// `useSearchParams` opts the component out of static prerendering
-// unless wrapped in Suspense — same pattern as /login.
 export default function SignupPage() {
   return (
     <Suspense fallback={null}>
@@ -29,11 +37,6 @@ export default function SignupPage() {
 
 function SignupPageInner() {
   const searchParams = useSearchParams();
-  // When the user lands here from `/join/<token>` we carry the
-  // invite token in the query so it survives the signup → email
-  // verification → redirect round-trip. `emailRedirectTo` below
-  // sends the verified user to /join/<token> so they land on the
-  // redeem step instead of being dropped on /dashboard.
   const inviteToken = searchParams.get("invite");
   const t = useTranslations("SignupPage");
 
@@ -41,6 +44,8 @@ function SignupPageInner() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -62,16 +67,6 @@ function SignupPageInner() {
 
     setLoading(true);
 
-    // Always name our own origin as the place the confirmation link
-    // returns to. Previously this was left unset unless an invite was
-    // involved, so Supabase fell back to its Site URL — which on a
-    // freshly-created or self-hosted project is `http://localhost:3000`
-    // (issue #595) — and even when the Site URL was right the link
-    // landed on `/` with an unexchanged `?code=`, so the user had to
-    // sign in again after verifying. /auth/callback exchanges the link
-    // for a session and forwards to `next` (issue #592). Supabase still
-    // has to allow this origin under Authentication → URL Configuration
-    // → Redirect URLs; see docs/auth-emails.md.
     const next = inviteToken
       ? `/join/${encodeURIComponent(inviteToken)}`
       : "/dashboard";
@@ -100,91 +95,111 @@ function SignupPageInner() {
 
   if (success) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background px-4">
-        <Card className="w-full max-w-md border-border bg-card">
-          <CardHeader className="items-center text-center">
-            {inviteToken ? (
-              <>
-                <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
-                  <CheckCircle className="h-6 w-6 text-primary" />
-                </div>
-                <CardTitle className="text-xl text-foreground">
-                  {t("checkEmailTitle")}
-                </CardTitle>
-                <CardDescription className="text-muted-foreground">
-                  {t.rich("checkEmailDesc", {
-                    email,
-                    strong: (chunks) => (
-                      <span className="text-foreground">{chunks}</span>
-                    ),
-                  })}
-                </CardDescription>
-              </>
-            ) : (
-              <>
-                <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-amber-500/10">
-                  <Clock className="h-6 w-6 text-amber-500" />
-                </div>
-                <CardTitle className="text-xl text-foreground">
-                  Registration Submitted
-                </CardTitle>
-                <CardDescription className="text-muted-foreground text-sm mt-2">
-                  Thank you for registering (<span className="text-foreground font-medium">{email}</span>). Your account is currently <strong>pending administrator approval</strong>. Once an administrator approves your request, you will have access to the workspace.
-                </CardDescription>
-              </>
-            )}
-          </CardHeader>
-          <CardContent>
-            <Link
-              href={
-                inviteToken
-                  ? `/login?invite=${encodeURIComponent(inviteToken)}`
-                  : "/login"
-              }
+      <Card className="w-full border-border/80 shadow-2xl bg-card/95 backdrop-blur-xl rounded-2xl overflow-hidden">
+        <CardHeader className="items-center text-center pb-4 pt-6">
+          <div className="relative mb-3 flex size-16 items-center justify-center rounded-2xl bg-white p-2 shadow-lg shadow-cyan-500/10 ring-2 ring-cyan-500/20">
+            <Image
+              src="/flyorder-logo.png"
+              alt="Fly Order Logo"
+              width={52}
+              height={52}
+              priority
+              className="size-full object-contain"
+            />
+          </div>
+
+          {inviteToken ? (
+            <>
+              <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-500">
+                <CheckCircle className="size-5" />
+              </div>
+              <CardTitle className="text-xl font-bold text-foreground">
+                {t("checkEmailTitle")}
+              </CardTitle>
+              <CardDescription className="text-sm text-muted-foreground mt-2">
+                {t.rich("checkEmailDesc", {
+                  email,
+                  strong: (chunks) => (
+                    <span className="text-foreground font-semibold">{chunks}</span>
+                  ),
+                })}
+              </CardDescription>
+            </>
+          ) : (
+            <>
+              <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/10 text-amber-500">
+                <Clock className="size-5" />
+              </div>
+              <CardTitle className="text-xl font-bold text-foreground">
+                Registration Submitted
+              </CardTitle>
+              <CardDescription className="text-sm text-muted-foreground mt-2 leading-relaxed">
+                Thank you for registering (<span className="text-foreground font-semibold">{email}</span>). Your account is currently{" "}
+                <strong className="text-amber-500">pending administrator approval</strong>. Once an administrator approves your request, you will receive access to the workspace.
+              </CardDescription>
+            </>
+          )}
+        </CardHeader>
+        <CardContent className="pt-2">
+          <Link
+            href={
+              inviteToken
+                ? `/login?invite=${encodeURIComponent(inviteToken)}`
+                : "/login"
+            }
+          >
+            <Button
+              variant="outline"
+              className="w-full h-11 border-border/80 text-foreground hover:bg-muted rounded-xl"
             >
-              <Button
-                variant="outline"
-                className="w-full border-border text-muted-foreground hover:bg-muted hover:text-foreground"
-              >
-                {t("backToSignIn")}
-              </Button>
-            </Link>
-          </CardContent>
-        </Card>
-      </div>
+              {t("backToSignIn")}
+            </Button>
+          </Link>
+        </CardContent>
+      </Card>
     );
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <Card className="w-full max-w-md border-border bg-card">
-        <CardHeader className="items-center text-center">
-          <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
-            {inviteToken ? (
-              <UsersRound className="h-6 w-6 text-primary" />
-            ) : (
-              <MessageSquare className="h-6 w-6 text-primary" />
-            )}
-          </div>
-          <CardTitle className="text-xl text-foreground">
-            {inviteToken ? t("titleJoin") : t("title")}
-          </CardTitle>
-          <CardDescription className="text-muted-foreground">
-            {inviteToken ? t("descJoin") : t("desc")}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSignup} className="flex flex-col gap-4">
-            {error && (
-              <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
-                {error}
-              </div>
-            )}
+    <Card className="w-full border-border/80 shadow-2xl bg-card/95 backdrop-blur-xl rounded-2xl overflow-hidden">
+      <CardHeader className="items-center text-center pb-4 pt-6">
+        {/* Brand Emblem */}
+        <div className="relative mb-3 flex size-16 items-center justify-center rounded-2xl bg-white p-2 shadow-lg shadow-cyan-500/10 ring-2 ring-cyan-500/20">
+          <Image
+            src="/flyorder-logo.png"
+            alt="Fly Order Logo"
+            width={52}
+            height={52}
+            priority
+            className="size-full object-contain"
+          />
+        </div>
 
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="fullName" className="text-muted-foreground">
-                {t("fullNameLabel")}
-              </Label>
+        <CardTitle className="text-2xl font-bold tracking-tight text-foreground">
+          {inviteToken ? t("titleJoin") : "Join Fly Order Team"}
+        </CardTitle>
+        <CardDescription className="text-sm text-muted-foreground mt-1">
+          {inviteToken
+            ? t("descJoin")
+            : "Create your agent account to access the workspace"}
+        </CardDescription>
+      </CardHeader>
+
+      <CardContent className="pt-2">
+        <form onSubmit={handleSignup} className="flex flex-col gap-3.5">
+          {error && (
+            <div className="rounded-xl border border-destructive/20 bg-destructive/10 px-4 py-3 text-xs text-destructive">
+              {error}
+            </div>
+          )}
+
+          {/* Full name */}
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="fullName" className="text-xs font-medium text-foreground/80">
+              {t("fullNameLabel")}
+            </Label>
+            <div className="relative flex items-center">
+              <User className="absolute left-3 size-4 text-muted-foreground pointer-events-none" />
               <Input
                 id="fullName"
                 type="text"
@@ -192,14 +207,18 @@ function SignupPageInner() {
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
                 required
-                className="border-border bg-muted text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-primary/20"
+                className="pl-9 h-11 border-border/80 bg-muted/50 text-foreground placeholder:text-muted-foreground/60 rounded-xl focus-visible:border-cyan-500 focus-visible:ring-cyan-500/20"
               />
             </div>
+          </div>
 
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="email" className="text-muted-foreground">
-                {t("emailLabel")}
-              </Label>
+          {/* Email */}
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="email" className="text-xs font-medium text-foreground/80">
+              {t("emailLabel")}
+            </Label>
+            <div className="relative flex items-center">
+              <Mail className="absolute left-3 size-4 text-muted-foreground pointer-events-none" />
               <Input
                 id="email"
                 type="email"
@@ -207,64 +226,107 @@ function SignupPageInner() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className="border-border bg-muted text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-primary/20"
+                className="pl-9 h-11 border-border/80 bg-muted/50 text-foreground placeholder:text-muted-foreground/60 rounded-xl focus-visible:border-cyan-500 focus-visible:ring-cyan-500/20"
               />
             </div>
+          </div>
 
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="password" className="text-muted-foreground">
-                {t("passwordLabel")}
-              </Label>
+          {/* Password */}
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="password" className="text-xs font-medium text-foreground/80">
+              {t("passwordLabel")}
+            </Label>
+            <div className="relative flex items-center">
+              <Lock className="absolute left-3 size-4 text-muted-foreground pointer-events-none" />
               <Input
                 id="password"
-                type="password"
+                type={showPassword ? "text" : "password"}
                 placeholder={t("passwordPlaceholder")}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                className="border-border bg-muted text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-primary/20"
+                className="pl-9 pr-10 h-11 border-border/80 bg-muted/50 text-foreground placeholder:text-muted-foreground/60 rounded-xl focus-visible:border-cyan-500 focus-visible:ring-cyan-500/20"
               />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 text-muted-foreground hover:text-foreground transition-colors"
+                aria-label={showPassword ? "Hide password" : "Show password"}
+              >
+                {showPassword ? (
+                  <EyeOff className="size-4" />
+                ) : (
+                  <Eye className="size-4" />
+                )}
+              </button>
             </div>
+          </div>
 
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="confirmPassword" className="text-muted-foreground">
-                {t("confirmPasswordLabel")}
-              </Label>
+          {/* Confirm Password */}
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="confirmPassword" className="text-xs font-medium text-foreground/80">
+              {t("confirmPasswordLabel")}
+            </Label>
+            <div className="relative flex items-center">
+              <Lock className="absolute left-3 size-4 text-muted-foreground pointer-events-none" />
               <Input
                 id="confirmPassword"
-                type="password"
+                type={showConfirmPassword ? "text" : "password"}
                 placeholder={t("confirmPasswordPlaceholder")}
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 required
-                className="border-border bg-muted text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-primary/20"
+                className="pl-9 pr-10 h-11 border-border/80 bg-muted/50 text-foreground placeholder:text-muted-foreground/60 rounded-xl focus-visible:border-cyan-500 focus-visible:ring-cyan-500/20"
               />
+              <button
+                type="button"
+                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                className="absolute right-3 text-muted-foreground hover:text-foreground transition-colors"
+                aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+              >
+                {showConfirmPassword ? (
+                  <EyeOff className="size-4" />
+                ) : (
+                  <Eye className="size-4" />
+                )}
+              </button>
             </div>
+          </div>
 
-            <Button
-              type="submit"
-              disabled={loading}
-              className="mt-2 h-10 w-full bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-            >
-              {loading ? t("creating") : t("submit")}
-            </Button>
-          </form>
+          {/* Submit button */}
+          <Button
+            type="submit"
+            disabled={loading}
+            className="mt-2 h-11 w-full bg-gradient-to-r from-sky-500 via-cyan-500 to-emerald-500 hover:opacity-95 text-white font-semibold rounded-xl shadow-lg shadow-cyan-500/20 active:scale-[0.99] transition-all disabled:opacity-50"
+          >
+            {loading ? (
+              <span className="flex items-center gap-2">
+                <span className="size-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                {t("creating")}
+              </span>
+            ) : (
+              <span className="flex items-center gap-2">
+                {t("submit")}
+                <ArrowRight className="size-4" />
+              </span>
+            )}
+          </Button>
+        </form>
 
-          <p className="mt-6 text-center text-sm text-muted-foreground">
-            {t("haveAccount")}{" "}
-            <Link
-              href={
-                inviteToken
-                  ? `/login?invite=${encodeURIComponent(inviteToken)}`
-                  : "/login"
-              }
-              className="text-primary hover:text-primary/80"
-            >
-              {t("signIn")}
-            </Link>
-          </p>
-        </CardContent>
-      </Card>
-    </div>
+        <p className="mt-5 text-center text-xs text-muted-foreground">
+          {t("haveAccount")}{" "}
+          <Link
+            href={
+              inviteToken
+                ? `/login?invite=${encodeURIComponent(inviteToken)}`
+                : "/login"
+            }
+            className="font-semibold text-cyan-600 dark:text-cyan-400 hover:underline"
+          >
+            {t("signIn")}
+          </Link>
+        </p>
+      </CardContent>
+    </Card>
   );
 }

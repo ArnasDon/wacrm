@@ -19,6 +19,8 @@ export const metadata: Metadata = {
   },
 };
 
+import { AuthBrandingShell } from "@/components/auth/auth-branding-shell";
+
 export default function AuthLayout({ children }: { children: ReactNode }) {
-  return children;
+  return <AuthBrandingShell>{children}</AuthBrandingShell>;
 }

@@ -90,8 +90,8 @@ export default function PendingApprovalPage() {
 
   return (
     <Card className="w-full border-border/80 shadow-2xl bg-card/95 backdrop-blur-xl rounded-2xl overflow-hidden">
-      <CardHeader className="text-center pb-2 pt-6">
-        <div className="mx-auto mb-3 flex size-16 items-center justify-center rounded-2xl bg-white p-2 shadow-lg shadow-cyan-500/10 ring-2 ring-cyan-500/20">
+      <CardHeader className="flex flex-col items-center justify-center text-center pb-2 pt-6">
+        <div className="mx-auto justify-self-center mb-3 flex size-16 items-center justify-center rounded-2xl bg-white p-2 shadow-lg shadow-cyan-500/10 ring-2 ring-cyan-500/20">
           <Image
             src="/flyorder-logo.png"
             alt="Fly Order Logo"

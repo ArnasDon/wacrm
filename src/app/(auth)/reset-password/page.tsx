@@ -162,14 +162,14 @@ export default function ResetPasswordPage() {
 
   return (
     <Card className="w-full border-border/80 bg-card/95 backdrop-blur-xl shadow-2xl shadow-black/20">
-      <CardHeader className="space-y-2 pb-4 text-center items-center">
-        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500/20 via-cyan-500/10 to-teal-500/20 border border-emerald-500/30 shadow-inner p-2.5">
+      <CardHeader className="flex flex-col items-center justify-center text-center pb-4 pt-6">
+        <div className="relative mb-3 mx-auto justify-self-center flex size-16 items-center justify-center rounded-2xl bg-white p-2 shadow-lg shadow-cyan-500/10 ring-2 ring-cyan-500/20">
           <Image
             src="/flyorder-logo.png"
-            alt="FlyOrder Logo"
-            width={40}
-            height={40}
-            className="h-full w-full object-contain"
+            alt="Fly Order Logo"
+            width={52}
+            height={52}
+            className="size-full object-contain"
             priority
           />
         </div>

@@ -156,26 +156,29 @@ export function AuthBrandingShell({ children }: { children: ReactNode }) {
         <div className="pointer-events-none absolute top-0 right-0 h-80 w-80 rounded-full bg-cyan-500/5 blur-3xl" />
         <div className="pointer-events-none absolute bottom-0 left-0 h-80 w-80 rounded-full bg-emerald-500/5 blur-3xl" />
 
-        {/* Mobile Header (visible only on screens < lg) */}
-        <div className="w-full flex flex-col items-center pt-4 pb-2 lg:hidden">
-          <Link href="/" className="flex flex-col items-center gap-2 group">
-            <div className="relative h-14 w-14 rounded-2xl bg-white p-1.5 shadow-lg shadow-cyan-500/10 ring-2 ring-cyan-500/30">
+        {/* Mobile Header Top Bar (visible only on screens < lg) */}
+        <div className="w-full flex items-center justify-between pt-2 pb-4 lg:hidden max-w-md">
+          <Link href="/" className="flex items-center gap-2.5">
+            <div className="relative h-9 w-9 rounded-xl bg-white p-1 shadow-sm ring-1 ring-cyan-500/30">
               <Image
                 src="/flyorder-logo.png"
                 alt="Fly Order Logo"
-                width={56}
-                height={56}
+                width={36}
+                height={36}
                 priority
                 className="h-full w-full object-contain"
               />
             </div>
-            <div className="text-center">
-              <span className="text-lg font-bold text-foreground">Fly Order</span>
-              <p className="text-[10px] font-semibold tracking-wider text-cyan-600 dark:text-cyan-400 uppercase">
-                Logistics & Delivery CRM
-              </p>
+            <div className="flex flex-col">
+              <span className="text-sm font-bold text-foreground leading-tight">Fly Order</span>
+              <span className="text-[9px] font-semibold tracking-wider text-cyan-600 dark:text-cyan-400 uppercase leading-tight">
+                Logistics CRM
+              </span>
             </div>
           </Link>
+          <span className="rounded-full bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 text-[10px] font-medium text-emerald-500">
+            v2.0
+          </span>
         </div>
 
         {/* Form Container */}

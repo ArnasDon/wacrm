@@ -35,6 +35,7 @@ interface Profile {
   beta_features: string[];
   account_id: string | null;
   account_role: AccountRole | null;
+  approval_status?: "pending" | "approved" | "rejected" | null;
 }
 
 interface AccountSummary {
@@ -152,6 +153,7 @@ interface ProfileRow {
   beta_features: string[] | null;
   account_id: string | null;
   account_role: string | null;
+  approval_status?: string | null;
 }
 
 /**
@@ -192,7 +194,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const result = await supabase
           .from("profiles")
           .select(
-            "id, full_name, email, avatar_url, role, beta_features, account_id, account_role",
+            "id, full_name, email, avatar_url, role, beta_features, account_id, account_role, approval_status",
           )
           .eq("user_id", userId)
           .maybeSingle();
@@ -267,6 +269,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           ? data.account_role
           : null;
 
+        const approvalStatus =
+          (data.approval_status as "pending" | "approved" | "rejected") ||
+          (data.account_id ? "approved" : "pending");
+
         setProfile({
           id: data.id,
           full_name: data.full_name,
@@ -280,6 +286,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           beta_features: data.beta_features ?? [],
           account_id: data.account_id ?? null,
           account_role: accountRole,
+          approval_status: approvalStatus,
         });
         setAccount(accountRow);
         if (!data.account_id || !accountRole) {

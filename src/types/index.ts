@@ -45,6 +45,10 @@ export interface Profile {
    * `@/lib/auth/roles` rather than comparing this string directly.
    */
   account_role?: AccountRole;
+  /**
+   * Status of registration approval ('pending' | 'approved' | 'rejected').
+   */
+  approval_status?: "pending" | "approved" | "rejected";
   created_at: string;
 }
 

@@ -15,7 +15,7 @@ import { BrowserNotificationsListener } from "@/components/notifications/browser
 // client components can't export Next's metadata object.
 
 function DashboardShellInner({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
+  const { user, profile, loading, profileLoading } = useAuth();
   const router = useRouter();
   const t = useTranslations("DashboardShell");
 
@@ -27,8 +27,10 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!loading && !user) {
       router.push("/login");
+    } else if (!loading && !profileLoading && profile?.approval_status === "pending") {
+      router.push("/pending-approval");
     }
-  }, [user, loading, router]);
+  }, [user, profile, loading, profileLoading, router]);
 
   if (loading) {
     return (

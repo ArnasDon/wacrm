@@ -25,11 +25,14 @@ import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import {
   AlertTriangle,
+  Check,
+  Clock,
   Loader2,
   Mail,
   MailX,
   Plus,
   Trash2,
+  UserCheck,
   UsersRound,
 } from 'lucide-react';
 
@@ -93,6 +96,14 @@ interface Invitation {
   expires_at: string;
 }
 
+interface PendingUser {
+  user_id: string;
+  full_name: string;
+  email: string;
+  avatar_url: string | null;
+  created_at: string;
+}
+
 // These roles are translated via `useTranslations("Settings.roles")` where they are used.
 const EDITABLE_ROLES: { value: AccountRole }[] = [
   { value: 'admin' },
@@ -132,6 +143,9 @@ export function MembersTab() {
 
   const [members, setMembers] = useState<Member[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
+  const [pendingApprovals, setPendingApprovals] = useState<PendingUser[]>([]);
+  const [approvingUserId, setApprovingUserId] = useState<string | null>(null);
+  const [selectedRoleForUser, setSelectedRoleForUser] = useState<Record<string, AccountRole>>({});
   const [loading, setLoading] = useState(true);
 
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -142,10 +156,13 @@ export function MembersTab() {
 
   const loadEverything = useCallback(async () => {
     try {
-      const [mres, ires] = await Promise.all([
+      const [mres, ires, ares] = await Promise.all([
         fetch('/api/account/members', { cache: 'no-store' }),
         canManageMembers
           ? fetch('/api/account/invitations', { cache: 'no-store' })
+          : Promise.resolve(null),
+        canManageMembers
+          ? fetch('/api/account/approvals', { cache: 'no-store' })
           : Promise.resolve(null),
       ]);
 
@@ -168,6 +185,17 @@ export function MembersTab() {
       } else {
         setInvitations([]);
       }
+
+      if (ares) {
+        if (ares.ok) {
+          const adata = (await ares.json()) as { pendingUsers: PendingUser[] };
+          setPendingApprovals(adata.pendingUsers || []);
+        } else {
+          setPendingApprovals([]);
+        }
+      } else {
+        setPendingApprovals([]);
+      }
     } catch (err) {
       console.error('[MembersTab] load error:', err);
       toast.error(t('networkError'));
@@ -175,6 +203,52 @@ export function MembersTab() {
       setLoading(false);
     }
   }, [canManageMembers, t]);
+
+  async function handleApprove(userId: string) {
+    const role = selectedRoleForUser[userId] || 'agent';
+    setApprovingUserId(userId);
+    try {
+      const res = await fetch('/api/account/approvals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, action: 'approve', role }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || 'Failed to approve user');
+        return;
+      }
+      toast.success(data.message || 'User approved successfully!');
+      void loadEverything();
+    } catch {
+      toast.error('Network error approving user');
+    } finally {
+      setApprovingUserId(null);
+    }
+  }
+
+  async function handleReject(userId: string) {
+    if (!confirm('Are you sure you want to decline this registration request?')) return;
+    setApprovingUserId(userId);
+    try {
+      const res = await fetch('/api/account/approvals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, action: 'reject' }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || 'Failed to reject user');
+        return;
+      }
+      toast.success('Registration request declined');
+      void loadEverything();
+    } catch {
+      toast.error('Network error rejecting user');
+    } finally {
+      setApprovingUserId(null);
+    }
+  }
 
   useEffect(() => {
     void loadEverything();
@@ -551,6 +625,121 @@ export function MembersTab() {
                         {t('revoke')}
                       </Button>
                     </li>
+                    );
+                  })}
+                </ul>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+
+        {/* Sign-up approvals — admin+ only */}
+        <div className="mt-8">
+          <div className="mb-2 flex items-center gap-2">
+            <UserCheck className="size-4 text-muted-foreground" />
+            <h3 className="text-sm font-semibold text-foreground">
+              Sign-up Approvals
+            </h3>
+            {pendingApprovals.length > 0 ? (
+              <Badge className="bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30">
+                {pendingApprovals.length} Pending
+              </Badge>
+            ) : (
+              <Badge className="bg-muted text-muted-foreground border-border">
+                0
+              </Badge>
+            )}
+          </div>
+          <p className="mb-3 text-xs text-muted-foreground">
+            Review and approve new public registrations before they receive access to this workspace.
+          </p>
+
+          {pendingApprovals.length === 0 ? (
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center py-8 text-center">
+                <UserCheck className="size-6 text-muted-foreground/60" />
+                <p className="mt-2 text-sm text-muted-foreground">
+                  No pending registration requests
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground/80">
+                  New users awaiting approval will appear here.
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <CardContent className="p-0">
+                <ul className="divide-y divide-border">
+                  {pendingApprovals.map((req) => {
+                    const isBusy = approvingUserId === req.user_id;
+                    const assignedRole = selectedRoleForUser[req.user_id] || 'agent';
+                    return (
+                      <li key={req.user_id} className="flex flex-wrap items-center justify-between gap-4 p-4">
+                        <div className="flex items-center gap-3 min-w-[200px]">
+                          <Avatar className="size-9 border border-border">
+                            <AvatarFallback className="text-xs font-semibold">
+                              {(req.full_name || req.email || '?').slice(0, 2).toUpperCase()}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <p className="text-sm font-medium text-foreground">
+                              {req.full_name || 'Unnamed Applicant'}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {req.email} · {fmtDate(req.created_at)}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 ml-auto">
+                          <Select
+                            value={assignedRole}
+                            onValueChange={(val) =>
+                              setSelectedRoleForUser((prev) => ({
+                                ...prev,
+                                [req.user_id]: val as AccountRole,
+                              }))
+                            }
+                            disabled={isBusy}
+                          >
+                            <SelectTrigger className="w-28 h-8 text-xs bg-muted border-border text-foreground">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className="bg-popover border-border">
+                              {EDITABLE_ROLES.map(({ value }) => (
+                                <SelectItem key={value} value={value} className="text-xs">
+                                  {tRoles(value)}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+
+                          <Button
+                            size="sm"
+                            variant="default"
+                            onClick={() => handleApprove(req.user_id)}
+                            disabled={isBusy}
+                            className="h-8 gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90 text-xs px-3"
+                          >
+                            {isBusy ? (
+                              <Loader2 className="size-3.5 animate-spin" />
+                            ) : (
+                              <Check className="size-3.5" />
+                            )}
+                            Approve
+                          </Button>
+
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleReject(req.user_id)}
+                            disabled={isBusy}
+                            className="h-8 gap-1.5 border-destructive/40 bg-destructive/10 text-destructive hover:bg-destructive/20 text-xs px-3"
+                          >
+                            Reject
+                          </Button>
+                        </div>
+                      </li>
                     );
                   })}
                 </ul>

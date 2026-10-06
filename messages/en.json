@@ -1369,7 +1369,7 @@
       "networkError": "Could not reach the server",
       "memberAlt": "Member",
       "removeDialogTitle": "Remove member",
-      "removeDialogDesc": "Remove <bold>{name}</bold> from the account? They'll be signed out of this account and given a fresh personal account on their next sign-in. Their login isn't deleted.",
+      "removeDialogDesc": "Remove <bold>{name}</bold> from the team? Their access and login will be permanently deleted and they will not be able to log in.",
       "cancel": "Cancel",
       "removing": "Removing...",
       "removeBtn": "Remove member"

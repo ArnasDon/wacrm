@@ -114,43 +114,61 @@ export async function DELETE(
 
     const { userId } = await params;
 
-    const { data, error } = await ctx.supabase.rpc("remove_account_member", {
-      p_user_id: userId,
-    });
-
-    if (error) {
-      if (
-        error.code === "23505" ||
-        error.message?.includes("idx_accounts_one_per_owner") ||
-        error.message?.includes("duplicate key")
-      ) {
-        // The user already owns a personal account; re-assign them to it
-        const admin = getSupabaseAdmin();
-        const { data: existingAcc } = await admin
-          .from("accounts")
-          .select("id")
-          .eq("owner_user_id", userId)
-          .maybeSingle();
-
-        if (existingAcc?.id) {
-          const { error: profileErr } = await admin
-            .from("profiles")
-            .update({
-              account_id: existingAcc.id,
-              account_role: "owner",
-              updated_at: new Date().toISOString(),
-            })
-            .eq("user_id", userId);
-
-          if (!profileErr) {
-            return NextResponse.json({ ok: true, newPersonalAccountId: existingAcc.id });
-          }
-        }
-      }
-      return rpcErrorToResponse(error, "Failed to remove member");
+    if (userId === ctx.userId) {
+      return NextResponse.json(
+        { error: "Cannot remove yourself; transfer ownership or leave the account instead" },
+        { status: 400 },
+      );
     }
 
-    return NextResponse.json({ ok: true, newPersonalAccountId: data });
+    const admin = getSupabaseAdmin();
+
+    // Verify target belongs to caller's account
+    const { data: targetProfile, error: targetErr } = await admin
+      .from("profiles")
+      .select("account_id, account_role, full_name")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (targetErr || !targetProfile) {
+      return NextResponse.json({ error: "Target user not found" }, { status: 404 });
+    }
+
+    if (targetProfile.account_id !== ctx.accountId) {
+      return NextResponse.json(
+        { error: "Target user is not a member of your account" },
+        { status: 403 },
+      );
+    }
+
+    if (targetProfile.account_role === "owner") {
+      return NextResponse.json(
+        { error: "Cannot remove the account owner; transfer ownership first" },
+        { status: 400 },
+      );
+    }
+
+    // 1. Delete any personal/orphaned accounts owned by this user
+    await admin.from("accounts").delete().eq("owner_user_id", userId);
+
+    // 2. Delete user from auth.users (permanently removes login credentials & cascades to profiles)
+    const { error: authDeleteErr } = await admin.auth.admin.deleteUser(userId);
+
+    if (authDeleteErr) {
+      console.warn("[members DELETE] auth delete failed, falling back to profile cleanup:", authDeleteErr);
+      // Fallback: unlink profile and set approval_status to rejected
+      await admin
+        .from("profiles")
+        .update({
+          account_id: null,
+          account_role: null,
+          approval_status: "rejected",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("user_id", userId);
+    }
+
+    return NextResponse.json({ ok: true });
   } catch (err) {
     return toErrorResponse(err);
   }

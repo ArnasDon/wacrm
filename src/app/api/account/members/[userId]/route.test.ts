@@ -2,12 +2,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   requireRole: vi.fn(),
-  rpc: vi.fn(),
   adminFrom: vi.fn(),
-  select: vi.fn(),
-  update: vi.fn(),
-  eq: vi.fn(),
-  maybeSingle: vi.fn(),
+  deleteUser: vi.fn(),
+  rpc: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/account", () => ({
@@ -20,6 +17,11 @@ vi.mock("@/lib/auth/account", () => ({
 vi.mock("@/lib/supabase/admin", () => ({
   getSupabaseAdmin: vi.fn(() => ({
     from: mocks.adminFrom,
+    auth: {
+      admin: {
+        deleteUser: mocks.deleteUser,
+      },
+    },
   })),
 }));
 
@@ -37,12 +39,9 @@ const context = {
 
 beforeEach(() => {
   mocks.requireRole.mockReset();
-  mocks.rpc.mockReset();
   mocks.adminFrom.mockReset();
-  mocks.select.mockReset();
-  mocks.update.mockReset();
-  mocks.eq.mockReset();
-  mocks.maybeSingle.mockReset();
+  mocks.deleteUser.mockReset();
+  mocks.rpc.mockReset();
 
   mocks.requireRole.mockResolvedValue(context);
 });
@@ -66,45 +65,44 @@ describe("/api/account/members/[userId]", () => {
     expect(body.ok).toBe(true);
   });
 
-  it("DELETE removes a member via RPC", async () => {
-    mocks.rpc.mockResolvedValue({ data: "new-acc-id", error: null });
-
-    const req = new Request("http://localhost/api/account/members/user-2", {
+  it("DELETE prevents self-removal", async () => {
+    const req = new Request("http://localhost/api/account/members/admin-1", {
       method: "DELETE",
     });
 
     const res = await DELETE(req, {
-      params: Promise.resolve({ userId: "user-2" }),
+      params: Promise.resolve({ userId: "admin-1" }),
     });
 
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(400);
     const body = await res.json();
-    expect(body.ok).toBe(true);
+    expect(body.error).toContain("Cannot remove yourself");
   });
 
-  it("DELETE falls back to existing account if RPC throws unique constraint error (23505)", async () => {
-    mocks.rpc.mockResolvedValue({
-      data: null,
-      error: {
-        code: "23505",
-        message: 'duplicate key value violates unique constraint "idx_accounts_one_per_owner"',
-      },
-    });
+  it("DELETE permanently removes member and deletes auth credentials", async () => {
+    mocks.deleteUser.mockResolvedValue({ error: null });
 
     mocks.adminFrom.mockImplementation((table: string) => {
-      if (table === "accounts") {
+      if (table === "profiles") {
         return {
           select: () => ({
             eq: () => ({
               maybeSingle: () =>
-                Promise.resolve({ data: { id: "existing-acc-123" }, error: null }),
+                Promise.resolve({
+                  data: {
+                    account_id: "account-flyorder",
+                    account_role: "agent",
+                    full_name: "Test Agent",
+                  },
+                  error: null,
+                }),
             }),
           }),
         };
       }
-      if (table === "profiles") {
+      if (table === "accounts") {
         return {
-          update: () => ({
+          delete: () => ({
             eq: () => Promise.resolve({ data: null, error: null }),
           }),
         };
@@ -123,6 +121,6 @@ describe("/api/account/members/[userId]", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.ok).toBe(true);
-    expect(body.newPersonalAccountId).toBe("existing-acc-123");
+    expect(mocks.deleteUser).toHaveBeenCalledWith("user-2");
   });
 });

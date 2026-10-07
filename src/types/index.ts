@@ -548,9 +548,17 @@ export interface SendMessageStepConfig {
  * `send_buttons` / `send_list` step configs carry the full interactive
  * payload (same shape stored on messages + quick replies). `kind` is
  * implied by the step_type but kept on the payload for a uniform shape.
+ *
+ * `wait_for_reply` parks the run after the send until the contact's
+ * next inbound message, which then becomes `message_text` for the
+ * steps after it (migration 045). Not part of the Meta payload — the
+ * send path picks payload fields explicitly, so it never reaches Meta.
  */
-export type SendButtonsStepConfig = InteractiveMessagePayload;
-export type SendListStepConfig = InteractiveMessagePayload;
+export interface InteractiveStepOptions {
+  wait_for_reply?: boolean;
+}
+export type SendButtonsStepConfig = InteractiveMessagePayload & InteractiveStepOptions;
+export type SendListStepConfig = InteractiveMessagePayload & InteractiveStepOptions;
 
 export interface SendTemplateStepConfig {
   template_name: string;

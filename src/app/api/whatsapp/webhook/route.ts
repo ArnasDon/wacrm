@@ -14,7 +14,7 @@ import {
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
 import { reopenClosedConversation } from '@/lib/conversations/reopen'
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
-import { runAutomationsForTrigger } from '@/lib/automations/engine'
+import { resumeAwaitingReply, runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
@@ -904,6 +904,28 @@ async function processMessage(
   // Fire-and-forget: a slow or failing automation must not block the
   // webhook's 200 OK response to Meta.
   const inboundText = contentText ?? message.text?.body ?? ''
+
+  // An automation parked at a "wait for reply" Send Buttons / Send List
+  // step takes this message as its reply — a tap or typed text — and
+  // continues from the step after the send. Like a Flow consuming the
+  // message, that suppresses the content-level triggers and AI reply
+  // below so the customer doesn't get a second bot answering. Runs
+  // BEFORE the trigger dispatch so the message that parks a run can
+  // never also resume it. Flows still win: only checked if no flow
+  // consumed the message. Never throws.
+  const automationConsumed = flowConsumed
+    ? false
+    : await resumeAwaitingReply({
+        accountId,
+        contactId: contactRecord.id,
+        context: {
+          message_text: inboundText,
+          conversation_id: conversation.id,
+          interactive_reply_id: interactiveReplyId ?? undefined,
+        },
+      })
+  const contentConsumed = flowConsumed || automationConsumed
+
   const automationTriggers: (
     | 'new_contact_created'
     | 'first_inbound_message'
@@ -911,9 +933,9 @@ async function processMessage(
     | 'keyword_match'
     | 'interactive_reply'
   )[] = []
-  // Content-level triggers are suppressed when a flow consumed the
-  // message — see the comment block above.
-  if (!flowConsumed) {
+  // Content-level triggers are suppressed when a flow or a waiting
+  // automation consumed the message — see the comment blocks above.
+  if (!contentConsumed) {
     automationTriggers.push('new_message_received', 'keyword_match')
     // Interactive tap → fire the interactive_reply trigger too (only
     // meaningful when a button/list reply actually arrived). Enables
@@ -959,7 +981,7 @@ async function processMessage(
   // the account has enabled it. Awaited inside `after()` (same reason as
   // the webhook dispatch below); `dispatchInboundToAiReply` owns its
   // eligibility gates + try/catch and never throws.
-  if (!flowConsumed && !interactiveReplyId && inboundText.trim()) {
+  if (!contentConsumed && !interactiveReplyId && inboundText.trim()) {
     await dispatchInboundToAiReply({
       accountId,
       conversationId: conversation.id,

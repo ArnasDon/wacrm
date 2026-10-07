@@ -1068,6 +1068,8 @@
         "matchWord": "Palavra inteira",
         "matchWordHint": "Corresponde à palavra-chave apenas como palavra isolada, então \"k\" não dispara mais em \"thanks\". Ideal para palavras-chave curtas em idiomas com espaços; use Contém para idiomas escritos sem espaços.",
         "matchExact": "Exata",
+        "waitForReply": "Aguardar resposta antes de continuar",
+        "waitForReplyHint": "Pausa aqui até o cliente tocar em um botão ou responder (até 24h). As etapas seguintes, incluindo Se/Senão no conteúdo da mensagem, usam essa resposta.",
         "closeConversationHint": "Define o status da conversa como \"fechada\". Nenhuma configuração necessária."
       }
     }

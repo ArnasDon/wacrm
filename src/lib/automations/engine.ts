@@ -267,7 +267,7 @@ export async function resumeAwaitingReply(input: AwaitingReplyInput): Promise<bo
       // Paused or deleted while waiting: drop the wait and let the
       // message go through the normal triggers instead.
       await markPending(pending.id, 'expired')
-      await setLogError(pending.log_id, 'automation paused while waiting for reply')
+      await setLogError(pending.log_id, tErr('pausedWhileWaitingForReply'))
       return false
     }
 
@@ -322,7 +322,7 @@ export async function expireAwaitingReplies(now: Date = new Date()): Promise<num
   }
   const rows = (data ?? []) as { id: string; log_id: string | null }[]
   for (const row of rows) {
-    await setLogError(row.log_id, 'no reply within 24h')
+    await setLogError(row.log_id, tErr('noReplyWithin24h'))
   }
   return rows.length
 }
@@ -635,7 +635,7 @@ async function parkForReply(step: AutomationStep, args: ExecuteArgs): Promise<vo
     run_at: new Date(Date.now() + REPLY_WAIT_MS).toISOString(),
     status: 'awaiting_reply',
   })
-  if (error) throw new Error(`could not park for reply: ${error.message}`)
+  if (error) throw new Error(tErr('parkForReplyFailed', { message: error.message }))
 }
 
 async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string> {

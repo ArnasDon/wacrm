@@ -37,6 +37,12 @@ updates:
       - dependency-name: react-dom
       - dependency-name: tailwindcss
       - dependency-name: eslint-config-next
+      - dependency-name: "@supabase/*"
+        versions: [">=2.110.0"]
+      - dependency-name: "@supabase/ssr"
+        versions: [">=0.12.1"]
+      - dependency-name: vitest
+        versions: [">=5.0.0"]
 
   # GitHub Actions in .github/workflows/. Catches setup-node /
   # checkout version bumps that keep the CI matrix healthy.

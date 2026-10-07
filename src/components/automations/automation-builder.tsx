@@ -1318,13 +1318,38 @@ function StepEditor({
     case "send_list":
       // The whole step_config IS the interactive payload; the shared
       // builder edits it in place (and enforces Meta's limits + preview).
+      // `wait_for_reply` rides on the step_config beside the payload. The
+      // composer rebuilds the payload from scratch when switching between
+      // buttons and list, so re-attach it on every change.
       return (
-        <InteractiveBuilder
-          value={asInteractive(cfg)}
-          onChange={(payload) =>
-            onChange({ ...step, step_config: toStepConfig(payload) })
-          }
-        />
+        <>
+          <InteractiveBuilder
+            value={asInteractive(cfg)}
+            onChange={(payload) =>
+              onChange({
+                ...step,
+                step_config: {
+                  ...toStepConfig(payload),
+                  ...(cfg.wait_for_reply ? { wait_for_reply: true } : {}),
+                },
+              })
+            }
+          />
+          <label className="flex items-start gap-2 text-xs text-foreground">
+            <input
+              type="checkbox"
+              checked={cfg.wait_for_reply === true}
+              onChange={(e) => set({ wait_for_reply: e.target.checked })}
+              className="mt-0.5 h-3.5 w-3.5 accent-primary"
+            />
+            <span>
+              {t("config.waitForReply")}
+              <span className="block text-muted-foreground">
+                {t("config.waitForReplyHint")}
+              </span>
+            </span>
+          </label>
+        </>
       )
     case "send_template":
       return (
@@ -1536,8 +1561,13 @@ function previewFor(
     case "send_message":
       return (step.step_config.text as string) || t("preview.noText")
     case "send_buttons":
-    case "send_list":
-      return interactivePayloadPreviewText(asInteractive(step.step_config)) || t("preview.noBody")
+    case "send_list": {
+      const preview =
+        interactivePayloadPreviewText(asInteractive(step.step_config)) || t("preview.noBody")
+      return step.step_config.wait_for_reply
+        ? t("preview.withWaitForReply", { preview })
+        : preview
+    }
     case "send_template":
       return (step.step_config.template_name as string) || t("preview.pickTemplate")
     case "wait": {

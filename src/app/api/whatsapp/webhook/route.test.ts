@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // Shared, hoisted state the module mocks close over. Reset per test.
 const h = vi.hoisted(() => ({
   runAutomationsForTrigger: vi.fn(),
+  resumeAwaitingReply: vi.fn(),
   dispatchInboundToFlows: vi.fn(),
   dispatchInboundToAiReply: vi.fn(),
   dispatchWebhookEvent: vi.fn(),
@@ -268,6 +269,7 @@ vi.mock('@/lib/whatsapp/template-webhook', () => ({
 }))
 vi.mock('@/lib/automations/engine', () => ({
   runAutomationsForTrigger: h.runAutomationsForTrigger,
+  resumeAwaitingReply: h.resumeAwaitingReply,
 }))
 vi.mock('@/lib/flows/engine', () => ({
   dispatchInboundToFlows: h.dispatchInboundToFlows,
@@ -394,6 +396,7 @@ beforeEach(() => {
     contentType: 'image/jpeg',
   })
   h.dispatchInboundToFlows.mockResolvedValue({ consumed: false })
+  h.resumeAwaitingReply.mockResolvedValue(false)
   h.dispatchInboundToAiReply.mockResolvedValue(undefined)
   h.dispatchWebhookEvent.mockResolvedValue(undefined)
   h.runAutomationsForTrigger.mockImplementation(() => {
@@ -1010,5 +1013,44 @@ describe('status webhook: failed statuses keep Meta\'s reason (#535)', () => {
     expect(h.state.recipientUpdates).toHaveLength(1)
     expect(h.state.recipientUpdates[0]).not.toHaveProperty('error_message')
     expect(h.state.recipientUpdates[0]).not.toHaveProperty('error_code')
+  })
+})
+
+describe('inbound webhook: automation waiting for a reply', () => {
+  const triggersFired = () =>
+    h.runAutomationsForTrigger.mock.calls.map(
+      (call) => (call[0] as { triggerType: string }).triggerType,
+    )
+
+  it('offers the message to a waiting automation before any trigger fires', async () => {
+    await runWebhook()
+
+    expect(h.resumeAwaitingReply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        context: expect.objectContaining({ message_text: 'hello' }),
+      }),
+    )
+    // Nothing was waiting, so the content triggers fire as normal.
+    expect(triggersFired()).toEqual(
+      expect.arrayContaining(['new_message_received', 'keyword_match']),
+    )
+  })
+
+  it('suppresses content triggers and AI reply when a waiting automation took it', async () => {
+    h.resumeAwaitingReply.mockResolvedValue(true)
+
+    await runWebhook()
+
+    expect(triggersFired()).not.toContain('new_message_received')
+    expect(triggersFired()).not.toContain('keyword_match')
+    expect(h.dispatchInboundToAiReply).not.toHaveBeenCalled()
+  })
+
+  it('leaves the message to a flow that consumed it', async () => {
+    h.dispatchInboundToFlows.mockResolvedValue({ consumed: true })
+
+    await runWebhook()
+
+    expect(h.resumeAwaitingReply).not.toHaveBeenCalled()
   })
 })

@@ -246,7 +246,7 @@ describe('generateReply — OpenAI-compatible', () => {
         generateReply({
           config: config({
             provider: 'openai_compatible',
-            baseUrl: 'http://127.0.0.1:11434/v1',
+            baseUrl: 'https://127.0.0.1:11434/v1',
           }),
           systemPrompt: 'sys',
           messages: [{ role: 'user', content: 'Hi' }],

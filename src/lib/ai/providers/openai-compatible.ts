@@ -11,11 +11,15 @@ import { isDeliverableUrl } from '@/lib/webhooks/ssrf'
 
 const PRIVATE_HOST_ALLOWLIST_ENV = 'AI_PROVIDER_ALLOWED_PRIVATE_HOSTS'
 
+function normalizeHost(host: string): string {
+  return host.trim().toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '')
+}
+
 function allowedPrivateHosts(): Set<string> {
   return new Set(
     (process.env[PRIVATE_HOST_ALLOWLIST_ENV] ?? '')
       .split(',')
-      .map((host) => host.trim().toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, ''))
+      .map(normalizeHost)
       .filter(Boolean),
   )
 }
@@ -44,6 +48,14 @@ export function normalizeOpenAiCompatibleBaseUrl(baseUrl: string): string {
       code: 'invalid_base_url',
       status: 400,
     })
+  }
+
+  if (parsed.protocol === 'http:' && !allowedPrivateHosts().has(normalizeHost(parsed.hostname))) {
+    throw new AiError(
+      'OpenAI-compatible API base URL must use https:// unless its host is listed in ' +
+        `${PRIVATE_HOST_ALLOWLIST_ENV}.`,
+      { code: 'invalid_base_url', status: 400 },
+    )
   }
 
   if (parsed.username || parsed.password) {

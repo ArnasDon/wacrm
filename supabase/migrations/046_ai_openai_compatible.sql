@@ -1,5 +1,5 @@
 -- ============================================================
--- 043_ai_openai_compatible.sql — configurable OpenAI-compatible chat APIs
+-- 046_ai_openai_compatible.sql — configurable OpenAI-compatible chat APIs
 -- ============================================================
 
 ALTER TABLE ai_configs

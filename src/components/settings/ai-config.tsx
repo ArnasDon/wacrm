@@ -38,10 +38,9 @@ const MASKED_KEY = '••••••••••••••••';
 // unassigned" choice gets a sentinel that maps to null in the payload.
 const HANDOFF_QUEUE = '__queue__';
 
-const PROVIDER_LABEL: Record<AiProvider, string> = {
+const PROVIDER_LABEL: Record<Exclude<AiProvider, 'openai_compatible'>, string> = {
   openai: 'OpenAI',
   anthropic: 'Anthropic (Claude)',
-  openai_compatible: 'OpenAI-compatible API',
 };
 
 const KEY_PLACEHOLDER: Record<AiProvider, string> = {
@@ -294,7 +293,7 @@ export function AiConfig() {
                       {PROVIDER_LABEL.anthropic}
                     </SelectItem>
                     <SelectItem value="openai_compatible">
-                      {PROVIDER_LABEL.openai_compatible}
+                      {t('providerOpenAiCompatible')}
                     </SelectItem>
                   </SelectContent>
                 </Select>

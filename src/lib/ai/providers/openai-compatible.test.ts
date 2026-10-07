@@ -27,6 +27,41 @@ describe('normalizeOpenAiCompatibleBaseUrl', () => {
     }
   })
 
+  it('rejects plain http for a host that is not allow-listed', () => {
+    const previous = process.env.AI_PROVIDER_ALLOWED_PRIVATE_HOSTS
+    process.env.AI_PROVIDER_ALLOWED_PRIVATE_HOSTS = '127.0.0.1'
+    try {
+      expect(() => normalizeOpenAiCompatibleBaseUrl('http://8.8.8.8/v1')).toThrow(
+        /must use https:\/\//,
+      )
+      expect(() => normalizeOpenAiCompatibleBaseUrl('http://api.groq.com/openai/v1')).toThrow(
+        /must use https:\/\//,
+      )
+      expect(() => normalizeOpenAiCompatibleBaseUrl('http://127.0.0.2:11434/v1')).toThrow(
+        /must use https:\/\//,
+      )
+      expect(normalizeOpenAiCompatibleBaseUrl('https://api.groq.com/openai/v1')).toBe(
+        'https://api.groq.com/openai/v1/chat/completions',
+      )
+    } finally {
+      if (previous === undefined) delete process.env.AI_PROVIDER_ALLOWED_PRIVATE_HOSTS
+      else process.env.AI_PROVIDER_ALLOWED_PRIVATE_HOSTS = previous
+    }
+  })
+
+  it('rejects plain http when no allow-list is configured', () => {
+    const previous = process.env.AI_PROVIDER_ALLOWED_PRIVATE_HOSTS
+    delete process.env.AI_PROVIDER_ALLOWED_PRIVATE_HOSTS
+    try {
+      expect(() => normalizeOpenAiCompatibleBaseUrl('http://127.0.0.1:11434/v1')).toThrow(
+        /must use https:\/\//,
+      )
+    } finally {
+      if (previous === undefined) delete process.env.AI_PROVIDER_ALLOWED_PRIVATE_HOSTS
+      else process.env.AI_PROVIDER_ALLOWED_PRIVATE_HOSTS = previous
+    }
+  })
+
   it('rejects credentials, query strings, fragments, and unsupported protocols', () => {
     expect(() => normalizeOpenAiCompatibleBaseUrl('https://user:pass@8.8.8.8/v1')).toThrow(
       /embedded credentials/,
@@ -58,7 +93,7 @@ describe('generateOpenAiCompatible', () => {
           systemPrompt: 'sys',
           messages: [{ role: 'user', content: 'Hi' }],
           timeoutMs: 1000,
-          baseUrl: 'http://127.0.0.1:11434/v1',
+          baseUrl: 'https://127.0.0.1:11434/v1',
         }),
       ).rejects.toMatchObject({ code: 'blocked_url', status: 400 })
       expect(fetchMock).not.toHaveBeenCalled()

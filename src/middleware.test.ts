@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { readdirSync } from "node:fs";
+import { join } from "node:path";
 import { NextRequest } from "next/server";
 
 // --- Scenario knobs the mock reads -----------------------------------------
@@ -109,5 +111,30 @@ describe("middleware — refreshed auth cookies survive redirects", () => {
     // No redirect — the normal NextResponse.next() already carries cookies.
     expect(res.headers.get("location")).toBeNull();
     expect(res.cookies.get(ROTATED.name)?.value).toBe(ROTATED.value);
+  });
+});
+
+describe("middleware — every dashboard route requires a session", () => {
+  // Read the route group rather than hard-coding a list, so a new page added
+  // under src/app/(dashboard)/ fails here until it is added to
+  // protectedPaths. /flows, /agents and /notifications were missed that way
+  // and rendered a broken page to signed-out visitors instead of redirecting.
+  const dashboardRoutes = readdirSync(join(__dirname, "app", "(dashboard)"), {
+    withFileTypes: true,
+  })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => `/${entry.name}`);
+
+  it("finds the dashboard route group", () => {
+    expect(dashboardRoutes).toContain("/dashboard");
+  });
+
+  it.each(dashboardRoutes)("redirects a signed-out visitor from %s to /login", async (route) => {
+    mockUser = null;
+
+    const res = await middleware(new NextRequest(`https://app.test${route}`));
+
+    expect(res.status).toBe(307);
+    expect(new URL(res.headers.get("location")!).pathname).toBe("/login");
   });
 });

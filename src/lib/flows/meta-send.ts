@@ -14,6 +14,7 @@ import {
   isRecipientNotAllowedError,
 } from '@/lib/whatsapp/phone-utils'
 import { resolveContactSendTarget } from '@/lib/whatsapp/wa-identity'
+import { assertConversationInAccount } from '@/lib/whatsapp/conversation-scope'
 import { supabaseAdmin } from './admin-client'
 
 // ------------------------------------------------------------
@@ -100,6 +101,10 @@ export async function engineSendText(
     throw new Error('contact not found for this account')
   }
 
+  // Same for the conversation the message lands in — see
+  // conversation-scope.ts (GHSA-m4fx-g6pr-hrw8).
+  await assertConversationInAccount(db, args.conversationId, args.accountId)
+
   // Phone number, or the business-scoped user ID when Meta has never
   // given us a number for this customer (issue #519).
   const sendTarget = resolveContactSendTarget(contact)
@@ -168,6 +173,7 @@ export async function engineSendText(
       updated_at: new Date().toISOString(),
     })
     .eq('id', args.conversationId)
+    .eq('account_id', args.accountId)
 
   return { whatsapp_message_id: waMessageId }
 }
@@ -208,6 +214,10 @@ export async function engineSendMedia(
   if (contactErr || !contact) {
     throw new Error('contact not found for this account')
   }
+
+  // Same for the conversation the message lands in — see
+  // conversation-scope.ts (GHSA-m4fx-g6pr-hrw8).
+  await assertConversationInAccount(db, args.conversationId, args.accountId)
 
   // Phone number, or the business-scoped user ID when Meta has never
   // given us a number for this customer (issue #519).
@@ -284,6 +294,7 @@ export async function engineSendMedia(
       updated_at: new Date().toISOString(),
     })
     .eq('id', args.conversationId)
+    .eq('account_id', args.accountId)
 
   return { whatsapp_message_id: waMessageId }
 }
@@ -359,6 +370,10 @@ async function sendInteractiveViaMeta(
   if (contactErr || !contact) {
     throw new Error('contact not found for this account')
   }
+
+  // Same for the conversation the message lands in — see
+  // conversation-scope.ts (GHSA-m4fx-g6pr-hrw8).
+  await assertConversationInAccount(db, input.conversationId, input.accountId)
 
   // Phone number, or the business-scoped user ID when Meta has never
   // given us a number for this customer (issue #519).
@@ -476,6 +491,7 @@ async function sendInteractiveViaMeta(
       updated_at: new Date().toISOString(),
     })
     .eq('id', input.conversationId)
+    .eq('account_id', input.accountId)
 
   return { whatsapp_message_id: waMessageId }
 }

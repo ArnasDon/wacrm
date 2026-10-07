@@ -1,4 +1,5 @@
 import { createTranslator } from 'next-intl';
+import activeMessages from '@app-messages';
 
 /**
  * Translator for code that runs outside React — API route handlers,
@@ -6,23 +7,18 @@ import { createTranslator } from 'next-intl';
  * Components should keep using `useTranslations` / `getTranslations`.
  *
  * The locale is fixed at build time (NEXT_PUBLIC_APP_LOCALE, see
- * src/i18n/request.ts), so this resolves one catalogue per process. The
- * conditional `require`s let the bundler drop the locales that aren't in
- * use instead of shipping all four to the browser. Unknown or unset locales
- * fall back to English, which is also what the test suite sees.
+ * src/i18n/request.ts), so this resolves one catalogue per process.
+ * Unknown or unset locales fall back to English, which is also what the
+ * test suite sees.
  */
 
 type Catalogue = Record<string, unknown>;
 
-/* eslint-disable @typescript-eslint/no-require-imports */
 function loadCatalogue(): { locale: string; messages: Catalogue } {
-  const locale = process.env.NEXT_PUBLIC_APP_LOCALE;
-  if (locale === 'pt') return { locale, messages: require('../../../messages/pt.json') };
-  if (locale === 'es') return { locale, messages: require('../../../messages/es.json') };
-  if (locale === 'ko') return { locale, messages: require('../../../messages/ko.json') };
-  return { locale: 'en', messages: require('../../../messages/en.json') };
+  const env = process.env.NEXT_PUBLIC_APP_LOCALE ?? '';
+  const locale = ['en', 'pt', 'es', 'ko'].includes(env) ? env : 'en';
+  return { locale, messages: activeMessages as Catalogue };
 }
-/* eslint-enable @typescript-eslint/no-require-imports */
 
 let cached: { locale: string; messages: Catalogue } | null = null;
 

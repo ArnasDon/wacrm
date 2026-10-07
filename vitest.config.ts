@@ -3,6 +3,7 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   resolve: {
     tsconfigPaths: true,
+    alias: { "@app-messages": new URL("./messages/en.json", import.meta.url).pathname },
   },
   test: {
     environment: "node",

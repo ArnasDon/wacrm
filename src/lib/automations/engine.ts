@@ -627,7 +627,7 @@ async function parkForReply(step: AutomationStep, args: ExecuteArgs): Promise<vo
     branch: args.branch,
     next_step_position: step.position + 1,
     context: args.context,
-    // For awaiting_reply rows run_at is the reply deadline (migration 043).
+    // For awaiting_reply rows run_at is the reply deadline (migration 045).
     run_at: new Date(Date.now() + REPLY_WAIT_MS).toISOString(),
     status: 'awaiting_reply',
   })

@@ -551,7 +551,7 @@ export interface SendMessageStepConfig {
  *
  * `wait_for_reply` parks the run after the send until the contact's
  * next inbound message, which then becomes `message_text` for the
- * steps after it (migration 043). Not part of the Meta payload — the
+ * steps after it (migration 045). Not part of the Meta payload — the
  * send path picks payload fields explicitly, so it never reaches Meta.
  */
 export interface InteractiveStepOptions {

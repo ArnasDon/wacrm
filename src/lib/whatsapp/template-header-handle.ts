@@ -2,6 +2,7 @@ import { uploadResumableMedia } from '@/lib/whatsapp/meta-api'
 import { MEDIA_HEADER_SPECS, isMediaHeaderKind } from '@/lib/whatsapp/media-header-types'
 import type { TemplatePayload } from '@/lib/whatsapp/template-validators'
 import { isDeliverableUrl } from '@/lib/webhooks/ssrf'
+import { getT } from '@/lib/i18n/translate'
 
 /**
  * Meta requires an `example.header_handle` (from the Resumable Upload
@@ -18,10 +19,11 @@ import { isDeliverableUrl } from '@/lib/webhooks/ssrf'
  * `media-header-types.ts` and mirror Meta's Cloud API media reference.
  */
 
+const t = getT('Validation.templates')
+
 // One message for the SSRF-guard refusal and a genuinely unreachable
 // host, across all three media kinds — see the guard comment below.
-const UNREACHABLE_MESSAGE =
-  'Could not fetch the header media URL. Make sure it is publicly reachable.'
+const unreachableMessage = () => t('headerUrlUnreachable')
 
 export async function ensureMediaHeaderHandle(
   payload: TemplatePayload,
@@ -36,9 +38,7 @@ export async function ensureMediaHeaderHandle(
 
   const appId = process.env.META_APP_ID
   if (!appId) {
-    throw new Error(
-      'Media-header templates need META_APP_ID set (used for Meta’s Resumable Upload). Add it to your environment, or remove the media header.',
-    )
+    throw new Error(t('metaAppIdRequired'))
   }
 
   // SSRF guard: `header_media_url` is caller-supplied (any authenticated
@@ -48,7 +48,7 @@ export async function ensureMediaHeaderHandle(
   // outbound-fetch call sites (see lib/webhooks/ssrf.ts) — matching the
   // unreachable-host message keeps the failure from being an oracle.
   if (!(await isDeliverableUrl(payload.header_media_url))) {
-    throw new Error(UNREACHABLE_MESSAGE)
+    throw new Error(unreachableMessage())
   }
 
   // Fetch the sample bytes (works for our uploaded chat-media URL and for
@@ -63,24 +63,28 @@ export async function ensureMediaHeaderHandle(
       signal: AbortSignal.timeout(10_000),
     })
   } catch {
-    throw new Error(UNREACHABLE_MESSAGE)
+    throw new Error(unreachableMessage())
   }
   if (!res.ok) {
-    throw new Error(`Header ${kind} URL returned ${res.status}. It must be publicly reachable.`)
+    throw new Error(t('headerUrlStatus', { kind, status: res.status }))
   }
 
   const contentType = (res.headers.get('content-type') || '').split(';')[0].trim().toLowerCase()
   if (contentType && !spec.mimeTypes.includes(contentType)) {
-    throw new Error(`Header ${kind} must be ${spec.formats} (got ${contentType}).`)
+    throw new Error(t('headerWrongType', { kind, formats: spec.formats, contentType }))
   }
 
   const bytes = new Uint8Array(await res.arrayBuffer())
   if (bytes.byteLength === 0) {
-    throw new Error(`Header ${kind} is empty.`)
+    throw new Error(t('headerEmpty', { kind }))
   }
   if (bytes.byteLength > spec.maxBytes) {
     throw new Error(
-      `Header ${kind} is ${(bytes.byteLength / 1024 / 1024).toFixed(1)} MB — Meta's limit is ${spec.maxBytes / 1024 / 1024} MB.`,
+      t('headerTooLarge', {
+        kind,
+        size: (bytes.byteLength / 1024 / 1024).toFixed(1),
+        max: spec.maxBytes / 1024 / 1024,
+      }),
     )
   }
 

@@ -8,6 +8,9 @@ import {
   rateLimitResponse,
   RATE_LIMITS,
 } from '@/lib/rate-limit';
+import { getT } from '@/lib/i18n/translate';
+
+const t = getT('Api');
 
 /**
  * POST /api/whatsapp/react
@@ -39,7 +42,7 @@ export async function POST(request: Request) {
 
     if (!message_id || typeof emoji !== 'string') {
       return NextResponse.json(
-        { error: 'message_id and emoji are required' },
+        { error: t('react.idEmojiRequired') },
         { status: 400 },
       );
     }
@@ -52,14 +55,14 @@ export async function POST(request: Request) {
       .maybeSingle();
 
     if (msgError || !targetMessage) {
-      return NextResponse.json({ error: 'Message not found' }, { status: 404 });
+      return NextResponse.json({ error: t('react.messageNotFound') }, { status: 404 });
     }
 
     if (!targetMessage.message_id) {
       // No Meta ID yet — usually a sending/failed agent message. We can't
       // tell Meta to react to a message it never received.
       return NextResponse.json(
-        { error: 'Cannot react to a message that has not been sent to WhatsApp' },
+        { error: t('react.notSent') },
         { status: 400 },
       );
     }
@@ -73,7 +76,7 @@ export async function POST(request: Request) {
 
     if (convError || !conversation) {
       return NextResponse.json(
-        { error: 'Conversation not found' },
+        { error: t('common.conversationNotFound') },
         { status: 404 },
       );
     }
@@ -86,7 +89,7 @@ export async function POST(request: Request) {
     const sendTarget = resolveContactSendTarget(contact);
     if (!sendTarget) {
       return NextResponse.json(
-        { error: 'Contact has no phone number or WhatsApp user ID' },
+        { error: t('react.contactNoPhone') },
         { status: 400 },
       );
     }
@@ -100,7 +103,7 @@ export async function POST(request: Request) {
 
     if (configError || !config) {
       return NextResponse.json(
-        { error: 'WhatsApp not configured.' },
+        { error: t('common.whatsappNotConfiguredDot') },
         { status: 400 },
       );
     }
@@ -117,10 +120,10 @@ export async function POST(request: Request) {
       });
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : 'Unknown Meta API error';
+        err instanceof Error ? err.message : t('react.unknownMetaError');
       console.error('[whatsapp/react] Meta send failed:', message);
       return NextResponse.json(
-        { error: `Meta API error: ${message}` },
+        { error: t('react.metaError', { message }) },
         { status: 502 },
       );
     }
@@ -137,7 +140,7 @@ export async function POST(request: Request) {
       if (delError) {
         console.error('[whatsapp/react] DB delete failed:', delError.message);
         return NextResponse.json(
-          { error: 'Reaction sent to Meta but DB delete failed' },
+          { error: t('react.dbDeleteFailed') },
           { status: 500 },
         );
       }
@@ -158,7 +161,7 @@ export async function POST(request: Request) {
       if (upsertError) {
         console.error('[whatsapp/react] DB upsert failed:', upsertError.message);
         return NextResponse.json(
-          { error: 'Reaction sent to Meta but DB upsert failed' },
+          { error: t('react.dbUpsertFailed') },
           { status: 500 },
         );
       }

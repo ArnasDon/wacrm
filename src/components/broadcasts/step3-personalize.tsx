@@ -192,7 +192,11 @@ export function Step3Personalize({
    * possible. Placeholders keyed by "{{N}}" map to variable key "N".
    */
   const previewText = useMemo(() => {
-    const contact = firstContact ?? SAMPLE_CONTACT;
+    const contact = firstContact ?? {
+      ...SAMPLE_CONTACT,
+      name: t('personalize.sampleName'),
+      company: t('personalize.sampleCompany'),
+    };
     const customValues = firstContact
       ? firstContactCustomValues
       : new Map<string, string>();
@@ -227,6 +231,7 @@ export function Step3Personalize({
     placeholders,
     firstContact,
     firstContactCustomValues,
+    t,
   ]);
 
   const previewLabel = firstContact

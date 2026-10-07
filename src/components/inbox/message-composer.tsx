@@ -142,6 +142,7 @@ export function MessageComposer({
   onClearReply,
 }: MessageComposerProps) {
   const t = useTranslations("Inbox.composer");
+  const tGate = useTranslations("GatedButton");
 
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
@@ -390,9 +391,11 @@ export function MessageComposer({
       const max = MEDIA_MAX_BYTES_BY_KIND[kind];
       if (file.size > max) {
         toast.error(
-          `File is ${(file.size / 1024 / 1024).toFixed(1)} MB — ${kind} limit is ${Math.round(
-            max / 1024 / 1024,
-          )} MB.`,
+          t("fileTooLarge", {
+            size: (file.size / 1024 / 1024).toFixed(1),
+            kind: t(`mediaKind.${kind}`),
+            max: Math.round(max / 1024 / 1024),
+          }),
         );
         return;
       }
@@ -403,12 +406,12 @@ export function MessageComposer({
         removeStaged(draftRef.current?.path);
         setDraft({ kind, mediaUrl: publicUrl, path, filename: file.name, caption: "" });
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Upload failed.");
+        toast.error(err instanceof Error ? err.message : t("uploadFailed"));
       } finally {
         setBusy(false);
       }
     },
-    [removeStaged],
+    [removeStaged, t],
   );
 
   const handlePicked = useCallback(
@@ -440,7 +443,7 @@ export function MessageComposer({
         removeStaged(draftRef.current?.path);
         setDraft({ kind: "audio", mediaUrl: publicUrl, path, filename: file.name, caption: "" });
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Upload failed.");
+        toast.error(err instanceof Error ? err.message : t("uploadFailed"));
       } finally {
         setBusy(false);
       }
@@ -701,7 +704,7 @@ export function MessageComposer({
             variant="ghost"
             size="sm"
             canAct={!readOnly}
-            gateReason="send messages"
+            gateReason={tGate("reasons.sendMessages")}
             title={readOnly ? undefined : t("sendTemplate")}
             className="h-9 w-9 shrink-0 p-0 text-muted-foreground hover:text-foreground"
             onClick={onOpenTemplates}
@@ -713,7 +716,7 @@ export function MessageComposer({
             variant="ghost"
             size="sm"
             canAct={!readOnly}
-            gateReason="send messages"
+            gateReason={tGate("reasons.sendMessages")}
             disabled={drafting}
             title={readOnly ? undefined : t("draftWithAI")}
             className="h-9 w-9 shrink-0 p-0 text-muted-foreground hover:text-primary"
@@ -753,7 +756,7 @@ export function MessageComposer({
           <GatedButton
             size="sm"
             canAct={!readOnly}
-            gateReason="send messages"
+            gateReason={tGate("reasons.sendMessages")}
             disabled={!text.trim() || sessionExpired || sending}
             onClick={handleSend}
             className="h-9 w-9 shrink-0 bg-primary p-0 hover:bg-primary/90 disabled:opacity-40"
@@ -838,6 +841,7 @@ function MediaDraftPreview({
   onSend: () => void;
   t: ReturnType<typeof useTranslations>;
 }) {
+  const tGate = useTranslations("GatedButton");
   return (
     <div className="rounded-xl border border-border bg-muted/40 p-3">
       <div className="flex items-start gap-3">
@@ -892,7 +896,7 @@ function MediaDraftPreview({
         <GatedButton
           size="sm"
           canAct={!readOnly}
-          gateReason="send messages"
+          gateReason={tGate("reasons.sendMessages")}
           disabled={busy}
           onClick={onSend}
           className={cn(

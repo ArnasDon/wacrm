@@ -17,6 +17,9 @@ import { NextResponse } from "next/server";
 import { getCurrentAccount, toErrorResponse } from "@/lib/auth/account";
 import { canManageMembers, isAccountRole } from "@/lib/auth/roles";
 import type { AccountMember } from "@/types";
+import { getT } from "@/lib/i18n/translate";
+
+const t = getT("Api");
 
 interface ProfileRow {
   user_id: string;
@@ -42,7 +45,7 @@ export async function GET() {
     if (error) {
       console.error("[GET /api/account/members] fetch error:", error);
       return NextResponse.json(
-        { error: "Failed to load members" },
+        { error: t('account.members.loadFailed') },
         { status: 500 },
       );
     }

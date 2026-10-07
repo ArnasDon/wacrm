@@ -5,6 +5,9 @@ import { decrypt } from '@/lib/whatsapp/encryption'
 import { validateAiCredentials } from '@/lib/ai/validate'
 import { AiError, type AiProvider } from '@/lib/ai/types'
 import { normalizeOpenAiCompatibleBaseUrl } from '@/lib/ai/providers/openai-compatible'
+import { getT } from '@/lib/i18n/translate'
+
+const t = getT('Api')
 
 /**
  * POST /api/ai/test  (admin+)
@@ -24,19 +27,19 @@ export async function POST(request: Request) {
 
     const body = await request.json().catch(() => null)
     if (!body || typeof body !== 'object') {
-      return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
+      return NextResponse.json({ error: t('common.invalidRequestBody') }, { status: 400 })
     }
 
     const provider = body.provider as AiProvider
     if (provider !== 'openai' && provider !== 'anthropic' && provider !== 'openai_compatible') {
       return NextResponse.json(
-        { error: 'provider must be "openai", "anthropic", or "openai_compatible"' },
+        { error: t('ai.providerInvalid') },
         { status: 400 },
       )
     }
     const model = typeof body.model === 'string' ? body.model.trim() : ''
     if (!model) {
-      return NextResponse.json({ error: 'model is required' }, { status: 400 })
+      return NextResponse.json({ error: t('ai.modelRequired') }, { status: 400 })
     }
     const baseUrlProvided = 'base_url' in body
     const requestedBaseUrl = typeof body.base_url === 'string' ? body.base_url.trim() : ''
@@ -55,7 +58,7 @@ export async function POST(request: Request) {
     if (!apiKeyPlain) {
       if (!existing?.api_key) {
         return NextResponse.json(
-          { error: 'Enter an API key to test.' },
+          { error: t('ai.enterApiKey') },
           { status: 400 },
         )
       }
@@ -63,7 +66,7 @@ export async function POST(request: Request) {
         apiKeyPlain = decrypt(existing.api_key)
       } catch {
         return NextResponse.json(
-          { error: 'Stored API key could not be decrypted — re-enter your key.' },
+          { error: t('ai.storedKeyReenter') },
           { status: 400 },
         )
       }
@@ -76,11 +79,11 @@ export async function POST(request: Request) {
         : existing?.provider === 'openai_compatible'
           ? (existing.base_url ?? '').trim()
           : ''
-      if (!candidate) return NextResponse.json({ error: 'base_url is required for openai_compatible', code: 'invalid_base_url' }, { status: 400 })
+      if (!candidate) return NextResponse.json({ error: t('ai.baseUrlRequired'), code: 'invalid_base_url' }, { status: 400 })
       try {
         normalizeOpenAiCompatibleBaseUrl(candidate)
       } catch (err) {
-        return NextResponse.json({ error: err instanceof AiError ? err.message : 'base_url must be a valid http(s) URL', code: 'invalid_base_url' }, { status: 400 })
+        return NextResponse.json({ error: err instanceof AiError ? err.message : t('ai.baseUrlInvalid'), code: 'invalid_base_url' }, { status: 400 })
       }
       baseUrl = candidate
     }
@@ -107,7 +110,7 @@ export async function POST(request: Request) {
       }
       console.error('[ai/test] validation error:', err)
       return NextResponse.json(
-        { error: 'Could not validate the API key.' },
+        { error: t('ai.validateFailed') },
         { status: 400 },
       )
     }

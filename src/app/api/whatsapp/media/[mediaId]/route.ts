@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getMediaUrl, downloadMedia } from '@/lib/whatsapp/meta-api'
 import { decrypt } from '@/lib/whatsapp/encryption'
+import { getT } from '@/lib/i18n/translate'
+
+const t = getT('Api')
 
 export async function GET(
   request: Request,
@@ -12,7 +15,7 @@ export async function GET(
 
     if (!mediaId) {
       return NextResponse.json(
-        { error: 'Media ID is required' },
+        { error: t('media.idRequired') },
         { status: 400 }
       )
     }
@@ -26,7 +29,7 @@ export async function GET(
 
     if (authError || !user) {
       return NextResponse.json(
-        { error: 'Unauthorized' },
+        { error: t('common.unauthorized') },
         { status: 401 }
       )
     }
@@ -43,7 +46,7 @@ export async function GET(
     const accountId = profile?.account_id as string | undefined
     if (!accountId) {
       return NextResponse.json(
-        { error: 'Your profile is not linked to an account.' },
+        { error: t('common.profileNotLinked') },
         { status: 403 },
       )
     }
@@ -57,7 +60,7 @@ export async function GET(
 
     if (configError || !config) {
       return NextResponse.json(
-        { error: 'WhatsApp not configured' },
+        { error: t('common.whatsappNotConfigured') },
         { status: 400 }
       )
     }
@@ -83,7 +86,7 @@ export async function GET(
   } catch (error) {
     console.error('Error in WhatsApp media GET:', error)
     return NextResponse.json(
-      { error: 'Failed to fetch media' },
+      { error: t('media.fetchFailed') },
       { status: 500 }
     )
   }

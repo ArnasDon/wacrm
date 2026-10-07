@@ -16,6 +16,9 @@ import {
   templateContentText,
 } from '@/lib/whatsapp/template-body'
 import { supabaseAdmin } from './admin-client'
+import { getT } from '@/lib/i18n/translate'
+
+const t = getT('LibErrors')
 
 // ------------------------------------------------------------
 // Automation-side Meta sender.
@@ -127,7 +130,7 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
     .eq('account_id', input.accountId)
     .maybeSingle()
   if (contactErr || !contact) {
-    throw new Error('contact not found for this account')
+    throw new Error(t('send.contactNotFound'))
   }
 
   // Same for the conversation the message lands in — see
@@ -139,7 +142,7 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
   const sendTarget = resolveContactSendTarget(contact)
   if (!sendTarget) {
     throw new Error(
-      `contact has no usable WhatsApp address (phone: ${contact.phone || 'none'})`
+      t('send.noWhatsAppAddress', { phone: contact.phone || t('send.none') })
     )
   }
   const sanitized = sendTarget.target
@@ -150,7 +153,7 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
     .eq('account_id', input.accountId)
     .single()
   if (configErr || !config) {
-    throw new Error('WhatsApp not configured for this account')
+    throw new Error(t('send.notConfigured'))
   }
 
   const accessToken = decrypt(config.access_token)
@@ -242,7 +245,7 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
   if (msgErr) {
     // Meta already has the message; record the DB error but don't pretend
     // the send failed. The engine wraps this in a log line.
-    throw new Error(`sent to Meta but DB insert failed: ${msgErr.message}`)
+    throw new Error(t('send.dbInsertFailed', { message: msgErr.message }))
   }
 
   await db

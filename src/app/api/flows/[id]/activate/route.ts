@@ -3,6 +3,9 @@ import { createClient } from '@/lib/supabase/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
 import { validateFlowForActivation } from '@/lib/flows/validate'
+import { getT } from '@/lib/i18n/translate'
+
+const t = getT('Api')
 
 /**
  * POST /api/flows/[id]/activate
@@ -39,7 +42,7 @@ export async function POST(
     data: { user },
   } = await supabase.auth.getUser()
   if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return NextResponse.json({ error: t('common.unauthorized') }, { status: 401 })
   }
 
   const body = (await request.json().catch(() => null)) as
@@ -48,7 +51,7 @@ export async function POST(
   const status = body?.status
   if (!status || !['draft', 'active', 'archived'].includes(status)) {
     return NextResponse.json(
-      { error: "status must be one of 'draft' | 'active' | 'archived'" },
+      { error: t('flows.statusInvalid') },
       { status: 400 },
     )
   }
@@ -60,7 +63,7 @@ export async function POST(
     .eq('id', id)
     .maybeSingle()
   if (!existing) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    return NextResponse.json({ error: t('common.notFound') }, { status: 404 })
   }
 
   const admin = supabaseAdmin()
@@ -79,7 +82,7 @@ export async function POST(
         .eq('flow_id', id),
     ])
     if (!flow) {
-      return NextResponse.json({ error: 'Not found' }, { status: 404 })
+      return NextResponse.json({ error: t('common.notFound') }, { status: 404 })
     }
     const issues = validateFlowForActivation(
       flow as {
@@ -98,7 +101,7 @@ export async function POST(
     if (blockers.length > 0) {
       return NextResponse.json(
         {
-          error: 'Cannot activate flow — fix the issues below first.',
+          error: t('flows.cannotActivate'),
           issues,
         },
         { status: 422 },

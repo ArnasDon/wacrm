@@ -1,4 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { getT } from '@/lib/i18n/translate';
+
+const t = getT('LibErrors');
 
 export class ContactTagWriteError extends Error {
   readonly status: number;
@@ -36,13 +39,13 @@ async function assertContactAndTagOwnership(
   ]);
 
   if (contactResult.error || tagResult.error) {
-    throw new ContactTagWriteError('Could not verify contact tag ownership');
+    throw new ContactTagWriteError(t('tags.verifyFailed'));
   }
   if (!contactResult.data) {
-    throw new ContactTagWriteError('Contact not found', 404);
+    throw new ContactTagWriteError(t('tags.contactNotFound'), 404);
   }
   if (!tagResult.data) {
-    throw new ContactTagWriteError('Tag not found', 404);
+    throw new ContactTagWriteError(t('tags.tagNotFound'), 404);
   }
 }
 
@@ -66,7 +69,7 @@ export async function addContactTagIfAbsent(
   if (error?.code === '23505') return false;
   if (error) {
     throw new ContactTagWriteError(
-      `Failed to add contact tag: ${error.message}`
+      t('tags.addFailed', { message: error.message })
     );
   }
   return true;
@@ -86,7 +89,7 @@ export async function removeContactTag(
 
   if (error) {
     throw new ContactTagWriteError(
-      `Failed to remove contact tag: ${error.message}`
+      t('tags.removeFailed', { message: error.message })
     );
   }
 }

@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/automations/admin-client'
+import { getT } from '@/lib/i18n/translate'
+
+const t = getT('Api')
 
 export async function POST(
   _request: Request,
@@ -34,7 +37,7 @@ export async function POST(
     .eq('account_id', accountId)
     .maybeSingle()
   if (origErr) return NextResponse.json({ error: origErr.message }, { status: 500 })
-  if (!original) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  if (!original) return NextResponse.json({ error: t('common.notFound') }, { status: 404 })
 
   const { data: copy, error: copyErr } = await admin
     .from('automations')
@@ -45,7 +48,7 @@ export async function POST(
       // insert can never land in an account they aren't a member of.
       account_id: accountId,
       user_id: userId,
-      name: `${original.name} (Copy)`,
+      name: t('automations.copyName', { name: original.name }),
       description: original.description,
       trigger_type: original.trigger_type,
       trigger_config: original.trigger_config,
@@ -54,7 +57,7 @@ export async function POST(
     .select()
     .single()
   if (copyErr || !copy) {
-    return NextResponse.json({ error: copyErr?.message ?? 'copy failed' }, { status: 500 })
+    return NextResponse.json({ error: copyErr?.message ?? t('automations.copyFailed') }, { status: 500 })
   }
 
   const { data: steps } = await admin

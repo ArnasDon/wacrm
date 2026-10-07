@@ -15,6 +15,9 @@ import {
 import { buildMetaTemplatePayload } from '@/lib/whatsapp/template-components'
 import { ensureMediaHeaderHandle } from '@/lib/whatsapp/template-header-handle'
 import { normalizeStatus } from '@/lib/whatsapp/template-status-normalize'
+import { getT } from '@/lib/i18n/translate'
+
+const t = getT('Api')
 
 /**
  * Shared upsert payload builder — both the Meta-failure path and the
@@ -105,14 +108,14 @@ export async function POST(request: Request) {
     try {
       payload = (await request.json()) as TemplatePayload
     } catch {
-      return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 })
+      return NextResponse.json({ error: t('templates.invalidJsonBody') }, { status: 400 })
     }
 
     if (payload.category === 'Authentication') {
       return NextResponse.json(
         {
           error:
-            'AUTHENTICATION templates are not yet supported here — create them in Meta WhatsApp Manager and use "Sync from Meta".',
+            t('templates.authNotSupported'),
         },
         { status: 400 },
       )
@@ -122,7 +125,7 @@ export async function POST(request: Request) {
       validateTemplatePayload(payload)
     } catch (e) {
       return NextResponse.json(
-        { error: e instanceof Error ? e.message : 'Validation failed.' },
+        { error: e instanceof Error ? e.message : t('templates.validationFailed') },
         { status: 400 },
       )
     }
@@ -147,7 +150,7 @@ export async function POST(request: Request) {
         return NextResponse.json(
           {
             error:
-              'WhatsApp not configured. Connect your WhatsApp Business account in Settings first.',
+              t('common.whatsappNotConfiguredConnect'),
           },
           { status: 400 },
         )
@@ -156,7 +159,7 @@ export async function POST(request: Request) {
         return NextResponse.json(
           {
             error:
-              'WABA (WhatsApp Business Account) ID missing. Re-connect your account in Settings.',
+              t('common.wabaIdMissing'),
           },
           { status: 400 },
         )
@@ -173,7 +176,7 @@ export async function POST(request: Request) {
         await ensureMediaHeaderHandle(payload, accessToken)
       } catch (e) {
         return NextResponse.json(
-          { error: e instanceof Error ? e.message : 'Header media upload failed.' },
+          { error: e instanceof Error ? e.message : t('templates.headerUploadFailed') },
           { status: 400 },
         )
       }
@@ -188,7 +191,7 @@ export async function POST(request: Request) {
         metaTemplateId = meta.id
         metaStatus = meta.status
       } catch (e) {
-        const message = e instanceof Error ? e.message : 'Meta submit failed.'
+        const message = e instanceof Error ? e.message : t('templates.metaSubmitFailed')
         // Persist the failure so the user can retry; row stays DRAFT
         // until they fix and re-submit.
         await upsertTemplateRow(
@@ -203,7 +206,7 @@ export async function POST(request: Request) {
         return NextResponse.json(
           {
             error: isRateLimit
-              ? 'Meta rate limit hit (100 template creates per hour). Try again later.'
+              ? t('templates.rateLimit')
               : message,
           },
           { status: isRateLimit ? 429 : 502 },
@@ -226,7 +229,7 @@ export async function POST(request: Request) {
       // so the user can recover via "Sync from Meta".
       return NextResponse.json(
         {
-          error: `Submitted to Meta but failed to save locally: ${upsertErr.message}. Run "Sync from Meta" to recover.`,
+          error: t('templates.submittedSaveFailed', { message: upsertErr.message }),
           meta_template_id: metaTemplateId,
         },
         { status: 500 },
@@ -253,7 +256,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error:
-          error instanceof Error ? error.message : 'Failed to submit template.',
+          error instanceof Error ? error.message : t('templates.submitFailed'),
       },
       { status: 500 },
     )

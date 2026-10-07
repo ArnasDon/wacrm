@@ -8,6 +8,9 @@ import {
   type ProviderArgs,
 } from './shared'
 import { isDeliverableUrl } from '@/lib/webhooks/ssrf'
+import { getT } from '@/lib/i18n/translate'
+
+const t = getT('LibErrors')
 
 const PRIVATE_HOST_ALLOWLIST_ENV = 'AI_PROVIDER_ALLOWED_PRIVATE_HOSTS'
 
@@ -27,7 +30,7 @@ function allowedPrivateHosts(): Set<string> {
 export function normalizeOpenAiCompatibleBaseUrl(baseUrl: string): string {
   const value = baseUrl.trim().replace(/\/+$/, '')
   if (!value) {
-    throw new AiError('OpenAI-compatible API base URL is required.', {
+    throw new AiError(t('ai.compatBaseUrlRequired'), {
       code: 'invalid_base_url',
       status: 400,
     })
@@ -37,39 +40,38 @@ export function normalizeOpenAiCompatibleBaseUrl(baseUrl: string): string {
   try {
     parsed = new URL(value)
   } catch {
-    throw new AiError('OpenAI-compatible API base URL must be a valid URL.', {
+    throw new AiError(t('ai.compatBaseUrlInvalid'), {
       code: 'invalid_base_url',
       status: 400,
     })
   }
 
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    throw new AiError('OpenAI-compatible API base URL must use http:// or https://.', {
+    throw new AiError(t('ai.compatBaseUrlProtocol'), {
       code: 'invalid_base_url',
       status: 400,
     })
   }
 
   if (parsed.protocol === 'http:' && !allowedPrivateHosts().has(normalizeHost(parsed.hostname))) {
-    throw new AiError(
-      'OpenAI-compatible API base URL must use https:// unless its host is listed in ' +
-        `${PRIVATE_HOST_ALLOWLIST_ENV}.`,
-      { code: 'invalid_base_url', status: 400 },
-    )
+    throw new AiError(t('ai.compatBaseUrlHttpsRequired', { envVar: PRIVATE_HOST_ALLOWLIST_ENV }), {
+      code: 'invalid_base_url',
+      status: 400,
+    })
   }
 
   if (parsed.username || parsed.password) {
-    throw new AiError('OpenAI-compatible API base URL must not contain embedded credentials.', {
+    throw new AiError(t('ai.compatBaseUrlCredentials'), {
       code: 'invalid_base_url',
       status: 400,
     })
   }
 
   if (parsed.search || parsed.hash) {
-    throw new AiError(
-      'OpenAI-compatible API base URL must not contain a query string or fragment.',
-      { code: 'invalid_base_url', status: 400 },
-    )
+    throw new AiError(t('ai.compatBaseUrlQuery'), {
+      code: 'invalid_base_url',
+      status: 400,
+    })
   }
 
   const normalized = parsed.toString().replace(/\/+$/, '')
@@ -103,11 +105,10 @@ export async function generateOpenAiCompatible(
   }
 
   if (!deliverable) {
-    throw new AiError(
-      'OpenAI-compatible provider URL is blocked by the server outbound URL policy. ' +
-        `For an operator-approved private host, add it to ${PRIVATE_HOST_ALLOWLIST_ENV}.`,
-      { code: 'blocked_url', status: 400 },
-    )
+    throw new AiError(t('ai.compatBlockedUrl', { envVar: PRIVATE_HOST_ALLOWLIST_ENV }), {
+      code: 'blocked_url',
+      status: 400,
+    })
   }
 
   let res: Response
@@ -135,7 +136,7 @@ export async function generateOpenAiCompatible(
   const data = (await res.json().catch(() => null)) as OpenAiCompatibleResponse | null
   const text = data?.choices?.[0]?.message?.content
   if (!text || typeof text !== 'string' || !text.trim()) {
-    throw new AiError('OpenAI-compatible provider returned an empty response.', {
+    throw new AiError(t('ai.emptyResponse', { provider: 'OpenAI-compatible provider' }), {
       code: 'empty_response',
     })
   }

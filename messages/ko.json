@@ -99,7 +99,27 @@
       "timeS": "{sec}초 전",
       "timeM": "{min}분 전",
       "timeH": "{hr}시간 전",
-      "timeD": "{day}일 전"
+      "timeD": "{day}일 전",
+      "items": {
+        "newMessage": "{who}에게서 새 메시지",
+        "newContact": "새 연락처: {name}",
+        "dealInStage": "딜 \"{title}\" - {stage} 단계",
+        "dealUpdated": "딜 \"{title}\" 업데이트됨",
+        "broadcastSent": "브로드캐스트 \"{name}\" 연락처 {count}명에게 전송됨",
+        "broadcastStatus": "브로드캐스트 \"{name}\" {status} (수신자 {count}명)",
+        "broadcastStatusNames": {
+          "draft": "초안",
+          "scheduled": "예약됨",
+          "sending": "전송 중",
+          "sent": "전송됨",
+          "failed": "실패"
+        },
+        "automationFailed": "자동화 \"{name}\" 실행 실패: {who}",
+        "automationTriggered": "자동화 \"{name}\" 실행됨: {who}",
+        "unknown": "알 수 없음",
+        "aContact": "연락처",
+        "automationFallback": "자동화"
+      }
     },
     "conversationsChart": {
       "title": "기간별 대화 추이",
@@ -129,7 +149,8 @@
       "thisWeek": "이번 주:",
       "lastWeek": "지난 주:",
       "noReplies": "아직 기록된 응답이 없습니다",
-      "noRepliesHint": "고객 메시지에 답변하면 이 차트가 채워집니다."
+      "noRepliesHint": "고객 메시지에 답변하면 이 차트가 채워집니다.",
+      "avgMinutes": "평균 시간(분)"
     },
     "emptyState": {
       "title": "아직 데이터가 충분하지 않습니다"
@@ -183,7 +204,10 @@
       "sendTemplateFailed": "템플릿 전송 실패: {reason}",
       "waitForSending": "메시지 전송이 끝날 때까지 기다려 주세요",
       "reactionFailed": "반응 추가 실패: {reason}",
-      "assignmentUpdateFailed": "담당자 변경에 실패했습니다"
+      "assignmentUpdateFailed": "담당자 변경에 실패했습니다",
+      "networkError": "네트워크 오류",
+      "documentFallback": "문서",
+      "you": "나"
     },
     "sessionTimer": {
       "expired": "만료됨",
@@ -226,7 +250,15 @@
       "send": "보내기",
       "quickReplyNamePrompt": "이 빠른 답장의 이름을 지정하세요:",
       "quickReplySaved": "빠른 답장으로 저장되었습니다.",
-      "quickReplySaveError": "빠른 답장을 저장하지 못했습니다."
+      "quickReplySaveError": "빠른 답장을 저장하지 못했습니다.",
+      "fileTooLarge": "파일 크기가 {size}MB입니다 — {kind} 제한은 {max}MB입니다.",
+      "mediaKind": {
+        "image": "이미지",
+        "video": "동영상",
+        "document": "문서",
+        "audio": "오디오"
+      },
+      "uploadFailed": "업로드에 실패했습니다."
     },
     "bubble": {
       "photo": "사진",
@@ -295,7 +327,10 @@
       "finalUrl": "최종 URL: {url}",
       "back": "뒤로",
       "cancel": "취소",
-      "send": "템플릿 보내기"
+      "send": "템플릿 보내기",
+      "headerVarLabel": "헤더 {var}",
+      "bodyVarLabel": "본문 {var}",
+      "urlButtonVarLabel": "URL 버튼 \"{text}\" — {var} 값"
     },
     "sidebar": {
       "contactInfo": "연락처 정보",
@@ -360,7 +395,10 @@
       "toastFailedDelete": "연락처를 삭제하지 못했습니다",
       "toastDeleted": "연락처가 삭제되었습니다",
       "toastBulkFailedDelete": "연락처를 삭제하지 못했습니다",
-      "toastBulkDeleted": "연락처 {count}개가 삭제되었습니다"
+      "toastBulkDeleted": "연락처 {count}개가 삭제되었습니다",
+      "filterByTag": "{name}(으)로 필터링",
+      "removeTagFilter": "{name} 필터 제거",
+      "selectContact": "{name} 선택"
     },
     "form": {
       "addTitle": "연락처 추가",
@@ -394,7 +432,9 @@
       "loadingTags": "태그를 불러오는 중...",
       "noTagsAvailable": "사용 가능한 태그가 없습니다. 설정에서 태그를 만드세요.",
       "phoneRequired": "전화번호는 필수입니다",
-      "phoneNeedsCountryCode": "국가 코드를 포함하세요. 번호는 +로 시작해야 합니다 (예: +14155550123)"
+      "phoneNeedsCountryCode": "국가 코드를 포함하세요. 번호는 +로 시작해야 합니다 (예: +14155550123)",
+      "notAuthenticated": "인증되지 않았습니다",
+      "notLinkedToAccount": "프로필이 계정에 연결되어 있지 않습니다."
     },
     "detailView": {
       "tabs": {
@@ -457,7 +497,8 @@
       "toastCustomFieldsSaved": "커스텀 필드가 저장되었습니다",
       "toastCustomFieldsFailed": "커스텀 필드를 저장하지 못했습니다",
       "toastTemplateSent": "\"{name}\" 템플릿을 보냈습니다",
-      "toastTemplateFailed": "템플릿을 보내지 못했습니다: {reason}"
+      "toastTemplateFailed": "템플릿을 보내지 못했습니다: {reason}",
+      "networkError": "네트워크 오류"
     },
     "importModal": {
       "title": "연락처 가져오기",
@@ -507,7 +548,10 @@
       "toastInvalidPhone_plural": "연락처 {count}개에 사용할 수 있는 전화번호가 없었습니다",
       "toastFailed": "연락처 {count}개를 가져오지 못했습니다",
       "toastFailed_plural": "연락처 {count}개를 가져오지 못했습니다",
-      "toastError": "가져오기 실패"
+      "toastError": "가져오기 실패",
+      "notAuthenticated": "인증되지 않았습니다",
+      "notLinkedToAccount": "프로필이 계정에 연결되어 있지 않습니다.",
+      "toastTagsSkippedMore": " (외 {count}개)"
     },
     "customFields": {
       "title": "커스텀 필드",
@@ -548,7 +592,15 @@
       "toastFailedMoveDeal": "딜을 이동하지 못했습니다",
       "toastFailedCreatePipeline": "파이프라인을 만들지 못했습니다",
       "toastPipelineCreated": "파이프라인이 생성되었습니다",
-      "toastNotLinkedToAccount": "프로필이 계정에 연결되어 있지 않습니다."
+      "toastNotLinkedToAccount": "프로필이 계정에 연결되어 있지 않습니다.",
+      "defaultPipelineName": "영업 파이프라인",
+      "defaultStages": {
+        "newLead": "신규 리드",
+        "qualified": "검증됨",
+        "proposalSent": "제안서 발송",
+        "negotiation": "협상",
+        "won": "성사"
+      }
     },
     "board": {
       "dropDealHere": "여기에 딜을 놓으세요",
@@ -623,7 +675,8 @@
       "toastMoveOrDeleteDeals": "먼저 이 단계의 딜을 이동하거나 삭제하세요",
       "toastFailedDeleteStage": "단계를 삭제하지 못했습니다",
       "toastFailedDeletePipeline": "파이프라인을 삭제하지 못했습니다",
-      "toastDeleted": "파이프라인이 삭제되었습니다"
+      "toastDeleted": "파이프라인이 삭제되었습니다",
+      "pickColor": "{color} 색상 선택"
     },
     "analytics": {
       "totalDeals": "전체 딜",
@@ -719,7 +772,9 @@
       "retryFailed": "실패 재시도 ({count})",
       "toastResumeStarted": "{count}명에게 백그라운드로 발송 중입니다.",
       "toastResumeStartedCapped": "{count}명에게 백그라운드로 발송 중입니다. 나머지 {remaining}명은 한 번 더 실행해야 합니다.",
-      "toastResumeFailed": "이어서 발송할 수 없습니다: {error}"
+      "toastResumeFailed": "이어서 발송할 수 없습니다: {error}",
+      "unknownError": "알 수 없는 오류",
+      "unknownContact": "알 수 없음"
     },
     "new": {
       "title": "새 브로드캐스트",
@@ -734,7 +789,8 @@
       "toastNotSignedIn": "로그인되어 있지 않습니다.",
       "toastNotLinked": "프로필이 계정에 연결되어 있지 않습니다.",
       "toastFailedDraft": "초안 저장 실패: {error}",
-      "toastDraftSaved": "초안이 저장되었습니다"
+      "toastDraftSaved": "초안이 저장되었습니다",
+      "broadcastFailed": "브로드캐스트 실패"
     },
     "wizard": {
       "next": "다음",
@@ -783,7 +839,9 @@
         "errorCsvParse": "CSV 파일을 파싱할 수 없습니다.",
         "errorCsvMissingPhone": "CSV에 'phone' 열이 있어야 합니다.",
         "audienceSummary": "대상 요약",
-        "calculating": "계산 중…"
+        "calculating": "계산 중…",
+        "estimatedRecipients": "예상 수신자",
+        "selectTypeForEstimate": "예상치를 보려면 대상 유형을 선택하세요."
       },
       "personalize": {
         "title": "변수 개인화",
@@ -817,7 +875,9 @@
           "name": "이름",
           "phone": "전화번호",
           "email": "이메일"
-        }
+        },
+        "sampleName": "홍길동",
+        "sampleCompany": "예시 주식회사"
       },
       "scheduleSend": {
         "title": "검토 및 전송",
@@ -844,6 +904,20 @@
         "confirmTitle": "브로드캐스트 확인",
         "confirmDesc": "<b>{template}</b> 템플릿으로 연락처 <b>{count, number}</b>명에게 이 브로드캐스트를 보내려고 합니다. 이 작업은 되돌릴 수 없습니다."
       }
+    },
+    "sending": {
+      "notSignedIn": "로그인되어 있지 않습니다.",
+      "notLinkedToAccount": "프로필이 계정에 연결되어 있지 않습니다.",
+      "lookupCsvContactsFailed": "CSV 연락처를 조회하지 못했습니다: {error}",
+      "createCsvContactsFailed": "CSV 연락처를 만들지 못했습니다: {error}",
+      "noContactsForAudience": "이 대상에 해당하는 연락처가 없습니다.",
+      "createBroadcastFailed": "브로드캐스트를 만들지 못했습니다: {error}",
+      "unknownErrorLower": "알 수 없는 오류",
+      "insertRecipientBatchFailed": "수신자 배치 {batch}을(를) 추가하지 못했습니다: {error}",
+      "fetchRecipientsFailed": "브로드캐스트 수신자를 가져오지 못했습니다",
+      "apiRequestFailed": "브로드캐스트 API 요청 실패",
+      "noPhoneOnContact": "연락처에 전화번호가 없습니다",
+      "unknownError": "알 수 없는 오류"
     }
   },
   "Automations": {
@@ -877,7 +951,8 @@
         "updateError": "업데이트하지 못했습니다",
         "duplicateError": "복제하지 못했습니다",
         "deleteError": "삭제하지 못했습니다"
-      }
+      },
+      "loadFailed": "자동화를 불러오지 못했습니다"
     },
     "edit": {
       "loading": "불러오는 중...",
@@ -977,7 +1052,8 @@
       "toasts": {
         "saved": "자동화가 저장되었습니다",
         "created": "자동화가 생성되었습니다",
-        "saveFailed": "저장 실패"
+        "saveFailed": "저장 실패",
+        "issueAt": "위치: {path}"
       },
       "tags": {
         "select": "태그 선택…",
@@ -1071,6 +1147,20 @@
         "waitForReply": "계속하기 전에 답장 기다리기",
         "waitForReplyHint": "고객이 버튼을 누르거나 답장할 때까지 여기서 멈춥니다(최대 24시간). 이후 단계(메시지 내용 조건 포함)는 그 답장을 사용합니다.",
         "closeConversationHint": "대화 상태를 \"닫힘\"으로 설정합니다. 추가 설정이 필요 없습니다."
+      },
+      "preview": {
+        "noText": "아직 텍스트 없음",
+        "noBody": "아직 본문 없음",
+        "withWaitForReply": "{preview} · 답장 대기",
+        "pickTemplate": "템플릿을 선택하세요",
+        "wait": "{amount} {unit}",
+        "units": {
+          "minutes": "분",
+          "hours": "시간",
+          "days": "일"
+        },
+        "when": "{subject} 조건",
+        "noUrl": "URL 없음"
       }
     }
   },
@@ -1106,7 +1196,8 @@
       "triggerKeywordNone": "키워드로 트리거 (설정 안 됨)",
       "triggerKeyword": "트리거 조건: {keywords}",
       "triggerFirstInbound": "연락처의 첫 수신 메시지에서 트리거됨",
-      "triggerManual": "수동 트리거"
+      "triggerManual": "수동 트리거",
+      "cloneFailedStatus": "복제 실패: {status}"
     },
     "edit": {
       "notFound": "플로우를 찾을 수 없습니다.",
@@ -1221,7 +1312,8 @@
         "fileUploaded": "파일이 업로드되었습니다.",
         "uploadFailed": "업로드에 실패했습니다.",
         "fileTooLarge": "파일이 {size}MB입니다 — 제한은 16MB입니다.",
-        "defaultOptionTitle": "옵션"
+        "defaultOptionTitle": "옵션",
+        "optionN": "옵션 {n}"
       },
       "categories": {
         "messaging": "메시징",
@@ -1282,7 +1374,15 @@
       "statusActivated": "플로우가 활성화되었습니다.",
       "statusArchived": "보관되었습니다.",
       "statusDraft": "초안으로 저장되었습니다.",
-      "deleteConfirm": "\"{name}\"을(를) 삭제할까요? 진행 중인 실행이 즉시 종료되며 되돌릴 수 없습니다."
+      "deleteConfirm": "\"{name}\"을(를) 삭제할까요? 진행 중인 실행이 즉시 종료되며 되돌릴 수 없습니다.",
+      "defaultYes": "예",
+      "defaultListButton": "옵션 보기",
+      "saveFailedStatus": "저장 실패: {status}",
+      "saveFailed": "저장 실패",
+      "statusUpdateFailedStatus": "상태 업데이트 실패: {status}",
+      "statusUpdateFailed": "상태 업데이트 실패",
+      "deleteFailedStatus": "삭제 실패: {status}",
+      "deleteFailed": "삭제 실패"
     },
     "summary": {
       "options": "옵션 {count}개",
@@ -1404,7 +1504,8 @@
       "labelTooLong": "라벨은 {max}자 이하여야 합니다",
       "copied": "초대 링크가 복사되었습니다",
       "clipboardBlocked": "클립보드 접근이 차단되었습니다 — 링크를 직접 복사하세요",
-      "whatsappMessage": "이 링크(유효 기간 {expiresInDays}일)로 wacrm의 {accountName}에 참여하세요: {url}"
+      "whatsappMessage": "이 링크(유효 기간 {expiresInDays}일)로 wacrm의 {accountName}에 참여하세요: {url}",
+      "createFailed": "초대를 만들지 못했습니다"
     },
     "tagsAndFields": {
       "title": "필드 & 태그",
@@ -1464,13 +1565,11 @@
       "deleteLocallyAria": "로컬에서 템플릿 삭제",
       "deleteMetaLocallyTitle": "Meta와 로컬에서 삭제",
       "deleteLocallyTitle": "로컬에서 삭제",
-
       "dialogEditTitle": "메시지 템플릿 수정",
       "dialogNewTitle": "새 메시지 템플릿",
       "dialogEditDesc": "변경 사항을 저장해 Meta에 재제출하세요. 검토 중에는 상태가 다시 대기 중으로 바뀝니다.",
       "dialogNewDesc": "템플릿을 만들어 Meta 승인을 요청하세요. 승인되면 브로드캐스트와 인박스에서 사용할 수 있습니다.",
       "authWarning": "AUTHENTICATION 템플릿은 본문과 OTP 버튼 형식이 고정되어 있어 별도의 빌더가 필요합니다. 지금은 Meta WhatsApp 관리자에서 만든 뒤 <bold>Meta에서 동기화</bold>로 가져오세요.",
-
       "templateName": "템플릿 이름",
       "namePlaceholder": "예: order_confirmation",
       "nameFixed": "템플릿이 Meta에 존재하면 이름이 고정됩니다 — 변경하려면 새 템플릿을 만드세요.",
@@ -1479,7 +1578,6 @@
       "language": "언어",
       "langFixed": "템플릿이 Meta에 존재하면 언어가 고정됩니다.",
       "langHint": "Meta의 정확한 코드와 일치해야 합니다 — <code>en_US</code>와 <code>en</code>은 다른 코드입니다.",
-
       "header": "헤더",
       "headerNone": "없음",
       "headerText": "텍스트",
@@ -1489,7 +1587,6 @@
       "headerTextPlaceholder": "헤더 텍스트 (최대 60자, {{1}} 선택 가능)",
       "headerSampleAria": "헤더 변수 샘플 값",
       "headerSamplePlaceholder": "{{1}}의 샘플 값 (Meta 검토에 필요)",
-
       "uploadImage": "이미지 업로드",
       "uploadVideo": "동영상 업로드",
       "uploadDocument": "문서 업로드",
@@ -1501,17 +1598,14 @@
       "mediaHint": "파일을 업로드하거나 공개 HTTPS 링크를 붙여넣으세요 — 검토를 위해 자동으로 Meta에 업로드됩니다.",
       "videoHint": " MP4 또는 3GPP, 16MB 이하, 60초 이하 권장.",
       "documentHint": " PDF, Word, PowerPoint, Excel 또는 텍스트, 링크는 100MB 이하(여기서 업로드 시 16MB 이하).",
-
       "bodyText": "본문 텍스트",
       "bodyPlaceholder": "안녕하세요 {{1}}님, 주문 {{2}}이(가) 확정되었습니다.",
       "sampleValues": "샘플 값 (Meta가 템플릿 검토에 사용합니다)",
       "bodyHint": "변수에는 {{1}}, {{2}}를 사용하세요 ({{1}}부터 연속되어야 합니다).",
       "sampleAria": "본문 변수 {var}의 샘플 값",
       "samplePlaceholder": "{var}의 샘플",
-
       "footer": "푸터 (선택)",
       "footerPlaceholder": "선택적 푸터 텍스트 (최대 60자)",
-
       "buttons": "버튼 (선택)",
       "addButton": "버튼 추가",
       "buttonsLimit": "최대 {max}개 버튼. QUICK_REPLY 버튼은 URL / 전화 / 코드 복사 버튼보다 앞에 와야 합니다.",
@@ -1524,19 +1618,16 @@
       "urlSamplePlaceholder": "{{1}}의 예시 값 (URL에 변수가 있을 때 필요)",
       "phonePlaceholder": "+15551234567",
       "codePlaceholder": "예시 코드 (예: SUMMER20)",
-
       "cancel": "취소",
       "saving": "저장 중…",
       "submitting": "제출 중…",
       "saveResubmit": "저장 & 재제출",
       "submitApproval": "승인 요청",
-
       "deleteDialogTitle": "템플릿을 삭제하시겠습니까?",
       "deleteMetaDesc": "\"{name}\"이(가) Meta와 wacrm에서 삭제됩니다. 이 템플릿을 사용하는 활성 브로드캐스트는 다음 전송부터 실패하기 시작합니다. 되돌릴 수 없습니다.",
       "deleteLocalDesc": "\"{name}\"이(가) wacrm에서 삭제됩니다. Meta에 제출된 적이 없으므로 별도의 원격 정리가 필요하지 않습니다.",
       "deleting": "삭제 중…",
       "delete": "삭제",
-
       "toastLoadFailed": "템플릿을 불러오지 못했습니다",
       "toastSubmitFailed": "제출하지 못했습니다",
       "toastSubmitEditSuccess": "수정 사항이 제출되었습니다 — Meta는 보통 24시간 이내에 검토합니다.",
@@ -1555,7 +1646,16 @@
       "toastInvalidDocument": "헤더 문서는 PDF, Word, PowerPoint, Excel 또는 텍스트 파일이어야 합니다.",
       "toastMediaTooLarge": "파일 크기가 {size}MB입니다 — 업로드 제한은 {max}MB입니다.",
       "toastUploadSuccess": "파일이 업로드되었습니다.",
-      "toastUploadFailed": "업로드에 실패했습니다."
+      "toastUploadFailed": "업로드에 실패했습니다.",
+      "syncFailedHttp": "동기화 실패 (HTTP {status})",
+      "deleteFailedHttp": "삭제 실패 (HTTP {status})",
+      "syncMoreSuffix": ", 외 {count}개",
+      "headerSampleAlt": "헤더 샘플",
+      "categoryLabels": {
+        "Marketing": "마케팅",
+        "Utility": "유틸리티",
+        "Authentication": "인증"
+      }
     },
     "roles": {
       "admin": "관리자",
@@ -1718,7 +1818,6 @@
       "profileSaved": "프로필이 저장되었습니다",
       "emailChangeFailed": "이메일 변경 실패: {message}",
       "profileSavedEmailCheck": "프로필이 저장되었습니다 — 이메일 주소 변경을 확인하려면 이메일을 확인하세요",
-
       "passwordTitle": "비밀번호",
       "passwordDesc": "최소 {min}자 이상 사용하세요. 변경 후에도 이 기기에서는 로그인이 유지됩니다.",
       "currentPassword": "현재 비밀번호",
@@ -1732,7 +1831,6 @@
       "currentPasswordIncorrect": "현재 비밀번호가 올바르지 않습니다",
       "passwordUpdateFailed": "비밀번호 업데이트 실패: {message}",
       "passwordUpdated": "비밀번호가 업데이트되었습니다",
-
       "sessionsTitle": "활성 세션",
       "sessionsDesc": "이 기기를 포함해 로그인되어 있는 모든 기기에서 로그아웃합니다. 노트북을 분실했거나 비밀번호를 공유한 경우 유용합니다.",
       "signOutAll": "모든 기기에서 로그아웃",
@@ -1741,7 +1839,9 @@
       "cancel": "취소",
       "signingOut": "로그아웃 중…",
       "signOutEverywhere": "모든 곳에서 로그아웃",
-      "signOutFailed": "로그아웃 실패: {message}"
+      "signOutFailed": "로그아웃 실패: {message}",
+      "avatarAlt": "아바타",
+      "fullNamePlaceholder": "김민지"
     },
     "appearance": {
       "title": "화면 설정",
@@ -1751,7 +1851,8 @@
       "useMode": "{mode} 모드 사용",
       "active": "사용 중",
       "accentColor": "강조 색상",
-      "useTheme": "{name} 테마 사용"
+      "useTheme": "{name} 테마 사용",
+      "themeId": "테마 ID: {id}"
     },
     "security": {
       "title": "로그인 & 보안",
@@ -1903,6 +2004,26 @@
       "editDoc": "수정",
       "deleteDoc": "삭제",
       "loading": "불러오는 중…"
+    },
+    "quickReplies": {
+      "nameRequired": "빠른 답장의 이름을 입력하세요.",
+      "saveError": "빠른 답장을 저장하지 못했습니다.",
+      "updated": "빠른 답장을 수정했습니다.",
+      "created": "빠른 답장을 만들었습니다.",
+      "deleteConfirm": "이 빠른 답장을 삭제할까요?",
+      "deleteError": "빠른 답장을 삭제하지 못했습니다.",
+      "title": "빠른 답장",
+      "description": "상담원이 인박스 작성기에서 삽입할 수 있는 재사용 가능한 문구(일반 텍스트 또는 저장된 인터랙티브 메시지)입니다.",
+      "new": "새 빠른 답장",
+      "edit": "빠른 답장 편집",
+      "empty": "아직 빠른 답장이 없습니다. 하나 만들어 여러 대화에서 재사용하세요.",
+      "nameLabel": "이름",
+      "namePlaceholder": "예: 영업시간",
+      "kindText": "텍스트",
+      "kindInteractive": "인터랙티브",
+      "textPlaceholder": "삽입할 메시지 텍스트",
+      "cancel": "취소",
+      "save": "저장"
     }
   },
   "SignupPage": {
@@ -2063,9 +2184,536 @@
     "rowTitlePlaceholder": "행 제목",
     "rowDescriptionPlaceholder": "설명 (선택)",
     "addRow": "행 추가",
-    "addSection": "섹션 추가"
+    "addSection": "섹션 추가",
+    "defaultListButton": "메뉴"
   },
   "DashboardShell": {
     "loading": "불러오는 중..."
+  },
+  "UiPrimitives": {
+    "close": "닫기"
+  },
+  "GatedButton": {
+    "readOnly": "읽기 전용 — 현재 역할로는 {action} 수 없습니다",
+    "reasons": {
+      "createAutomations": "자동화를 만들",
+      "createBroadcasts": "브로드캐스트를 만들",
+      "addOrImportContacts": "연락처를 추가하거나 가져올",
+      "deleteContacts": "연락처를 삭제할",
+      "createFlows": "플로우를 만들",
+      "createPipelines": "파이프라인을 만들",
+      "createDeals": "거래를 만들",
+      "sendMessages": "메시지를 보낼"
+    }
+  },
+  "Metadata": {
+    "description": "직접 호스팅할 수 있는 WhatsApp용 CRM 템플릿입니다."
+  },
+  "Currency": {
+    "USD": "미국 달러",
+    "EUR": "유로",
+    "GBP": "영국 파운드",
+    "INR": "인도 루피",
+    "AUD": "호주 달러",
+    "CAD": "캐나다 달러",
+    "BRL": "브라질 헤알",
+    "JPY": "일본 엔",
+    "CNY": "중국 위안",
+    "AED": "UAE 디르함",
+    "ZAR": "남아프리카 랜드",
+    "NGN": "나이지리아 나이라",
+    "SGD": "싱가포르 달러",
+    "MXN": "멕시코 페소",
+    "COP": "콜롬비아 페소"
+  },
+  "TemplateStatus": {
+    "DRAFT": "초안",
+    "PENDING": "대기 중",
+    "APPROVED": "승인됨",
+    "REJECTED": "거부됨",
+    "PAUSED": "일시 중지됨",
+    "DISABLED": "비활성화됨",
+    "IN_APPEAL": "이의 제기 중",
+    "PENDING_DELETION": "삭제 대기 중"
+  },
+  "StarterAutomations": {
+    "welcome_message": {
+      "name": "환영 메시지",
+      "description": "처음 연락한 연락처에게 인사말로 자동 응답합니다.",
+      "text": "안녕하세요! 👋 연락 주셔서 감사합니다. 곧 답변드리겠습니다."
+    },
+    "out_of_office": {
+      "name": "부재중",
+      "description": "업무 시간 외에 자동 응답하여 아무도 기다리지 않게 합니다.",
+      "text": "메시지 감사합니다! 지금은 업무 시간(오전 9시–오후 6시)이 아니며, 내일 아침 가장 먼저 답변드리겠습니다."
+    },
+    "lead_qualifier": {
+      "name": "리드 검증",
+      "description": "검증 질문으로 유입 리드를 선별합니다.",
+      "keywords": "가격,견적,구매",
+      "text": "좋습니다 — 가격 안내를 도와드리겠습니다! 간단한 질문: 대략 몇 개의 좌석(라이선스)이 필요하신가요?"
+    },
+    "follow_up_reminder": {
+      "name": "후속 리마인더",
+      "description": "연락처가 24시간 이내에 답장하지 않으면 리마인더를 보냅니다.",
+      "text": "다시 연락드립니다 — 다른 궁금한 점이 있으신가요? 기꺼이 도와드리겠습니다!"
+    }
+  },
+  "StarterFlows": {
+    "welcome_menu": {
+      "name": "환영 메뉴",
+      "description": "키워드를 입력한 고객을 맞이하고 신규 또는 기존 고객 여부에 따라 적합한 상담원에게 연결합니다.",
+      "keywords": "지원,도움,안녕",
+      "text": "안녕하세요! 👋 고객 지원에 오신 것을 환영합니다. 기존 고객이신가요, 신규 고객이신가요?",
+      "footer": "계속하려면 아래 버튼을 누르세요.",
+      "existingButton": "기존 고객",
+      "newButton": "신규 고객",
+      "existingNote": "기존 고객이 도움을 요청합니다 — 답장하기 전에 계정 이력을 확인하세요.",
+      "newNote": "신규 고객 — 가격 정보와 온보딩 링크를 공유하세요."
+    },
+    "faq_bot": {
+      "name": "FAQ 봇",
+      "description": "자주 묻는 질문에 자동으로 답변합니다. 고객이 목록에서 주제를 고르면 봇이 답변하고 종료합니다.",
+      "keywords": "faq,질문,정보",
+      "text": "무엇을 도와드릴까요?",
+      "buttonLabel": "주제 보기",
+      "commonSection": "자주 묻는 질문",
+      "hoursRow": "영업시간",
+      "pricingRow": "가격",
+      "refundsRow": "환불 정책",
+      "otherSection": "기타",
+      "humanRow": "상담원과 대화",
+      "hoursAnswer": "월–금, 현지 시간 오전 9시–오후 6시에 운영합니다. 주말에는 긴급한 문제만 지원합니다.",
+      "pricingAnswer": "요금은 월 $9부터 시작합니다. 자세한 내용은 https://example.com/pricing 에서 확인하세요.",
+      "refundsAnswer": "구매 후 30일 이내에 환불이 가능합니다. 주문 번호를 답장으로 보내주시면 처리해 드리겠습니다.",
+      "humanNote": "고객이 FAQ 봇에서 상담원과의 대화를 요청했습니다."
+    },
+    "lead_capture": {
+      "name": "리드 수집",
+      "description": "처음 문의한 고객을 맞이하고 이름 + 이메일 + 회사를 수집한 뒤, 답변을 메모에 담아 영업팀에 인계합니다.",
+      "intro": "환영합니다! 👋 적합한 담당자에게 연결해 드리기 위해 몇 가지 간단한 질문을 드리겠습니다.",
+      "askName": "성함이 어떻게 되시나요?",
+      "askEmail": "감사합니다, {name}님! 업무용 이메일 주소를 알려주세요.",
+      "askCompany": "거의 끝났습니다 — 회사 이름이 무엇인가요?",
+      "handoffNote": "신규 리드 — 이름={name}, 이메일={email}, 회사={company}."
+    }
+  },
+  "LibErrors": {
+    "upload": {
+      "notSignedIn": "로그인되어 있지 않습니다.",
+      "accountUnresolved": "계정을 확인할 수 없습니다."
+    },
+    "media": {
+      "noAttachment": "이 메시지에는 첨부 파일이 없습니다."
+    },
+    "ai": {
+      "timeout": "AI 제공업체의 응답 시간이 너무 깁니다.",
+      "unreachable": "AI 제공업체에 연결할 수 없습니다: {message}",
+      "emptyResponse": "{provider}에서 빈 응답을 반환했습니다.",
+      "compatBaseUrlRequired": "OpenAI 호환 API 기본 URL은 필수입니다.",
+      "compatBaseUrlInvalid": "OpenAI 호환 API 기본 URL은 올바른 URL이어야 합니다.",
+      "compatBaseUrlProtocol": "OpenAI 호환 API 기본 URL은 http:// 또는 https://를 사용해야 합니다.",
+      "compatBaseUrlHttpsRequired": "OpenAI 호환 API 기본 URL은 호스트가 {envVar}에 등록되어 있지 않으면 https://를 사용해야 합니다.",
+      "compatBaseUrlCredentials": "OpenAI 호환 API 기본 URL에는 인증 정보를 포함할 수 없습니다.",
+      "compatBaseUrlQuery": "OpenAI 호환 API 기본 URL에는 쿼리 문자열이나 프래그먼트를 포함할 수 없습니다.",
+      "compatBlockedUrl": "OpenAI 호환 제공자 URL이 서버의 외부 URL 정책에 의해 차단되었습니다. 운영자가 승인한 사설 호스트라면 {envVar}에 추가하세요.",
+      "invalidKey": "{provider}에서 API 키를 거부했습니다",
+      "rateLimited": "{provider} 요청 한도에 도달했습니다",
+      "apiError": "{provider} API 오류 ({status})",
+      "embeddingsMalformed": "임베딩 응답 형식이 올바르지 않습니다.",
+      "embeddingsMissingIndices": "임베딩 응답에 결과 인덱스가 없습니다.",
+      "embeddingsMissingVector": "임베딩 응답에 벡터가 누락되었습니다."
+    },
+    "tags": {
+      "verifyFailed": "연락처 태그 소유권을 확인할 수 없습니다",
+      "contactNotFound": "연락처를 찾을 수 없습니다",
+      "tagNotFound": "태그를 찾을 수 없습니다",
+      "addFailed": "연락처 태그를 추가하지 못했습니다: {message}",
+      "removeFailed": "연락처 태그를 제거하지 못했습니다: {message}"
+    },
+    "auth": {
+      "unauthorized": "인증되지 않았습니다",
+      "forbidden": "접근이 거부되었습니다",
+      "internal": "내부 서버 오류",
+      "loadContext": "계정 정보를 불러올 수 없습니다",
+      "notLinked": "프로필이 계정에 연결되어 있지 않습니다",
+      "requiresRole": "이 작업에는 {min} 이상의 역할이 필요합니다",
+      "roleNames": {
+        "owner": "소유자",
+        "admin": "관리자",
+        "agent": "상담원",
+        "viewer": "뷰어"
+      }
+    },
+    "rateLimitExceeded": "요청 한도를 초과했습니다",
+    "send": {
+      "contactNotFound": "이 계정에서 연락처를 찾을 수 없습니다",
+      "noWhatsAppAddress": "연락처에 사용할 수 있는 WhatsApp 주소가 없습니다 (전화번호: {phone})",
+      "none": "없음",
+      "notConfigured": "이 계정에 WhatsApp이 설정되어 있지 않습니다",
+      "dbInsertFailed": "Meta로 전송되었지만 DB 저장에 실패했습니다: {message}",
+      "conversationLookupFailed": "대화 조회에 실패했습니다: {message}",
+      "conversationNotFound": "이 계정에서 대화를 찾을 수 없습니다"
+    },
+    "engine": {
+      "needsContact": "{step}에는 연락처가 필요합니다",
+      "emptyText": "send_message의 텍스트가 비어 있습니다",
+      "needsTemplateName": "send_template에는 template_name이 필요합니다",
+      "needsContactAndTag": "{step}에는 연락처 + tag_id가 필요합니다",
+      "needsPipelineStage": "create_deal에는 파이프라인 + 단계가 필요합니다",
+      "needsUrl": "send_webhook에는 URL이 필요합니다",
+      "pausedWhileWaitingForReply": "답장을 기다리는 동안 자동화가 일시 중지되었습니다",
+      "noReplyWithin24h": "24시간 내 답장 없음",
+      "parkForReplyFailed": "답장 대기 상태로 전환할 수 없습니다: {message}",
+      "destinationNotAllowed": "send_webhook: 허용되지 않는 대상입니다",
+      "webhookStatus": "웹훅이 {status}을(를) 반환했습니다",
+      "conversationNotInAccount": "대화가 이 계정에 속하지 않습니다",
+      "noContactForConversation": "대화를 확인할 수 없습니다: 연락처 없음",
+      "noConversation": "전송할 수 없습니다: 연락처에 기존 대화가 없습니다",
+      "tagAddedNoConversation": "tag_added 자동화가 전송할 수 없습니다: 연락처에 기존 대화가 없습니다"
+    }
+  },
+  "Validation": {
+    "flows": {
+      "nameRequired": "플로우 이름은 필수입니다.",
+      "entryRequired": "활성화하기 전에 시작 노드를 선택하세요.",
+      "needsNode": "활성화하려면 플로우에 노드가 하나 이상 있어야 합니다.",
+      "entryMissing": "시작 노드 \"{id}\"이(가) 존재하지 않습니다.",
+      "duplicateNodeKey": "중복된 node_key \"{key}\".",
+      "unreachable": "노드 \"{key}\"은(는) 시작 노드에서 도달할 수 없습니다.",
+      "keywordsRequired": "키워드 트리거에는 키워드가 하나 이상 필요합니다.",
+      "blankKeywords": "키워드 {count}개가 비어 있습니다 — 아무것과도 일치하지 않습니다.",
+      "startNeedsNext": "시작 노드는 다음 노드를 가리켜야 합니다.",
+      "startMissingNext": "시작 노드가 존재하지 않는 노드 \"{key}\"을(를) 가리킵니다.",
+      "sendMessageNeedsText": "메시지 보내기 노드에는 본문 텍스트가 필요합니다.",
+      "sendMessageNeedsNext": "메시지 보내기 노드는 다음 노드를 가리켜야 합니다.",
+      "sendMessageMissingNext": "메시지 보내기 노드가 존재하지 않는 노드 \"{key}\"을(를) 가리킵니다.",
+      "sendMediaNeedsType": "미디어 보내기 노드에는 미디어 유형(이미지, 동영상 또는 문서)이 필요합니다.",
+      "sendMediaNeedsFile": "미디어 보내기 노드에는 파일이 필요합니다(활성화하기 전에 업로드하세요).",
+      "captionTooLong": "캡션이 {max}자를 초과합니다(WhatsApp 제한).",
+      "sendMediaNeedsNext": "미디어 보내기 노드는 다음 노드를 가리켜야 합니다.",
+      "sendMediaMissingNext": "미디어 보내기 노드가 존재하지 않는 노드 \"{key}\"을(를) 가리킵니다.",
+      "sendButtonsNeedsText": "버튼 보내기 노드에는 본문 텍스트가 필요합니다.",
+      "sendButtonsNeedsButton": "버튼 보내기에는 버튼이 하나 이상 필요합니다.",
+      "tooManyButtons": "WhatsApp는 메시지당 최대 {max}개의 버튼만 허용합니다.",
+      "buttonNeedsReplyId": "버튼 {n}에 응답 ID가 필요합니다.",
+      "duplicateButtonReplyId": "중복된 버튼 응답 ID \"{id}\".",
+      "buttonNeedsTitle": "버튼 {n}에 제목이 필요합니다.",
+      "buttonTitleTooLong": "버튼 {n}의 제목이 {max}자를 초과합니다(WhatsApp 제한).",
+      "buttonNeedsNext": "버튼 {n}에 다음 노드가 필요합니다.",
+      "buttonMissingNext": "버튼 {n}이(가) 존재하지 않는 노드 \"{key}\"을(를) 가리킵니다.",
+      "sendListNeedsText": "목록 보내기 노드에는 본문 텍스트가 필요합니다.",
+      "sendListNeedsLabel": "목록 보내기에는 버튼 라벨(탭하여 펼치는 텍스트)이 필요합니다.",
+      "sendListNeedsRow": "목록 보내기에는 행이 하나 이상 필요합니다.",
+      "tooManyRows": "목록 보내기는 모든 섹션을 합쳐 최대 {max}개의 행만 허용합니다.",
+      "rowNeedsReplyId": "섹션 {section}의 행 {row}에 응답 ID가 필요합니다.",
+      "duplicateRowId": "중복된 목록 행 ID \"{id}\".",
+      "rowNeedsTitle": "행 {n}에 제목이 필요합니다.",
+      "rowTitleTooLong": "행 {n}의 제목이 {max}자를 초과합니다.",
+      "rowDescriptionTooLong": "행 {n}의 설명이 {max}자를 초과합니다.",
+      "rowNeedsNext": "행 {n}에 다음 노드가 필요합니다.",
+      "rowMissingNext": "행 {n}이(가) 존재하지 않는 노드 \"{key}\"을(를) 가리킵니다.",
+      "collectNeedsPrompt": "입력 수집에는 고객에게 보낼 질문이 필요합니다.",
+      "collectNeedsVarKey": "입력 수집에는 답변을 저장할 var_key가 필요합니다.",
+      "invalidVarKey": "var_key \"{key}\"는 영문자, 숫자, 밑줄만 사용할 수 있으며 영문자나 밑줄로 시작해야 합니다.",
+      "collectNeedsNext": "입력 수집 노드는 다음 노드를 가리켜야 합니다.",
+      "collectMissingNext": "입력 수집 노드가 존재하지 않는 노드 \"{key}\"을(를) 가리킵니다.",
+      "conditionNeedsSubject": "조건에는 대상(var / tag / contact_field)이 필요합니다.",
+      "conditionNeedsSubjectKey": "조건에는 subject_key(변수 이름, 태그 ID 또는 필드 이름)가 필요합니다.",
+      "conditionNeedsOperator": "조건에는 연산자가 필요합니다.",
+      "operatorNeedsValue": "연산자 \"{operator}\"는 보통 비교 값이 필요합니다 — 값이 비어 있으면 비어 있는 대상과만 일치합니다.",
+      "conditionNeedsBranch": "조건의 \"{branch}\" 분기에 노드가 필요합니다.",
+      "conditionMissingBranch": "조건의 \"{branch}\"이(가) 존재하지 않는 노드 \"{key}\"을(를) 가리킵니다.",
+      "setTagNeedsMode": "연락처 태그 지정에는 모드(추가 또는 제거)가 필요합니다.",
+      "setTagNeedsTag": "연락처 태그 지정에는 적용할 태그가 필요합니다.",
+      "setTagNeedsNext": "연락처 태그 지정 노드는 다음 노드를 가리켜야 합니다.",
+      "setTagMissingNext": "연락처 태그 지정 노드가 존재하지 않는 노드 \"{key}\"을(를) 가리킵니다.",
+      "unknownNodeType": "알 수 없는 노드 유형 \"{type}\"."
+    },
+    "automations": {
+      "needsStep": "활성 자동화에는 단계가 하나 이상 필요합니다",
+      "messageTextRequired": "메시지 텍스트는 필수입니다",
+      "templateNameRequired": "템플릿 이름은 필수입니다",
+      "tagRequired": "태그는 필수입니다",
+      "agentRequired": "모드가 \"specific\"이면 상담원은 필수입니다",
+      "fieldNameRequired": "필드 이름은 필수입니다",
+      "fieldValueRequired": "필드 값은 필수입니다",
+      "pipelineRequired": "파이프라인은 필수입니다",
+      "stageRequired": "단계는 필수입니다",
+      "titleRequired": "제목은 필수입니다",
+      "waitAmountInvalid": "대기 시간은 0보다 커야 합니다",
+      "waitUnitInvalid": "대기 단위는 분, 시간 또는 일이어야 합니다",
+      "conditionSubjectRequired": "조건 대상은 필수입니다",
+      "conditionOperandRequired": "조건 피연산자는 필수입니다",
+      "webhookUrlRequired": "웹훅 URL은 필수입니다",
+      "webhookUrlScheme": "웹훅 URL은 http 또는 https를 사용해야 합니다",
+      "webhookUrlInvalid": "웹훅 URL이 올바른 URL이 아닙니다",
+      "unknownStepType": "알 수 없는 단계 유형: {type}",
+      "keywordRequired": "키워드가 하나 이상 필요합니다",
+      "keywordsEmpty": "키워드는 빈 문자열일 수 없습니다",
+      "matchTypeInvalid": "일치 유형은 \"exact\", \"contains\" 또는 \"word\"여야 합니다",
+      "scheduleRequired": "일정은 필수입니다",
+      "replyIdRequired": "응답 ID가 하나 이상 필요합니다",
+      "replyIdsEmpty": "응답 ID는 빈 문자열일 수 없습니다"
+    },
+    "templates": {
+      "nameRequired": "템플릿 이름은 필수입니다.",
+      "nameInvalid": "템플릿 이름에는 영문 소문자, 숫자, 밑줄만 사용할 수 있습니다(1-512자).",
+      "bodyNotContiguous": "본문 변수는 {first}부터 연속되어야 합니다 — 발견된 변수: {found}.",
+      "bodyRequired": "본문 텍스트는 필수입니다.",
+      "bodyTooLong": "본문 텍스트가 {max}자를 초과합니다(현재 {got}자).",
+      "footerTooLong": "푸터 텍스트가 {max}자를 초과합니다(현재 {got}자).",
+      "footerNoVariables": "푸터 텍스트에는 {placeholder} 변수를 넣을 수 없습니다(Meta 규칙).",
+      "headerTextRequired": "텍스트 헤더에는 header_content가 필요합니다.",
+      "headerTextTooLong": "헤더 텍스트가 {max}자를 초과합니다(현재 {got}자).",
+      "headerTooManyVariables": "텍스트 헤더에는 변수를 최대 1개만 사용할 수 있습니다 — {count}개 발견(Meta 규칙).",
+      "headerVariableMustBeFirst": "텍스트 헤더 변수는 {var}이어야 합니다(Meta 규칙).",
+      "mediaHeaderRequiresSource": "{type} 헤더에는 공개 샘플 URL(header_media_url) 또는 Resumable Upload 핸들(header_handle)이 필요합니다.",
+      "headerMediaUrlScheme": "header_media_url은 http(s) 스킴을 사용해야 합니다.",
+      "headerMediaUrlInvalid": "header_media_url은 올바른 URL이어야 합니다.",
+      "tooManyButtons": "템플릿에는 버튼을 최대 {max}개까지 넣을 수 있습니다(현재 {got}개).",
+      "tooManyUrlButtons": "URL 버튼은 최대 {max}개까지 허용됩니다(현재 {got}개).",
+      "tooManyPhoneButtons": "PHONE_NUMBER 버튼은 최대 {max}개까지 허용됩니다(현재 {got}개).",
+      "tooManyCopyCodeButtons": "COPY_CODE 버튼은 최대 {max}개까지 허용됩니다(현재 {got}개).",
+      "quickReplyInterleaved": "QUICK_REPLY 버튼은 URL / PHONE_NUMBER / COPY_CODE 버튼과 섞을 수 없습니다 — 맨 앞에 모아 두세요.",
+      "buttonMissingText": "버튼 #{n}({type})에 텍스트가 없습니다.",
+      "buttonTextTooLong": "버튼 #{n}의 텍스트가 {max}자를 초과합니다.",
+      "urlButtonMissingUrl": "URL 버튼 #{n}에 url이 없습니다.",
+      "urlButtonInvalidUrl": "URL 버튼 #{n}의 url이 올바르지 않습니다.",
+      "urlButtonTooManyVariables": "URL 버튼 #{n}에는 변수를 최대 1개만 사용할 수 있습니다(Meta 규칙).",
+      "urlButtonVariableMustBeFirst": "URL 버튼 #{n}의 변수는 {var}이어야 합니다(Meta 규칙).",
+      "urlButtonNeedsExample": "URL 버튼 #{n}이(가) {var}을(를) 사용합니다 — Meta는 예시 값을 요구합니다.",
+      "phoneButtonMissingNumber": "PHONE_NUMBER 버튼 #{n}에 phone_number가 없습니다.",
+      "copyCodeButtonMissingExample": "COPY_CODE 버튼 #{n}에 예시 값이 없습니다.",
+      "bodySampleCountMismatch": "본문에 변수가 {count}개 있습니다 — 샘플 값을 정확히 {count}개 입력하세요(현재 {got}개).",
+      "headerSampleCountMismatch": "헤더에 변수가 {count}개 있습니다 — 샘플 값을 정확히 {count}개 입력하세요(현재 {got}개).",
+      "bodySampleEmpty": "본문 샘플 값 #{n}이(가) 비어 있습니다.",
+      "headerSampleEmpty": "헤더 샘플 값 #{n}이(가) 비어 있습니다.",
+      "languageRequired": "언어는 필수입니다.",
+      "metaAppIdRequired": "미디어 헤더 템플릿에는 META_APP_ID 설정이 필요합니다(Meta의 Resumable Upload에 사용). 환경 변수에 추가하거나 미디어 헤더를 제거하세요.",
+      "headerUrlUnreachable": "헤더 미디어 URL을 가져올 수 없습니다. 공개적으로 접근 가능한지 확인하세요.",
+      "headerUrlStatus": "헤더 {kind} URL이 {status}을(를) 반환했습니다. 공개적으로 접근 가능해야 합니다.",
+      "headerWrongType": "헤더 {kind}은(는) {formats} 형식이어야 합니다(현재 {contentType}).",
+      "headerEmpty": "헤더 {kind}이(가) 비어 있습니다.",
+      "headerTooLarge": "헤더 {kind}의 크기가 {size} MB입니다 — Meta의 제한은 {max} MB입니다.",
+      "headerTextValueRequired": "헤더 텍스트 변수 {var}에 값이 필요합니다 — headerText를 전달하세요.",
+      "mediaHeaderSendSource": "{type} 헤더는 전송 시 미디어 링크나 id가 필요합니다 — 템플릿에 header_media_url을 설정하거나 headerMediaUrl/headerMediaId를 전달하세요.",
+      "bodyValuesMissing": "본문에 변수가 {count}개 있지만 값은 {got}개만 제공되었습니다.",
+      "urlButtonParamRequired": "URL 버튼 #{n}이(가) {var}을(를) 사용합니다 — buttonParams[{index}] 값이 필요합니다."
+    },
+    "interactive": {
+      "buttonCount": "인터랙티브 버튼 메시지에는 버튼이 1-{max}개 필요합니다(현재 {got}개).",
+      "buttonMissingId": "인터랙티브 버튼에 id가 없습니다.",
+      "duplicateButtonId": "인터랙티브 메시지에 중복된 버튼 id \"{id}\"이(가) 있습니다.",
+      "buttonMissingTitle": "인터랙티브 버튼 \"{id}\"에 제목이 없습니다.",
+      "buttonTitleTooLong": "인터랙티브 버튼 제목 \"{title}\"이(가) {max}자를 초과합니다.",
+      "listRequiresButtonLabel": "인터랙티브 목록에는 buttonLabel이 필요합니다.",
+      "listButtonLabelTooLong": "인터랙티브 목록 buttonLabel \"{label}\"이(가) {max}자를 초과합니다.",
+      "listSectionCount": "인터랙티브 목록에는 섹션이 1-{max}개 필요합니다(현재 {got}개).",
+      "listRowCount": "인터랙티브 목록에는 모든 섹션을 합쳐 행이 1-{max}개 필요합니다(현재 {got}개).",
+      "listRowMissingId": "인터랙티브 목록 행에 id가 없습니다.",
+      "duplicateRowId": "인터랙티브 목록에 중복된 행 id \"{id}\"이(가) 있습니다.",
+      "listRowMissingTitle": "인터랙티브 목록 행 \"{id}\"에 제목이 없습니다.",
+      "listRowTitleTooLong": "인터랙티브 목록 행 제목 \"{title}\"이(가) {max}자를 초과합니다.",
+      "listRowDescriptionTooLong": "인터랙티브 목록 행 \"{id}\"의 설명이 {max}자를 초과합니다.",
+      "bodyRequired": "인터랙티브 메시지에는 bodyText가 필요합니다.",
+      "bodyTooLong": "인터랙티브 bodyText가 {max}자를 초과합니다.",
+      "headerTooLong": "인터랙티브 headerText가 {max}자를 초과합니다.",
+      "footerTooLong": "인터랙티브 footerText가 {max}자를 초과합니다."
+    }
+  },
+  "Api": {
+    "common": {
+      "notFound": "찾을 수 없습니다",
+      "invalidJson": "잘못된 JSON입니다",
+      "unauthorized": "인증되지 않았습니다",
+      "internalServerError": "내부 서버 오류",
+      "profileNotLinked": "프로필이 계정에 연결되어 있지 않습니다.",
+      "conversationNotFound": "대화를 찾을 수 없습니다",
+      "failedToLoadConversation": "대화를 불러오지 못했습니다",
+      "whatsappNotConfigured": "WhatsApp가 설정되지 않았습니다",
+      "whatsappNotConfiguredDot": "WhatsApp가 설정되지 않았습니다.",
+      "whatsappNotConfiguredSetup": "WhatsApp가 설정되지 않았습니다. 먼저 WhatsApp 연동을 설정하세요.",
+      "whatsappNotConfiguredConnect": "WhatsApp가 설정되지 않았습니다. 먼저 설정에서 WhatsApp Business 계정을 연결하세요.",
+      "wabaIdMissing": "WABA(WhatsApp Business Account) ID가 없습니다. 설정에서 계정을 다시 연결하세요.",
+      "unknownError": "알 수 없는 오류",
+      "invalidRequestBody": "잘못된 요청 본문입니다",
+      "titleEmpty": "제목은 비워둘 수 없습니다",
+      "insertFailed": "추가하지 못했습니다"
+    },
+    "account": {
+      "apiKeys": {
+        "revokeFailed": "API 키를 폐기하지 못했습니다",
+        "notFoundOrRevoked": "API 키를 찾을 수 없거나 이미 폐기되었습니다",
+        "loadFailed": "API 키를 불러오지 못했습니다",
+        "nameRequired": "이름은 필수입니다",
+        "nameTooLong": "이름은 {max}자 이하여야 합니다",
+        "scopesInvalid": "권한 범위는 알려진 범위 문자열의 배열이어야 합니다",
+        "createFailed": "API 키를 생성하지 못했습니다"
+      },
+      "invitations": {
+        "revokeFailed": "초대를 취소하지 못했습니다",
+        "notFound": "초대를 찾을 수 없습니다",
+        "loadFailed": "초대 목록을 불러오지 못했습니다",
+        "roleInvalid": "역할은 admin, agent, viewer 중 하나여야 합니다",
+        "labelTooLong": "라벨은 {max}자 이하여야 합니다",
+        "createFailed": "초대를 생성하지 못했습니다"
+      },
+      "members": {
+        "loadFailed": "팀원 목록을 불러오지 못했습니다",
+        "updateFailed": "팀원을 업데이트하지 못했습니다",
+        "roleInvalid": "역할은 owner, admin, agent, viewer 중 하나여야 합니다",
+        "useTransferOwnership": "팀원을 소유자로 승격하려면 POST /api/account/transfer-ownership을 사용하세요"
+      },
+      "nameMustBeString": "이름은 문자열이어야 합니다",
+      "nameEmpty": "계정 이름은 비워둘 수 없습니다",
+      "nameTooLong": "계정 이름은 {max}자 이하여야 합니다",
+      "updateFailed": "계정을 업데이트하지 못했습니다",
+      "transferFailed": "소유권을 이전하지 못했습니다",
+      "newOwnerInvalid": "newOwnerUserId는 유효한 UUID여야 합니다"
+    },
+    "invitations": {
+      "redeemFailed": "초대를 수락하지 못했습니다",
+      "missingToken": "초대 토큰이 없습니다"
+    },
+    "ai": {
+      "pausedRequired": "paused(불리언)는 필수입니다",
+      "updateConversationFailed": "대화를 업데이트하지 못했습니다",
+      "loadConfigFailed": "AI 설정을 불러오지 못했습니다",
+      "providerInvalid": "제공자는 \"openai\", \"anthropic\" 또는 \"openai_compatible\"이어야 합니다",
+      "baseUrlRequired": "openai_compatible에는 base_url이 필수입니다",
+      "baseUrlInvalid": "base_url은 올바른 http(s) URL이어야 합니다",
+      "modelRequired": "모델은 필수입니다",
+      "handoffNotMember": "인계 담당자(handoff_agent_id)는 이 계정의 팀원이어야 합니다",
+      "storedKeyReenter": "저장된 API 키를 복호화할 수 없습니다 — 키를 다시 입력하세요.",
+      "apiKeyRequired": "API 키는 필수입니다",
+      "validateWithProviderFailed": "제공자에서 API 키를 확인할 수 없습니다.",
+      "embeddingsKeyError": "임베딩 키: {message}",
+      "validateEmbeddingsFailed": "임베딩 키를 확인할 수 없습니다.",
+      "saveConfigFailed": "AI 설정을 저장하지 못했습니다",
+      "deleteConfigFailed": "AI 설정을 삭제하지 못했습니다",
+      "conversationIdRequired": "conversation_id는 필수입니다",
+      "storedKeyUndecryptable": "저장된 API 키를 복호화할 수 없습니다.",
+      "notConfigured": "AI 어시스턴트가 설정되지 않았습니다. 설정 → AI 어시스턴트에서 활성화하세요.",
+      "noMessages": "아직 초안을 작성할 메시지가 없습니다.",
+      "messagesRequired": "messages는 필수입니다",
+      "sendMessageToTest": "에이전트를 테스트하려면 메시지를 보내세요.",
+      "noAgentConfigured": "아직 설정된 에이전트가 없습니다. 설정에서 제공자 키를 추가하세요.",
+      "enterApiKey": "테스트할 API 키를 입력하세요.",
+      "validateFailed": "API 키를 확인할 수 없습니다.",
+      "loadUsageFailed": "사용량을 불러오지 못했습니다",
+      "knowledge": {
+        "loadDocFailed": "문서를 불러오지 못했습니다",
+        "nothingToUpdate": "업데이트할 내용이 없습니다",
+        "contentEmpty": "내용은 비워둘 수 없습니다",
+        "updateDocFailed": "문서를 업데이트하지 못했습니다",
+        "indexingFailed": "색인 실패",
+        "updatedIndexFailed": "업데이트되었지만 의미 기반 색인에 실패했습니다({message}). 키워드 검색은 계속 작동합니다. 재색인을 사용해 다시 시도하세요.",
+        "updatedKeywordOnly": "키워드 검색만으로 업데이트되었습니다 — 임베딩 키를 복호화할 수 없습니다(ENCRYPTION_KEY를 확인한 후 키를 다시 입력하세요).",
+        "deleteDocFailed": "문서를 삭제하지 못했습니다",
+        "loadDocsFailed": "문서 목록을 불러오지 못했습니다",
+        "reindexKeyCorrupt": "임베딩 키를 복호화할 수 없습니다(ENCRYPTION_KEY를 확인한 후 설정 → AI 어시스턴트에서 키를 다시 입력하세요). 재색인된 항목이 없습니다.",
+        "reindexPartial": "{reindexed}개를 재색인한 후 오류가 발생했습니다: {message}",
+        "loadKbFailed": "지식베이스를 불러오지 못했습니다",
+        "titleContentRequired": "제목과 내용은 필수입니다",
+        "saveDocFailed": "문서를 저장하지 못했습니다",
+        "savedIndexFailed": "저장되었지만 의미 기반 색인에 실패했습니다({message}). 키워드 검색은 계속 작동합니다. 재색인을 사용해 다시 시도하세요.",
+        "savedKeywordOnly": "키워드 검색만으로 저장되었습니다 — 임베딩 키를 복호화할 수 없습니다(ENCRYPTION_KEY를 확인한 후 키를 다시 입력하세요)."
+      }
+    },
+    "automations": {
+      "copyName": "{name} (복사본)",
+      "copyFailed": "복제하지 못했습니다",
+      "invalidActiveConfig": "잘못된 설정으로는 자동화를 활성 상태로 유지할 수 없습니다",
+      "invalidActivateConfig": "잘못된 설정으로는 자동화를 활성화할 수 없습니다",
+      "nameTriggerRequired": "이름과 트리거는 필수입니다"
+    },
+    "contacts": {
+      "tagIdRequired": "tag_id는 필수입니다"
+    },
+    "flows": {
+      "statusInvalid": "상태는 'draft', 'active', 'archived' 중 하나여야 합니다",
+      "cannotActivate": "플로우를 활성화할 수 없습니다 — 먼저 아래 문제를 해결하세요.",
+      "nameEmpty": "이름은 비워둘 수 없습니다",
+      "unknownTemplate": "알 수 없는 플로우 템플릿 \"{slug}\"",
+      "insertFailed": "플로우를 생성하지 못했습니다",
+      "nameRequired": "이름은 필수입니다"
+    },
+    "quickReplies": {
+      "kindInvalid": "종류는 \"text\" 또는 \"interactive\"여야 합니다",
+      "contentTextRequired": "텍스트 빠른 답장에는 내용이 필요합니다",
+      "titleRequired": "제목은 필수입니다"
+    },
+    "broadcast": {
+      "alreadyRunning": "이 브로드캐스트의 발송이 이미 진행 중입니다. 완료될 때까지 기다린 후 다시 재개하세요.",
+      "recipientsRequired": "`recipients`(권장) 또는 `phone_numbers`를 제공하세요 — 비어 있지 않은 배열이어야 합니다",
+      "templateNameRequired": "템플릿 이름은 필수입니다",
+      "templateMalformed": "로컬 템플릿 데이터가 손상되었습니다 — 브로드캐스트 전에 설정에서 \"Meta에서 동기화\"를 실행해 복구하세요.",
+      "invalidPhoneFormat": "전화번호 형식이 올바르지 않습니다"
+    },
+    "whatsappConfig": {
+      "fetchFailed": "설정을 가져오지 못했습니다",
+      "noConfig": "아직 저장된 WhatsApp 설정이 없습니다. 양식을 작성하고 설정 저장을 클릭하세요.",
+      "tokenCorrupted": "저장된 액세스 토큰을 현재 ENCRYPTION_KEY로 복호화할 수 없습니다. 보통 키가 변경되었거나 환경마다 다르기 때문입니다(local vs Hostinger vs Vercel). 아래의 \"설정 초기화\"를 클릭한 후 다시 저장하세요.",
+      "credentialsRequired": "access_token과 phone_number_id는 필수입니다",
+      "phoneIdDigits": "Phone Number ID는 숫자만 포함해야 합니다 — 전화번호 자체가 아니라 Meta → WhatsApp → API Setup에 표시되는 숫자 ID입니다.",
+      "wabaIdDigits": "WhatsApp Business Account ID는 숫자만 포함해야 합니다 — Meta → WhatsApp → API Setup에서 복사하세요.",
+      "pinDigits": "PIN은 정확히 6자리여야 합니다.",
+      "validateFailed": "설정을 검증하지 못했습니다",
+      "numberLinkedElsewhere": "이 WhatsApp 전화번호는 이미 이 인스턴스의 다른 계정에 연결되어 있습니다. 각 전화번호는 하나의 wacrm 사용자에만 연결할 수 있습니다.",
+      "encryptFailed": "토큰을 암호화하지 못했습니다. 환경 변수의 ENCRYPTION_KEY가 유효한 64자 16진수 문자열인지 확인하세요.",
+      "updateFailed": "설정을 업데이트하지 못했습니다",
+      "saveFailed": "설정을 저장하지 못했습니다",
+      "deleteFailed": "설정을 삭제하지 못했습니다",
+      "noConfigShort": "아직 저장된 WhatsApp 설정이 없습니다.",
+      "tokenUndecryptable": "저장된 액세스 토큰을 복호화할 수 없습니다 — ENCRYPTION_KEY가 변경되었을 가능성이 높습니다. 토큰을 다시 입력해 복구하세요.",
+      "phoneCheckFailed": "전화번호 메타데이터 확인 실패: {message}",
+      "wabaNoApps": "WABA에 구독된 앱이 없습니다. 설정을 다시 저장해 구독하세요.",
+      "wabaCheckFailed": "WABA 구독 확인 실패: {message}",
+      "noWabaId": "등록된 WABA ID가 없습니다 — WABA ID 없이는 웹훅을 연결할 수 없습니다. 양식에 추가한 후 다시 저장하세요."
+    },
+    "media": {
+      "idRequired": "미디어 ID는 필수입니다",
+      "fetchFailed": "미디어를 가져오지 못했습니다"
+    },
+    "react": {
+      "idEmojiRequired": "message_id와 emoji는 필수입니다",
+      "messageNotFound": "메시지를 찾을 수 없습니다",
+      "notSent": "WhatsApp으로 전송되지 않은 메시지에는 반응할 수 없습니다",
+      "contactNoPhone": "연락처에 전화번호나 WhatsApp 사용자 ID가 없습니다",
+      "unknownMetaError": "알 수 없는 Meta API 오류",
+      "metaError": "Meta API 오류: {message}",
+      "dbDeleteFailed": "반응은 Meta로 전송되었지만 DB에서 삭제하지 못했습니다",
+      "dbUpsertFailed": "반응은 Meta로 전송되었지만 DB에 저장하지 못했습니다"
+    },
+    "send": {
+      "idsRequired": "conversation_id 또는 contact_id와 message_type이 필요합니다",
+      "contactNotFound": "연락처를 찾을 수 없습니다",
+      "openConversationFailed": "이 연락처와 대화를 열지 못했습니다"
+    },
+    "templates": {
+      "invalidId": "잘못된 템플릿 ID입니다.",
+      "invalidJsonBody": "잘못된 JSON 본문입니다.",
+      "notFound": "템플릿을 찾을 수 없습니다.",
+      "neverSubmitted": "이 템플릿은 Meta에 제출된 적이 없습니다 — 새 템플릿을 사용해 제출하세요.",
+      "statusNotEditable": "{status} 상태의 템플릿은 수정할 수 없습니다. 허용: APPROVED, REJECTED, PAUSED.",
+      "authNotEditable": "AUTHENTICATION 템플릿은 여기서 수정할 수 없습니다 — Meta WhatsApp 관리자에서 관리하세요.",
+      "validationFailed": "유효성 검사에 실패했습니다.",
+      "headerUploadFailed": "헤더 미디어 업로드에 실패했습니다.",
+      "metaEditFailed": "Meta에서 수정하지 못했습니다.",
+      "editedSaveFailed": "Meta에서 수정되었지만 로컬에 저장하지 못했습니다: {message}. 복구하려면 \"Meta에서 동기화\"를 실행하세요.",
+      "editFailed": "템플릿을 수정하지 못했습니다.",
+      "notConfiguredDelete": "WhatsApp가 설정되지 않아 Meta에서 삭제할 수 없습니다.",
+      "metaDeleteFailed": "Meta에서 삭제하지 못했습니다.",
+      "deletedLocalFailed": "Meta에서 삭제되었지만 로컬에서 삭제하지 못했습니다: {message}.",
+      "deleteFailed": "템플릿을 삭제하지 못했습니다.",
+      "authNotSupported": "AUTHENTICATION 템플릿은 아직 여기서 지원되지 않습니다 — Meta WhatsApp 관리자에서 만든 후 \"Meta에서 동기화\"를 사용하세요.",
+      "metaSubmitFailed": "Meta에 제출하지 못했습니다.",
+      "rateLimit": "Meta 요청 한도에 도달했습니다(시간당 템플릿 생성 100개). 나중에 다시 시도하세요.",
+      "submittedSaveFailed": "Meta에 제출되었지만 로컬에 저장하지 못했습니다: {message}. 복구하려면 \"Meta에서 동기화\"를 실행하세요.",
+      "submitFailed": "템플릿을 제출하지 못했습니다.",
+      "metaApiStatus": "Meta API 오류: {status}",
+      "syncFailed": "템플릿을 동기화하지 못했습니다"
+    }
   }
 }

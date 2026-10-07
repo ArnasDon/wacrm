@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { slugify } from "@/components/flows/shared";
+import { getT } from "@/lib/i18n/translate";
 import { INTERACTIVE_LIMITS } from "@/lib/whatsapp/meta-api";
 import {
   validateInteractivePayload,
@@ -48,7 +49,7 @@ export function blankListPayload(): InteractiveListPayload {
   return {
     kind: "list",
     body: "",
-    button_label: "Menu",
+    button_label: getT("Interactive")("defaultListButton"),
     sections: [{ title: "", rows: [{ id: "row_1", title: "" }] }],
   };
 }

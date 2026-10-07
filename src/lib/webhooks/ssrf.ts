@@ -191,12 +191,36 @@ export function isPrivateOrReservedIp(ip: string): boolean {
 }
 
 /**
- * True if `rawUrl`'s host resolves only to publicly-routable
- * address(es). Returns false for a malformed URL, an obvious internal
- * name (`localhost`, `*.local`, `*.internal`), a literal private IP, or
- * a hostname that resolves to any private/reserved address.
+ * Options for outbound URL checks. `allowPrivateHosts` is intentionally
+ * an explicit operator-controlled allow-list; it is not derived from the
+ * request or account data. This lets self-hosted AI servers such as Ollama
+ * be used without turning arbitrary private addresses into valid targets.
  */
-export async function isDeliverableUrl(rawUrl: string): Promise<boolean> {
+export interface DeliverableUrlOptions {
+  allowPrivateHosts?: Iterable<string>
+}
+
+function normalizedHostSet(hosts: Iterable<string> | undefined): Set<string> {
+  const out = new Set<string>()
+  if (!hosts) return out
+  for (const host of hosts) {
+    const value = host.trim().toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '')
+    if (value) out.add(value)
+  }
+  return out
+}
+
+/**
+ * True if `rawUrl`'s host resolves only to publicly-routable
+ * address(es), unless the exact hostname/IP is explicitly allow-listed
+ * by the server operator. Returns false for a malformed URL, an obvious
+ * internal name (`localhost`, `*.local`, `*.internal`), a literal private
+ * IP, or a hostname that resolves to any private/reserved address.
+ */
+export async function isDeliverableUrl(
+  rawUrl: string,
+  options: DeliverableUrlOptions = {},
+): Promise<boolean> {
   let host: string;
   try {
     host = new URL(rawUrl).hostname.replace(/^\[|\]$/g, '');
@@ -204,9 +228,12 @@ export async function isDeliverableUrl(rawUrl: string): Promise<boolean> {
     return false;
   }
 
+  const lower = host.toLowerCase().replace(/\.$/, '');
+  const allowPrivateHosts = normalizedHostSet(options.allowPrivateHosts)
+  if (allowPrivateHosts.has(lower)) return true
+
   if (isIP(host)) return !isPrivateOrReservedIp(host);
 
-  const lower = host.toLowerCase();
   if (
     lower === 'localhost' ||
     lower.endsWith('.localhost') ||

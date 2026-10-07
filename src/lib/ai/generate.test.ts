@@ -7,6 +7,7 @@ function config(overrides: Partial<AiConfig> = {}): AiConfig {
     provider: 'openai',
     model: 'gpt-test',
     apiKey: 'sk-test',
+    baseUrl: null,
     systemPrompt: null,
     isActive: true,
     autoReplyEnabled: false,
@@ -190,5 +191,120 @@ describe('generateReply — Anthropic', () => {
     const body = JSON.parse(fetchMock.mock.calls[0][1].body)
     expect(body.messages[0].role).toBe('user')
     expect(body.messages).toHaveLength(1)
+  })
+})
+
+
+describe('generateReply — OpenAI-compatible', () => {
+  it('uses the configured endpoint and max_tokens', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [{ message: { content: 'Gateway reply' } }],
+          usage: { prompt_tokens: 12, completion_tokens: 4, total_tokens: 16 },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await generateReply({
+      config: config({
+        provider: 'openai_compatible',
+        model: 'llama-3.3-70b',
+        baseUrl: 'https://8.8.8.8/v1/',
+      }),
+      systemPrompt: 'sys',
+      messages: [{ role: 'user', content: 'Hi' }],
+    })
+
+    expect(result).toEqual({
+      text: 'Gateway reply',
+      handoff: false,
+      usage: { promptTokens: 12, completionTokens: 4, totalTokens: 16 },
+    })
+    const [url, opts] = fetchMock.mock.calls[0]
+    expect(url).toBe('https://8.8.8.8/v1/chat/completions')
+    expect(opts.headers.Authorization).toBe('Bearer sk-test')
+    expect(JSON.parse(opts.body).max_tokens).toBe(1024)
+    expect(opts.redirect).toBe('manual')
+  })
+
+  it('blocks private hosts unless the operator explicitly allow-lists them', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const previous = process.env.AI_PROVIDER_ALLOWED_PRIVATE_HOSTS
+    delete process.env.AI_PROVIDER_ALLOWED_PRIVATE_HOSTS
+    try {
+      await expect(
+        generateReply({
+          config: config({
+            provider: 'openai_compatible',
+            baseUrl: 'https://127.0.0.1:11434/v1',
+          }),
+          systemPrompt: 'sys',
+          messages: [{ role: 'user', content: 'Hi' }],
+        }),
+      ).rejects.toMatchObject({ code: 'blocked_url', status: 400 })
+      expect(fetchMock).not.toHaveBeenCalled()
+    } finally {
+      if (previous === undefined) delete process.env.AI_PROVIDER_ALLOWED_PRIVATE_HOSTS
+      else process.env.AI_PROVIDER_ALLOWED_PRIVATE_HOSTS = previous
+    }
+  })
+
+  it('allows an operator-approved private host', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [{ message: { content: 'Local reply' } }],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const previous = process.env.AI_PROVIDER_ALLOWED_PRIVATE_HOSTS
+    process.env.AI_PROVIDER_ALLOWED_PRIVATE_HOSTS = '127.0.0.1'
+    try {
+      const result = await generateReply({
+        config: config({
+          provider: 'openai_compatible',
+          model: 'llama3.2',
+          baseUrl: 'http://127.0.0.1:11434/v1',
+        }),
+        systemPrompt: 'sys',
+        messages: [{ role: 'user', content: 'Hi' }],
+      })
+      expect(result.text).toBe('Local reply')
+      expect(fetchMock).toHaveBeenCalledOnce()
+    } finally {
+      if (previous === undefined) delete process.env.AI_PROVIDER_ALLOWED_PRIVATE_HOSTS
+      else process.env.AI_PROVIDER_ALLOWED_PRIVATE_HOSTS = previous
+    }
+  })
+
+  it('does not follow redirects', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 302 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      generateReply({
+        config: config({
+          provider: 'openai_compatible',
+          baseUrl: 'https://8.8.8.8/v1',
+        }),
+        systemPrompt: 'sys',
+        messages: [{ role: 'user', content: 'Hi' }],
+      }),
+    ).rejects.toMatchObject({ code: 'provider_error' })
+
+    expect(fetchMock.mock.calls[0][1].redirect).toBe('manual')
   })
 })

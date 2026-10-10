@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { toErrorResponse } from '@/lib/auth/errors'
+import { requirePlatformAdmin } from '@/lib/auth/platform-admin'
 import { criarFunilPadrao } from '@/lib/ccc/setup-funil'
 
 // ============================================================
@@ -23,6 +25,14 @@ function admin() {
 }
 
 export async function POST(req: Request) {
+  // Só o consultor (platform admin) usa o console da CCC. A rota roda com
+  // service role (lê e grava em qualquer conta), então estar logado não basta.
+  try {
+    await requirePlatformAdmin()
+  } catch (err) {
+    return toErrorResponse(err)
+  }
+
   try {
     const body = await req.json().catch(() => null)
     const accountId =

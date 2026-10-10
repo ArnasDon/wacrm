@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { toErrorResponse } from '@/lib/auth/errors'
+import { requirePlatformAdmin } from '@/lib/auth/platform-admin'
 
 // ============================================================
 // /api/ccc/entregaveis — carregar / editar / aprovar o pacote gerado.
@@ -10,7 +12,8 @@ import { createClient } from '@supabase/supabase-js'
 //                           → salva a edição do texto e/ou aprova o pacote.
 //
 // Escreve via service role. A rota é protegida por sessão no middleware
-// (todo /api/ccc/* exige usuário logado, exceto o cron de acompanhamento).
+// (todo /api/ccc/* exige usuário logado, exceto o cron de acompanhamento) e,
+// em cada handler, por requirePlatformAdmin() — só o consultor usa o console.
 // ============================================================
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -26,6 +29,14 @@ function admin() {
 }
 
 export async function GET(req: Request) {
+  // Só o consultor (platform admin) usa o console da CCC. A rota roda com
+  // service role (lê e grava em qualquer conta), então estar logado não basta.
+  try {
+    await requirePlatformAdmin()
+  } catch (err) {
+    return toErrorResponse(err)
+  }
+
   const { searchParams } = new URL(req.url)
   const diagnosticoId = searchParams.get('diagnostico_id') || ''
   if (!diagnosticoId) {
@@ -57,6 +68,14 @@ export async function GET(req: Request) {
 }
 
 export async function PATCH(req: Request) {
+  // Só o consultor (platform admin) usa o console da CCC. A rota roda com
+  // service role (lê e grava em qualquer conta), então estar logado não basta.
+  try {
+    await requirePlatformAdmin()
+  } catch (err) {
+    return toErrorResponse(err)
+  }
+
   const body = await req.json().catch(() => null)
   const entregavelId =
     body && typeof body.entregavel_id === 'string' ? body.entregavel_id : ''

@@ -18,6 +18,10 @@ describe('hotel meeting 2026-10-09', () => {
       .toBe('El hotel le estará confirmando los métodos de pago. Nuestro horario de atención es de 8:00 am a 8:00 pm; en ese horario le darán seguimiento.')
     expect(withAttentionHours('Con mucho gusto, un compañero de nuestro equipo le atenderá por este chat. 🙌', true, true))
       .toBe('Con mucho gusto, un compañero de nuestro equipo le atenderá por este chat. Nuestro horario de atención es de 8:00 am a 8:00 pm; en ese horario le darán seguimiento. 🙌')
+    // VSR 2026-10-10: the model already stated the time frame — never a second one.
+    const own = '¡Con mucho gusto! Un compañero del área de reservaciones le ayudará con eso en un máximo de una hora. 😊'
+    expect(withAttentionHours(own, false, true)).toBe(own)
+    expect(withAttentionHours('Nuestro horario de atención es de 8:00 am a 8:00 pm; en ese horario le confirmarán los métodos de pago.', true, true)).toContain('horario de atención')
     const plain = 'La Suite Clásica cuesta Q600 por noche. ¿Para qué fechas?'
     expect(withAttentionHours(plain, false)).toBe(plain)
   })

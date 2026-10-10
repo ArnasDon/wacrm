@@ -60,6 +60,9 @@ const SECURITY_HEADERS = [
   },
 ] as const;
 
+// Projeto Vercel das páginas de venda (ver rewrites).
+const SITE = "https://site-central-de-receita.vercel.app";
+
 const nextConfig: NextConfig = {
   /**
    * Cache-Control policy.
@@ -124,10 +127,13 @@ const nextConfig: NextConfig = {
     ];
   },
   /**
-   * Marketing domain: centraldereceita.com.br serve a landing (public/lp.html)
-   * na raiz; o app segue respondendo nos demais paths do mesmo projeto
-   * (/signup, /login, /privacidade, /dashboard...). `beforeFiles` intercepta
-   * "/" pelo host ANTES da rota "/" do app.
+   * Marketing domain: as páginas de venda (home e /oferta) moram num projeto
+   * próprio na Vercel (`site-central-de-receita`, pasta local de mesmo nome),
+   * fora deste repo — mexer em página não exige PR. Aqui só fazemos o proxy:
+   * o navegador continua em centraldereceita.com.br, então os fetch('/api/...')
+   * das páginas (assinatura, CAPI) seguem vindo para o CRM. O app segue
+   * respondendo nos demais paths (/signup, /login, /privacidade, /dashboard...).
+   * `beforeFiles` intercepta "/" pelo host ANTES da rota "/" do app.
    */
   async rewrites() {
     return {
@@ -135,18 +141,17 @@ const nextConfig: NextConfig = {
         {
           source: "/",
           has: [{ type: "host", value: "centraldereceita.com.br" }],
-          destination: "/lp.html",
+          destination: SITE + "/",
         },
         {
           source: "/",
           has: [{ type: "host", value: "www.centraldereceita.com.br" }],
-          destination: "/lp.html",
+          destination: SITE + "/",
         },
       ],
       afterFiles: [
-        // Landing da Central de Comando Comercial (oferta) com URL limpa:
-        // /oferta serve o estático public/oferta.html (em qualquer host).
-        { source: "/oferta", destination: "/oferta.html" },
+        // Landing da Central de Comando Comercial (em qualquer host).
+        { source: "/oferta", destination: SITE + "/oferta" },
       ],
     };
   },

@@ -441,11 +441,11 @@ owner and confirm the result sets differ. Do not reproduce it by inserting into
 
 A user who signs up through the app gets an account from the `handle_new_user`
 trigger (READ: `handle_new_user` is defined in `001_initial_schema.sql` and
-re-referenced in `017`/`018`/`034`/`043`), and that account has **no slug**.
+re-referenced in `017`/`018`/`034`/`047`), and that account has **no slug**.
 `INFERRED` from the migrations, not measured at runtime: no migration assigns
 `accounts.slug` from the trigger — `047_tenant_foundation.sql` backfills the
 column once, at migration time — so the trigger cannot supply a slug for a
-signup that happens after that backfill. The slug backfill in migration 043 only
+signup that happens after that backfill. The slug backfill in migration 047 only
 assigns slugs to accounts that existed when it ran; it does not provision for
 future signups. Until that is built, every new tenant needs the manual
 provisioning step above. `047_tenant_foundation.sql:115-116` says the same thing

@@ -155,9 +155,26 @@ export async function POST(request: Request) {
       }
       baseUrl = candidate
     }
+    // Reuse the stored key only for the same provider and, for
+    // openai_compatible, the same normalized base URL. Otherwise a request
+    // could send the decrypted stored key to a host it controls.
+    let storedKeyReusable = false
+    if (existing?.api_key && existing.provider === provider) {
+      if (provider !== 'openai_compatible') {
+        storedKeyReusable = true
+      } else {
+        try {
+          storedKeyReusable =
+            String(normalizeOpenAiCompatibleBaseUrl(baseUrl ?? '')) ===
+            String(normalizeOpenAiCompatibleBaseUrl(existing.base_url ?? ''))
+        } catch {
+          // An invalid stored base URL counts as a mismatch.
+        }
+      }
+    }
     if (rawKey) {
       apiKeyPlain = rawKey
-    } else if (existing?.api_key) {
+    } else if (storedKeyReusable && existing?.api_key) {
       try {
         apiKeyPlain = decrypt(existing.api_key)
       } catch {

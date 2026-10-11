@@ -252,5 +252,7 @@ describe('no nudge after a closed conversation (VSR 2026-10-09)', () => {
     expect(botAwaitsAnswer('¡Siempre a la orden! Será un gusto recibirle en una próxima oportunidad. 😊')).toBe(false);
     expect(botAwaitsAnswer('¡Con mucho gusto! Aquí estamos para cuando decidan, será un placer atenderles. 😊')).toBe(false);
     expect(botAwaitsAnswer('Tenemos Suite Clásica y Premium. ¿Cuál le gustaría conocer?')).toBe(true);
+    expect(botAwaitsAnswer('El spa abre de 8:00 am a 1:00 pm. Si me indica cuál masaje le interesa y para cuántas personas, con gusto le ayudo.')).toBe(true);
+    expect(botAwaitsAnswer('Indíqueme sus fechas y con gusto le cotizo.')).toBe(true);
   });
 });

@@ -187,8 +187,14 @@ export function isClosingMessage(text: string | null | undefined): boolean {
  * 2026-10-09: a guest said "Les agradezco" and still got one).
  */
 export function botAwaitsAnswer(lastBotText: string | null | undefined): boolean {
-  return /\?/.test(lastBotText ?? '');
+  const t = lastBotText ?? '';
+  // A request phrased without "?" still awaits an answer (VSR 2026-10-10:
+  // "Si me indica cuál masaje le interesa… con gusto le ayudo" — no nudge).
+  return /\?/.test(t) || INVITES_ANSWER.test(t);
 }
+
+const INVITES_ANSWER =
+  /\b(si me (indica|confirma|dice|comparte|cuenta|env[ií]a)|ind[ií]que(me|nos)|conf[ií]rme(me|nos)|c[uú][eé]nte(me|nos)|d[ií]ga(me|nos)|comp[aá]rta(me|nos)|me (indica|confirma|comparte) )/i;
 
 /** Local hour (0-23) of `date` read in `timeZone`. */
 export function hourInTimeZone(date: Date, timeZone: string): number {

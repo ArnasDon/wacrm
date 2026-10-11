@@ -258,15 +258,32 @@ export async function POST(request: Request) {
     }
 
     if (existing) {
-      const { error: upErr } = await supabase
+      let updateQuery = supabase
         .from('ai_configs')
         .update(encryptedKey ? { ...shared, api_key: encryptedKey } : shared)
         .eq('account_id', accountId)
+        .eq('id', existing.id)
+        .eq('provider', existing.provider)
+      updateQuery =
+        existing.api_key == null
+          ? updateQuery.is('api_key', null)
+          : updateQuery.eq('api_key', existing.api_key)
+      updateQuery =
+        existing.base_url == null
+          ? updateQuery.is('base_url', null)
+          : updateQuery.eq('base_url', existing.base_url)
+      const { data: updatedRows, error: upErr } = await updateQuery.select('id')
       if (upErr) {
         console.error('[ai/config POST] update error:', upErr)
         return NextResponse.json(
           { error: t('ai.saveConfigFailed') },
           { status: 500 },
+        )
+      }
+      if (!updatedRows || updatedRows.length === 0) {
+        return NextResponse.json(
+          { error: t('ai.configConflict') },
+          { status: 409 },
         )
       }
     } else {

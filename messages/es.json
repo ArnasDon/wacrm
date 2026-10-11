@@ -2619,7 +2619,8 @@
         "saveDocFailed": "Error al guardar el documento",
         "savedIndexFailed": "Guardado, pero la indexación semántica falló ({message}). La búsqueda por palabras clave sigue funcionando; usa Reindexar para reintentar.",
         "savedKeywordOnly": "Guardado solo con búsqueda por palabras clave: no se pudo descifrar tu clave de embeddings (revisa ENCRYPTION_KEY y vuelve a ingresar la clave)."
-      }
+      },
+      "configConflict": "Otra persona cambió esta configuración de IA. Recarga e inténtalo de nuevo."
     },
     "automations": {
       "copyName": "{name} (Copia)",

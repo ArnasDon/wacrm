@@ -90,8 +90,14 @@ describe('parseCampaignFile — required fields', () => {
     expect(() => parseCampaignFile(fileWith({ campaign: {} }))).toThrow(/campaign.name/);
   });
 
-  it('rejects a missing creative.url', () => {
-    expect(() => parseCampaignFile(fileWith({ creative: {} }))).toThrow(/creative.url/);
+  it('allows a missing or empty creative.url (image is optional)', () => {
+    const parsed = parseCampaignFile(fileWith({ creative: {} }));
+    expect(parsed.imagemUrl).toBeNull();
+  });
+
+  it('allows creative being omitted or null', () => {
+    const parsed = parseCampaignFile(fileWith({ creative: null }));
+    expect(parsed.imagemUrl).toBeNull();
   });
 
   it('rejects an empty recipients array', () => {

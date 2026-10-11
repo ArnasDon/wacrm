@@ -309,4 +309,24 @@ describe('CLARA — 9 Mandatory Tests & Real Cases A and B Suite', () => {
     expect(parts.h).toBe(20);
     expect(parts.mi).toBe(0);
   });
+
+  // ============================================================
+  // TESTE 10 — PROIBIÇÃO DE META-LINGUAGEM DE ENVIO GRADUAL
+  // ============================================================
+  it('TESTE 10: Prompt strictly forbids meta-language announcing gradual delivery ("de forma gradual", "aos poucos") to the customer', () => {
+    const prompt = buildConversationalSystemPrompt({
+      config: baseConfig,
+      mode: 'auto_reply',
+      isInitialContact: true,
+      userMessageCount: 1,
+      property: TOSCANO_FLAT_PROPERTY,
+      propertyKnowledge: TOSCANO_FLAT_KNOWLEDGE,
+      communicatedContent: [],
+    });
+
+    expect(prompt).toContain('PROIBIÇÃO ABSOLUTA DE META-LINGUAGEM');
+    expect(prompt).toContain('É TERMINANTEMENTE PROIBIDO avisar, explicar ou sugerir ao cliente o envio "de forma gradual"');
+    expect(prompt).toContain('A dosagem em camadas é uma disciplina operacional ESTRITAMENTE INTERNA E INVISÍVEL');
+  });
 });
+

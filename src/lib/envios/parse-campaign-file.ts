@@ -40,8 +40,8 @@ export interface ParsedCampaignLead {
 export interface ParsedCampaignFile {
   /** Suggested envio name from `campaign.name` — the caller may still let the user edit it. */
   nome: string;
-  /** Shared image URL (`creative.url`) — already hosted, used as-is. */
-  imagemUrl: string;
+  /** Shared image URL (`creative.url`) — already hosted, used as-is. Null when no creative is provided. */
+  imagemUrl: string | null;
   /** Sorted by `recipients[i].order` ascending — lote assignment must follow this sequence. */
   leads: ParsedCampaignLead[];
   /** A/B/C+ message variants from the file's `messages` field, or `null` when the file uses the legacy per-recipient `message` field instead. */
@@ -64,16 +64,16 @@ export function parseCampaignFile(raw: string): ParsedCampaignFile {
   if (!root) throw new Error('Arquivo não é um JSON válido');
 
   const campaign = asRecord(root.campaign);
-  const nome = campaign?.name;
-  if (typeof nome !== 'string' || !nome.trim()) {
+  const rawNome = typeof campaign?.name === 'string' ? campaign.name.trim() : '';
+  const rootNome = typeof root.name === 'string' ? root.name.trim() : '';
+  const nome = rawNome || rootNome;
+  if (!nome) {
     throw new Error('Campo "campaign.name" ausente no arquivo');
   }
 
   const creative = asRecord(root.creative);
-  const imagemUrl = creative?.url;
-  if (typeof imagemUrl !== 'string' || !imagemUrl.trim()) {
-    throw new Error('Campo "creative.url" ausente no arquivo');
-  }
+  const rawImageUrl = typeof creative?.url === 'string' ? creative.url.trim() : null;
+  const imagemUrl = rawImageUrl && rawImageUrl.length > 0 ? rawImageUrl : null;
 
   let variants: string[] | null = null;
   if (root.messages !== undefined) {
@@ -86,6 +86,8 @@ export function parseCampaignFile(raw: string): ParsedCampaignFile {
       }
       return m.trim();
     });
+  } else if (typeof root.message === 'string' && root.message.trim()) {
+    variants = [root.message.trim()];
   }
 
   const recipients = root.recipients;
@@ -119,5 +121,5 @@ export function parseCampaignFile(raw: string): ParsedCampaignFile {
     .sort((a, b) => a.order - b.order)
     .map((lead) => ({ nome: lead.nome, telefone: lead.telefone, mensagem: lead.mensagem }));
 
-  return { nome: nome.trim(), imagemUrl: imagemUrl.trim(), leads, variants };
+  return { nome: nome.trim(), imagemUrl: imagemUrl ? imagemUrl.trim() : null, leads, variants };
 }

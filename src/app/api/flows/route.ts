@@ -4,6 +4,7 @@ import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
 import { getFlowTemplate } from '@/lib/flows/templates'
 import { getT } from '@/lib/i18n/translate'
+import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 
 const t = getT('Api')
 
@@ -63,6 +64,9 @@ export async function POST(request: Request) {
     return NextResponse.json(guard.body, { status: guard.status })
   }
   const { userId, supabase } = guard
+
+  const rl = checkRateLimit(`workflow:${userId}`, RATE_LIMITS.workflow)
+  if (!rl.success) return rateLimitResponse(rl)
 
   // Resolve the caller's account_id — `flows.account_id` is NOT NULL
   // post-017, so an INSERT without it trips the not-null constraint

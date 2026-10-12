@@ -6,6 +6,7 @@ import {
   verifyPhoneNumber,
 } from '@/lib/whatsapp/meta-api'
 import { getT } from '@/lib/i18n/translate'
+import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 
 const t = getT('Api')
 
@@ -40,6 +41,9 @@ export async function GET() {
   if (authError || !user) {
     return NextResponse.json({ error: t('common.unauthorized') }, { status: 401 })
   }
+
+  const rl = checkRateLimit(`whatsapp-admin:${user.id}`, RATE_LIMITS.whatsappAdmin)
+  if (!rl.success) return rateLimitResponse(rl)
 
   // whatsapp_config is one-row-per-account post-017. Resolve the
   // caller's account_id so a teammate who joined an existing account

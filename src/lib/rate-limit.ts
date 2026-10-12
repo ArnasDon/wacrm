@@ -176,6 +176,21 @@ export const RATE_LIMITS = {
    *  capping a stampede; excess inbounds simply don't get an auto-reply
    *  (they still land in the inbox for a human). */
   aiAutoReplyAccount: { limit: 30, windowMs: 60_000 },
+  /** Per-user workflow / CRUD mutations: create, edit, delete,
+   *  duplicate, and activate automations and flows, engine triggers,
+   *  contact tags, and quick replies. 60/min carries a busy editor
+   *  while bounding a runaway script; outbound amplification is
+   *  separately capped by the whatsappAdmin budget below. */
+  workflow: { limit: 60, windowMs: 60_000 },
+  /** Per-user Meta API amplification: WhatsApp config save / verify,
+   *  template submit / sync / update / delete. Each of these fans out
+   *  to Meta's own APIs, so a compromised session looping them would
+   *  hammer Meta — 30/min is far above any click-driven use; Meta's
+   *  per-number limits remain the real throughput ceiling. */
+  whatsappAdmin: { limit: 30, windowMs: 60_000 },
+  /** Inbound media fetches (the Meta download proxy). Generous — an
+   *  agent scrolling an inbox pulls many attachments at once. */
+  whatsappMedia: { limit: 120, windowMs: 60_000 },
 } as const;
 
 /** Test-only helper. Clears the in-memory state so unit tests don't

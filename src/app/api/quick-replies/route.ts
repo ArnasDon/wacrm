@@ -3,6 +3,7 @@ import { getCurrentAccount, requireRole, toErrorResponse } from '@/lib/auth/acco
 import { supabaseAdmin } from '@/lib/automations/admin-client'
 import { validateInteractivePayload } from '@/lib/whatsapp/interactive'
 import { getT } from '@/lib/i18n/translate'
+import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 
 const t = getT('Api')
 
@@ -33,6 +34,9 @@ export async function POST(request: Request) {
   } catch (err) {
     return toErrorResponse(err)
   }
+
+  const rl = checkRateLimit(`workflow:${ctx.userId}`, RATE_LIMITS.workflow)
+  if (!rl.success) return rateLimitResponse(rl)
 
   const body = await request.json().catch(() => null)
   if (!body) return NextResponse.json({ error: t('common.invalidJson') }, { status: 400 })

@@ -4,6 +4,7 @@ import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
 import { validateFlowForActivation } from '@/lib/flows/validate'
 import { getT } from '@/lib/i18n/translate'
+import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 
 const t = getT('Api')
 
@@ -31,11 +32,16 @@ export async function POST(
   // flows_update policy requires `agent`, but the service-role client
   // below bypasses RLS, so enforce the role here (a viewer passes the
   // membership-only ownership check).
+  let userId: string
   try {
-    await requireRole('agent')
+    const ctx = await requireRole('agent')
+    userId = ctx.userId
   } catch (err) {
     return toErrorResponse(err)
   }
+
+  const rl = checkRateLimit(`workflow:${userId}`, RATE_LIMITS.workflow)
+  if (!rl.success) return rateLimitResponse(rl)
 
   const supabase = await createClient()
   const {

@@ -23,6 +23,7 @@ import {
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
 import { resolveVerifyTokenForSave } from '@/lib/whatsapp/verify-token'
 import { getT } from '@/lib/i18n/translate'
+import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 
 const t = getT('Api')
 
@@ -260,6 +261,9 @@ export async function POST(request: Request) {
     if (authError || !user) {
       return NextResponse.json({ error: t('common.unauthorized') }, { status: 401 })
     }
+
+    const rl = checkRateLimit(`whatsapp-admin:${user.id}`, RATE_LIMITS.whatsappAdmin)
+    if (!rl.success) return rateLimitResponse(rl)
 
     const accountId = await resolveAccountId(supabase, user.id)
     if (!accountId) {
@@ -602,6 +606,9 @@ export async function DELETE() {
     if (authError || !user) {
       return NextResponse.json({ error: t('common.unauthorized') }, { status: 401 })
     }
+
+    const rl = checkRateLimit(`whatsapp-admin:${user.id}`, RATE_LIMITS.whatsappAdmin)
+    if (!rl.success) return rateLimitResponse(rl)
 
     const accountId = await resolveAccountId(supabase, user.id)
     if (!accountId) {

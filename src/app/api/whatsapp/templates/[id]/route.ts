@@ -17,6 +17,7 @@ import {
 import { buildMetaTemplatePayload } from '@/lib/whatsapp/template-components'
 import { ensureMediaHeaderHandle } from '@/lib/whatsapp/template-header-handle'
 import { getT } from '@/lib/i18n/translate'
+import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 
 const t = getT('Api')
 
@@ -72,7 +73,10 @@ export async function PATCH(
     }
     // Editing a template pushes a component replacement to Meta before
     // anything is written locally, so the role has to be checked here.
-    const { supabase, accountId } = await requireRole('admin')
+    const { supabase, accountId, userId } = await requireRole('admin')
+
+    const rl = checkRateLimit(`whatsapp-admin:${userId}`, RATE_LIMITS.whatsappAdmin)
+    if (!rl.success) return rateLimitResponse(rl)
 
     let payload: TemplatePayload
     try {
@@ -244,7 +248,10 @@ export async function DELETE(
     }
     // Deleting removes the template on Meta first; same reasoning as
     // the PATCH handler above.
-    const { supabase, accountId } = await requireRole('admin')
+    const { supabase, accountId, userId } = await requireRole('admin')
+
+    const rl = checkRateLimit(`whatsapp-admin:${userId}`, RATE_LIMITS.whatsappAdmin)
+    if (!rl.success) return rateLimitResponse(rl)
 
     const { data: existing, error: lookupErr } = await supabase
       .from('message_templates')

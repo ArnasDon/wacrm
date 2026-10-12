@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/automations/admin-client'
 import { getT } from '@/lib/i18n/translate'
+import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 
 const t = getT('Api')
 
@@ -23,6 +24,9 @@ export async function POST(
   } catch (err) {
     return toErrorResponse(err)
   }
+
+  const rl = checkRateLimit(`workflow:${userId}`, RATE_LIMITS.workflow)
+  if (!rl.success) return rateLimitResponse(rl)
 
   // Match on `account_id`, not `user_id` — see the tenancy note in the
   // sibling [id]/route.ts (GHSA-xvrq-88hg-44q6). `user_id` records the

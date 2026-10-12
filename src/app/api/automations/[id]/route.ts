@@ -178,6 +178,20 @@ export async function DELETE(
   const rl = checkRateLimit(`workflow:${userId}`, RATE_LIMITS.workflow)
   if (!rl.success) return rateLimitResponse(rl)
 
+  // Tenancy pre-read, the same check PATCH runs: an id that belongs to
+  // another account is invisible here, so answer 404 instead of running
+  // a service-role delete that would silently affect zero rows while
+  // still answering {ok:true}.
+  const { data: existing } = await supabaseAdmin()
+    .from('automations')
+    .select('id, account_id')
+    .eq('id', id)
+    .eq('account_id', accountId)
+    .maybeSingle()
+  if (!existing) {
+    return NextResponse.json({ error: t('common.notFound') }, { status: 404 })
+  }
+
   const { error } = await supabaseAdmin()
     .from('automations')
     .delete()

@@ -180,7 +180,7 @@ describe('automations/[id] tenancy (GHSA-xvrq-88hg-44q6)', () => {
     const del = (await DELETE(new Request('http://t/'), {
       params,
     })) as unknown as { status: number }
-    expect(del.status).toBe(200) // scoped DELETE is a no-op, not an error
+    expect(del.status).toBe(404) // P9: foreign ids 404 from the tenancy pre-read; the scoped delete never runs
 
     const dup = (await DUPLICATE(new Request('http://t/', { method: 'POST' }), {
       params,
@@ -261,14 +261,10 @@ describe('workflow rate limit (S3-P4)', () => {
 // ------------------------------------------------------------
 // S2-P7b: the admin-DELETE tenancy control that the S2 report
 // listed as "not individually measured". Measured shape of the
-// route: DELETE has NO ownership pre-read (unlike flows/[id]);
-// the whole tenancy boundary is the `.eq('id', id).eq('account_id',
-// ctx.accountId)` pair on the service-role delete. Consequence,
-// asserted as-is: a foreign id affects ZERO rows (the fake DB
-// below only records a write when every filter matches the stored
-// row, the same predicate Postgres would apply) but still answers
-// 200 {ok:true} - the misleading response shape is documented here,
-// not hidden; making it a 404 is a follow-up.
+// route after P9: DELETE carries the same tenancy pre-read PATCH
+// uses, so a foreign id answers 404 (the service-role delete never
+// runs); the positive control proves the own-account path still
+// lands exactly one row with the id+account filter pair.
 // ------------------------------------------------------------
 describe('admin DELETE tenancy controls (S2-P7b)', () => {
   const del = () =>
@@ -288,11 +284,11 @@ describe('admin DELETE tenancy controls (S2-P7b)', () => {
     __resetRateLimitForTests()
   })
 
-  it('foreign id: scoped to the caller account, affects zero rows (200 as measured)', async () => {
+  it('foreign id: 404 from the tenancy pre-read, the service-role delete never runs', async () => {
     h.state.callerAccountId = 'acc-new' // row belongs to acc-old
     const res = (await del()) as unknown as { status: number; body: unknown }
-    expect(res.status).toBe(200)
-    expect(res.body).toEqual({ ok: true })
+    expect(res.status).toBe(404)
+    expect((res.body as { error: unknown }).error).toEqual(expect.any(String))
     expect(deletes()).toHaveLength(0)
   })
 
@@ -318,11 +314,11 @@ describe('admin DELETE tenancy controls (S2-P7b)', () => {
   it('rate limit: the 429 path leaves the service-role client untouched', async () => {
     const { __resetRateLimitForTests } = await import('@/lib/rate-limit')
     __resetRateLimitForTests()
-    h.state.callerAccountId = 'acc-new' // foreign shape: each call records no write
+    h.state.callerAccountId = 'acc-new' // foreign shape: each call 404s and records no write
 
     for (let i = 0; i < 60; i++) {
       const res = (await del()) as unknown as { status: number }
-      expect(res.status).toBe(200)
+      expect(res.status).toBe(404)
     }
 
     const limited = (await del()) as unknown as {

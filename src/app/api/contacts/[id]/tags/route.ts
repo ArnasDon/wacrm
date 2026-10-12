@@ -7,6 +7,7 @@ import {
   removeContactTag,
 } from '@/lib/contacts/tag-write';
 import { getT } from '@/lib/i18n/translate';
+import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit';
 
 const t = getT('Api');
 
@@ -29,6 +30,8 @@ export async function POST(
 ) {
   try {
     const ctx = await requireRole('agent');
+    const rl = checkRateLimit(`workflow:${ctx.userId}`, RATE_LIMITS.workflow);
+    if (!rl.success) return rateLimitResponse(rl);
     const { id: contactId } = await params;
     const tagId = await readTagId(request);
     if (!tagId) {
@@ -57,6 +60,8 @@ export async function DELETE(
 ) {
   try {
     const ctx = await requireRole('agent');
+    const rl = checkRateLimit(`workflow:${ctx.userId}`, RATE_LIMITS.workflow);
+    if (!rl.success) return rateLimitResponse(rl);
     const { id: contactId } = await params;
     const tagId = await readTagId(request);
     if (!tagId) {

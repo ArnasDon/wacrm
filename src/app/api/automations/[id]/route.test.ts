@@ -220,3 +220,34 @@ describe('automations/[id] tenancy (GHSA-xvrq-88hg-44q6)', () => {
     expect(insert!.filters).toContainEqual(['account_id', 'acc-old'])
   })
 })
+
+describe('workflow rate limit (S3-P4)', () => {
+  it('answers 429 with Retry-After once the per-user workflow budget is exhausted', async () => {
+    const { __resetRateLimitForTests } = await import('@/lib/rate-limit')
+    __resetRateLimitForTests()
+    h.state.callerAccountId = 'acc-new'
+
+    // 60 PATCH calls consume the `workflow` budget (60/min). Each lands
+    // on the 404 branch — the caller's account never matches the row's.
+    for (let i = 0; i < 60; i++) {
+      const res = (await PATCH(
+        new Request('http://t/', {
+          method: 'PATCH',
+          body: JSON.stringify({ name: 'spam' }),
+        }),
+        { params },
+      )) as unknown as { status: number }
+      expect(res.status).toBe(404)
+    }
+
+    const limited = (await PATCH(
+      new Request('http://t/', {
+        method: 'PATCH',
+        body: JSON.stringify({ name: 'spam' }),
+      }),
+      { params },
+    )) as unknown as { status: number; body: { retry_after_seconds?: number } }
+    expect(limited.status).toBe(429)
+    expect(limited.body.retry_after_seconds).toBeGreaterThan(0)
+  })
+})

@@ -11,6 +11,7 @@ import {
   validateTriggerForActivation,
 } from '@/lib/automations/validate'
 import { getT } from '@/lib/i18n/translate'
+import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 
 const t = getT('Api')
 
@@ -72,12 +73,17 @@ export async function PATCH(
   // requires `agent`, but this route mutates via the service-role client
   // which bypasses RLS, so enforce the role here.
   let accountId: string
+  let userId: string
   try {
     const ctx = await requireRole('agent')
     accountId = ctx.accountId
+    userId = ctx.userId
   } catch (err) {
     return toErrorResponse(err)
   }
+
+  const rl = checkRateLimit(`workflow:${userId}`, RATE_LIMITS.workflow)
+  if (!rl.success) return rateLimitResponse(rl)
 
   const body = await request.json().catch(() => null)
   if (!body) return NextResponse.json({ error: t('common.invalidJson') }, { status: 400 })
@@ -160,12 +166,17 @@ export async function DELETE(
   // Deleting an automation is a write — enforce `agent` (the service-role
   // client below bypasses the agent-gated automations_delete RLS).
   let accountId: string
+  let userId: string
   try {
     const ctx = await requireRole('agent')
     accountId = ctx.accountId
+    userId = ctx.userId
   } catch (err) {
     return toErrorResponse(err)
   }
+
+  const rl = checkRateLimit(`workflow:${userId}`, RATE_LIMITS.workflow)
+  if (!rl.success) return rateLimitResponse(rl)
 
   const { error } = await supabaseAdmin()
     .from('automations')

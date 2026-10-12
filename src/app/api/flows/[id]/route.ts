@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
 import { getT } from '@/lib/i18n/translate'
+import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 
 const t = getT('Api')
 
@@ -99,11 +100,16 @@ export async function PUT(
   // Writes require at least `agent` — the RLS flows_update policy demands
   // it, but this route mutates via the service-role client which bypasses
   // RLS, so the role must be enforced here (a viewer passes ownership).
+  let userId: string
   try {
-    await requireRole('agent')
+    const ctx = await requireRole('agent')
+    userId = ctx.userId
   } catch (err) {
     return toErrorResponse(err)
   }
+
+  const rl = checkRateLimit(`workflow:${userId}`, RATE_LIMITS.workflow)
+  if (!rl.success) return rateLimitResponse(rl)
 
   const guard = await requireOwnership(id)
   if (!guard.ok) return NextResponse.json(guard.body, { status: guard.status })
@@ -194,11 +200,16 @@ export async function DELETE(
 
   // Writes require at least `agent` — see the PUT handler note. The
   // service-role client below bypasses the agent-gated flows_delete RLS.
+  let userId: string
   try {
-    await requireRole('agent')
+    const ctx = await requireRole('agent')
+    userId = ctx.userId
   } catch (err) {
     return toErrorResponse(err)
   }
+
+  const rl = checkRateLimit(`workflow:${userId}`, RATE_LIMITS.workflow)
+  if (!rl.success) return rateLimitResponse(rl)
 
   const guard = await requireOwnership(id)
   if (!guard.ok) return NextResponse.json(guard.body, { status: guard.status })

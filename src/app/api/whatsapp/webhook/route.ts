@@ -13,7 +13,10 @@ import {
 } from '@/lib/whatsapp/wa-identity'
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
 import { reopenClosedConversation } from '@/lib/conversations/reopen'
-import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
+import {
+  safeTokenEqual,
+  verifyMetaWebhookSignature,
+} from '@/lib/whatsapp/webhook-signature'
 import { resumeAwaitingReply, runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply'
@@ -28,6 +31,15 @@ import {
 // give it headroom beyond the platform default (Vercel clamps this to the
 // plan's ceiling). Tune as needed.
 export const maxDuration = 60
+
+/**
+ * Hard cap (bytes) for inbound webhook payloads, enforced before any
+ * crypto or JSON work. Meta's batches are small; a self-hosted
+ * deployment has no platform body limit (unlike Vercel's), so an
+ * unbounded `request.text()` would be a memory DoS vector. 1 MiB
+ * leaves generous headroom for a full message batch with metadata.
+ */
+const MAX_WEBHOOK_BODY_BYTES = 1_048_576
 
 // Lazy-initialized to avoid build-time crash when env vars are missing
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -170,7 +182,10 @@ export async function GET(request: Request) {
     for (const config of configs) {
       if (!config.verify_token) continue
       try {
-        if (decrypt(config.verify_token) === verifyToken) {
+        // Constant-time compare — a plain `===` here would leak the
+        // verified prefix length per row through timing (and the loop
+        // walks every tenant's config, so the oracle repeats per row).
+        if (safeTokenEqual(decrypt(config.verify_token), verifyToken)) {
           matchedConfig = config
           break
         }
@@ -221,6 +236,11 @@ export async function POST(request: Request) {
   // Read raw body first so we can HMAC-verify the exact bytes Meta
   // signed. request.json() would re-encode and break the signature.
   const rawBody = await request.text()
+  const bodyBytes = Buffer.byteLength(rawBody, 'utf8')
+  if (bodyBytes > MAX_WEBHOOK_BODY_BYTES) {
+    console.warn('[webhook] rejected oversized payload:', bodyBytes, 'bytes')
+    return NextResponse.json({ error: 'Payload too large' }, { status: 413 })
+  }
   const signature = request.headers.get('x-hub-signature-256')
 
   if (!verifyMetaWebhookSignature(rawBody, signature)) {

@@ -166,3 +166,21 @@ describe('template lifecycle role gate (GHSA-m4fx-g6pr-hrw8)', () => {
     expect(meta.deleteMessageTemplate).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('whatsappAdmin rate limit (S3-P4)', () => {
+  it('answers 429 once the per-user Meta-amplification budget is exhausted', async () => {
+    const { __resetRateLimitForTests } = await import('@/lib/rate-limit')
+    __resetRateLimitForTests()
+
+    // 30 DELETE calls consume the `whatsappAdmin` budget (30/min); each
+    // succeeds through the mocked Meta + local delete.
+    for (let i = 0; i < 30; i++) {
+      const res = await DELETE(new Request('http://localhost/t'), { params })
+      expect(res.status).toBe(200)
+    }
+
+    const limited = await DELETE(new Request('http://localhost/t'), { params })
+    expect(limited.status).toBe(429)
+    expect(limited.headers.get('Retry-After')).toMatch(/^\d+$/)
+  })
+})

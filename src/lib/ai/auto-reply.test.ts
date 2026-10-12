@@ -3474,7 +3474,13 @@ describe('dispatchInboundToAiReply — hotel reply claims "queda anotada" withou
     expect(h.dispatchSystemAlert).toHaveBeenCalledWith(
       expect.objectContaining({ dedupKey: 'ai_noted_without_marker:acct-1' }),
     )
-    expect(h.engineSendText).toHaveBeenCalledWith(expect.objectContaining({ text: expect.stringContaining('Entendido.\n\nEl equipo del hotel se lo confirma por este chat.') }))
+    expect(h.engineSendText).toHaveBeenCalledWith(expect.objectContaining({ text: expect.stringContaining('Entendido.\n\nYa le pasé su solicitud al equipo del hotel') }))
+    // …and the team actually gets it (nothing was saved to a reservation).
+    expect(h.state.messageInserts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ content_type: 'internal_note', content_text: expect.stringContaining('no pudo guardar') }),
+      ]),
+    )
   })
 
   it('does not retry when the reply already carries the marker', async () => {

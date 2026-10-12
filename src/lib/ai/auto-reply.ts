@@ -1120,6 +1120,15 @@ For airport transport, record the guest's request in nota on the relevant existi
       }
       if ((generation.reservationProposals ?? []).length === 0 || (airportRequest && !hasAirportNote(generation))) {
         generation = { ...generation, text: replyWithoutNotedClaim(generation.text) }
+        // Nothing to attach it to (e.g. an early check-in from a guest who
+        // booked elsewhere — VSR 2026-10-07): hand the ask to the team so
+        // the reply's "se lo pasé al equipo" is true, bot keeps running.
+        await notifyTeamRequestReady(
+          db,
+          accountId,
+          conversationId,
+          `🤖 El huésped pidió algo que la IA no pudo guardar en una reservación de este chat. Revisar y confirmarle: «${latestUserMessage(messages).slice(0, 300)}»`,
+        )
       }
     }
 

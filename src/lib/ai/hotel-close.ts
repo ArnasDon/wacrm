@@ -215,10 +215,10 @@ export function replyWithoutNotedClaim(text: string): string {
     .map((line) => line.split(/(?<=[.!?])\s+/).filter((s) => !NOTED_CLAIM_RE.test(s)).join(' ').trim())
     .filter(Boolean)
     .join('\n\n')
-  if (!kept) return 'El equipo del hotel le confirma esta petición por este chat en breve.'
+  if (!kept) return 'Ya le pasé su solicitud al equipo del hotel; se la confirman por este chat en breve.'
   // Don't tack it on when the reply already says the team follows up
   // (VSR 2026-10-07: "…el equipo del hotel se lo confirma" twice in a row).
   return /\b(?:equipo|compa[nñ]er[oa]|asesor[a]?|recepci[oó]n)\b/i.test(kept)
     ? kept
-    : `${kept}\n\nEl equipo del hotel se lo confirma por este chat en breve.`
+    : `${kept}\n\nYa le pasé su solicitud al equipo del hotel; se la confirman por este chat en breve.`
 }

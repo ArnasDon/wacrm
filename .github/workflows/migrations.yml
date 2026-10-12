@@ -93,11 +93,17 @@ jobs:
         run: supabase db reset --local --no-seed
 
       # Negative control on the gate mechanism itself: the sentinel
-      # raises an exception on purpose. If this step ever passes, the
-      # CLI stopped propagating psql's non-zero exit and every green
-      # isolation run below it is worthless — the job fails here.
+      # raises an exception on purpose, so a correctly-propagating CLI
+      # exits non-zero and this step PASSES. If the step ever fails,
+      # the CLI stopped propagating psql's non-zero exit and the
+      # isolation gate below it is not a gate.
       - name: Sentinel - prove a raised error fails the step
-        run: supabase db query --local --file .github/workflows/isolation-sentinel.sql
+        run: |
+          if supabase db query --local --file .github/workflows/isolation-sentinel.sql; then
+            echo "sentinel: a raised SQL error did NOT make the CLI step fail - error propagation is broken, the isolation gate below is not a gate"
+            exit 1
+          fi
+          echo "sentinel ok: a raised SQL error propagates as a non-zero exit"
 
       # The gate: sections 7-9b of isolation.sql push real traffic
       # through the real RLS policies (exit 0 = every assertion held;

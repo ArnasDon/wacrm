@@ -31,6 +31,8 @@ const h = vi.hoisted(() => ({
     /** Account the mocked `requireRole` / `getCurrentAccount` resolve. */
     callerAccountId: 'acc-new',
     callerUserId: 'user-removed',
+    /** When true, the mocked `requireRole` throws (role gate). */
+    roleDeny: false,
     /** Writes the fake DB accepted, by table + operation. */
     writes: [] as { table: string; op: string; filters: [string, unknown][] }[],
   },
@@ -66,11 +68,14 @@ vi.mock('@/lib/auth/account', () => ({
     userId: h.state.callerUserId,
     role: 'owner',
   }),
-  requireRole: async () => ({
-    accountId: h.state.callerAccountId,
-    userId: h.state.callerUserId,
-    role: 'owner',
-  }),
+  requireRole: async () => {
+    if (h.state.roleDeny) throw new Error('forbidden: caller lacks the agent role')
+    return {
+      accountId: h.state.callerAccountId,
+      userId: h.state.callerUserId,
+      role: 'owner',
+    }
+  },
   toErrorResponse: (err: unknown) => ({
     body: { error: err instanceof Error ? err.message : 'error' },
     status: 403,
@@ -153,6 +158,7 @@ const params = Promise.resolve({ id: 'auto-1' })
 beforeEach(() => {
   h.state.writes = []
   h.state.callerAccountId = 'acc-new'
+  h.state.roleDeny = false
 })
 
 describe('automations/[id] tenancy (GHSA-xvrq-88hg-44q6)', () => {
@@ -249,5 +255,82 @@ describe('workflow rate limit (S3-P4)', () => {
     )) as unknown as { status: number; body: { retry_after_seconds?: number } }
     expect(limited.status).toBe(429)
     expect(limited.body.retry_after_seconds).toBeGreaterThan(0)
+  })
+})
+
+// ------------------------------------------------------------
+// S2-P7b: the admin-DELETE tenancy control that the S2 report
+// listed as "not individually measured". Measured shape of the
+// route: DELETE has NO ownership pre-read (unlike flows/[id]);
+// the whole tenancy boundary is the `.eq('id', id).eq('account_id',
+// ctx.accountId)` pair on the service-role delete. Consequence,
+// asserted as-is: a foreign id affects ZERO rows (the fake DB
+// below only records a write when every filter matches the stored
+// row, the same predicate Postgres would apply) but still answers
+// 200 {ok:true} - the misleading response shape is documented here,
+// not hidden; making it a 404 is a follow-up.
+// ------------------------------------------------------------
+describe('admin DELETE tenancy controls (S2-P7b)', () => {
+  const del = () =>
+    DELETE(
+      new Request('http://t/auto-1', { method: 'DELETE' }),
+      { params },
+    ) as Promise<unknown>
+
+  const deletes = () =>
+    h.state.writes.filter((w) => w.table === 'automations' && w.op === 'delete')
+
+  // The earlier suites burn the shared `workflow` budget for this same
+  // user id (the rate-limit module state is file-wide); reset before any
+  // test that expects to pass the 60/min gate.
+  beforeEach(async () => {
+    const { __resetRateLimitForTests } = await import('@/lib/rate-limit')
+    __resetRateLimitForTests()
+  })
+
+  it('foreign id: scoped to the caller account, affects zero rows (200 as measured)', async () => {
+    h.state.callerAccountId = 'acc-new' // row belongs to acc-old
+    const res = (await del()) as unknown as { status: number; body: unknown }
+    expect(res.status).toBe(200)
+    expect(res.body).toEqual({ ok: true })
+    expect(deletes()).toHaveLength(0)
+  })
+
+  it('positive control: own-account id affects exactly one row with the id+account pair', async () => {
+    h.state.callerAccountId = 'acc-old'
+    const res = (await del()) as unknown as { status: number; body: unknown }
+    expect(res.status).toBe(200)
+    expect(res.body).toEqual({ ok: true })
+    expect(deletes()).toHaveLength(1)
+    expect(deletes()[0].filters).toEqual([
+      ['id', 'auto-1'],
+      ['account_id', 'acc-old'],
+    ])
+  })
+
+  it('role gate: a denied caller never reaches the service-role client', async () => {
+    h.state.roleDeny = true
+    const res = (await del()) as unknown as { status: number; body: unknown }
+    expect(res.status).toBe(403)
+    expect(h.state.writes).toHaveLength(0)
+  })
+
+  it('rate limit: the 429 path leaves the service-role client untouched', async () => {
+    const { __resetRateLimitForTests } = await import('@/lib/rate-limit')
+    __resetRateLimitForTests()
+    h.state.callerAccountId = 'acc-new' // foreign shape: each call records no write
+
+    for (let i = 0; i < 60; i++) {
+      const res = (await del()) as unknown as { status: number }
+      expect(res.status).toBe(200)
+    }
+
+    const limited = (await del()) as unknown as {
+      status: number
+      body: { retry_after_seconds?: number }
+    }
+    expect(limited.status).toBe(429)
+    expect(limited.body.retry_after_seconds).toBeGreaterThan(0)
+    expect(deletes()).toHaveLength(0)
   })
 })

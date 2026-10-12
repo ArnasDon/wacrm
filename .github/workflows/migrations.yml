@@ -24,11 +24,13 @@ on:
     # "expected", which blocks every PR that doesn't touch SQL.
     paths:
       - 'supabase/**'
+      - 'src/lib/tenant/**'
       - '.github/workflows/migrations.yml'
   push:
     branches: [main]
     paths:
       - 'supabase/**'
+      - 'src/lib/tenant/**'
       - '.github/workflows/migrations.yml'
 
 concurrency:
@@ -69,3 +71,36 @@ jobs:
       # just the absence of an error.
       - name: Verify the resulting schema
         run: supabase db query --local --file supabase/ci/verify-schema.sql
+
+  isolation:
+    name: Tenant-isolation gate (real RLS)
+    runs-on: ubuntu-latest
+    needs: apply
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install the Supabase CLI
+        uses: supabase/setup-cli@v3
+        with:
+          version: 2.113.0
+
+      - name: Start Postgres
+        run: supabase db start
+
+      # Same clean-slate guarantee as the apply job: the gate must run
+      # against the schema the migrations produce, not a warm volume.
+      - name: Replay every migration from scratch
+        run: supabase db reset --local --no-seed
+
+      # Negative control on the gate mechanism itself: the sentinel
+      # raises an exception on purpose. If this step ever passes, the
+      # CLI stopped propagating psql's non-zero exit and every green
+      # isolation run below it is worthless — the job fails here.
+      - name: Sentinel - prove a raised error fails the step
+        run: supabase db query --local --file .github/workflows/isolation-sentinel.sql
+
+      # The gate: sections 7-9b of isolation.sql push real traffic
+      # through the real RLS policies (exit 0 = every assertion held;
+      # exit 3 = a raised assertion, via the file's own ON_ERROR_STOP).
+      - name: Run the tenant-isolation gate
+        run: supabase db query --local --file src/lib/tenant/isolation.sql

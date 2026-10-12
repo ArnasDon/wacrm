@@ -55,22 +55,6 @@ export async function POST(request: Request) {
         .maybeSingle()
       existing = data as unknown as { api_key: string; provider: AiProvider; base_url: string | null } | null
     }
-    if (!apiKeyPlain) {
-      if (!existing?.api_key) {
-        return NextResponse.json(
-          { error: t('ai.enterApiKey') },
-          { status: 400 },
-        )
-      }
-      try {
-        apiKeyPlain = decrypt(existing.api_key)
-      } catch {
-        return NextResponse.json(
-          { error: t('ai.storedKeyReenter') },
-          { status: 400 },
-        )
-      }
-    }
 
     let baseUrl: string | null = null
     if (provider === 'openai_compatible') {
@@ -86,6 +70,39 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: err instanceof AiError ? err.message : t('ai.baseUrlInvalid'), code: 'invalid_base_url' }, { status: 400 })
       }
       baseUrl = candidate
+    }
+
+    // Reuse the stored key only for the same provider and, for
+    // openai_compatible, the same normalized base URL.
+    if (!apiKeyPlain) {
+      let storedKeyReusable = false
+      if (existing?.api_key && existing.provider === provider) {
+        if (provider !== 'openai_compatible') {
+          storedKeyReusable = true
+        } else {
+          try {
+            storedKeyReusable =
+              String(normalizeOpenAiCompatibleBaseUrl(baseUrl ?? '')) ===
+              String(normalizeOpenAiCompatibleBaseUrl(existing.base_url ?? ''))
+          } catch {
+            // An invalid stored base URL counts as a mismatch.
+          }
+        }
+      }
+      if (!storedKeyReusable || !existing?.api_key) {
+        return NextResponse.json(
+          { error: t('ai.enterApiKey') },
+          { status: 400 },
+        )
+      }
+      try {
+        apiKeyPlain = decrypt(existing.api_key)
+      } catch {
+        return NextResponse.json(
+          { error: t('ai.storedKeyReenter') },
+          { status: 400 },
+        )
+      }
     }
 
     try {

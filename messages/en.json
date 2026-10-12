@@ -2619,7 +2619,8 @@
         "saveDocFailed": "Failed to save document",
         "savedIndexFailed": "Saved, but semantic indexing failed ({message}). Lexical search still works; use Reindex to retry.",
         "savedKeywordOnly": "Saved with keyword search only — your embeddings key could not be decrypted (check ENCRYPTION_KEY, then re-enter the key)."
-      }
+      },
+      "configConflict": "This AI configuration was changed by someone else. Reload and try again."
     },
     "automations": {
       "copyName": "{name} (Copy)",

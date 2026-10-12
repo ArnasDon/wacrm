@@ -137,6 +137,16 @@ ORDER BY conname;
 \else
 \set uid_b 8f4a20fa-dadb-4acb-95e7-ebf0f4fe3e85
 \endif
+\if :{?probe_a}
+\set probe_a_override 1
+\else
+\set probe_a_override 0
+\endif
+\if :{?probe_b}
+\set probe_b_override 1
+\else
+\set probe_b_override 0
+\endif
 -- Account C is NOT a fixture value: it must be created by the probe itself, so it
 -- cannot be a fixed uuid (a fresh uuid every run is what makes a collision mean a
 -- real bug). uid_c is the only generated value; probe_c is READ BACK from the
@@ -189,6 +199,66 @@ SELECT 'iso-' || :'nonce' || '-after@isolation.probe.invalid' AS after_marker \g
 \echo '--- run nonce:' :nonce '  probe marker:' :marker
 \echo '--- probe A: account' :probe_a '  user' :uid_a
 \echo '--- probe B: account' :probe_b '  user' :uid_b
+
+-- ===========================================================================
+-- 6b. PROBE PROVISIONING (committed, idempotent). Sections 7-10 reference
+-- probe_a/probe_b/uid_a/uid_b as FIXED uuids, and every probe row they
+-- insert carries one of those user ids: the FK on contacts.user_id points
+-- at auth.users, so the users must exist in WHATEVER database this gate
+-- runs against. Section 8 shows the pattern for C (fresh uuid, trigger-
+-- built account, loud check); A and B are fixed, so they use ON CONFLICT:
+-- a clean stack gets the rows fresh, a database that already carries them
+-- is a no-op, and re-runs stay idempotent.
+--
+-- This block COMMITS, unlike every later section: the four rows are
+-- deterministic and gate-owned. The header promise of zero residue holds
+-- for the probe DATA (sections 7-10 still roll back); these four
+-- provisioning rows are the documented exception.
+BEGIN;
+INSERT INTO auth.users (id, email, aud, role, encrypted_password, raw_app_meta_data)
+VALUES
+  (:'uid_a'::uuid, 'iso-a-' || :'nonce' || '@isolation.probe.invalid',
+   'authenticated', 'authenticated', '', '{"provider":"email","providers":["email"]}'),
+  (:'uid_b'::uuid, 'iso-b-' || :'nonce' || '@isolation.probe.invalid',
+   'authenticated', 'authenticated', '', '{"provider":"email","providers":["email"]}')
+ON CONFLICT (id) DO NOTHING;
+
+-- The trigger that owns auth.users (handle_new_user, migration 017) builds
+-- each new user's personal account and owner profile; one account per
+-- owner (idx_accounts_one_per_owner) means the gate must use the
+-- trigger-built account as the probe account, never invent a second one.
+-- Read it back (the C section already does exactly this); a user who
+-- pre-exists from an earlier gate run keeps the account that run built.
+\if :probe_a_override != 0
+\else
+SELECT count(*) AS uid_a_accounts FROM accounts WHERE owner_user_id = :'uid_a'::uuid \gset
+\if :uid_a_accounts != '1'
+\echo 'PROBE PROVISIONING FAILED: uid_a owns ' :uid_a_accounts ' account(s), expected exactly 1 - handle_new_user swallows its own errors, so check the WARNING log above'
+\quit 3
+\endif
+SELECT id AS probe_a FROM accounts WHERE owner_user_id = :'uid_a'::uuid \gset
+\endif
+\if :probe_b_override != 0
+\else
+SELECT count(*) AS uid_b_accounts FROM accounts WHERE owner_user_id = :'uid_b'::uuid \gset
+\if :uid_b_accounts != '1'
+\echo 'PROBE PROVISIONING FAILED: uid_b owns ' :uid_b_accounts ' account(s), expected exactly 1 - handle_new_user swallows its own errors, so check the WARNING log above'
+\quit 3
+\endif
+SELECT id AS probe_b FROM accounts WHERE owner_user_id = :'uid_b'::uuid \gset
+\endif
+
+-- Loud check, psql-level (psql does not interpolate inside DO bodies -
+-- see section 8): each probe user holds exactly one owner profile, or
+-- every later section reads a phantom tenant.
+SELECT count(*) AS probe_profiles FROM profiles WHERE user_id IN (:'uid_a'::uuid, :'uid_b'::uuid) AND account_role = 'owner' \gset
+\if :probe_profiles != '2'
+\echo 'PROBE PROVISIONING FAILED: profiles=' :probe_profiles ' (expected 2) - the owner profiles are missing'
+\quit 3
+\endif
+COMMIT;
+\echo '--- effective probe A: account' :probe_a '  user' :uid_a
+\echo '--- effective probe B: account' :probe_b '  user' :uid_b
 
 -- Failure ledger. Accumulated in a psql variable so one run reports EVERY broken
 -- assertion instead of stopping at the first, then raised once at the end.

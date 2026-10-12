@@ -122,6 +122,21 @@ ORDER BY conname;
 --   psql -v probe_a=<account uuid> -v uid_a=<auth user_id>
 --   psql -v probe_b=<account uuid> -v uid_b=<auth user_id> -v nonce=<digits>
 \if :{?probe_a}
+\set probe_a_override 1
+\else
+\set probe_a_override 0
+\endif
+\if :{?probe_b}
+\set probe_b_override 1
+\else
+\set probe_b_override 0
+\endif
+-- Default fixture values, each guarded so a -v override is never
+-- clobbered. The override flags above must be set BEFORE these blocks
+-- run: once a default has set :probe_a, :{?probe_a} is true forever
+-- and can no longer tell an explicit -v probe_a= apart from the
+-- default itself.
+\if :{?probe_a}
 \else
 \set probe_a 0661e985-3c71-48e5-aafd-bc5277eca3a2
 \endif
@@ -189,6 +204,78 @@ SELECT 'iso-' || :'nonce' || '-after@isolation.probe.invalid' AS after_marker \g
 \echo '--- run nonce:' :nonce '  probe marker:' :marker
 \echo '--- probe A: account' :probe_a '  user' :uid_a
 \echo '--- probe B: account' :probe_b '  user' :uid_b
+
+-- ===========================================================================
+-- 6b. PROBE PROVISIONING (committed, idempotent). Sections 7-10 reference
+-- probe_a/probe_b/uid_a/uid_b as FIXED uuids, and every probe row they
+-- insert carries one of those user ids: the FK on contacts.user_id points
+-- at auth.users, so the users must exist in WHATEVER database this gate
+-- runs against. Section 8 shows the pattern for C (fresh uuid, trigger-
+-- built account, loud check); A and B are fixed, so they use ON CONFLICT:
+-- a clean stack gets the rows fresh, a database that already carries them
+-- is a no-op, and re-runs stay idempotent.
+--
+-- This block COMMITS, unlike every later section: the four rows are
+-- deterministic and gate-owned. The header promise of zero residue holds
+-- for the probe DATA (sections 7-10 still roll back); these four
+-- provisioning rows are the documented exception.
+BEGIN;
+INSERT INTO auth.users (id, email, aud, role, encrypted_password, raw_app_meta_data)
+VALUES
+  (:'uid_a'::uuid, 'iso-a-' || :'nonce' || '@isolation.probe.invalid',
+   'authenticated', 'authenticated', '', '{"provider":"email","providers":["email"]}'),
+  (:'uid_b'::uuid, 'iso-b-' || :'nonce' || '@isolation.probe.invalid',
+   'authenticated', 'authenticated', '', '{"provider":"email","providers":["email"]}')
+ON CONFLICT (id) DO NOTHING;
+
+-- The trigger that owns auth.users (handle_new_user, migration 017) builds
+-- each new user's personal account and owner profile; one account per
+-- owner (idx_accounts_one_per_owner) means the gate must use the
+-- trigger-built account as the probe account, never invent a second one.
+-- Read it back (the C section already does exactly this); a user who
+-- pre-exists from an earlier gate run keeps the account that run built.
+\if :probe_a_override
+\else
+SELECT (count(*) <> 1) AS uid_a_bad FROM accounts WHERE owner_user_id = :'uid_a'::uuid \gset
+\if :uid_a_bad
+\echo 'PROBE PROVISIONING FAILED: uid_a does not own exactly 1 account - handle_new_user swallows its own errors, so check the WARNINGs above'
+\quit 3
+\endif
+SELECT id AS probe_a FROM accounts WHERE owner_user_id = :'uid_a'::uuid \gset
+\endif
+\if :probe_b_override
+\else
+SELECT (count(*) <> 1) AS uid_b_bad FROM accounts WHERE owner_user_id = :'uid_b'::uuid \gset
+\if :uid_b_bad
+\echo 'PROBE PROVISIONING FAILED: uid_b does not own exactly 1 account - handle_new_user swallows its own errors, so check the WARNINGs above'
+\quit 3
+\endif
+SELECT id AS probe_b FROM accounts WHERE owner_user_id = :'uid_b'::uuid \gset
+\endif
+
+-- Loud check, psql-level (psql does not interpolate inside DO bodies -
+-- see section 8): each probe user holds exactly one owner profile, or
+-- every later section reads a phantom tenant. \if takes a single
+-- boolean value, so the inequality is folded into the SELECT.
+SELECT (count(*) <> 2) AS probe_profiles_bad FROM profiles WHERE user_id IN (:'uid_a'::uuid, :'uid_b'::uuid) AND account_role = 'owner' \gset
+\if :probe_profiles_bad
+\echo 'PROBE PROVISIONING FAILED: the two probe users do not hold exactly 2 owner profiles - the trigger output is incomplete'
+\quit 3
+\endif
+
+-- The gate drives traffic as anon, so anon needs table privileges the
+-- way the hosted platform gives them (privileges permit the attempt;
+-- RLS decides the rows - it remains the boundary). A clean stack's
+-- grants are a property of the Supabase CLI version that reset it
+-- (measured: the 2.113 stack lacked them; 2.119 carries them), so the
+-- gate provisions its own baseline rather than trusting the version:
+-- idempotent, committed like the probe rows, and independent of which
+-- CLI reset the stack.
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO anon, authenticated;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO anon, authenticated;
+COMMIT;
+\echo '--- effective probe A: account' :probe_a '  user' :uid_a
+\echo '--- effective probe B: account' :probe_b '  user' :uid_b
 
 -- Failure ledger. Accumulated in a psql variable so one run reports EVERY broken
 -- assertion instead of stopping at the first, then raised once at the end.
@@ -1132,6 +1219,130 @@ SELECT (SELECT count(*) FROM tenants)                       AS tenants_visible,
        (SELECT count(*) FROM contacts)                       AS contacts_visible;
 ROLLBACK;
 
+-- ===========================================================================
+\echo ''
+\echo '--- 10. NEGATIVE: the invitation RPC refuses used / expired / already-member (S4) ---'
+-- redeem_invitation (migration 019) is SECURITY DEFINER: it trusts
+-- auth.uid() for the caller and enforces every refusal in SQL. This
+-- section seeds four invitations (rolled back, zero residue) and drives
+-- the RPC as user B through all five outcomes. B is the sole owner of
+-- account B at seed time - exactly the state the RPC admits; every
+-- mutation lives in ONE transaction that is rolled back at the end.
+BEGIN;
+INSERT INTO account_invitations (account_id, token_hash, role, expires_at)
+VALUES
+  (:'probe_a'::uuid, 'iso10-live-'    || :'nonce', 'admin', NOW() + interval '7 days'),
+  (:'probe_a'::uuid, 'iso10-used-'    || :'nonce', 'admin', NOW() + interval '7 days'),
+  (:'probe_a'::uuid, 'iso10-expired-' || :'nonce', 'admin', NOW() - interval '1 day'),
+  (:'probe_b'::uuid, 'iso10-home-'    || :'nonce', 'admin', NOW() + interval '7 days');
+UPDATE account_invitations
+SET accepted_at = NOW(), accepted_by_user_id = :'uid_b'
+WHERE token_hash = 'iso10-used-' || :'nonce';
+
+SELECT set_config('iso.i_live',    'iso10-live-'    || :'nonce', true);
+SELECT set_config('iso.i_used',    'iso10-used-'    || :'nonce', true);
+SELECT set_config('iso.i_expired', 'iso10-expired-' || :'nonce', true);
+SELECT set_config('iso.i_home',    'iso10-home-'    || :'nonce', true);
+SELECT set_config('iso.uid_b',     :'uid_b',                  true);
+
+DO $iso_section10$
+DECLARE
+  v_ret   uuid;
+  v_home  text := 'UNTRIED';
+  v_live  text := 'UNTRIED';
+  v_used  text := 'UNTRIED';
+  v_exp   text := 'UNTRIED';
+  v_live2 text := 'UNTRIED';
+BEGIN
+  SET LOCAL ROLE anon;
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', current_setting('iso.uid_b'), 'role', 'authenticated')::text, true);
+
+  -- 1) B is already a member of its own account B -> 23505.
+  BEGIN
+    v_ret := public.redeem_invitation(current_setting('iso.i_home'));
+    v_home := 'ALLOWED acc=' || v_ret;
+  EXCEPTION WHEN SQLSTATE '23505' THEN v_home := 'REJECTED_23505';
+  WHEN OTHERS THEN v_home := 'REJECTED_OTHER_' || SQLSTATE; END;
+
+  -- 2) The live invitation: B joins account A -> returns account A —
+  --    UNLESS B's old personal account carries domain data or B is not
+  --    its sole owner, in which case the RPC's safety guard refuses
+  --    with 23505. Both outcomes are gate-legal (a clean-CI user has
+  --    an empty personal account; a working-DB user may not); a
+  --    success in the refused shape, or any other SQLSTATE, fails.
+  BEGIN
+    v_ret := public.redeem_invitation(current_setting('iso.i_live'));
+    v_live := 'OK acc=' || v_ret;
+  EXCEPTION WHEN SQLSTATE '23505' THEN v_live := 'REJECTED_23505';
+  WHEN OTHERS THEN
+    v_live := 'REJECTED_OTHER_' || SQLSTATE || ' ' || LEFT(SQLERRM, 80); END;
+
+  -- 3) The pre-seeded used row -> 22023.
+  BEGIN
+    PERFORM public.redeem_invitation(current_setting('iso.i_used'));
+    v_used := 'ALLOWED';
+  EXCEPTION WHEN SQLSTATE '22023' THEN v_used := 'REJECTED_22023';
+  WHEN OTHERS THEN v_used := 'REJECTED_OTHER_' || SQLSTATE; END;
+
+  -- 4) The expired row -> 22023.
+  BEGIN
+    PERFORM public.redeem_invitation(current_setting('iso.i_expired'));
+    v_exp := 'ALLOWED';
+  EXCEPTION WHEN SQLSTATE '22023' THEN v_exp := 'REJECTED_22023';
+  WHEN OTHERS THEN v_exp := 'REJECTED_OTHER_' || SQLSTATE; END;
+
+  -- 5) Consistent re-run of the live invitation: after a successful
+  --    join the row is used -> 22023; after a 23505 refusal nothing
+  --    changed, so the second call must return the SAME refusal.
+  BEGIN
+    PERFORM public.redeem_invitation(current_setting('iso.i_live'));
+    v_live2 := 'ALLOWED_AGAIN';
+  EXCEPTION WHEN SQLSTATE '22023' THEN v_live2 := 'REJECTED_22023';
+  WHEN SQLSTATE '23505' THEN v_live2 := 'REJECTED_23505';
+  WHEN OTHERS THEN v_live2 := 'REJECTED_OTHER_' || SQLSTATE; END;
+
+  PERFORM set_config('iso.section10.home',    v_home,  true);
+  PERFORM set_config('iso.section10.live',    v_live,  true);
+  PERFORM set_config('iso.section10.used',    v_used,  true);
+  PERFORM set_config('iso.section10.expired', v_exp,   true);
+  PERFORM set_config('iso.section10.live2',   v_live2, true);
+END $iso_section10$;
+
+SELECT current_setting('iso.section10.home')    AS home_outcome,
+       current_setting('iso.section10.live')    AS live_outcome,
+       current_setting('iso.section10.used')    AS used_outcome,
+       current_setting('iso.section10.expired') AS expired_outcome,
+       current_setting('iso.section10.live2')   AS live_again_outcome
+\gset s10_
+\echo '   home=' :s10_home_outcome '  live=' :s10_live_outcome '  used=' :s10_used_outcome '  expired=' :s10_expired_outcome '  live_again=' :s10_live_again_outcome
+
+SELECT :'ledger' || CASE
+  WHEN :'s10_home_outcome' = 'REJECTED_23505' THEN ''
+  ELSE format(E'[10] FAIL already-member redeem was %s, expected 23505 (a member cannot join their own account twice)\n', :'s10_home_outcome')
+END AS ledger \gset
+SELECT :'ledger' || CASE
+  WHEN :'s10_live_outcome' LIKE 'OK acc=' || :'probe_a' || '%'
+    OR :'s10_live_outcome' = 'REJECTED_23505'
+  THEN ''
+  ELSE format(E'[10] FAIL live redeem was %s, expected success (empty personal account) or a 23505 safety refusal\n', :'s10_live_outcome')
+END AS ledger \gset
+SELECT :'ledger' || CASE
+  WHEN :'s10_used_outcome' = 'REJECTED_22023' THEN ''
+  ELSE format(E'[10] FAIL pre-used invitation was %s, expected 22023\n', :'s10_used_outcome')
+END AS ledger \gset
+SELECT :'ledger' || CASE
+  WHEN :'s10_expired_outcome' = 'REJECTED_22023' THEN ''
+  ELSE format(E'[10] FAIL expired invitation was %s, expected 22023\n', :'s10_expired_outcome')
+END AS ledger \gset
+SELECT :'ledger' || CASE
+  WHEN (:'s10_live_outcome' LIKE 'OK acc=%' AND :'s10_live_again_outcome' = 'REJECTED_22023')
+    OR (:'s10_live_outcome' = 'REJECTED_23505' AND :'s10_live_again_outcome' = 'REJECTED_23505')
+  THEN ''
+  ELSE format(E'[10] FAIL live-invitation re-run: first=%s, second=%s (expected 22023 after a join, or the same 23505 refusal)\n', :'s10_live_outcome', :'s10_live_again_outcome')
+END AS ledger \gset
+ROLLBACK;
+
 -- ---------------------------------------------------------------------------
 -- THE GATE. One raised error, so psql exits non-zero (measured: exit 3).
 -- ---------------------------------------------------------------------------
@@ -1152,5 +1363,5 @@ SELECT format($fmt$DO $iso$ BEGIN RAISE EXCEPTION %L USING ERRCODE = 'ISO01'; EN
               'tenant isolation FAILED: ' || :'ledger') AS iso_raise \gset iso_raise_
 SELECT :'iso_raise_iso_raise' AS iso_raise_stmt \gexec
 \else
-\echo 'TENANT ISOLATION OK: own_rows > 0 for both users, 0 cross-account probe rows visible, cross-account INSERT rejected with 42501, cross-account UPDATE rejected with 42501, cross-account DELETE left account B''s row intact (counted as postgres).'
+\echo 'TENANT ISOLATION OK: own_rows > 0 for both users, 0 cross-account probe rows visible, cross-account INSERT rejected with 42501, cross-account UPDATE rejected with 42501, cross-account DELETE left account B''s row intact (counted as postgres), invitation RPC refused already-member (23505) and used/expired (22023).'
 \endif

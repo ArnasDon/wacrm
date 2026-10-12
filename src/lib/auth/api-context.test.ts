@@ -130,3 +130,44 @@ describe("requireApiKey", () => {
     );
   });
 });
+
+describe("key-to-account binding (S4 cross-tenant scenario: one key = one account, nothing else)", () => {
+  // Two keys, two accounts. A's key alone carries contacts:read. If the
+  // lookup ever fell through between rows (a hash collision, a missing
+  // UNIQUE on the hash column, or scope/account copied across rows), the
+  // assertions below catch it: B's plaintext must resolve to B's row
+  // and only B's row.
+  const keyA = generateApiKey();
+  const keyB = generateApiKey();
+
+  beforeEach(() => {
+    const rows: Record<string, ApiKeyRow> = {
+      [keyA.hash]: row({ id: "key-a", account_id: "acct-a", scopes: ["contacts:read"] }),
+      [keyB.hash]: row({ id: "key-b", account_id: "acct-b", scopes: [] }),
+    };
+    findActiveKeyByHash.mockImplementation(async (h: string) => rows[h] ?? null);
+  });
+
+  it("key B's context is pinned to account B and its own key row", async () => {
+    const ctx = await requireApiKey(reqWith(`Bearer ${keyB.plaintext}`));
+    expect(ctx.authType).toBe("api_key");
+    expect(ctx.accountId).toBe("acct-b");
+    expect(ctx.keyId).toBe("key-b");
+    expect(ctx.scopes).toEqual([]);
+  });
+
+  it("key A's context is pinned to account A — never the other key's account", async () => {
+    const ctx = await requireApiKey(reqWith(`Bearer ${keyA.plaintext}`));
+    expect(ctx.accountId).toBe("acct-a");
+    expect(ctx.keyId).toBe("key-a");
+    expect(ctx.accountId).not.toBe("acct-b");
+  });
+
+  it("a scope granted to key A is NOT inheritable through key B (403)", async () => {
+    await expectApiError(
+      requireApiKey(reqWith(`Bearer ${keyB.plaintext}`), "contacts:read"),
+      "forbidden",
+      403,
+    );
+  });
+});

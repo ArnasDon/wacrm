@@ -1,0 +1,117 @@
+RLS census — live Supabase Postgres (supabase_db_wacrm)
+Date: 2026-10-12 | Branch base: c4374a8 | S4 evidence
+
+=== RLS-enabled public tables (pg_tables.rowsecurity) ===
+           tablename           
+-------------------------------
+ account_invitations
+ accounts
+ ai_configs
+ ai_knowledge_chunks
+ ai_knowledge_documents
+ ai_usage_log
+ api_keys
+ automation_logs
+ automation_pending_executions
+ automation_steps
+ automations
+ broadcast_recipients
+ broadcasts
+ contact_custom_values
+ contact_notes
+ contact_tags
+ contacts
+ conversations
+ custom_fields
+ deals
+ flow_nodes
+ flow_run_events
+ flow_runs
+ flows
+ member_presence
+ message_reactions
+ message_templates
+ messages
+ notifications
+ pipeline_stages
+ pipelines
+ profiles
+ quick_replies
+ tags
+ tenants
+ webhook_endpoints
+ whatsapp_config
+(37 rows)
+
+
+=== policy counts per table ===
+       tablename        | policies 
+------------------------+----------
+ account_invitations    |        2
+ accounts               |        2
+ ai_configs             |        4
+ ai_knowledge_chunks    |        4
+ ai_knowledge_documents |        4
+ ai_usage_log           |        1
+ api_keys               |        4
+ automation_logs        |        1
+ automation_steps       |        2
+ automations            |        4
+ broadcast_recipients   |        2
+ broadcasts             |        4
+ contact_custom_values  |        2
+ contact_notes          |        4
+ contact_tags           |        2
+ contacts               |        4
+ conversations          |        4
+ custom_fields          |        4
+ deals                  |        4
+ flow_nodes             |        2
+ flow_run_events        |        1
+ flow_runs              |        1
+ flows                  |        4
+ member_presence        |        1
+ message_reactions      |        2
+ message_templates      |        4
+ messages               |        2
+ notifications          |        2
+ pipeline_stages        |        2
+ pipelines              |        4
+ profiles               |        3
+ quick_replies          |        4
+ tags                   |        4
+ webhook_endpoints      |        4
+ whatsapp_config        |        4
+(35 rows)
+
+
+=== RLS-enabled tables with ZERO policies (fail-closed set) ===
+           tablename           
+-------------------------------
+ automation_pending_executions
+ tenants
+(2 rows)
+
+
+=== tables with RLS but no account-membership predicate (spot set) ===
+     tablename     |        policyname        
+-------------------+--------------------------
+ accounts          | accounts_select
+ accounts          | accounts_update
+ ai_configs        | ai_configs_delete
+ ai_configs        | ai_configs_insert
+ ai_configs        | ai_configs_select
+ ai_configs        | ai_configs_update
+ api_keys          | api_keys_delete
+ api_keys          | api_keys_insert
+ api_keys          | api_keys_select
+ api_keys          | api_keys_update
+ profiles          | profiles_insert
+ profiles          | profiles_select
+ profiles          | profiles_update
+ webhook_endpoints | webhook_endpoints_delete
+ webhook_endpoints | webhook_endpoints_insert
+ webhook_endpoints | webhook_endpoints_select
+ webhook_endpoints | webhook_endpoints_update
+(17 rows)
+

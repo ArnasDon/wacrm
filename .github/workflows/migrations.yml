@@ -24,11 +24,13 @@ on:
     # "expected", which blocks every PR that doesn't touch SQL.
     paths:
       - 'supabase/**'
+      - 'src/lib/tenant/**'
       - '.github/workflows/migrations.yml'
   push:
     branches: [main]
     paths:
       - 'supabase/**'
+      - 'src/lib/tenant/**'
       - '.github/workflows/migrations.yml'
 
 concurrency:
@@ -69,3 +71,60 @@ jobs:
       # just the absence of an error.
       - name: Verify the resulting schema
         run: supabase db query --local --file supabase/ci/verify-schema.sql
+
+  isolation:
+    name: Tenant-isolation gate (real RLS)
+    runs-on: ubuntu-latest
+    needs: apply
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install the Supabase CLI
+        uses: supabase/setup-cli@v3
+        with:
+          # 2.119: its local stack carries the platform default grants
+          # (anon/authenticated/service_role on all public tables) that
+          # the gate's SET ROLE anon traffic depends on; 2.113's stack
+          # lacks them (measured: permission denied for table contacts).
+          version: 2.119.0
+
+      - name: Start Postgres
+        run: supabase db start
+
+      # Same clean-slate guarantee as the apply job: the gate must run
+      # against the schema the migrations produce, not a warm volume.
+      - name: Replay every migration from scratch
+        run: supabase db reset --local --no-seed
+
+      # Install a real psql client. The gate below is a psql SCRIPT
+      # (\echo / \gset / \if meta-commands), not an executable SQL file:
+      # `supabase db query` runs file contents as SQL against the server
+      # and chokes on the first backslash (measured in CI: "syntax error
+      # at or near \""). Plain psql against the clean stack the apply job
+      # just reset is the only runner that understands the script.
+      - name: Install the psql client
+        run: sudo apt-get update -y && sudo apt-get install -y postgresql-client
+
+      # Negative control on the gate mechanism itself: the sentinel
+      # raises an exception on purpose, so a healthy psql exits
+      # non-zero and this step PASSES. If the step ever fails, error
+      # propagation is broken and the isolation gate below is not a
+      # gate.
+      - name: Sentinel - prove a raised error fails the step
+        run: |
+          if PGPASSWORD=postgres psql -h localhost -p 54322 -U postgres -d postgres \
+            -v ON_ERROR_STOP=1 -f .github/workflows/isolation-sentinel.sql; then
+            echo "sentinel: a raised SQL error did NOT make psql exit non-zero - error propagation is broken, the isolation gate below is not a gate"
+            exit 1
+          fi
+          echo "sentinel ok: a raised SQL error propagates as a non-zero exit"
+
+      # The gate: sections 7-10 of isolation.sql push real traffic
+      # through the real RLS policies. The script exits 0 only when
+      # every assertion held; a raised assertion exits non-zero
+      # (ON_ERROR_STOP is set both inside the script and on the
+      # psql command line).
+      - name: Run the tenant-isolation gate
+        run: |
+          PGPASSWORD=postgres psql -h localhost -p 54322 -U postgres -d postgres \
+            -v ON_ERROR_STOP=1 -f src/lib/tenant/isolation.sql

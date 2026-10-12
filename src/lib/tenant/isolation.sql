@@ -1132,6 +1132,130 @@ SELECT (SELECT count(*) FROM tenants)                       AS tenants_visible,
        (SELECT count(*) FROM contacts)                       AS contacts_visible;
 ROLLBACK;
 
+-- ===========================================================================
+\echo ''
+\echo '--- 10. NEGATIVE: the invitation RPC refuses used / expired / already-member (S4) ---'
+-- redeem_invitation (migration 019) is SECURITY DEFINER: it trusts
+-- auth.uid() for the caller and enforces every refusal in SQL. This
+-- section seeds four invitations (rolled back, zero residue) and drives
+-- the RPC as user B through all five outcomes. B is the sole owner of
+-- account B at seed time - exactly the state the RPC admits; every
+-- mutation lives in ONE transaction that is rolled back at the end.
+BEGIN;
+INSERT INTO account_invitations (account_id, token_hash, role, expires_at)
+VALUES
+  (:'probe_a'::uuid, 'iso10-live-'    || :'nonce', 'admin', NOW() + interval '7 days'),
+  (:'probe_a'::uuid, 'iso10-used-'    || :'nonce', 'admin', NOW() + interval '7 days'),
+  (:'probe_a'::uuid, 'iso10-expired-' || :'nonce', 'admin', NOW() - interval '1 day'),
+  (:'probe_b'::uuid, 'iso10-home-'    || :'nonce', 'admin', NOW() + interval '7 days');
+UPDATE account_invitations
+SET accepted_at = NOW(), accepted_by_user_id = :'uid_b'
+WHERE token_hash = 'iso10-used-' || :'nonce';
+
+SELECT set_config('iso.i_live',    'iso10-live-'    || :'nonce', true);
+SELECT set_config('iso.i_used',    'iso10-used-'    || :'nonce', true);
+SELECT set_config('iso.i_expired', 'iso10-expired-' || :'nonce', true);
+SELECT set_config('iso.i_home',    'iso10-home-'    || :'nonce', true);
+SELECT set_config('iso.uid_b',     :'uid_b',                  true);
+
+DO $iso_section10$
+DECLARE
+  v_ret   uuid;
+  v_home  text := 'UNTRIED';
+  v_live  text := 'UNTRIED';
+  v_used  text := 'UNTRIED';
+  v_exp   text := 'UNTRIED';
+  v_live2 text := 'UNTRIED';
+BEGIN
+  SET LOCAL ROLE anon;
+  PERFORM set_config('request.jwt.claims',
+    json_build_object('sub', current_setting('iso.uid_b'), 'role', 'authenticated')::text, true);
+
+  -- 1) B is already a member of its own account B -> 23505.
+  BEGIN
+    v_ret := public.redeem_invitation(current_setting('iso.i_home'));
+    v_home := 'ALLOWED acc=' || v_ret;
+  EXCEPTION WHEN SQLSTATE '23505' THEN v_home := 'REJECTED_23505';
+  WHEN OTHERS THEN v_home := 'REJECTED_OTHER_' || SQLSTATE; END;
+
+  -- 2) The live invitation: B joins account A -> returns account A —
+  --    UNLESS B's old personal account carries domain data or B is not
+  --    its sole owner, in which case the RPC's safety guard refuses
+  --    with 23505. Both outcomes are gate-legal (a clean-CI user has
+  --    an empty personal account; a working-DB user may not); a
+  --    success in the refused shape, or any other SQLSTATE, fails.
+  BEGIN
+    v_ret := public.redeem_invitation(current_setting('iso.i_live'));
+    v_live := 'OK acc=' || v_ret;
+  EXCEPTION WHEN SQLSTATE '23505' THEN v_live := 'REJECTED_23505';
+  WHEN OTHERS THEN
+    v_live := 'REJECTED_OTHER_' || SQLSTATE || ' ' || LEFT(SQLERRM, 80); END;
+
+  -- 3) The pre-seeded used row -> 22023.
+  BEGIN
+    PERFORM public.redeem_invitation(current_setting('iso.i_used'));
+    v_used := 'ALLOWED';
+  EXCEPTION WHEN SQLSTATE '22023' THEN v_used := 'REJECTED_22023';
+  WHEN OTHERS THEN v_used := 'REJECTED_OTHER_' || SQLSTATE; END;
+
+  -- 4) The expired row -> 22023.
+  BEGIN
+    PERFORM public.redeem_invitation(current_setting('iso.i_expired'));
+    v_exp := 'ALLOWED';
+  EXCEPTION WHEN SQLSTATE '22023' THEN v_exp := 'REJECTED_22023';
+  WHEN OTHERS THEN v_exp := 'REJECTED_OTHER_' || SQLSTATE; END;
+
+  -- 5) Consistent re-run of the live invitation: after a successful
+  --    join the row is used -> 22023; after a 23505 refusal nothing
+  --    changed, so the second call must return the SAME refusal.
+  BEGIN
+    PERFORM public.redeem_invitation(current_setting('iso.i_live'));
+    v_live2 := 'ALLOWED_AGAIN';
+  EXCEPTION WHEN SQLSTATE '22023' THEN v_live2 := 'REJECTED_22023';
+  WHEN SQLSTATE '23505' THEN v_live2 := 'REJECTED_23505';
+  WHEN OTHERS THEN v_live2 := 'REJECTED_OTHER_' || SQLSTATE; END;
+
+  PERFORM set_config('iso.section10.home',    v_home,  true);
+  PERFORM set_config('iso.section10.live',    v_live,  true);
+  PERFORM set_config('iso.section10.used',    v_used,  true);
+  PERFORM set_config('iso.section10.expired', v_exp,   true);
+  PERFORM set_config('iso.section10.live2',   v_live2, true);
+END $iso_section10$;
+
+SELECT current_setting('iso.section10.home')    AS home_outcome,
+       current_setting('iso.section10.live')    AS live_outcome,
+       current_setting('iso.section10.used')    AS used_outcome,
+       current_setting('iso.section10.expired') AS expired_outcome,
+       current_setting('iso.section10.live2')   AS live_again_outcome
+\gset s10_
+\echo '   home=' :s10_home_outcome '  live=' :s10_live_outcome '  used=' :s10_used_outcome '  expired=' :s10_expired_outcome '  live_again=' :s10_live_again_outcome
+
+SELECT :'ledger' || CASE
+  WHEN :'s10_home_outcome' = 'REJECTED_23505' THEN ''
+  ELSE format(E'[10] FAIL already-member redeem was %s, expected 23505 (a member cannot join their own account twice)\n', :'s10_home_outcome')
+END AS ledger \gset
+SELECT :'ledger' || CASE
+  WHEN :'s10_live_outcome' LIKE 'OK acc=' || :'probe_a' || '%'
+    OR :'s10_live_outcome' = 'REJECTED_23505'
+  THEN ''
+  ELSE format(E'[10] FAIL live redeem was %s, expected success (empty personal account) or a 23505 safety refusal\n', :'s10_live_outcome')
+END AS ledger \gset
+SELECT :'ledger' || CASE
+  WHEN :'s10_used_outcome' = 'REJECTED_22023' THEN ''
+  ELSE format(E'[10] FAIL pre-used invitation was %s, expected 22023\n', :'s10_used_outcome')
+END AS ledger \gset
+SELECT :'ledger' || CASE
+  WHEN :'s10_expired_outcome' = 'REJECTED_22023' THEN ''
+  ELSE format(E'[10] FAIL expired invitation was %s, expected 22023\n', :'s10_expired_outcome')
+END AS ledger \gset
+SELECT :'ledger' || CASE
+  WHEN (:'s10_live_outcome' LIKE 'OK acc=%' AND :'s10_live_again_outcome' = 'REJECTED_22023')
+    OR (:'s10_live_outcome' = 'REJECTED_23505' AND :'s10_live_again_outcome' = 'REJECTED_23505')
+  THEN ''
+  ELSE format(E'[10] FAIL live-invitation re-run: first=%s, second=%s (expected 22023 after a join, or the same 23505 refusal)\n', :'s10_live_outcome', :'s10_live_again_outcome')
+END AS ledger \gset
+ROLLBACK;
+
 -- ---------------------------------------------------------------------------
 -- THE GATE. One raised error, so psql exits non-zero (measured: exit 3).
 -- ---------------------------------------------------------------------------
@@ -1152,5 +1276,5 @@ SELECT format($fmt$DO $iso$ BEGIN RAISE EXCEPTION %L USING ERRCODE = 'ISO01'; EN
               'tenant isolation FAILED: ' || :'ledger') AS iso_raise \gset iso_raise_
 SELECT :'iso_raise_iso_raise' AS iso_raise_stmt \gexec
 \else
-\echo 'TENANT ISOLATION OK: own_rows > 0 for both users, 0 cross-account probe rows visible, cross-account INSERT rejected with 42501, cross-account UPDATE rejected with 42501, cross-account DELETE left account B''s row intact (counted as postgres).'
+\echo 'TENANT ISOLATION OK: own_rows > 0 for both users, 0 cross-account probe rows visible, cross-account INSERT rejected with 42501, cross-account UPDATE rejected with 42501, cross-account DELETE left account B''s row intact (counted as postgres), invitation RPC refused already-member (23505) and used/expired (22023).'
 \endif

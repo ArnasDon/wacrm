@@ -92,21 +92,35 @@ jobs:
       - name: Replay every migration from scratch
         run: supabase db reset --local --no-seed
 
+      # Install a real psql client. The gate below is a psql SCRIPT
+      # (\echo / \gset / \if meta-commands), not an executable SQL file:
+      # `supabase db query` runs file contents as SQL against the server
+      # and chokes on the first backslash (measured in CI: "syntax error
+      # at or near \""). Plain psql against the clean stack the apply job
+      # just reset is the only runner that understands the script.
+      - name: Install the psql client
+        run: sudo apt-get update -y && sudo apt-get install -y postgresql-client
+
       # Negative control on the gate mechanism itself: the sentinel
-      # raises an exception on purpose, so a correctly-propagating CLI
-      # exits non-zero and this step PASSES. If the step ever fails,
-      # the CLI stopped propagating psql's non-zero exit and the
-      # isolation gate below it is not a gate.
+      # raises an exception on purpose, so a healthy psql exits
+      # non-zero and this step PASSES. If the step ever fails, error
+      # propagation is broken and the isolation gate below is not a
+      # gate.
       - name: Sentinel - prove a raised error fails the step
         run: |
-          if supabase db query --local --file .github/workflows/isolation-sentinel.sql; then
-            echo "sentinel: a raised SQL error did NOT make the CLI step fail - error propagation is broken, the isolation gate below is not a gate"
+          if PGPASSWORD=postgres psql -h localhost -p 54322 -U postgres -d postgres \
+            -v ON_ERROR_STOP=1 -f .github/workflows/isolation-sentinel.sql; then
+            echo "sentinel: a raised SQL error did NOT make psql exit non-zero - error propagation is broken, the isolation gate below is not a gate"
             exit 1
           fi
           echo "sentinel ok: a raised SQL error propagates as a non-zero exit"
 
-      # The gate: sections 7-9b of isolation.sql push real traffic
-      # through the real RLS policies (exit 0 = every assertion held;
-      # exit 3 = a raised assertion, via the file's own ON_ERROR_STOP).
+      # The gate: sections 7-10 of isolation.sql push real traffic
+      # through the real RLS policies. The script exits 0 only when
+      # every assertion held; a raised assertion exits non-zero
+      # (ON_ERROR_STOP is set both inside the script and on the
+      # psql command line).
       - name: Run the tenant-isolation gate
-        run: supabase db query --local --file src/lib/tenant/isolation.sql
+        run: |
+          PGPASSWORD=postgres psql -h localhost -p 54322 -U postgres -d postgres \
+            -v ON_ERROR_STOP=1 -f src/lib/tenant/isolation.sql

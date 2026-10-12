@@ -74,3 +74,15 @@ docker run -d --env-file .env.local -e PORT=3000 -p 3000:3000 wacrm
   deployment, sending the shared secret in the `x-cron-secret` header
   (`AUTOMATION_CRON_SECRET`, see `.env.local.example`). Both return
   503 until that variable is set.
+- **Rotating `AUTOMATION_CRON_SECRET`.** The value is one shared
+  operator credential: whoever holds it can fire every tenant's
+  queued automation runs, since both cron endpoints execute with the
+  service-role client across all accounts by design. There is no
+  per-tenant scoping and no automatic rotation. On suspected exposure:
+  1. Generate a new long random string and restart the app with it.
+  2. Point the external scheduler at the new value (`x-cron-secret`
+     header) before the next tick. Until then, cron calls are rejected
+     — 401 on a mismatched secret, 503 while the variable is empty —
+     and pending runs simply queue; the engine's claim lock makes
+     redelivery idempotent, so nothing runs twice.
+  3. Verify one cron call returns 200 and the run log shows the tick.

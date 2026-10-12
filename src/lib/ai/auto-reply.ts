@@ -1098,8 +1098,16 @@ For airport transport, record the guest's request in nota on the relevant existi
           void dispatchSystemAlert({
             severity: 'warning',
             source: 'ai_dispatch_error',
-            title: 'AI told a hotel guest their request was noted but saved nothing (no record_reservation marker, twice)',
-            detail: { account_id: accountId, conversation_id: conversationId, model: config.model },
+            title: 'AI told a hotel guest their request was noted but saved nothing (no record_reservation marker, twice; claim removed before sending)',
+            // The claimed reply is what a reviewer needs: most hits are
+            // "noted" about something that isn't a stay (late check-out,
+            // a guest list) — false positives only the text reveals.
+            detail: {
+              account_id: accountId,
+              conversation_id: conversationId,
+              model: config.model,
+              claimed_reply: generation.text.slice(0, 300),
+            },
             dedupKey: `ai_noted_without_marker:${accountId}`,
             accountId,
             throttleMinutes: 60,

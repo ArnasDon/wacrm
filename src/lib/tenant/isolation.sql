@@ -122,6 +122,21 @@ ORDER BY conname;
 --   psql -v probe_a=<account uuid> -v uid_a=<auth user_id>
 --   psql -v probe_b=<account uuid> -v uid_b=<auth user_id> -v nonce=<digits>
 \if :{?probe_a}
+\set probe_a_override 1
+\else
+\set probe_a_override 0
+\endif
+\if :{?probe_b}
+\set probe_b_override 1
+\else
+\set probe_b_override 0
+\endif
+-- Default fixture values, each guarded so a -v override is never
+-- clobbered. The override flags above must be set BEFORE these blocks
+-- run: once a default has set :probe_a, :{?probe_a} is true forever
+-- and can no longer tell an explicit -v probe_a= apart from the
+-- default itself.
+\if :{?probe_a}
 \else
 \set probe_a 0661e985-3c71-48e5-aafd-bc5277eca3a2
 \endif
@@ -136,16 +151,6 @@ ORDER BY conname;
 \if :{?uid_b}
 \else
 \set uid_b 8f4a20fa-dadb-4acb-95e7-ebf0f4fe3e85
-\endif
-\if :{?probe_a}
-\set probe_a_override 1
-\else
-\set probe_a_override 0
-\endif
-\if :{?probe_b}
-\set probe_b_override 1
-\else
-\set probe_b_override 0
 \endif
 -- Account C is NOT a fixture value: it must be created by the probe itself, so it
 -- cannot be a fixed uuid (a fresh uuid every run is what makes a collision mean a
@@ -229,20 +234,20 @@ ON CONFLICT (id) DO NOTHING;
 -- trigger-built account as the probe account, never invent a second one.
 -- Read it back (the C section already does exactly this); a user who
 -- pre-exists from an earlier gate run keeps the account that run built.
-\if :probe_a_override != 0
+\if :probe_a_override
 \else
-SELECT count(*) AS uid_a_accounts FROM accounts WHERE owner_user_id = :'uid_a'::uuid \gset
-\if :uid_a_accounts != '1'
-\echo 'PROBE PROVISIONING FAILED: uid_a owns ' :uid_a_accounts ' account(s), expected exactly 1 - handle_new_user swallows its own errors, so check the WARNING log above'
+SELECT (count(*) <> 1) AS uid_a_bad FROM accounts WHERE owner_user_id = :'uid_a'::uuid \gset
+\if :uid_a_bad
+\echo 'PROBE PROVISIONING FAILED: uid_a does not own exactly 1 account - handle_new_user swallows its own errors, so check the WARNINGs above'
 \quit 3
 \endif
 SELECT id AS probe_a FROM accounts WHERE owner_user_id = :'uid_a'::uuid \gset
 \endif
-\if :probe_b_override != 0
+\if :probe_b_override
 \else
-SELECT count(*) AS uid_b_accounts FROM accounts WHERE owner_user_id = :'uid_b'::uuid \gset
-\if :uid_b_accounts != '1'
-\echo 'PROBE PROVISIONING FAILED: uid_b owns ' :uid_b_accounts ' account(s), expected exactly 1 - handle_new_user swallows its own errors, so check the WARNING log above'
+SELECT (count(*) <> 1) AS uid_b_bad FROM accounts WHERE owner_user_id = :'uid_b'::uuid \gset
+\if :uid_b_bad
+\echo 'PROBE PROVISIONING FAILED: uid_b does not own exactly 1 account - handle_new_user swallows its own errors, so check the WARNINGs above'
 \quit 3
 \endif
 SELECT id AS probe_b FROM accounts WHERE owner_user_id = :'uid_b'::uuid \gset
@@ -250,12 +255,24 @@ SELECT id AS probe_b FROM accounts WHERE owner_user_id = :'uid_b'::uuid \gset
 
 -- Loud check, psql-level (psql does not interpolate inside DO bodies -
 -- see section 8): each probe user holds exactly one owner profile, or
--- every later section reads a phantom tenant.
-SELECT count(*) AS probe_profiles FROM profiles WHERE user_id IN (:'uid_a'::uuid, :'uid_b'::uuid) AND account_role = 'owner' \gset
-\if :probe_profiles != '2'
-\echo 'PROBE PROVISIONING FAILED: profiles=' :probe_profiles ' (expected 2) - the owner profiles are missing'
+-- every later section reads a phantom tenant. \if takes a single
+-- boolean value, so the inequality is folded into the SELECT.
+SELECT (count(*) <> 2) AS probe_profiles_bad FROM profiles WHERE user_id IN (:'uid_a'::uuid, :'uid_b'::uuid) AND account_role = 'owner' \gset
+\if :probe_profiles_bad
+\echo 'PROBE PROVISIONING FAILED: the two probe users do not hold exactly 2 owner profiles - the trigger output is incomplete'
 \quit 3
 \endif
+
+-- The gate drives traffic as anon, so anon needs table privileges the
+-- way the hosted platform gives them (privileges permit the attempt;
+-- RLS decides the rows - it remains the boundary). A clean stack's
+-- grants are a property of the Supabase CLI version that reset it
+-- (measured: the 2.113 stack lacked them; 2.119 carries them), so the
+-- gate provisions its own baseline rather than trusting the version:
+-- idempotent, committed like the probe rows, and independent of which
+-- CLI reset the stack.
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO anon, authenticated;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO anon, authenticated;
 COMMIT;
 \echo '--- effective probe A: account' :probe_a '  user' :uid_a
 \echo '--- effective probe B: account' :probe_b '  user' :uid_b

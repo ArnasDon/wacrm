@@ -82,7 +82,11 @@ jobs:
       - name: Install the Supabase CLI
         uses: supabase/setup-cli@v3
         with:
-          version: 2.113.0
+          # 2.119: its local stack carries the platform default grants
+          # (anon/authenticated/service_role on all public tables) that
+          # the gate's SET ROLE anon traffic depends on; 2.113's stack
+          # lacks them (measured: permission denied for table contacts).
+          version: 2.119.0
 
       - name: Start Postgres
         run: supabase db start

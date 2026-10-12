@@ -16,6 +16,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { dispatchSystemAlert } from '@/lib/observability/alerts'
+import { TEAMMATE_QUIET_MS } from './human-reply'
 
 /** Look-back window. Long enough that a healthy bot (30s debounce +
  *  seconds of generation) would definitely have logged usage for any
@@ -76,7 +77,20 @@ export async function checkAiLiveness(db: SupabaseClient): Promise<AiLivenessRes
 
   for (const accountId of accountIds) {
     if (calledAccounts.has(accountId)) continue // bot is alive here
-    const convIds = convByAccount.get(accountId) ?? []
+    let convIds = convByAccount.get(accountId) ?? []
+    if (convIds.length < MIN_DISTINCT_CONVERSATIONS) continue
+
+    // A teammate answered recently → the AI is quiet there on purpose
+    // (TEAMMATE_QUIET_MS), not down. Loose on purpose: any human agent row.
+    const { data: staffRows } = await db
+      .from('messages')
+      .select('conversation_id')
+      .in('conversation_id', convIds)
+      .eq('sender_type', 'agent')
+      .eq('ai_generated', false)
+      .gte('created_at', new Date(Date.now() - TEAMMATE_QUIET_MS).toISOString())
+    const staffConvs = new Set((staffRows ?? []).map((r) => r.conversation_id as string))
+    convIds = convIds.filter((id) => !staffConvs.has(id))
     if (convIds.length < MIN_DISTINCT_CONVERSATIONS) continue
 
     const { count } = await db

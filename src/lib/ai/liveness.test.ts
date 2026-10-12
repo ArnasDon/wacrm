@@ -12,6 +12,8 @@ interface FakeState {
   eligibleConvs: { id: string; account_id: string }[]
   /** conversation_id -> customer message count in window */
   msgCounts: Record<string, number>
+  /** conversations a teammate answered within TEAMMATE_QUIET_MS */
+  staffConvs?: string[]
 }
 
 function fakeDb(s: FakeState): SupabaseClient {
@@ -53,18 +55,28 @@ function fakeDb(s: FakeState): SupabaseClient {
       }
       if (table === 'messages') {
         let convIds: string[] = []
+        let sender = ''
         const c = {
           select: () => c,
           in: (_col: string, ids: string[]) => {
             convIds = ids
             return c
           },
-          eq: () => c,
+          eq: (col: string, v: string) => {
+            if (col === 'sender_type') sender = v
+            return c
+          },
           gte: () =>
-            Promise.resolve({
-              count: convIds.reduce((n, id) => n + (s.msgCounts[id] ?? 0), 0),
-              error: null,
-            }),
+            Promise.resolve(
+              sender === 'agent'
+                ? {
+                    data: convIds
+                      .filter((id) => s.staffConvs?.includes(id))
+                      .map((id) => ({ conversation_id: id })),
+                    error: null,
+                  }
+                : { count: convIds.reduce((n, id) => n + (s.msgCounts[id] ?? 0), 0), error: null },
+            ),
         }
         return c
       }
@@ -142,6 +154,23 @@ describe('checkAiLiveness', () => {
           { id: 'c2', account_id: 'a1' },
         ],
         msgCounts: { c1: 1, c2: 1 }, // 2 total, < 3
+      }),
+    )
+    expect(r.deadAccounts).toEqual([])
+    expect(h.dispatchSystemAlert).not.toHaveBeenCalled()
+  })
+
+  it('does NOT alert when a teammate is handling the threads (AI quiet on purpose)', async () => {
+    const r = await checkAiLiveness(
+      fakeDb({
+        aiConfigAccounts: ['a1'],
+        usageAccounts: [],
+        eligibleConvs: [
+          { id: 'c1', account_id: 'a1' },
+          { id: 'c2', account_id: 'a1' },
+        ],
+        msgCounts: { c1: 5, c2: 5 },
+        staffConvs: ['c1'],
       }),
     )
     expect(r.deadAccounts).toEqual([])

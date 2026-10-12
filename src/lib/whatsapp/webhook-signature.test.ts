@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   parseAppSecrets,
+  safeTokenEqual,
   verifyMetaWebhookSignature,
 } from "./webhook-signature";
 
@@ -128,6 +129,28 @@ describe("verifyMetaWebhookSignature", () => {
       const body = "{}";
       expect(verifyMetaWebhookSignature(body, signedHeader(body, " , "))).toBe(false);
       expect(verifyMetaWebhookSignature(body, signedHeader(body, ""))).toBe(false);
+    });
+  });
+
+  describe("safeTokenEqual (constant-time string compare)", () => {
+    it("accepts equal strings of any length", () => {
+      expect(safeTokenEqual("abc", "abc")).toBe(true);
+      expect(safeTokenEqual("", "")).toBe(true);
+      const long = "x".repeat(512);
+      expect(safeTokenEqual(long, long)).toBe(true);
+    });
+
+    it("rejects different strings of the same length", () => {
+      expect(safeTokenEqual("abc", "abd")).toBe(false);
+      expect(safeTokenEqual("a", "b")).toBe(false);
+    });
+
+    it("rejects different-length strings without throwing", () => {
+      // timingSafeEqual throws on length mismatch — the padding guard
+      // keeps the call total-order safe in both directions.
+      expect(safeTokenEqual("abc", "abcd")).toBe(false);
+      expect(safeTokenEqual("abcd", "abc")).toBe(false);
+      expect(safeTokenEqual("short", "a-much-longer-plaintext-verify-token")).toBe(false);
     });
   });
 });

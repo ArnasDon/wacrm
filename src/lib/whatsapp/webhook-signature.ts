@@ -78,3 +78,22 @@ export function verifyMetaWebhookSignature(
   }
   return ok
 }
+
+/**
+ * Constant-time comparison of two arbitrary-length strings.
+ *
+ * The shorter side is zero-padded so `timingSafeEqual` never throws on a
+ * length mismatch. The content compare stays constant-time for the longer
+ * of the two; the length difference is observable but irrelevant for the
+ * one current use (per-row verify-token compare on the webhook GET
+ * handshake — the tokens are user-set, and the real hardening is hashing
+ * them at rest, which is tracked separately).
+ */
+export function safeTokenEqual(a: string, b: string): boolean {
+  const ba = Buffer.from(a)
+  const bb = Buffer.from(b)
+  const len = Math.max(ba.length, bb.length)
+  const pa = Buffer.concat([Buffer.alloc(len - ba.length), ba])
+  const pb = Buffer.concat([Buffer.alloc(len - bb.length), bb])
+  return crypto.timingSafeEqual(pa, pb)
+}

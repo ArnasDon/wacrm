@@ -1054,3 +1054,42 @@ describe('inbound webhook: automation waiting for a reply', () => {
     expect(h.resumeAwaitingReply).not.toHaveBeenCalled()
   })
 })
+
+describe('inbound webhook: oversized body cap (self-hosted DoS guard)', () => {
+  it('rejects bodies over 1 MiB with 413, before signature processing', async () => {
+    const { POST } = await import('./route')
+
+    const body = 'x'.repeat(1_048_577) // one byte past the cap
+    const res = await POST(
+      new Request('http://localhost/api/whatsapp/webhook', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body,
+      }),
+    )
+    // The test's NextResponse mock returns { body, init }
+    const { init } = res as { body: unknown; init?: { status?: number } }
+    expect(init?.status).toBe(413)
+    // Rejected before `after()` — no processing was scheduled.
+    expect(h.state.afterCallbacks).toHaveLength(0)
+  })
+
+  it('accepts a body exactly at the cap and proceeds to JSON parsing', async () => {
+    const { POST } = await import('./route')
+
+    // 1 MiB of padding + just enough to stay valid JSON would be 1 MiB+;
+    // at exactly the cap the body passes the size check and reaches
+    // signature/JSON handling — the signature mock returns true, then
+    // JSON.parse rejects the non-JSON payload with 400.
+    const body = 'x'.repeat(1_048_576)
+    const res = await POST(
+      new Request('http://localhost/api/whatsapp/webhook', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body,
+      }),
+    )
+    const { init } = res as { body: unknown; init?: { status?: number } }
+    expect(init?.status).toBe(400)
+  })
+})

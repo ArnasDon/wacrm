@@ -36,6 +36,7 @@ import {
 import { cn } from '@/lib/utils';
 import { FEATURE_FLAGS, FEATURE_FLAG_KEYS } from '@/lib/features/flags';
 import { OnboardingCompanySection } from '@/components/admin/onboarding-panels';
+import { AiCheckSection } from '@/components/admin/ai-check-section';
 
 /** Spanish labels for the toggleable sidebar sections (keys = `labelKey`s
  *  in `src/components/layout/sidebar.tsx`). Order = display order. */
@@ -565,6 +566,12 @@ export function CompanyMasterDetail({
 
               <OnboardingCompanySection
                 key={selected.id}
+                companyId={selected.id}
+                industryVertical={selected.industryVertical}
+              />
+
+              <AiCheckSection
+                key={`ai-check-${selected.id}`}
                 companyId={selected.id}
                 industryVertical={selected.industryVertical}
               />

@@ -18,6 +18,7 @@ productos, configuraciones ni auditorías críticas (`ai_action_log`).
 | Rate limits vencidos                       |      2 días |
 | Archivos huérfanos de chat                 |     15 días |
 | Bitácora de limpiezas                      |    180 días |
+| Historial de pg_cron (`cron.job_run_details`) |    7 días (job `prune-cron-run-history`, migración 164) |
 
 Antes de borrar el detalle de IA, los totales se acumulan en
 `ai_usage_monthly`. Los archivos de `chat-media` solo se eliminan cuando son

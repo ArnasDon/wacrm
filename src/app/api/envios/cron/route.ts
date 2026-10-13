@@ -123,6 +123,7 @@ export async function GET(request: Request) {
     }
 
     try {
+      console.log(`[envios/cron] Processando lead ${lead.id} (${lead.telefone}) no lote ${lote.id}...`)
       if (envio.mensagem_imagem_url) {
         await sendImageWithCaption(
           envio.account_id as string,
@@ -137,9 +138,11 @@ export async function GET(request: Request) {
         .from('envio_leads')
         .update({ status: 'enviado', enviado_em: new Date().toISOString() })
         .eq('id', lead.id)
+      console.log(`[envios/cron] Lead ${lead.id} (${lead.telefone}) marcado como enviado com sucesso.`)
     } catch (err) {
       // One bad number never blocks the rest of the lote (spec).
       const message = err instanceof BaileysSendError ? err.message : 'Falha ao enviar mensagem'
+      console.error(`[envios/cron] Erro ao enviar para lead ${lead.id} (${lead.telefone}): ${message}`)
       await db.from('envio_leads').update({ status: 'falhou', erro: message }).eq('id', lead.id)
     }
     processed++

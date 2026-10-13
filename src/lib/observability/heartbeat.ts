@@ -27,6 +27,7 @@ export const HEARTBEATS = {
   webhooks_cron: { expectedIntervalSeconds: 300 },
   retention_cron: { expectedIntervalSeconds: 86_400 },
   subscriptions_cron: { expectedIntervalSeconds: 86_400 },
+  weekly_health_cron: { expectedIntervalSeconds: 604_800 },
   // Not an app route: the VPS's nightly pg_dump
   // (scripts/backup/sandia-db-backup.sh) reports through the same RPC.
   db_backup: { expectedIntervalSeconds: 86_400 },

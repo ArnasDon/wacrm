@@ -39,6 +39,7 @@ import {
 } from '@/components/admin/company-master-detail';
 import { AiDemo } from '@/components/admin/ai-demo';
 import { AlertsPanel } from '@/components/admin/alerts-panel';
+import { WeeklyHealthPanel } from '@/components/admin/weekly-health-panel';
 
 type Company = PlatformCompany;
 
@@ -772,6 +773,8 @@ export default function PlatformAdminPage() {
           {error}
         </div>
       ) : null}
+
+      <WeeklyHealthPanel />
 
       <AlertsPanel />
 

@@ -40,6 +40,7 @@ import {
 import { AiDemo } from '@/components/admin/ai-demo';
 import { AlertsPanel } from '@/components/admin/alerts-panel';
 import { WeeklyHealthPanel } from '@/components/admin/weekly-health-panel';
+import { OnboardingSetupCard } from '@/components/admin/onboarding-panels';
 
 type Company = PlatformCompany;
 
@@ -777,6 +778,8 @@ export default function PlatformAdminPage() {
       <WeeklyHealthPanel />
 
       <AlertsPanel />
+
+      <OnboardingSetupCard />
 
       <CompanyMasterDetail
         companies={companies}

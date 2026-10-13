@@ -43,10 +43,13 @@ interface ApplyVerticalArgs {
    *  columns — normally the account owner. */
   actingUserId: string
   vertical: VerticalSlug
+  /** Steps to leave out — the onboarding form supplies its own KB docs
+   *  and prompt instead of the kit's `[[placeholder]]` scaffolds. */
+  skip?: ('knowledgeDocs' | 'aiPrompt')[]
 }
 
 export async function applyVerticalKit(args: ApplyVerticalArgs): Promise<ApplyVerticalResult> {
-  const { db, accountId, actingUserId, vertical } = args
+  const { db, accountId, actingUserId, vertical, skip = [] } = args
   const def = getVertical(vertical)
   if (!def) throw new Error(`Unknown vertical "${vertical}"`)
 
@@ -67,10 +70,10 @@ export async function applyVerticalKit(args: ApplyVerticalArgs): Promise<ApplyVe
   await seedProductCategories(db, accountId, def, result)
   await seedPipeline(db, accountId, actingUserId, def, result)
   await seedFlows(db, accountId, actingUserId, def, result)
-  await seedKnowledgeDocs(db, accountId, actingUserId, def, result)
+  if (!skip.includes('knowledgeDocs')) await seedKnowledgeDocs(db, accountId, actingUserId, def, result)
   await applyAccountSettings(db, accountId, def, result)
   await applyGoogleSheetsEvents(db, accountId, def, result)
-  await applyAiPromptScaffold(db, accountId, def, result)
+  if (!skip.includes('aiPrompt')) await applyAiPromptScaffold(db, accountId, def, result)
 
   // Stamp the vertical + when the kit ran. Done last so a partial
   // failure above doesn't mark it "applied".

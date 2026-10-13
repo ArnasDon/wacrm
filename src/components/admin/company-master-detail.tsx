@@ -35,6 +35,7 @@ import {
 } from '@/lib/verticals';
 import { cn } from '@/lib/utils';
 import { FEATURE_FLAGS, FEATURE_FLAG_KEYS } from '@/lib/features/flags';
+import { OnboardingCompanySection } from '@/components/admin/onboarding-panels';
 
 /** Spanish labels for the toggleable sidebar sections (keys = `labelKey`s
  *  in `src/components/layout/sidebar.tsx`). Order = display order. */
@@ -561,6 +562,12 @@ export function CompanyMasterDetail({
                     : 'Kit no aplicado todavía'}
                 </p>
               </div>
+
+              <OnboardingCompanySection
+                key={selected.id}
+                companyId={selected.id}
+                industryVertical={selected.industryVertical}
+              />
 
               {(() => {
                 const busy = busyIds.hiddenNav === selected.id;

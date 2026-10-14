@@ -90,7 +90,7 @@ describe('loadHotelStayEstimate', () => {
     expect(res).toContain('estimado')
   })
 
-  it('includes the deposit amount, computed from the account deposit_percent, when the total is complete', async () => {
+  it('does not request a deposit for a complete but still pending stay', async () => {
     const res = await loadHotelStayEstimate(
       makeDb({ reservation: RESV, rates: RATES, products: [{ id: 'p1', name: 'Master Suite Deluxe' }] }),
       'acct-1',
@@ -98,12 +98,11 @@ describe('loadHotelStayEstimate', () => {
       'GTQ',
       50,
     )
-    expect(res).toContain('anticipo')
-    expect(res).toContain('50%')
-    expect(res).toMatch(/anticipo.*250/) // 50% of 500
+    expect(res).not.toContain('anticipo')
+    expect(res).toContain('la disponibilidad y el precio final los confirma una persona')
   })
 
-  it('respects a non-default deposit_percent', async () => {
+  it('does not request a deposit even when a different percentage is configured', async () => {
     const res = await loadHotelStayEstimate(
       makeDb({ reservation: RESV, rates: RATES, products: [{ id: 'p1', name: 'Master Suite Deluxe' }] }),
       'acct-1',
@@ -111,8 +110,8 @@ describe('loadHotelStayEstimate', () => {
       'GTQ',
       30,
     )
-    expect(res).toContain('30%')
-    expect(res).toMatch(/anticipo.*150/) // 30% of 500
+    expect(res).not.toContain('anticipo')
+    expect(res).toMatch(/Total estimado: .*500/)
   })
 
   it('does NOT mention a deposit when a night has no published rate (partial subtotal)', async () => {
@@ -271,7 +270,12 @@ describe('computeStayEstimateStatus', () => {
       expect(res.total).toBe(1000)
       expect(res.text).toContain('1,000')
       expect(res.text).toContain('Master Suite Deluxe')
-      expect(res.text).toContain('anticipo')
+      for (const text of [res.text, res.closingText]) {
+        expect(text).not.toContain('anticipo')
+        expect(text).not.toContain('en breve')
+      }
+      for (const text of [res.textEn, res.closingTextEn]) expect(text).not.toContain('deposit')
+      expect(res.text).toContain('no confirma una reserva')
       expect(res.reservationRequestId).toBe('rr-1')
     }
   })
@@ -373,7 +377,7 @@ describe('several rooms (B43)', () => {
     expect(res.total).toBe(1000) // 2 rooms × couple Wed 500
     expect(res.text).toContain('2 habitaciones × 2 personas')
     // The after-close wording: no item/dates recap, one availability line.
-    expect(res.closingText).toMatch(/^El total estimado de su solicitud es de .*1.?000 por 1 noche \(2 habitaciones × 2 personas\), con un anticipo de .*500 para apartarla\. Un compañero le confirmará la disponibilidad en breve\. 😊$/)
+    expect(res.closingText).toMatch(/^El total estimado de su solicitud es de .*1.?000 por 1 noche \(2 habitaciones × 2 personas\)\. Recepción debe verificar la disponibilidad; este estimado no confirma una reserva\.$/)
     expect(res.closingText).not.toContain('Master Suite Deluxe')
     const summary = await loadHotelStayEstimate(
       makeDb({ reservation: { ...RESV, guests: 4, rooms: 2 }, rates: RATES, products: PRODUCTS }),
@@ -443,7 +447,7 @@ describe('partial estimate wording — one parenthesis (owner, 2026-09-26)', () 
   it('5 adults', async () => {
     const res = await run({ guests: 5, adults: 5, children_ages: [] })
     expect(res.status === 'priced' && res.closingText).toContain(
-      'por 2 noches (5 adultos; calculado con la tarifa publicada de 4 personas), con un anticipo',
+      'por 2 noches (5 adultos; calculado con la tarifa publicada de 4 personas).',
     )
   })
 

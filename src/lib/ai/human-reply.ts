@@ -235,8 +235,9 @@ export async function teammateRepliedRecently(
   conversationId: string,
   resetAtISO: string | null,
   now: Date = new Date(),
+  lookbackMs: number = TEAMMATE_QUIET_MS,
 ): Promise<boolean> {
-  const windowStart = new Date(now.getTime() - TEAMMATE_QUIET_MS).toISOString()
+  const windowStart = new Date(now.getTime() - lookbackMs).toISOString()
   const since = [windowStart, resetAtISO, await lastResumedAt(db, conversationId)]
     .filter((s): s is string => !!s)
     .sort()

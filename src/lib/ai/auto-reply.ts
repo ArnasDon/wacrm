@@ -283,7 +283,7 @@ const SIGN_OFF_REPLY_RE = /^[^\p{L}]*(?:con (?:mucho )?gusto|igualmente|a usted|
 
 /** Appended when a teammate has already replied in this hotel thread. */
 const TEAMMATE_PRESENT_NOTE =
-  'A teammate from the hotel is already chatting with this guest in this conversation (their messages are in the history). Keep helping as the assistant, but do NOT offer to connect them with the team and do NOT hand off — a person is already here. If they ask about a booking they already have, just say kindly that our teammate already helping them in this chat will take care of it (no hand-off marker). In Spanish call that person "nuestro compañero" or "alguien de nuestro equipo" — never "su colega" or "la colega". Never repeat or contradict what the teammate already told them; if the teammate already answered something, build on it.'
+  'A teammate previously replied in this hotel conversation. The staff quiet window is enforced before generation; you are now handling an eligible unanswered customer message. Respond to that latest need using the existing history and agreements. Do not restart the sale, duplicate a human answer, or claim a teammate is currently preparing or following up on something without evidence. If reception must verify availability, a voucher, payment or an overdue quote, use the available handoff once rather than promising progress or a deadline. In Spanish call staff "nuestro compañero" or "alguien de nuestro equipo", never "su colega". Respect verified staff decisions.'
 
 const HUMAN_HANDOFF_ACK_TEXT =
   'Con gusto, en un momento le comunico con alguien del equipo para que le ayude. 🙌'

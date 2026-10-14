@@ -1706,6 +1706,7 @@
       "webhookTitle": "Configuración del webhook",
       "webhookDesc": "Usa esta URL como callback del webhook en el panel de la app de Meta.",
       "webhookUrl": "URL de callback del webhook",
+      "webhookUrlHint": "Para desarrollo local, reemplaza localhost con la URL HTTPS pública de tu túnel. Incluye /api/whatsapp/webhook.",
       "mediaTitle": "Almacenamiento de adjuntos",
       "mediaDesc": "Meta elimina los archivos recibidos unos 30 días después de su llegada. Los adjuntos pueden copiarse a tu propio almacenamiento para que sigan visibles.",
       "mirrorInbound": "Conservar adjuntos entrantes",

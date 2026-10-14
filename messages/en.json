@@ -1706,6 +1706,7 @@
       "webhookTitle": "Webhook Configuration",
       "webhookDesc": "Use this URL as your webhook callback in the Meta App Dashboard.",
       "webhookUrl": "Webhook Callback URL",
+      "webhookUrlHint": "For local development, replace localhost with your public HTTPS tunnel URL. Include /api/whatsapp/webhook.",
       "mediaTitle": "Attachment Storage",
       "mediaDesc": "Meta deletes received media about 30 days after it arrives. Attachments can be copied to your own storage so they stay viewable.",
       "mirrorInbound": "Keep inbound attachments",

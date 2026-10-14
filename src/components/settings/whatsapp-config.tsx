@@ -103,6 +103,7 @@ export function WhatsAppConfig() {
   const [accessToken, setAccessToken] = useState('');
   const [verifyToken, setVerifyToken] = useState('');
   const [pin, setPin] = useState('');
+  const [webhookUrl, setWebhookUrl] = useState('');
   const [tokenEdited, setTokenEdited] = useState(false);
   const [verifyEdited, setVerifyEdited] = useState(false);
 
@@ -135,10 +136,11 @@ export function WhatsAppConfig() {
   const [registrationProbe, setRegistrationProbe] =
     useState<RegistrationProbe | null>(null);
 
-  const webhookUrl =
-    typeof window !== 'undefined'
-      ? `${window.location.origin}/api/whatsapp/webhook`
-      : '';
+  // Pre-fill the current host, while allowing local users to replace it with
+  // an HTTPS tunnel URL that Meta can reach from the public internet.
+  useEffect(() => {
+    setWebhookUrl(`${window.location.origin}/api/whatsapp/webhook`);
+  }, []);
 
   const fetchConfig = useCallback(async (acctId: string) => {
     setLoading(true);
@@ -862,9 +864,10 @@ export function WhatsAppConfig() {
               <Label className="text-muted-foreground">{t('webhookUrl')}</Label>
               <div className="flex gap-2">
                 <Input
-                  readOnly
                   value={webhookUrl}
-                  className="bg-muted border-border text-muted-foreground font-mono text-sm"
+                  type="url"
+                  onChange={(e) => setWebhookUrl(e.target.value)}
+                  className="bg-muted border-border text-foreground font-mono text-sm"
                 />
                 <Button
                   variant="outline"
@@ -875,6 +878,9 @@ export function WhatsAppConfig() {
                   <Copy className="size-4" />
                 </Button>
               </div>
+              <p className="text-xs text-muted-foreground">
+                {t('webhookUrlHint')}
+              </p>
             </div>
           </CardContent>
         </Card>

@@ -1706,6 +1706,7 @@
       "webhookTitle": "웹훅 설정",
       "webhookDesc": "Meta 앱 대시보드의 웹훅 콜백으로 이 URL을 사용하세요.",
       "webhookUrl": "웹훅 콜백 URL",
+      "webhookUrlHint": "로컬 개발에서는 localhost를 공개 HTTPS 터널 URL로 바꾸세요. /api/whatsapp/webhook 경로를 포함해야 합니다.",
       "mediaTitle": "첨부파일 저장",
       "mediaDesc": "Meta는 수신된 미디어를 도착 후 약 30일이 지나면 삭제합니다. 첨부파일을 자체 스토리지에 복사해 두면 계속 볼 수 있습니다.",
       "mirrorInbound": "수신 첨부파일 보관",

@@ -14,9 +14,9 @@
 // sends landed in the Inbox as empty bubbles.
 // ============================================================
 
-import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard';
+
+
 import type { MessageTemplate } from '@/types';
 
 /**
@@ -55,11 +55,6 @@ export function templateBodyParams(
   return Array.isArray(templateParams) ? templateParams : [];
 }
 
-/** `en_US` → `en`; used to match a request against a synced row. */
-function baseLanguage(language: string): string {
-  return language.toLowerCase().split(/[_-]/)[0];
-}
-
 export interface ResolvedTemplate {
   /** Best-matching local row, or null when the account has none. */
   row: MessageTemplate | null;
@@ -78,77 +73,7 @@ export interface ResolvedTemplate {
   language: string;
 }
 
-/**
- * Look up the `message_templates` row for a send, tolerant of the
- * `en` / `en_US` split.
- *
- * The old lookup was `.eq('language', requested || 'en_US')`. Templates
- * synced from Meta commonly carry the bare `en`, so a caller that
- * omitted the language matched no row: no header components, and no
- * body to persist. Matching falls back through
- * exact → same base language → a sensible default.
- */
-export async function resolveTemplateRow(
-  db: SupabaseClient,
-  accountId: string,
-  templateName: string,
-  requestedLanguage?: string | null
-): Promise<ResolvedTemplate> {
-  const { data } = await db
-    .from('message_templates')
-    .select('*')
-    .eq('account_id', accountId)
-    .eq('name', templateName);
-
-  // Sorted here rather than with `.order()` so the only query-builder
-  // surface this helper depends on is select + eq — the same shape the
-  // callers' existing fakes implement.
-  const rows = ((Array.isArray(data) ? data : []) as { language?: string }[])
-    .slice()
-    .sort((a, b) => (a.language ?? '').localeCompare(b.language ?? ''));
-  const fallbackLanguage = requestedLanguage || 'en_US';
-
-  if (rows.length === 0) {
-    return { row: null, malformed: false, language: fallbackLanguage };
-  }
-
-  const pick = (): { language?: string } | undefined => {
-    if (requestedLanguage) {
-      const wanted = requestedLanguage.toLowerCase();
-      const exact = rows.find((r) => r.language?.toLowerCase() === wanted);
-      if (exact) return exact;
-      const wantedBase = baseLanguage(requestedLanguage);
-      return rows.find(
-        (r) => r.language && baseLanguage(r.language) === wantedBase
-      );
-    }
-    // No language asked for: prefer the historical default, then the
-    // bare form Meta's sync produces, then whatever exists.
-    return (
-      rows.find((r) => r.language === 'en_US') ??
-      rows.find((r) => r.language === 'en') ??
-      rows[0]
-    );
-  };
-
-  const chosen = pick();
-  if (!chosen) {
-    // Rows exist but none in the requested language — the caller pinned
-    // a translation this account hasn't synced. Send it anyway; Meta is
-    // the authority on which translations are approved.
-    return { row: null, malformed: false, language: fallbackLanguage };
-  }
-
-  if (!isMessageTemplate(chosen)) {
-    return { row: null, malformed: true, language: fallbackLanguage };
-  }
-
-  return {
-    row: chosen,
-    malformed: false,
-    language: requestedLanguage || chosen.language || 'en_US',
-  };
-}
+export {resolveLocalTemplate as resolveTemplateRow} from './template-local';
 
 /**
  * The text to persist as `messages.content_text` for a template send.

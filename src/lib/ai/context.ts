@@ -1,10 +1,11 @@
-import type { SupabaseClient } from '@supabase/supabase-js'
-import type { ChatMessage } from './types'
-import { aiContextMessageLimit } from './defaults'
+import type { SqlConnection } from '@/lib/db/transaction';
+import { queryRows } from '@/lib/db/rows';
+import type { ChatMessage } from './types';
+import { aiContextMessageLimit } from './defaults';
 
 interface DbMessage {
-  sender_type: 'customer' | 'agent' | 'bot'
-  content_text: string | null
+  sender_type: 'customer' | 'agent' | 'bot';
+  content_text: string | null;
 }
 
 /**
@@ -17,25 +18,21 @@ interface DbMessage {
  * naturally and the most recent customer message lands last.
  */
 export async function buildConversationContext(
-  db: SupabaseClient,
+  db: SqlConnection,
+  accountId: string,
   conversationId: string,
-  limit: number = aiContextMessageLimit(),
+  limit: number = aiContextMessageLimit()
 ): Promise<ChatMessage[]> {
-  const { data, error } = await db
-    .from('messages')
-    .select('sender_type, content_text')
-    .eq('conversation_id', conversationId)
-    .eq('content_type', 'text')
-    .order('created_at', { ascending: false })
-    .limit(limit)
-
-  if (error) throw error
-
-  const rows = ((data ?? []) as DbMessage[]).reverse()
+  const data = await queryRows<DbMessage>(
+    db,
+    "SELECT m.sender_type,m.content_text FROM public.messages m JOIN public.conversations c ON c.id=m.conversation_id WHERE c.account_id=$1 AND m.conversation_id=$2 AND m.content_type='text' ORDER BY m.created_at DESC,m.id DESC LIMIT $3",
+    [accountId, conversationId, Math.min(100, Math.max(1, limit))]
+  );
+  const rows = data.reverse();
   return rows
     .filter((m) => m.content_text && m.content_text.trim())
     .map((m) => ({
       role: m.sender_type === 'customer' ? 'user' : 'assistant',
       content: m.content_text!.trim(),
-    }))
+    }));
 }

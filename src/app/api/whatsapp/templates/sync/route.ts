@@ -1,13 +1,16 @@
-import { NextResponse } from 'next/server'
+import { NextResponse } from 'next/server';
+import { getLocalAccountContext, withAccount } from '@/lib/db/context';
+import { queryRows } from '@/lib/db/rows';
+import { hasMinRole } from '@/lib/auth/roles';
 import {
-  ForbiddenError,
-  UnauthorizedError,
-  requireRole,
-  toErrorResponse,
-} from '@/lib/auth/account'
-import { decrypt } from '@/lib/whatsapp/encryption'
-import { normalizeStatus } from '@/lib/whatsapp/template-status-normalize'
-import type { TemplateButton, TemplateSampleValues } from '@/types'
+  assertSameOrigin,
+  localErrorResponse,
+  RequestError,
+} from '@/lib/api/local-route';
+import { readWhatsAppConfig } from '@/lib/db/whatsapp-config';
+import { decrypt } from '@/lib/whatsapp/encryption';
+import { normalizeStatus } from '@/lib/whatsapp/template-status-normalize';
+import type { TemplateButton, TemplateSampleValues } from '@/types';
 
 /**
  * Sync message templates from Meta → local message_templates table.
@@ -22,133 +25,136 @@ import type { TemplateButton, TemplateSampleValues } from '@/types'
  * they remain visible so the user can notice drift and clean up.
  */
 
-const META_API_VERSION = 'v21.0'
-const META_API_BASE = `https://graph.facebook.com/${META_API_VERSION}`
+const META_API_VERSION = 'v21.0';
+const META_API_BASE = `https://graph.facebook.com/${META_API_VERSION}`;
 
 interface MetaButton {
-  type: string
-  text: string
-  url?: string
-  phone_number?: string
-  example?: string[] | string
+  type: string;
+  text: string;
+  url?: string;
+  phone_number?: string;
+  example?: string[] | string;
 }
 
 interface MetaTemplateComponent {
-  type: string
-  text?: string
-  format?: string
-  buttons?: MetaButton[]
+  type: string;
+  text?: string;
+  format?: string;
+  buttons?: MetaButton[];
   example?: {
-    header_text?: string[]
-    header_handle?: string[]
-    body_text?: string[][]
-  }
+    header_text?: string[];
+    header_handle?: string[];
+    body_text?: string[][];
+  };
 }
 
 interface MetaTemplate {
-  id: string
-  name: string
-  language: string
-  status: string
-  category: string
-  components?: MetaTemplateComponent[]
-  quality_score?: { score?: string } | string
+  id: string;
+  name: string;
+  language: string;
+  status: string;
+  category: string;
+  components?: MetaTemplateComponent[];
+  quality_score?: { score?: string } | string;
 }
 
 function normalizeCategory(
-  meta: string,
+  meta: string
 ): 'Marketing' | 'Utility' | 'Authentication' {
-  const upper = meta.toUpperCase()
-  if (upper === 'UTILITY') return 'Utility'
-  if (upper === 'AUTHENTICATION') return 'Authentication'
-  return 'Marketing'
+  const upper = meta.toUpperCase();
+  if (upper === 'UTILITY') return 'Utility';
+  if (upper === 'AUTHENTICATION') return 'Authentication';
+  return 'Marketing';
 }
 
 function normalizeQualityScore(
-  raw: MetaTemplate['quality_score'],
+  raw: MetaTemplate['quality_score']
 ): 'GREEN' | 'YELLOW' | 'RED' | null {
   const score =
-    typeof raw === 'string' ? raw : raw?.score ? String(raw.score) : null
-  if (!score) return null
-  const upper = score.toUpperCase()
+    typeof raw === 'string' ? raw : raw?.score ? String(raw.score) : null;
+  if (!score) return null;
+  const upper = score.toUpperCase();
   return upper === 'GREEN' || upper === 'YELLOW' || upper === 'RED'
     ? (upper as 'GREEN' | 'YELLOW' | 'RED')
-    : null
+    : null;
 }
 
 function parseButtons(metaButtons: MetaButton[] | undefined): TemplateButton[] {
-  if (!metaButtons?.length) return []
-  const out: TemplateButton[] = []
+  if (!metaButtons?.length) return [];
+  const out: TemplateButton[] = [];
   for (const b of metaButtons) {
     switch (b.type?.toUpperCase()) {
       case 'QUICK_REPLY':
-        out.push({ type: 'QUICK_REPLY', text: b.text })
-        break
+        out.push({ type: 'QUICK_REPLY', text: b.text });
+        break;
       case 'URL':
         out.push({
           type: 'URL',
           text: b.text,
           url: b.url ?? '',
           example: Array.isArray(b.example) ? b.example[0] : b.example,
-        })
-        break
+        });
+        break;
       case 'PHONE_NUMBER':
         out.push({
           type: 'PHONE_NUMBER',
           text: b.text,
           phone_number: b.phone_number ?? '',
-        })
-        break
+        });
+        break;
       case 'COPY_CODE':
         out.push({
           type: 'COPY_CODE',
           text: b.text,
-          example: Array.isArray(b.example) ? b.example[0] ?? '' : b.example ?? '',
-        })
-        break
+          example: Array.isArray(b.example)
+            ? (b.example[0] ?? '')
+            : (b.example ?? ''),
+        });
+        break;
       // OTP, FLOW, etc — out of scope for v1; drop silently.
     }
   }
-  return out
+  return out;
 }
 
 function extractSampleValues(
   body: MetaTemplateComponent | undefined,
-  header: MetaTemplateComponent | undefined,
+  header: MetaTemplateComponent | undefined
 ): TemplateSampleValues | null {
   // Meta returns body_text as a 2D array — one row per example set.
   // We take the first row (most templates have exactly one).
-  const bodySample = body?.example?.body_text?.[0]
-  const headerSample = header?.example?.header_text
-  if (!bodySample?.length && !headerSample?.length) return null
-  const sv: TemplateSampleValues = {}
-  if (bodySample?.length) sv.body = bodySample
-  if (headerSample?.length) sv.header = headerSample
-  return sv
+  const bodySample = body?.example?.body_text?.[0];
+  const headerSample = header?.example?.header_text;
+  if (!bodySample?.length && !headerSample?.length) return null;
+  const sv: TemplateSampleValues = {};
+  if (bodySample?.length) sv.body = bodySample;
+  if (headerSample?.length) sv.header = headerSample;
+  return sv;
 }
 
-export async function POST() {
+export async function POST(request: Request) {
   try {
+    assertSameOrigin(request);
     // Syncing rewrites the account-wide template catalog, which is
     // settings-class data: `canEditSettings` and the message_templates
     // insert/update RLS policies (migration 017) both require 'admin'.
     // Resolving account_id off the profile only proved membership.
-    const { supabase, accountId, userId } = await requireRole('admin')
+    const ctx = await getLocalAccountContext();
+    if (!hasMinRole(ctx.role, 'admin'))
+      throw new RequestError('Insufficient permissions.', 403);
+    const { accountId, userId } = ctx;
+    const config = await withAccount(ctx, (db) =>
+      readWhatsAppConfig(db, accountId)
+    );
 
-    const { data: config, error: configError } = await supabase
-      .from('whatsapp_config')
-      .select('*')
-      .eq('account_id', accountId)
-      .single()
-
-    if (configError || !config) {
+    if (!config) {
       return NextResponse.json(
         {
           error:
             'WhatsApp not configured. Connect your WhatsApp Business account in Settings first.',
         },
-        { status: 400 },
-      )
+        { status: 400 }
+      );
     }
 
     if (!config.waba_id) {
@@ -157,65 +163,64 @@ export async function POST() {
           error:
             'WABA (WhatsApp Business Account) ID missing. Re-connect your account in Settings.',
         },
-        { status: 400 },
-      )
+        { status: 400 }
+      );
     }
 
-    const accessToken = decrypt(config.access_token)
+    const accessToken = decrypt(config.access_token);
 
-    const metaTemplates: MetaTemplate[] = []
-    let nextUrl:
-      | string
-      | null = `${META_API_BASE}/${config.waba_id}/message_templates?limit=100&fields=id,name,language,status,category,components,quality_score`
-    const PAGE_CAP = 20
-    let pageCount = 0
+    const metaTemplates: MetaTemplate[] = [];
+    let nextUrl: string | null =
+      `${META_API_BASE}/${config.waba_id}/message_templates?limit=100&fields=id,name,language,status,category,components,quality_score`;
+    const PAGE_CAP = 20;
+    let pageCount = 0;
 
     while (nextUrl && pageCount < PAGE_CAP) {
-      pageCount++
+      pageCount++;
       const metaRes: Response = await fetch(nextUrl, {
         headers: { Authorization: `Bearer ${accessToken}` },
-      })
+      });
 
       if (!metaRes.ok) {
-        let metaErr = `Meta API error: ${metaRes.status}`
+        let metaErr = `Meta API error: ${metaRes.status}`;
         try {
-          const body = await metaRes.json()
-          if (body?.error?.message) metaErr = body.error.message
+          const body = await metaRes.json();
+          if (body?.error?.message) metaErr = body.error.message;
         } catch {
           // response wasn't JSON — keep the fallback
         }
-        return NextResponse.json({ error: metaErr }, { status: 502 })
+        return NextResponse.json({ error: metaErr }, { status: 502 });
       }
 
       const metaBody: {
-        data?: MetaTemplate[]
-        paging?: { next?: string }
-      } = await metaRes.json()
-      if (metaBody.data) metaTemplates.push(...metaBody.data)
-      nextUrl = metaBody.paging?.next ?? null
+        data?: MetaTemplate[];
+        paging?: { next?: string };
+      } = await metaRes.json();
+      if (metaBody.data) metaTemplates.push(...metaBody.data);
+      nextUrl = metaBody.paging?.next ?? null;
     }
 
-    let inserted = 0
-    let updated = 0
-    const errors: { name: string; language: string; message: string }[] = []
+    let inserted = 0;
+    let updated = 0;
+    const errors: { name: string; language: string; message: string }[] = [];
 
     for (const t of metaTemplates) {
-      const body = (t.components ?? []).find((c) => c.type === 'BODY')
-      const header = (t.components ?? []).find((c) => c.type === 'HEADER')
-      const footer = (t.components ?? []).find((c) => c.type === 'FOOTER')
-      const buttons = (t.components ?? []).find((c) => c.type === 'BUTTONS')
+      const body = (t.components ?? []).find((c) => c.type === 'BODY');
+      const header = (t.components ?? []).find((c) => c.type === 'HEADER');
+      const footer = (t.components ?? []).find((c) => c.type === 'FOOTER');
+      const buttons = (t.components ?? []).find((c) => c.type === 'BUTTONS');
 
-      const parsedButtons = parseButtons(buttons?.buttons)
-      const sampleValues = extractSampleValues(body, header)
+      const parsedButtons = parseButtons(buttons?.buttons);
+      const sampleValues = extractSampleValues(body, header);
 
-      const headerFormat = header?.format?.toUpperCase()
+      const headerFormat = header?.format?.toUpperCase();
       const headerType =
         headerFormat === 'TEXT' ||
         headerFormat === 'IMAGE' ||
         headerFormat === 'VIDEO' ||
         headerFormat === 'DOCUMENT'
           ? headerFormat.toLowerCase()
-          : null
+          : null;
 
       const row = {
         // Account tenancy + user audit, same split as the submit
@@ -237,52 +242,70 @@ export async function POST() {
         meta_template_id: t.id,
         quality_score: normalizeQualityScore(t.quality_score),
         updated_at: new Date().toISOString(),
-      }
+      };
 
-      const { data: existing, error: lookupErr } = await supabase
-        .from('message_templates')
-        .select('id')
-        .eq('account_id', accountId)
-        .eq('name', t.name)
-        .eq('language', t.language)
-        .maybeSingle()
-
-      if (lookupErr) {
+      try {
+        const existing = await withAccount(ctx, async (db) => {
+          const rows = await queryRows<{ id: string }>(
+            db,
+            'SELECT id FROM public.message_templates WHERE account_id=$1 AND name=$2 AND language=$3 LIMIT 1',
+            [accountId, t.name, t.language]
+          );
+          if (rows[0]) {
+            const values = [
+              row.category,
+              row.header_type,
+              row.header_content,
+              row.header_handle,
+              row.body_text,
+              row.footer_text,
+              row.buttons ? JSON.stringify(row.buttons) : null,
+              row.sample_values ? JSON.stringify(row.sample_values) : null,
+              row.status,
+              row.meta_template_id,
+              row.quality_score,
+              userId,
+              rows[0].id,
+              accountId,
+            ];
+            await db.query(
+              `UPDATE public.message_templates SET category=$1,header_type=$2,header_content=$3,header_handle=$4,body_text=$5,footer_text=$6,buttons=$7::jsonb,sample_values=$8::jsonb,status=$9,meta_template_id=$10,quality_score=$11,user_id=$12,updated_at=now() WHERE id=$13 AND account_id=$14`,
+              values
+            );
+            return false;
+          }
+          await db.query(
+            `INSERT INTO public.message_templates(account_id,user_id,name,category,language,header_type,header_content,header_handle,body_text,footer_text,buttons,sample_values,status,meta_template_id,quality_score)
+            VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,$13,$14,$15)`,
+            [
+              accountId,
+              userId,
+              row.name,
+              row.category,
+              row.language,
+              row.header_type,
+              row.header_content,
+              row.header_handle,
+              row.body_text,
+              row.footer_text,
+              row.buttons ? JSON.stringify(row.buttons) : null,
+              row.sample_values ? JSON.stringify(row.sample_values) : null,
+              row.status,
+              row.meta_template_id,
+              row.quality_score,
+            ]
+          );
+          return true;
+        });
+        if (existing) inserted++;
+        else updated++;
+      } catch (error) {
         errors.push({
           name: t.name,
           language: t.language,
-          message: lookupErr.message,
-        })
-        continue
-      }
-
-      if (existing?.id) {
-        const { error: updErr } = await supabase
-          .from('message_templates')
-          .update(row)
-          .eq('id', existing.id)
-        if (updErr) {
-          errors.push({
-            name: t.name,
-            language: t.language,
-            message: updErr.message,
-          })
-        } else {
-          updated++
-        }
-      } else {
-        const { error: insErr } = await supabase
-          .from('message_templates')
-          .insert(row)
-        if (insErr) {
-          errors.push({
-            name: t.name,
-            language: t.language,
-            message: insErr.message,
-          })
-        } else {
-          inserted++
-        }
+          message:
+            error instanceof Error ? error.message : 'Database update failed.',
+        });
       }
     }
 
@@ -293,23 +316,12 @@ export async function POST() {
       updated,
       errors,
       truncated: pageCount >= PAGE_CAP && nextUrl !== null,
-    })
+    });
   } catch (error) {
     // Auth failures map to 401/403 rather than being folded into the
     // generic 500 below, which surfaces `error.message` as a sync failure.
-    if (
-      error instanceof UnauthorizedError ||
-      error instanceof ForbiddenError
-    ) {
-      return toErrorResponse(error)
-    }
-    console.error('Error syncing WhatsApp templates:', error)
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error ? error.message : 'Failed to sync templates',
-      },
-      { status: 500 },
-    )
+    if (error instanceof RequestError) return localErrorResponse(error);
+    console.error('Error syncing WhatsApp templates:', error);
+    return localErrorResponse(error);
   }
 }

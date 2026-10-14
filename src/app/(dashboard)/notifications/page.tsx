@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
+import { apiResult } from "@/lib/api/client";
+import { startPolling } from "@/lib/api/polling";
 import { useAuth } from "@/hooks/use-auth";
 import type { Notification } from "@/types";
 import { Bell, CheckCheck, Loader2, UserPlus } from "lucide-react";
@@ -30,62 +31,31 @@ export default function NotificationsPage() {
 
   const load = useCallback(async () => {
     if (!accountId) return;
-    const supabase = createClient();
-    const { data, error: fetchErr } = await supabase
-      .from("notifications")
-      .select("*")
-      .eq("account_id", accountId)
-      .order("created_at", { ascending: false })
-      .limit(100);
+    const { data, error: fetchErr } = await apiResult<{ notifications: Notification[] }>('/api/notifications');
     if (fetchErr) {
       setError(fetchErr.message);
       return;
     }
-    setNotifications((data ?? []) as Notification[]);
+    setError(null);
+    setNotifications(data?.notifications ?? []);
   }, [accountId]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    load();
-  }, [load]);
-
-  // Realtime — new assignments appear without a refresh, and a
-  // "mark all read" fired from another tab/device stays in sync here.
-  useEffect(() => {
-    const supabase = createClient();
-    const channel = supabase
-      .channel("notifications-page")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "notifications" },
-        (payload) => {
-          if (payload.eventType === "INSERT") {
-            const row = payload.new as Notification;
-            setNotifications((prev) => {
-              if (!prev) return [row];
-              if (prev.some((n) => n.id === row.id)) return prev;
-              return [row, ...prev];
-            });
-          } else if (payload.eventType === "UPDATE") {
-            const row = payload.new as Notification;
-            setNotifications((prev) =>
-              prev?.map((n) => (n.id === row.id ? { ...n, ...row } : n)) ??
-              prev,
-            );
-          } else if (payload.eventType === "DELETE") {
-            const oldRow = payload.old as Partial<Notification>;
-            setNotifications(
-              (prev) => prev?.filter((n) => n.id !== oldRow.id) ?? prev,
-            );
-          }
-        },
-      )
-      .subscribe();
-
+    if (!accountId) return;
+    const polling = startPolling(async signal => {
+      const response = await fetch('/api/notifications', { cache: 'no-store', signal });
+      if (!response.ok) throw new Error('Unable to load notifications.');
+      return await response.json() as { notifications: Notification[] };
+    }, data => { setError(null); setNotifications(data.notifications); }, error => setError(error instanceof Error ? error.message : 'Unable to load notifications.'), 10000, () => !document.hidden);
+    const refresh = () => polling.refresh();
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
     return () => {
-      supabase.removeChannel(channel);
+      polling.stop();
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
     };
-  }, []);
+  }, [accountId]);
 
   const markRead = useCallback(
     async (id: string) => {
@@ -99,12 +69,7 @@ export default function NotificationsPage() {
               : n,
           ) ?? prev,
       );
-      const supabase = createClient();
-      const { error: updateErr } = await supabase
-        .from("notifications")
-        .update({ read_at: new Date().toISOString() })
-        .eq("id", id)
-        .is("read_at", null);
+      const { error: updateErr } = await apiResult('/api/notifications', { method: 'PATCH', body: JSON.stringify({ id }) });
       if (updateErr) {
         toast.error(t("markReadFailed"));
         load();
@@ -132,11 +97,7 @@ export default function NotificationsPage() {
     setNotifications(
       (prev) => prev?.map((n) => (n.read_at ? n : { ...n, read_at: now })) ?? prev,
     );
-    const supabase = createClient();
-    const { error: updateErr } = await supabase
-      .from("notifications")
-      .update({ read_at: now })
-      .is("read_at", null);
+    const { error: updateErr } = await apiResult('/api/notifications', { method: 'PATCH', body: JSON.stringify({ all: true }) });
     setMarkingAll(false);
     if (updateErr) {
       toast.error(t("markAllFailed"));

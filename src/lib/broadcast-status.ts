@@ -76,7 +76,7 @@ export const recipientStatusConfig: Record<RecipientStatus, StatusDisplay> = {
 
 /**
  * Tolerant lookup — callers often have a generic string status
- * coming from Supabase. Falls back to the "draft" / "pending"
+ * coming from PostgreSQL. Falls back to the "draft" / "pending"
  * entry so the UI never crashes on an unknown value.
  */
 export function getBroadcastStatus(status: string): StatusDisplay {

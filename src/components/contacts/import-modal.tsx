@@ -1,22 +1,14 @@
 'use client';
 
 import { useMemo, useRef, useState } from 'react';
-import { createClient } from '@/lib/supabase/client';
+import { apiResult } from '@/lib/api/client';
+import type { importContacts } from '@/lib/db/contact-import';
+import type { Tag as ContactTag } from '@/types';
 import { useAuth } from '@/hooks/use-auth';
-import {
-  dedupeByPhone,
-  isUniqueViolation,
-  normalizeKey,
-} from '@/lib/contacts/dedupe';
 import {
   parseContactCsv,
   type ParsedContactRow,
 } from '@/lib/contacts/parse-contact-csv';
-import {
-  assignImportedContactTags,
-  resolveImportTagIds,
-  type ContactTagAssignment,
-} from '@/lib/contacts/resolve-import-tags';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import {
@@ -127,8 +119,7 @@ export function ImportModal({
   onImported,
 }: ImportModalProps) {
   const t = useTranslations('Contacts.importModal');
-  const supabase = createClient();
-  const { accountId, canEditSettings } = useAuth();
+  const { accountId } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [file, setFile] = useState<File | null>(null);
@@ -191,10 +182,9 @@ export function ImportModal({
     setHasCompanyColumn(csvHasCompany);
 
     if (csvHasTags && accountId) {
-      const { data: tags } = await supabase
-        .from('tags')
-        .select('name, color')
-        .eq('account_id', accountId);
+      const { data, error } = await apiResult<{ tags: ContactTag[] }>('/api/settings/tags');
+      if (error) { toast.error(error.message); return; }
+      const tags = data?.tags;
 
       const colors = new Map<string, string>();
       for (const tag of tags ?? []) {
@@ -212,161 +202,25 @@ export function ImportModal({
     setImporting(true);
 
     try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      const user = session?.user;
-      if (!user) throw new Error('Not authenticated');
-      if (!accountId)
-        throw new Error('Your profile is not linked to an account.');
-
-      let imported = 0;
-      let skipped = 0;
-      let failed = 0;
-      const failedDetails: { phone: string; name?: string; reason: string }[] =
-        [];
-
-      // 1) De-dupe within the file by normalized phone (keep first).
-      //    Rows with no usable phone at all are counted separately —
-      //    they never duplicated anything, so lumping them into
-      //    `skipped` would misreport them as dupes (see dedupeByPhone).
-      const {
-        unique,
-        duplicates: inFileDupes,
-        invalid: invalidPhone,
-      } = dedupeByPhone(parsedRows);
-      skipped += inFileDupes;
-
-      // 2) Skip numbers already in this account. One read of the
-      //    generated `phone_normalized` column (migration 022) → Set.
-      const { data: existingRows } = await supabase
-        .from('contacts')
-        .select('phone_normalized')
-        .eq('account_id', accountId);
-      const existing = new Set(
-        (existingRows ?? [])
-          .map(
-            (r) => (r as { phone_normalized: string | null }).phone_normalized
-          )
-          .filter((p): p is string => !!p)
-      );
-
-      const toInsert = unique.filter((row) => {
-        if (existing.has(normalizeKey(row.phone))) {
-          skipped++;
-          return false;
-        }
-        return true;
-      });
-
-      // 3) Resolve tag names → ids (admin+ may auto-create missing tags).
-      //    Skip the round-trip when the import carries no tag names.
-      const allTagNames = toInsert.flatMap((row) => row.tagNames);
-      let tagIdByKey = new Map<string, string>();
-      let skippedNames: string[] = [];
-      if (allTagNames.length > 0) {
-        ({ tagIdByKey, skippedNames } = await resolveImportTagIds(supabase, {
-          accountId,
-          userId: user.id,
-          tagNames: allTagNames,
-          canCreateTags: canEditSettings,
-        }));
+      type ImportResult = Awaited<ReturnType<typeof importContacts>>;
+      const aggregate: ImportResult = { imported: 0, skipped: 0, invalidPhone: 0, failed: 0, tagsAssigned: 0, failedDetails: [], skippedNames: [] };
+      for (let offset = 0; offset < parsedRows.length; offset += 200) {
+        const { data, error } = await apiResult<ImportResult>('/api/contacts/import', {
+          method: 'POST', body: JSON.stringify({ rows: parsedRows.slice(offset, offset + 200) }),
+        });
+        if (error || !data) throw new Error(error?.message ?? t('toastError'));
+        aggregate.imported += data.imported;
+        aggregate.skipped += data.skipped;
+        aggregate.invalidPhone += data.invalidPhone;
+        aggregate.failed += data.failed;
+        aggregate.tagsAssigned += data.tagsAssigned;
+        aggregate.failedDetails.push(...data.failedDetails);
+        aggregate.skippedNames.push(...data.skippedNames);
+        // Refresh after each committed chunk, including partial imports.
+        if (data.imported) onImported();
       }
-
-      const tagAssignments: ContactTagAssignment[] = [];
-
-      // 4) Batch insert the genuinely-new rows in chunks of 50. The DB
-      //    unique index is the backstop: a 23505 (race, or a format
-      //    that normalizes equal) counts as skipped, not failed.
-      const chunkSize = 50;
-
-      for (let i = 0; i < toInsert.length; i += chunkSize) {
-        const chunk = toInsert.slice(i, i + chunkSize);
-        const rows = chunk.map((row) => ({
-          user_id: user.id,
-          account_id: accountId,
-          phone: row.phone,
-          name: row.name || null,
-          email: row.email || null,
-          company: row.company || null,
-        }));
-
-        const { data, error } = await supabase
-          .from('contacts')
-          .insert(rows)
-          .select('id');
-
-        if (error) {
-          // Retry individually so one bad/duplicate row doesn't sink
-          // the whole chunk.
-          for (let j = 0; j < rows.length; j++) {
-            const row = rows[j];
-            const source = chunk[j];
-            const { data: singleData, error: singleErr } = await supabase
-              .from('contacts')
-              .insert(row)
-              .select('id')
-              .single();
-
-            if (!singleErr && singleData) {
-              imported++;
-              if (source.tagNames.length > 0) {
-                tagAssignments.push({
-                  contactId: singleData.id,
-                  tagNames: source.tagNames,
-                });
-              }
-            } else if (isUniqueViolation(singleErr)) {
-              skipped++;
-            } else {
-              failed++;
-              // Keep the actual DB error instead of discarding it —
-              // "N contacts failed" with no reason attached left no
-              // way to tell an RLS/constraint failure from a fluke,
-              // let alone which contact it was.
-              console.error(
-                '[contacts import] insert failed for',
-                row.phone,
-                singleErr
-              );
-              failedDetails.push({
-                phone: row.phone,
-                name: row.name ?? undefined,
-                reason:
-                  (singleErr as { message?: string } | null)?.message ||
-                  t('unknownReason'),
-              });
-            }
-          }
-        } else {
-          const inserted = data ?? [];
-          imported += inserted.length;
-          // inserted[j] ↔ chunk[j] only holds because a single INSERT
-          // preserves RETURNING order. If this path is ever split into
-          // parallel inserts, zip by phone or returned id instead.
-          for (let j = 0; j < inserted.length; j++) {
-            const source = chunk[j];
-            if (!source || source.tagNames.length === 0) continue;
-            tagAssignments.push({
-              contactId: inserted[j].id,
-              tagNames: source.tagNames,
-            });
-          }
-        }
-      }
-
-      // 5) Wire tags onto the contacts we just created. Failure here must
-      //    not mask a successful contact import.
-      let tagsAssigned = 0;
-      try {
-        tagsAssigned = await assignImportedContactTags(
-          supabase,
-          tagAssignments,
-          tagIdByKey
-        );
-      } catch {
-        toast.warning(t('toastTagsWarning'));
-      }
+      const { imported, skipped, invalidPhone, failed, failedDetails, tagsAssigned } = aggregate;
+      const skippedNames = [...new Set(aggregate.skippedNames)];
 
       setResult({
         imported,

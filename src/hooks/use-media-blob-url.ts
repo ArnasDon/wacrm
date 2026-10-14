@@ -1,9 +1,9 @@
-"use client";
+'use client';
 
-import { useEffect, useState } from "react";
-import { isProxiedMediaUrl, loadMediaBlob } from "@/lib/media/blob-cache";
+import { useEffect, useState } from 'react';
+import { isProxiedMediaUrl, loadMediaBlob } from '@/lib/media/blob-cache';
 
-export type MediaLoadStatus = "idle" | "loading" | "ready" | "error";
+export type MediaLoadStatus = 'idle' | 'loading' | 'ready' | 'error';
 
 interface MediaBlobUrlState {
   /** Ready-to-render URL: the original for public media, an object URL for proxied. */
@@ -60,19 +60,19 @@ export function useMediaBlobUrl(url: string | undefined): MediaBlobUrlState {
     };
   }, [url]);
 
-  if (!url) return { src: null, status: "idle" };
+  if (!url) return { src: null, status: 'idle' };
 
   // Nothing to load for a public URL — derived here rather than pushed
   // through state so the first paint already has the image.
-  if (!isProxiedMediaUrl(url)) return { src: url, status: "ready" };
+  if (!isProxiedMediaUrl(url)) return { src: url, status: 'ready' };
 
   // A result for a *previous* URL is stale; the new URL's load is already
   // in flight, so report loading rather than flashing the old image.
   if (resolved?.url === url) {
     return resolved.failed
-      ? { src: null, status: "error" }
-      : { src: resolved.objectUrl, status: "ready" };
+      ? { src: null, status: 'error' }
+      : { src: resolved.objectUrl, status: 'ready' };
   }
 
-  return { src: null, status: "loading" };
+  return { src: null, status: 'loading' };
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
+import { apiResult } from '@/lib/api/client';
 import { Broadcast } from '@/types';
 import { Button } from '@/components/ui/button';
 import {
@@ -24,7 +24,7 @@ import { useTranslations } from 'next-intl';
  * beat on Supabase — the aggregate trigger in migration 003 keeps
  * counts consistent; we just need to surface the freshest snapshot.
  */
-const POLL_INTERVAL_MS = 5_000;
+const POLL_INTERVAL_MS = 10_000;
 
 function percent(numerator: number, denominator: number): number {
   if (!denominator) return 0;
@@ -71,13 +71,9 @@ export default function BroadcastsPage() {
 
   async function fetchBroadcasts() {
     try {
-      const supabase = createClient();
-      const { data, error: fetchError } = await supabase
-        .from('broadcasts')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (fetchError) throw fetchError;
+      const {data:result,error:fetchError}=await apiResult<{broadcasts:Broadcast[]}>('/api/broadcasts');
+      if(fetchError)throw new Error(fetchError.message);
+      const data=result?.broadcasts;
       setBroadcasts(data ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : t('errorLoad'));

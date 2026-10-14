@@ -1,149 +1,79 @@
-import type { SupabaseClient } from '@supabase/supabase-js'
-import type { AiConfig } from './types'
-import { chunkText } from './chunk'
-import { embedTexts, toVectorLiteral } from './embeddings'
-
-// ============================================================
-// Knowledge base: ingest (chunk + optionally embed) and hybrid
-// retrieve (semantic when an embeddings key is present, topped up with
-// lexical full-text search).
-// ============================================================
-
-interface MatchRow {
-  id: string
-  content: string
-}
-
-/**
- * (Re)build the chunks for one document. Deletes the document's
- * existing chunks, re-chunks the content, and — when the account has an
- * embeddings key — embeds each chunk. Runs under whatever client the
- * caller passes (service-role for ingest routes).
- *
- * Throws on embedding failure so the ingest route can report it; the
- * chunks are only written once embedding (if attempted) succeeds, so a
- * failed embed never leaves half-indexed rows.
- */
+import type { SqlConnection } from '@/lib/db/transaction';
+import { AiStore } from '@/lib/db/ai-store';
+import type { AiConfig } from './types';
+import { chunkText } from './chunk';
+import { embedTexts } from './embeddings';
+export type AiSqlRunner = <T>(
+  work: (db: SqlConnection) => Promise<T>
+) => Promise<T>;
+/** Embed outside the transaction, then atomically replace the unchanged document's index. */
 export async function ingestDocument(
-  db: SupabaseClient,
+  run: AiSqlRunner,
   accountId: string,
   config: Pick<AiConfig, 'embeddingsApiKey'>,
   documentId: string,
-  content: string,
+  content: string
 ): Promise<void> {
-  const chunks = chunkText(content)
-
-  // Replace, don't append — re-ingest must be idempotent.
-  const { error: delErr } = await db
-    .from('ai_knowledge_chunks')
-    .delete()
-    .eq('document_id', documentId)
-  if (delErr) throw delErr
-
-  if (chunks.length === 0) return
-
-  // Embed if a key is set, but DON'T let an embedding failure stop the
-  // chunks from being stored: a failed embed must still leave the
-  // document searchable lexically. We record the error and rethrow it
-  // AFTER inserting (embedding-less) rows, so the route can warn
-  // "semantic indexing failed" — which is now truthful, because lexical
-  // search really does still work.
-  let embeddings: number[][] | null = null
-  let embedError: unknown = null
-  if (config.embeddingsApiKey) {
+  const chunks = chunkText(content);
+  let embeddings: number[][] | null = null;
+  let embedError: unknown = null;
+  if (config.embeddingsApiKey && chunks.length) {
     try {
-      embeddings = await embedTexts(config.embeddingsApiKey, chunks)
-    } catch (err) {
-      embedError = err
+      embeddings = await embedTexts(config.embeddingsApiKey, chunks);
+    } catch (error) {
+      embedError = error;
     }
   }
-
-  const rows = chunks.map((content, i) => ({
-    document_id: documentId,
-    account_id: accountId,
-    chunk_index: i,
-    content,
-    embedding: embeddings ? toVectorLiteral(embeddings[i]) : null,
-  }))
-
-  const { error: insErr } = await db.from('ai_knowledge_chunks').insert(rows)
-  if (insErr) throw insErr
-
-  if (embedError) throw embedError
+  await run((db) =>
+    new AiStore(db, accountId).replaceChunks(
+      documentId,
+      content,
+      chunks.map((content, i) => ({
+        content,
+        embedding: embeddings?.[i] ?? null,
+      }))
+    )
+  );
+  if (embedError) throw embedError;
 }
-
-/**
- * Retrieve up to `k` knowledge excerpts relevant to `queryText`.
- *
- * Semantic-primary when an embeddings key is configured (embed the
- * query → cosine-nearest chunks), then topped up with lexical full-text
- * matches to fill `k`. Lexical-only when there's no key. Best-effort:
- * any failure (no KB, embedding error, RPC error) degrades to fewer or
- * zero results and never throws into the draft / auto-reply path.
- */
 export async function retrieveKnowledge(
-  db: SupabaseClient,
+  db: SqlConnection,
   accountId: string,
   config: Pick<AiConfig, 'embeddingsApiKey'>,
   queryText: string,
-  k = 5,
+  k = 5
 ): Promise<string[]> {
-  const query = queryText.trim()
-  if (!query || k <= 0) return []
-
-  // Skip everything when the account has no knowledge base — otherwise
-  // every draft / auto-reply would pay for a query embedding + two RPCs
-  // just to get []. One cheap indexed COUNT (head, no rows) instead of a
-  // paid embeddings call on the hot path.
+  const query = queryText.trim();
+  k = Math.min(20, Math.floor(k));
+  if (!query || k <= 0) return [];
+  const store = new AiStore(db, accountId);
   try {
-    const { count, error } = await db
-      .from('ai_knowledge_chunks')
-      .select('id', { count: 'exact', head: true })
-      .eq('account_id', accountId)
-    if (error || !count) return []
+    if (!(await store.hasChunks())) return [];
   } catch {
-    return []
+    return [];
   }
-
-  const picked = new Map<string, string>() // id → content, preserves order
-
-  // Semantic path.
+  const picked = new Map<string, string>();
   if (config.embeddingsApiKey) {
     try {
-      const [queryEmbedding] = await embedTexts(config.embeddingsApiKey, [query])
-      if (queryEmbedding) {
-        const { data, error } = await db.rpc('match_ai_knowledge_semantic', {
-          p_account_id: accountId,
-          p_query_embedding: toVectorLiteral(queryEmbedding),
-          p_match_count: k,
-        })
-        if (!error && Array.isArray(data)) {
-          for (const row of data as MatchRow[]) picked.set(row.id, row.content)
-        }
-      }
-    } catch (err) {
-      console.error('[ai knowledge] semantic retrieval failed, falling back to FTS:', err)
+      const [vector] = await embedTexts(config.embeddingsApiKey, [query]);
+      if (vector)
+        for (const row of await store.semantic(vector, k))
+          picked.set(row.id, row.content);
+    } catch {
+      console.error(
+        '[ai knowledge] semantic retrieval failed; using keyword search.'
+      );
     }
   }
-
-  // Lexical top-up (also the sole path when there's no embeddings key).
   if (picked.size < k) {
     try {
-      const { data, error } = await db.rpc('match_ai_knowledge_fts', {
-        p_account_id: accountId,
-        p_query: query,
-        p_match_count: k,
-      })
-      if (!error && Array.isArray(data)) {
-        for (const row of data as MatchRow[]) {
-          if (picked.size >= k) break
-          if (!picked.has(row.id)) picked.set(row.id, row.content)
-        }
+      for (const row of await store.lexical(query, k)) {
+        if (picked.size >= k) break;
+        if (!picked.has(row.id)) picked.set(row.id, row.content);
       }
-    } catch (err) {
-      console.error('[ai knowledge] lexical retrieval failed:', err)
+    } catch {
+      console.error('[ai knowledge] keyword retrieval failed.');
     }
   }
-
-  return Array.from(picked.values()).slice(0, k)
+  return [...picked.values()].slice(0, k);
 }

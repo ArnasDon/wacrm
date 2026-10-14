@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { SupabaseClient } from '@supabase/supabase-js';
+import type { SqlConnection } from '@/lib/db/transaction';
 
 vi.mock('@/lib/whatsapp/encryption', () => ({
   decrypt: (s: string) => s,
@@ -25,34 +25,14 @@ interface Calls {
 }
 
 function makeDb(rows: Row[], calls: Calls) {
-  const from = () => {
-    let mode: 'select' | 'update' = 'select';
-    let payload: Record<string, unknown> = {};
-    let id: string | null = null;
-    const b: Record<string, unknown> = {
-      select: () => b,
-      eq: (col: string, val: string) => {
-        if (col === 'id') id = val;
-        return b;
-      },
-      update: (p: Record<string, unknown>) => {
-        mode = 'update';
-        payload = p;
-        return b;
-      },
-      contains: () => Promise.resolve({ data: rows, error: null }),
-      then: (resolve: (v: unknown) => unknown) => {
-        if (mode === 'update' && id) calls.updates.push({ id, payload });
-        return resolve({ data: null, error: null });
-      },
-    };
-    return b;
-  };
-  const rpc = (name: string, args: Record<string, unknown>) => {
-    calls.rpcs.push({ name, args });
-    return Promise.resolve({ data: null, error: null });
-  };
-  return { from, rpc } as unknown as SupabaseClient;
+  return { query: async (sql:string,values:unknown[]=[])=>{
+    expect(sql).toContain('account_id=$1');
+    expect(values[0]).toBe('acct-1');
+    if(sql.startsWith('SELECT')) return {rows};
+    if(sql.includes('failure_count=failure_count+1')) calls.rpcs.push({name:'record_webhook_failure',args:{endpoint_id:values[1],max_failures:values[2]}});
+    else calls.updates.push({id:values[1] as string,payload:{failure_count:0}});
+    return {rows:[]};
+  } } satisfies SqlConnection;
 }
 
 const emptyCalls = (): Calls => ({ updates: [], rpcs: [] });

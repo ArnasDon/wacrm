@@ -1,94 +1,93 @@
-"use client";
-
-import { useEffect, useRef, useCallback, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
-import type { Message, Conversation } from "@/types";
-import type { RealtimeChannel } from "@supabase/supabase-js";
-
-interface RealtimeEvent<T> {
-  eventType: "INSERT" | "UPDATE" | "DELETE";
-  new: T;
-  old: Partial<T>;
-}
-
+'use client';
+import { useEffect, useRef, useCallback, useState } from 'react';
+import type { Message, Conversation } from '@/types';
+import { startPolling } from '@/lib/api/polling';
+import { snapshotEvents, type SnapshotEvent } from '@/lib/inbox/poll-events';
+import { useAuth } from './use-auth';
 interface UseRealtimeOptions {
   channelName: string;
-  onMessageEvent?: (event: RealtimeEvent<Message>) => void;
-  onConversationEvent?: (event: RealtimeEvent<Conversation>) => void;
+  conversationId?: string;
+  onMessageEvent?: (event: SnapshotEvent<Message>) => void;
+  onConversationEvent?: (event: SnapshotEvent<Conversation>) => void;
   enabled?: boolean;
+  pollWhenHidden?: boolean;
 }
-
 export function useRealtime({
   channelName,
+  conversationId,
   onMessageEvent,
   onConversationEvent,
   enabled = true,
+  pollWhenHidden = false,
 }: UseRealtimeOptions) {
-  const channelRef = useRef<RealtimeChannel | null>(null);
-  const [isConnected, setIsConnected] = useState(false);
-
-  // Store latest callbacks in refs to avoid re-subscribing when the
-  // parent re-renders with fresh closures. Assigned inside an effect
-  // so the mutation doesn't happen during render (React 19's refs
-  // rule) — subscribers only read `.current` inside async Realtime
-  // callbacks, which always run after the render that updates it.
-  const onMessageRef = useRef(onMessageEvent);
-  const onConversationRef = useRef(onConversationEvent);
+  const { accountId, user } = useAuth();
+  const key =
+    channelName + ':' + accountId + ':' + user?.id + ':' + conversationId;
+  const [connection, setConnection] = useState<{
+    key: string;
+    connected: boolean;
+  } | null>(null);
+  const stopRef = useRef<(() => void) | null>(null);
+  const messageRef = useRef(onMessageEvent);
+  const conversationRef = useRef(onConversationEvent);
   useEffect(() => {
-    onMessageRef.current = onMessageEvent;
-    onConversationRef.current = onConversationEvent;
+    messageRef.current = onMessageEvent;
+    conversationRef.current = onConversationEvent;
   });
-
   useEffect(() => {
-    if (!enabled) return;
-
-    const supabase = createClient();
-
-    const channel = supabase
-      .channel(channelName)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "messages" },
-        (payload) => {
-          onMessageRef.current?.({
-            eventType: payload.eventType as RealtimeEvent<Message>["eventType"],
-            new: payload.new as Message,
-            old: payload.old as Partial<Message>,
-          });
-        }
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "conversations" },
-        (payload) => {
-          onConversationRef.current?.({
-            eventType: payload.eventType as RealtimeEvent<Conversation>["eventType"],
-            new: payload.new as Conversation,
-            old: payload.old as Partial<Conversation>,
-          });
-        }
-      )
-      .subscribe((status) => {
-        setIsConnected(status === "SUBSCRIBED");
-      });
-
-    channelRef.current = channel;
-
+    if (!enabled || !accountId) return;
+    let previousMessages: Message[] | null = null;
+    let previousConversations: Conversation[] | null = null;
+    const query = conversationId
+      ? '?conversationId=' + encodeURIComponent(conversationId)
+      : '';
+    const polling = startPolling(
+      async (signal) => {
+        const response = await fetch('/api/inbox/poll' + query, {
+          cache: 'no-store',
+          signal,
+        });
+        if (!response.ok) throw new Error('Inbox refresh failed.');
+        return (await response.json()) as {
+          messages: Message[];
+          conversations: Conversation[];
+        };
+      },
+      (data) => {
+        for (const event of snapshotEvents(previousMessages, data.messages))
+          messageRef.current?.(event);
+        for (const event of snapshotEvents(
+          previousConversations,
+          data.conversations,
+          true
+        ))
+          conversationRef.current?.(event);
+        previousMessages = data.messages;
+        previousConversations = data.conversations;
+        setConnection({ key, connected: true });
+      },
+      () => setConnection({ key, connected: false }),
+      conversationId ? 3000 : 10000,
+      () => pollWhenHidden || !document.hidden
+    );
+    stopRef.current = polling.stop;
+    const refresh = () => polling.refresh();
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
     return () => {
-      supabase.removeChannel(channel);
-      channelRef.current = null;
-      setIsConnected(false);
+      polling.stop();
+      stopRef.current = null;
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
     };
-  }, [channelName, enabled]);
-
+  }, [enabled, accountId, conversationId, key, pollWhenHidden]);
   const unsubscribe = useCallback(() => {
-    if (channelRef.current) {
-      const supabase = createClient();
-      supabase.removeChannel(channelRef.current);
-      channelRef.current = null;
-      setIsConnected(false);
-    }
+    stopRef.current?.();
+    stopRef.current = null;
+    setConnection(null);
   }, []);
-
-  return { isConnected, unsubscribe };
+  return {
+    isConnected: enabled && connection?.key === key && connection.connected,
+    unsubscribe,
+  };
 }

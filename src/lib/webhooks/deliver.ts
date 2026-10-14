@@ -20,7 +20,8 @@
 
 import { randomUUID } from 'node:crypto';
 
-import type { SupabaseClient } from '@supabase/supabase-js';
+import type { SqlConnection } from '@/lib/db/transaction';
+import { recordWebhookFailure } from '@/lib/db/webhooks';
 
 import { decrypt } from '@/lib/whatsapp/encryption';
 import { buildSignatureHeader } from '@/lib/webhooks/sign';
@@ -44,20 +45,14 @@ interface EndpointRow {
  * subscribed to it. Never throws.
  */
 export async function dispatchWebhookEvent(
-  db: SupabaseClient,
+  db: SqlConnection,
   accountId: string,
   event: WebhookEvent,
   data: unknown
 ): Promise<void> {
   try {
-    const { data: rows, error } = await db
-      .from('webhook_endpoints')
-      .select('id, url, secret')
-      .eq('account_id', accountId)
-      .eq('is_active', true)
-      .contains('events', [event]);
-
-    if (error || !rows || rows.length === 0) return;
+    const { rows } = await db.query('SELECT id,url,secret FROM public.webhook_endpoints WHERE account_id=$1 AND is_active=true AND events @> ARRAY[$2]::text[]',[accountId,event]) as {rows:EndpointRow[]};
+    if (rows.length === 0) return;
 
     // Sign the exact bytes we send so a receiver can recompute the
     // HMAC over the raw request body. `id` is a per-delivery uuid the
@@ -74,7 +69,7 @@ export async function dispatchWebhookEvent(
 
     await Promise.allSettled(
       (rows as EndpointRow[]).map((row) =>
-        deliverOne(db, row, event, payload, tsSeconds)
+        deliverOne(db, accountId, row, event, payload, tsSeconds)
       )
     );
   } catch (err) {
@@ -84,7 +79,8 @@ export async function dispatchWebhookEvent(
 }
 
 async function deliverOne(
-  db: SupabaseClient,
+  db: SqlConnection,
+  accountId: string,
   row: EndpointRow,
   event: WebhookEvent,
   payload: string,
@@ -95,7 +91,7 @@ async function deliverOne(
   // misconfigured internal URL surfaces and eventually auto-disables.
   if (!(await isDeliverableUrl(row.url))) {
     console.warn('[webhooks] refusing non-public delivery target for', row.id);
-    await recordFailure(db, row);
+    await recordFailure(db, accountId, row);
     return;
   }
 
@@ -106,7 +102,7 @@ async function deliverOne(
     // A row whose secret can't be decrypted can never produce a valid
     // signature — count it as a failure so it eventually auto-disables.
     console.error('[webhooks] secret decrypt failed for', row.id, err);
-    await recordFailure(db, row);
+    await recordFailure(db, accountId, row);
     return;
   }
 
@@ -129,30 +125,25 @@ async function deliverOne(
     if (!res.ok) throw new Error(`endpoint responded ${res.status}`);
 
     // Success: clear the failure streak.
-    await db
-      .from('webhook_endpoints')
-      .update({ failure_count: 0, last_delivery_at: new Date().toISOString() })
-      .eq('id', row.id);
+    await db.query('UPDATE public.webhook_endpoints SET failure_count=0,last_delivery_at=now() WHERE account_id=$1 AND id=$2',[accountId,row.id]);
   } catch (err) {
     console.warn(
       `[webhooks] delivery to ${row.id} failed:`,
       err instanceof Error ? err.message : err
     );
-    await recordFailure(db, row);
+    await recordFailure(db, accountId, row);
   }
 }
 
-async function recordFailure(db: SupabaseClient, row: EndpointRow): Promise<void> {
+async function recordFailure(db: SqlConnection, accountId:string, row: EndpointRow): Promise<void> {
   // Atomic increment (+ auto-disable at the threshold) via a SQL
   // function — a read-modify-write here would lose increments when two
   // deliveries to the same endpoint run concurrently (e.g.
   // conversation.created + message.received for one inbound message),
   // so a dead endpoint might never reach the disable threshold.
-  const { error } = await db.rpc('record_webhook_failure', {
-    endpoint_id: row.id,
-    max_failures: MAX_CONSECUTIVE_FAILURES,
-  });
-  if (error) {
+  try {
+    await recordWebhookFailure(db,accountId,row.id,MAX_CONSECUTIVE_FAILURES);
+  } catch(error) {
     console.error('[webhooks] record_webhook_failure failed for', row.id, error);
   }
 }

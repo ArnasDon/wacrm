@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { SupabaseClient } from '@supabase/supabase-js';
+import type { SqlConnection } from '@/lib/db/transaction';
 
 import { BroadcastError } from './broadcast-core';
 import {
@@ -23,31 +23,19 @@ interface ClaimCall {
   or?: string;
 }
 
-function claimDb(returnedRows: unknown[], calls: ClaimCall[]): SupabaseClient {
+function claimDb(returnedRows: unknown[], calls: ClaimCall[]): SqlConnection {
   return {
-    from() {
-      const call: ClaimCall = { update: {}, filters: {} };
-      const b: Record<string, unknown> = {
-        update: (row: Record<string, unknown>) => {
-          call.update = row;
-          calls.push(call);
-          return b;
-        },
-        eq: (col: string, val: unknown) => {
-          call.filters[col] = val;
-          return b;
-        },
-        or: (expr: string) => {
-          call.or = expr;
-          return b;
-        },
-        select: async () => ({ data: returnedRows, error: null }),
-        then: (resolve: (r: { error: null }) => unknown) =>
-          resolve({ error: null }),
-      };
-      return b;
+    query: async (sql, values = []) => {
+      calls.push({
+        update: sql.includes('delivery_locked_at=NULL')
+          ? { delivery_locked_at: null }
+          : { delivery_locked_at: values[2] },
+        filters: { account_id: values[0], id: values[1] },
+        or: 'delivery_locked_at.is.null,delivery_locked_at.lt.' + values[3],
+      });
+      return { rows: returnedRows };
     },
-  } as unknown as SupabaseClient;
+  };
 }
 
 describe('claimBroadcastDelivery', () => {
@@ -57,23 +45,17 @@ describe('claimBroadcastDelivery', () => {
       claimDb([{ id: 'bc-1' }], calls),
       'acct-1',
       'bc-1',
-      new Date('2026-08-11T12:00:00Z'),
+      new Date('2026-08-11T12:00:00Z')
     );
 
     expect(ok).toBe(true);
     expect(calls[0].filters).toEqual({ id: 'bc-1', account_id: 'acct-1' });
-    expect(calls[0].update.delivery_locked_at).toBe(
-      '2026-08-11T12:00:00.000Z',
-    );
+    expect(calls[0].update.delivery_locked_at).toBe('2026-08-11T12:00:00.000Z');
   });
 
   it('refuses when another pass already holds the lock', async () => {
     // The UPDATE's WHERE didn't match — someone else got there first.
-    const ok = await claimBroadcastDelivery(
-      claimDb([], []),
-      'acct-1',
-      'bc-1',
-    );
+    const ok = await claimBroadcastDelivery(claimDb([], []), 'acct-1', 'bc-1');
     expect(ok).toBe(false);
   });
 
@@ -83,12 +65,12 @@ describe('claimBroadcastDelivery', () => {
       claimDb([{ id: 'bc-1' }], calls),
       'acct-1',
       'bc-1',
-      new Date('2026-08-11T12:00:00Z'),
+      new Date('2026-08-11T12:00:00Z')
     );
     // 30 minutes before "now" — a pass whose process died is recoverable
     // without touching the database by hand.
     expect(calls[0].or).toBe(
-      'delivery_locked_at.is.null,delivery_locked_at.lt.2026-08-11T11:30:00.000Z',
+      'delivery_locked_at.is.null,delivery_locked_at.lt.2026-08-11T11:30:00.000Z'
     );
   });
 
@@ -102,9 +84,9 @@ describe('claimBroadcastDelivery', () => {
 describe('releaseBroadcastDelivery', () => {
   it('clears the lock', async () => {
     const calls: ClaimCall[] = [];
-    await releaseBroadcastDelivery(claimDb([], calls), 'bc-1');
+    await releaseBroadcastDelivery(claimDb([], calls), 'bc-1', 'acct-1');
     expect(calls[0].update).toEqual({ delivery_locked_at: null });
-    expect(calls[0].filters).toEqual({ id: 'bc-1' });
+    expect(calls[0].filters).toEqual({ id: 'bc-1', account_id: 'acct-1' });
   });
 });
 
@@ -125,43 +107,30 @@ interface PlanWrites {
   failedUpdate?: Record<string, unknown>;
 }
 
-function planDb(fx: PlanFixture, writes: PlanWrites = {}): SupabaseClient {
+function planDb(fx: PlanFixture, writes: PlanWrites = {}): SqlConnection {
   return {
-    from(table: string) {
-      const b: Record<string, unknown> = {
-        select: () => b,
-        eq: () => b,
-        order: () => b,
-        in: (col: string, vals: unknown) => {
-          if (col === 'status') writes.statusFilter = vals;
-          if (col === 'id') writes.failedIds = vals;
-          return b;
-        },
-        update: (row: Record<string, unknown>) => {
-          writes.failedUpdate = row;
-          return b;
-        },
-        maybeSingle: async () => ({
-          data: fx.broadcast === undefined ? null : fx.broadcast,
-          error: null,
-        }),
-        single: async () => ({
-          data: fx.config === undefined ? null : fx.config,
-          error: null,
-        }),
-        then: (resolve: (r: { data: unknown[]; error: null }) => unknown) => {
-          if (table === 'broadcast_recipients') {
-            return resolve({ data: fx.recipients ?? [], error: null });
-          }
-          if (table === 'message_templates') {
-            return resolve({ data: fx.templates ?? [], error: null });
-          }
-          return resolve({ data: [], error: null });
-        },
-      };
-      return b;
+    query: async (sql, values = []) => {
+      if (sql.includes('SELECT * FROM public.broadcasts'))
+        return { rows: fx.broadcast ? [fx.broadcast] : [] };
+      if (sql.includes('FROM public.whatsapp_config'))
+        return { rows: fx.config ? [fx.config] : [] };
+      if (sql.includes('FROM public.message_templates'))
+        return { rows: fx.templates ?? [] };
+      if (sql.includes('SELECT r.*')) {
+        writes.statusFilter = values[2];
+        return { rows: fx.recipients ?? [] };
+      }
+      if (sql.includes('UPDATE public.broadcast_recipients')) {
+        writes.failedIds = [
+          ...((writes.failedIds as unknown[]) ?? []),
+          values[2],
+        ];
+        writes.failedUpdate = { status: 'failed' };
+        return { rows: [] };
+      }
+      throw new Error('Unexpected SQL');
     },
-  } as unknown as SupabaseClient;
+  };
 }
 
 const BROADCAST = {
@@ -175,7 +144,7 @@ const CONFIG = { phone_number_id: 'pn-1', access_token: 'tok' };
 function recipient(
   id: string,
   phone: string | null,
-  params: unknown = ['A123'],
+  params: unknown = ['A123']
 ) {
   return {
     id,
@@ -185,6 +154,25 @@ function recipient(
 }
 
 describe('planBroadcastResume', () => {
+  it('commits failed recipients even when every phone is unsendable', async () => {
+    const writes: PlanWrites = {};
+    const result = await planBroadcastResume(
+      planDb(
+        {
+          broadcast: BROADCAST,
+          config: CONFIG,
+          recipients: [recipient('gone', null)],
+        },
+        writes
+      ),
+      'acct-1',
+      'bc-1',
+      'pending'
+    );
+    expect(result.plan.planned).toEqual([]);
+    expect(result.unsendable).toBe(1);
+    expect(writes.failedIds).toEqual(['gone']);
+  });
   it('plans the outstanding recipients with their frozen params', async () => {
     const writes: PlanWrites = {};
     const { plan, remaining, unsendable } = await planBroadcastResume(
@@ -197,11 +185,11 @@ describe('planBroadcastResume', () => {
             recipient('r2', '+15559876543', ['B456', 'Monday']),
           ],
         },
-        writes,
+        writes
       ),
       'acct-1',
       'bc-1',
-      'pending',
+      'pending'
     );
 
     expect(writes.statusFilter).toEqual(['pending']);
@@ -234,11 +222,11 @@ describe('planBroadcastResume', () => {
           config: CONFIG,
           recipients: [recipient('r1', '+15551234567')],
         },
-        failedWrites,
+        failedWrites
       ),
       'acct-1',
       'bc-1',
-      'failed',
+      'failed'
     );
     expect(failedWrites.statusFilter).toEqual(['failed']);
 
@@ -250,11 +238,11 @@ describe('planBroadcastResume', () => {
           config: CONFIG,
           recipients: [recipient('r1', '+15551234567')],
         },
-        allWrites,
+        allWrites
       ),
       'acct-1',
       'bc-1',
-      'all',
+      'all'
     );
     expect(allWrites.statusFilter).toEqual(['pending', 'failed']);
   });
@@ -272,7 +260,7 @@ describe('planBroadcastResume', () => {
       }),
       'acct-1',
       'bc-1',
-      'pending',
+      'pending'
     );
     expect(plan.planned.map((p) => p.params)).toEqual([[], []]);
   });
@@ -290,11 +278,11 @@ describe('planBroadcastResume', () => {
             recipient('r3', 'nonsense'),
           ],
         },
-        writes,
+        writes
       ),
       'acct-1',
       'bc-1',
-      'pending',
+      'pending'
     );
 
     // Left 'pending', these would keep the broadcast in 'sending'
@@ -307,13 +295,13 @@ describe('planBroadcastResume', () => {
 
   it('caps one pass and reports the leftover', async () => {
     const many = Array.from({ length: RESUME_MAX_PER_REQUEST + 25 }, (_, i) =>
-      recipient(`r${i}`, '+1555000' + String(i).padStart(4, '0')),
+      recipient(`r${i}`, '+1555000' + String(i).padStart(4, '0'))
     );
     const { plan, remaining } = await planBroadcastResume(
       planDb({ broadcast: BROADCAST, config: CONFIG, recipients: many }),
       'acct-1',
       'bc-1',
-      'pending',
+      'pending'
     );
     expect(plan.planned).toHaveLength(RESUME_MAX_PER_REQUEST);
     // Surfaced to the caller rather than silently dropped.
@@ -326,8 +314,8 @@ describe('planBroadcastResume', () => {
         planDb({ broadcast: null }),
         'acct-1',
         'bc-1',
-        'pending',
-      ),
+        'pending'
+      )
     ).rejects.toMatchObject({ status: 404 });
   });
 
@@ -337,8 +325,8 @@ describe('planBroadcastResume', () => {
         planDb({ broadcast: BROADCAST, config: CONFIG, recipients: [] }),
         'acct-1',
         'bc-1',
-        'failed',
-      ),
+        'failed'
+      )
     ).rejects.toBeInstanceOf(BroadcastError);
   });
 
@@ -361,7 +349,7 @@ describe('planBroadcastResume', () => {
       }),
       'acct-1',
       'bc-1',
-      'pending',
+      'pending'
     );
     expect(plan.templateRow?.language).toBe('en');
   });

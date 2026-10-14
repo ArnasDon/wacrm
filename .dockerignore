@@ -15,3 +15,7 @@ docker-compose*.yml
 .vscode
 .idea
 coverage
+
+.cache
+local-data
+.superpowers

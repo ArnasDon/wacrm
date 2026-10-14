@@ -1,35 +1,48 @@
-import { NextResponse } from 'next/server'
-import { requireRole, toErrorResponse } from '@/lib/auth/account'
-import { runAutomationsForTrigger } from '@/lib/automations/engine'
-import type { AutomationTriggerType } from '@/types'
-
-/**
- * Manual trigger for testing or for external integrations that want
- * to fire automations. Auth is required — we resolve the caller's
- * account_id and dispatch over the account's automations.
- */
+import {
+  accountRoute,
+  readObject,
+  requireUUID,
+  RequestError,
+} from '@/lib/api/local-route';
+import {
+  runAutomationsForTrigger,
+  type AutomationContext,
+} from '@/lib/automations/engine';
+import type { AutomationTriggerType } from '@/types';
 export async function POST(request: Request) {
-  // Firing automations sends outbound WhatsApp — a write action. Require
-  // at least `agent`; a viewer must not be able to trigger sends.
-  let accountId: string
-  try {
-    const ctx = await requireRole('agent')
-    accountId = ctx.accountId
-  } catch (err) {
-    return toErrorResponse(err)
-  }
-
-  const body = await request.json().catch(() => null)
-  if (!body?.trigger_type) {
-    return NextResponse.json({ error: 'trigger_type required' }, { status: 400 })
-  }
-
-  await runAutomationsForTrigger({
-    accountId,
-    triggerType: body.trigger_type as AutomationTriggerType,
-    contactId: body.contact_id ?? null,
-    context: body.context ?? {},
-  })
-
-  return NextResponse.json({ ok: true })
+  const response = await accountRoute(
+    request,
+    'agent',
+    async (db, ctx) => {
+      const body = await readObject(request);
+      if (typeof body.trigger_type !== 'string' || !body.trigger_type)
+        throw new RequestError('trigger_type required');
+      const contactId =
+        body.contact_id == null ? null : requireUUID(body.contact_id);
+      if (contactId) {
+        const owned = await db.query(
+          'SELECT id FROM public.contacts WHERE account_id=$1 AND id=$2',
+          [ctx.accountId, contactId]
+        );
+        if (!owned.rows.length)
+          throw new RequestError('Contact not found.', 404);
+      }
+      if (
+        body.context !== undefined &&
+        (!body.context ||
+          typeof body.context !== 'object' ||
+          Array.isArray(body.context))
+      )
+        throw new RequestError('Invalid automation context.');
+      return {
+        triggerType: body.trigger_type as AutomationTriggerType,
+        contactId,
+        context: (body.context ?? {}) as AutomationContext,
+      };
+    },
+    async (result, ctx) => {
+      await runAutomationsForTrigger({ accountId: ctx.accountId, ...result });
+    }
+  );
+  return response.ok ? Response.json({ ok: true }) : response;
 }

@@ -1,4 +1,4 @@
-"use client";
+'use client';
 
 import {
   createContext,
@@ -7,19 +7,18 @@ import {
   useState,
   useCallback,
   useMemo,
-  useRef,
   type ReactNode,
-} from "react";
-import { createClient } from "@/lib/supabase/client";
-import type { User } from "@supabase/supabase-js";
-import { DEFAULT_CURRENCY } from "@/lib/currency";
+} from 'react';
+import { authClient } from '@/lib/auth/client';
+import type { LocalUser as User } from '@/lib/auth/client';
+import { DEFAULT_CURRENCY } from '@/lib/currency';
 import {
   canEditSettings as canEditSettingsFor,
   canManageMembers as canManageMembersFor,
   canSendMessages as canSendMessagesFor,
   isAccountRole,
   type AccountRole,
-} from "@/lib/auth/roles";
+} from '@/lib/auth/roles';
 
 interface Profile {
   id: string;
@@ -56,13 +55,13 @@ interface AccountSummary {
  */
 export type AccountStatus =
   /** Profile row still in flight. */
-  | "loading"
+  | 'loading'
   /** Account + role resolved; normal operation. */
-  | "ready"
+  | 'ready'
   /** Signed in, but no profile row / no account / no role on it. */
-  | "unlinked"
+  | 'unlinked'
   /** The profile lookup itself failed after retrying. */
-  | "error";
+  | 'error';
 
 interface AuthContextValue {
   user: User | null;
@@ -134,265 +133,76 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-/** Attempts at the profile lookup, including the first. */
-const PROFILE_FETCH_ATTEMPTS = 2;
-const PROFILE_FETCH_RETRY_MS = 1500;
-
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/** Shape of the `profiles` select below. */
-interface ProfileRow {
-  id: string;
-  full_name: string | null;
-  email: string;
-  avatar_url: string | null;
-  role: string | null;
-  beta_features: string[] | null;
-  account_id: string | null;
-  account_role: string | null;
-}
-
-/**
- * AuthProvider — wrap this around the dashboard layout.
- * Makes ONE getSession() call for the whole tree instead of one per
- * component, avoiding internal lock contention in the Supabase client.
- */
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [account, setAccount] = useState<AccountSummary | null>(null);
-  const [loading, setLoading] = useState(true);
-  // Why the account/role couldn't be established, when it couldn't.
-  // Null on the happy path.
-  const [statusDetail, setStatusDetail] = useState<string | null>(null);
-  // Tracked separately from `loading`. The session settles fast (one
-  // local cookie read); the profile fetch crosses the network and
-  // settles later. Callers that gate on `profile.*` need to know which
-  // window they're in — see the type doc above.
-  const [profileLoading, setProfileLoading] = useState(true);
-
-  // Tracks the user ID we've successfully initiated/completed fetching
-  // a profile for. This prevents redundant re-fetches and toggling
-  // profileLoading back to true on window focus events/token refresh.
-  const lastFetchedUserIdRef = useRef<string | null>(null);
-
-  // Shared across init, auth-state-change listener, and the exposed
-  // refreshProfile() callback. Reads the current session's user id and
-  // pulls the matching profile row along with its account summary.
-  const fetchProfile = useCallback(async (userId: string) => {
-    const supabase = createClient();
-    setProfileLoading(true);
-    setStatusDetail(null);
-    lastFetchedUserIdRef.current = userId;
-    try {
-      let data: ProfileRow | null = null;
-      for (let attempt = 1; ; attempt++) {
-        const result = await supabase
-          .from("profiles")
-          .select(
-            "id, full_name, email, avatar_url, role, beta_features, account_id, account_role",
-          )
-          .eq("user_id", userId)
-          .maybeSingle();
-
-        if (!result.error) {
-          data = result.data;
-          break;
-        }
-
-        const error = result.error;
-        console.error("[AuthProvider] fetchProfile error:", {
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-          code: error.code,
-        });
-        // One hiccup here used to lock the session read-only for good:
-        // the profile stayed null, so every `useCan` gate answered
-        // false and no page offered a way to recover (issue #471).
-        // Retry, then hand the reason to the UI.
-        if (attempt < PROFILE_FETCH_ATTEMPTS) {
-          await sleep(PROFILE_FETCH_RETRY_MS);
-          continue;
-        }
-        lastFetchedUserIdRef.current = null;
-        setStatusDetail(error.message);
-        return;
-      }
-
-      if (data) {
-        // Load the account with a plain lookup by id instead of an
-        // embedded FK join. The embed (`account:accounts!inner(...)`)
-        // forces PostgREST to resolve the profiles.account_id →
-        // accounts.id relationship from its schema cache; a stale cache
-        // (common right after a migration adds the FK) makes it fail
-        // hard with PGRST200 and blanks the whole profile — the user
-        // then loses account context everywhere (issue #294). A point
-        // lookup by id needs no relationship inference, so the profile
-        // (with account_id / account_role) still resolves even if the
-        // account name lookup itself can't.
-        let accountRow: AccountSummary | null = null;
-        if (data.account_id) {
-          const { data: account, error: accountErr } = await supabase
-            .from("accounts")
-            // default_currency added in migration 021; narrowed to the
-            // USD fallback below for older schemas where it reads null.
-            .select("id, name, default_currency")
-            .eq("id", data.account_id)
-            .maybeSingle();
-          if (accountErr) {
-            console.error("[AuthProvider] fetchAccount error:", {
-              message: accountErr.message,
-              details: accountErr.details,
-              hint: accountErr.hint,
-              code: accountErr.code,
-            });
-          } else if (account) {
-            accountRow = {
-              id: account.id,
-              name: account.name,
-              default_currency: account.default_currency ?? DEFAULT_CURRENCY,
-            };
-          }
-        }
-
-        // Narrow the DB enum into our AccountRole union. The DB
-        // constraint should make this unconditional, but a future
-        // migration that broadens the enum without updating TS would
-        // otherwise crash here — fall back to null and let UI gates
-        // treat the caller as least-privileged.
-        const accountRole = isAccountRole(data.account_role)
-          ? data.account_role
-          : null;
-
-        setProfile({
-          id: data.id,
-          full_name: data.full_name,
-          email: data.email,
-          avatar_url: data.avatar_url,
-          role: data.role,
-          // `beta_features` is `NOT NULL DEFAULT ARRAY[]` in the DB, but
-          // narrow defensively in case the column hasn't been migrated yet
-          // (older deployments running 011 lazily) — `null` reads as no
-          // opt-ins, which is the safe default for any future beta gate.
-          beta_features: data.beta_features ?? [],
-          account_id: data.account_id ?? null,
-          account_role: accountRole,
-        });
-        setAccount(accountRow);
-        if (!data.account_id || !accountRole) {
-          // The row exists but carries no tenancy. Migration 017 made
-          // both columns NOT NULL for new signups, so this is a user
-          // whose bootstrap didn't complete (handle_new_user swallows a
-          // failure as a WARNING) or one predating that migration.
-          // Every insert and update they attempt will be denied by RLS.
-          setStatusDetail(
-            `profile ${data.id} has no ${!data.account_id ? "account_id" : "account_role"}`,
-          );
-        }
-      } else {
-        lastFetchedUserIdRef.current = null;
-        setStatusDetail("no profiles row for the signed-in user");
-      }
-    } catch (err) {
-      console.error("[AuthProvider] fetchProfile threw:", err);
-      lastFetchedUserIdRef.current = null;
-      setStatusDetail(err instanceof Error ? err.message : "profile fetch failed");
-    } finally {
-      setProfileLoading(false);
-    }
-  }, []);
-
+  const session = authClient.useSession();
+  const user = session.data?.user ?? null;
+  const userId = user?.id;
+  const loading = session.isPending;
+  const [snapshot, setSnapshot] = useState<{
+    userId: string;
+    profile: Profile | null;
+    account: AccountSummary | null;
+    detail: string | null;
+  } | null>(null);
+  const [refresh, setRefresh] = useState(0);
   useEffect(() => {
-    const supabase = createClient();
-    let mounted = true;
-
-    const safetyTimer = setTimeout(() => {
-      if (mounted) {
-        console.warn("[AuthProvider] getSession() timed out after 3s");
-        setLoading(false);
-        setProfileLoading(false);
-      }
-    }, 3000);
-
-    const init = async () => {
+    if (!userId) return;
+    const controller = new AbortController();
+    let active = true;
+    async function load() {
       try {
-        const {
-          data: { session },
-          error,
-        } = await supabase.auth.getSession();
-
-        if (error) console.error("[AuthProvider] getSession error:", error.message);
-
-        if (!mounted) return;
-        const currentUser = session?.user ?? null;
-        setUser(currentUser);
-
-        if (currentUser) {
-          // Don't block session loading on profile fetch — chrome
-          // (header, sidebar) can render from the user object alone,
-          // profile enriches async. Callers that need to branch on
-          // profile data gate on `profileLoading` instead.
-          fetchProfile(currentUser.id);
-        } else {
-          // No user → no profile to load. Flip profileLoading off so
-          // pages that gate on it don't wait forever on the logged-out
-          // path (the route guard or redirect should fire instead).
-          setProfileLoading(false);
-        }
-      } catch (err) {
-        console.error("[AuthProvider] init threw:", err);
-      } finally {
-        if (mounted) setLoading(false);
-        clearTimeout(safetyTimer);
+        const response = await fetch('/api/auth-context', {
+          cache: 'no-store',
+          signal: controller.signal,
+        });
+        const body = await response.json();
+        if (!response.ok)
+          throw new Error(body.error ?? 'Unable to load account.');
+        const profile = body.profile as Profile | null;
+        if (profile && !isAccountRole(profile.account_role))
+          profile.account_role = null;
+        if (active)
+          setSnapshot({
+            userId: userId!,
+            profile,
+            account: body.account ?? null,
+            detail: null,
+          });
+      } catch (error) {
+        if (active)
+          setSnapshot({
+            userId: userId!,
+            profile: null,
+            account: null,
+            detail:
+              error instanceof Error
+                ? error.message
+                : 'Unable to load account.',
+          });
       }
-    };
-
-    init();
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!mounted) return;
-      const currentUser = session?.user ?? null;
-      setUser(currentUser);
-
-      if (currentUser) {
-        if (currentUser.id !== lastFetchedUserIdRef.current) {
-          fetchProfile(currentUser.id);
-        }
-      } else {
-        lastFetchedUserIdRef.current = null;
-        setProfile(null);
-        setAccount(null);
-        setProfileLoading(false);
-      }
-
-      setLoading(false);
-    });
-
+    }
+    void load();
     return () => {
-      mounted = false;
-      clearTimeout(safetyTimer);
-      subscription.unsubscribe();
+      active = false;
+      controller.abort();
     };
-  }, [fetchProfile]);
-
-  const signOut = useCallback(async () => {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    setUser(null);
-    setProfile(null);
-    setAccount(null);
-    window.location.href = "/login";
-  }, []);
-
+  }, [userId, refresh]);
+  // Never expose a previous identity's permissions while a new fetch is pending.
+  const current = snapshot?.userId === userId ? snapshot : null;
+  const profile = current?.profile ?? null;
+  const account = current?.account ?? null;
+  const statusDetail = current?.detail ?? null;
+  const profileLoading = Boolean(userId && !current);
   const refreshProfile = useCallback(async () => {
-    if (!user?.id) return;
-    await fetchProfile(user.id);
-  }, [user?.id, fetchProfile]);
+    setRefresh((value) => value + 1);
+  }, []);
+  const signOut = useCallback(async () => {
+    const result = await authClient.signOut();
+    if (result.error)
+      throw new Error(result.error.message ?? 'Unable to sign out.');
+    setSnapshot(null);
+    window.location.href = '/login';
+  }, []);
 
   // Derive the role booleans once per profile change rather than on
   // every consumer render. Cheap regardless, but the memo also gives
@@ -403,10 +213,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return {
       accountRole: role,
       accountId: profile?.account_id ?? null,
-      isOwner: role === "owner",
-      isAdmin: role === "admin",
-      isAgent: role === "agent",
-      isViewer: role === "viewer",
+      isOwner: role === 'owner',
+      isAdmin: role === 'admin',
+      isAgent: role === 'agent',
+      isViewer: role === 'viewer',
       canManageMembers: role ? canManageMembersFor(role) : false,
       canEditSettings: role ? canEditSettingsFor(role) : false,
       canSendMessages: role ? canSendMessagesFor(role) : false,
@@ -416,14 +226,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Signed out is not a broken account — the shell redirects to /login
   // before anything reads this.
   const accountStatus: AccountStatus = !user
-    ? "loading"
+    ? 'loading'
     : profileLoading
-      ? "loading"
+      ? 'loading'
       : !profile
-        ? "error"
+        ? 'error'
         : derived.accountId && derived.accountRole
-          ? "ready"
-          : "unlinked";
+          ? 'ready'
+          : 'unlinked';
 
   return (
     <AuthContext.Provider
@@ -463,14 +273,14 @@ export function useAuth(): AuthContextValue {
       loading: false,
       profileLoading: false,
       signOut: async () => {
-        window.location.href = "/login";
+        window.location.href = '/login';
       },
       refreshProfile: async () => {},
       account: null,
       defaultCurrency: DEFAULT_CURRENCY,
       // Outside the provider there is nothing to resolve yet — 'loading'
       // keeps the access alert from firing on, say, the login page.
-      accountStatus: "loading",
+      accountStatus: 'loading',
       accountStatusDetail: null,
       accountId: null,
       accountRole: null,

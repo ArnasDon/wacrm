@@ -31,25 +31,28 @@
 //               "contact_id", "contact_created" } }
 // ============================================================
 
-import { requireApiKey } from '@/lib/auth/api-context';
-import { ok, fail, toApiErrorResponse } from '@/lib/api/v1/respond';
-import { resolveConversationByPhone } from '@/lib/whatsapp/resolve-conversation';
 import {
-  sendMessageToConversation,
+  requireLocalApiKey,
+  withApiKeyAccount,
+} from '@/lib/auth/api-context-local';
+import { ok, fail, toApiErrorResponse } from '@/lib/api/v1/respond';
+import { resolveApiConversation } from '@/lib/db/public-api';
+import { sendApiMessage } from '@/lib/whatsapp/send-message-api';
+import {
   validateSendMessageParams,
   SendMessageError,
-} from '@/lib/whatsapp/send-message';
+} from '@/lib/whatsapp/send-message-shared';
 import type { InteractiveMessagePayload } from '@/lib/whatsapp/interactive';
 
 export async function POST(request: Request) {
   try {
-    const ctx = await requireApiKey(request, 'messages:send');
+    const ctx = await requireLocalApiKey(request, 'messages:send');
 
     const body = (await request.json().catch(() => null)) as Record<
       string,
       unknown
     > | null;
-    if (!body || typeof body !== 'object') {
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
       return fail('bad_request', 'Request body must be a JSON object', 400);
     }
 
@@ -98,34 +101,36 @@ export async function POST(request: Request) {
     // Find-or-create the conversation for this phone, then send. Both
     // steps share `SendMessageError`, so one catch maps the whole
     // pipeline to the envelope.
-    const resolved = await resolveConversationByPhone(
-      ctx.supabase,
-      ctx.accountId,
-      to,
-      typeof body.name === 'string' ? body.name : null
+    const resolved = await withApiKeyAccount(
+      ctx,
+      'messages:send',
+      (db, auditUserId) =>
+        resolveApiConversation(
+          db,
+          ctx.accountId,
+          auditUserId,
+          to,
+          typeof body.name === 'string' ? body.name : null
+        )
     );
 
-    const result = await sendMessageToConversation(
-      ctx.supabase,
-      ctx.accountId,
-      {
-        conversationId: resolved.conversationId,
-        messageType: type,
-        contentText: typeof body.text === 'string' ? body.text : null,
-        mediaUrl: typeof body.media_url === 'string' ? body.media_url : null,
-        filename: typeof body.filename === 'string' ? body.filename : null,
-        templateName: typeof template?.name === 'string' ? template.name : null,
-        templateLanguage:
-          typeof template?.language === 'string' ? template.language : null,
-        templateParams,
-        templateMessageParams,
-        interactivePayload,
-        replyToMessageId:
-          typeof body.reply_to_message_id === 'string'
-            ? body.reply_to_message_id
-            : null,
-      }
-    );
+    const result = await sendApiMessage(ctx, {
+      conversationId: resolved.conversationId,
+      messageType: type,
+      contentText: typeof body.text === 'string' ? body.text : null,
+      mediaUrl: typeof body.media_url === 'string' ? body.media_url : null,
+      filename: typeof body.filename === 'string' ? body.filename : null,
+      templateName: typeof template?.name === 'string' ? template.name : null,
+      templateLanguage:
+        typeof template?.language === 'string' ? template.language : null,
+      templateParams,
+      templateMessageParams,
+      interactivePayload,
+      replyToMessageId:
+        typeof body.reply_to_message_id === 'string'
+          ? body.reply_to_message_id
+          : null,
+    });
 
     return ok(
       {

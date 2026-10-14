@@ -1,10 +1,10 @@
-"use client";
+'use client';
 
-import { useEffect, useRef, useSyncExternalStore } from "react";
-import { useRouter } from "next/navigation";
-import { useTranslations } from "next-intl";
-import { createClient } from "@/lib/supabase/client";
-import type { Message } from "@/types";
+import { useEffect, useRef, useSyncExternalStore } from 'react';
+import { useRouter } from 'next/navigation';
+import { useTranslations } from 'next-intl';
+import { useRealtime } from './use-realtime';
+import type { Message } from '@/types';
 import {
   DEFAULT_NOTIFICATION_LABELS,
   buildNotificationContent,
@@ -16,7 +16,7 @@ import {
   subscribeBrowserNotifyPref,
   viewedConversationFromLocation,
   type NotificationLabels,
-} from "@/lib/notifications/browser-notify";
+} from '@/lib/notifications/browser-notify';
 
 const serverSnapshot = () => false;
 
@@ -28,7 +28,7 @@ export function useBrowserNotifyPref(): boolean {
   return useSyncExternalStore(
     subscribeBrowserNotifyPref,
     readBrowserNotifyPref,
-    serverSnapshot,
+    serverSnapshot
   );
 }
 
@@ -37,13 +37,8 @@ export function useBrowserNotifyPref(): boolean {
  * per signed-in dashboard tab (the dashboard shell does this via
  * <BrowserNotificationsListener />) so alerts fire on any page.
  *
- * Listens for realtime INSERTs on `messages` — RLS scopes the stream to
- * the caller's account, same as useTotalUnread / useRealtime. Only
- * live events are considered: there is no initial fetch, so an existing
- * backlog never produces a burst of alerts on page load.
- *
- * Own channel name so it coexists with the inbox page's subscription
- * and the sidebar's unread counters.
+ * Polls the local inbox API, ignoring the first snapshot so an existing
+ * backlog does not produce alerts.
  *
  * Fires only while a dashboard tab is open — there is no service worker
  * or Web Push here, so a closed browser stays quiet.
@@ -51,7 +46,7 @@ export function useBrowserNotifyPref(): boolean {
 export function useBrowserNotifications(): void {
   const enabled = useBrowserNotifyPref();
   const router = useRouter();
-  const t = useTranslations("Settings.browserNotifications.labels");
+  const t = useTranslations('Settings.browserNotifications.labels');
 
   // Translated labels, read inside the async Realtime callback. Kept in
   // a ref (assigned in an effect, not during render) so a locale change
@@ -59,44 +54,67 @@ export function useBrowserNotifications(): void {
   const labelsRef = useRef<NotificationLabels>(DEFAULT_NOTIFICATION_LABELS);
   useEffect(() => {
     labelsRef.current = {
-      fallbackTitle: t("fallbackTitle"),
-      image: t("image"),
-      audio: t("audio"),
-      video: t("video"),
-      document: t("document"),
-      location: t("location"),
-      template: t("template"),
+      fallbackTitle: t('fallbackTitle'),
+      image: t('image'),
+      audio: t('audio'),
+      video: t('video'),
+      document: t('document'),
+      location: t('location'),
+      template: t('template'),
     };
   });
 
   // Message ids already handled, for replay dedupe. Survives re-renders,
   // pruned by shouldNotifyForMessage.
   const seenRef = useRef<Map<string, number>>(new Map());
+  const notifyRef = useRef<((msg: Message) => Promise<void>) | null>(null);
+  useRealtime({
+    channelName: 'browser-notifications',
+    enabled,
+    pollWhenHidden: true,
+    onMessageEvent: (event) => {
+      if (
+        event.eventType !== 'INSERT' ||
+        getNotificationPermission() !== 'granted'
+      )
+        return;
+      const msg = event.new;
+      if (
+        shouldNotifyForMessage(msg, {
+          documentVisible: document.visibilityState === 'visible',
+          viewingConversationId: viewedConversationFromLocation(
+            window.location.pathname,
+            window.location.search
+          ),
+          seen: seenRef.current,
+        })
+      )
+        void notifyRef.current?.(msg);
+    },
+  });
 
   useEffect(() => {
     if (!enabled) return;
-    if (getNotificationPermission() === "unsupported") return;
+    if (getNotificationPermission() === 'unsupported') return;
 
-    const supabase = createClient();
     let cancelled = false;
 
     const notify = async (msg: Message) => {
       // One small select to put the contact's name in the title. A
       // failure here just means the generic fallback title.
-      const { data } = await supabase
-        .from("conversations")
-        .select("contact:contacts(name, wa_username, phone)")
-        .eq("id", msg.conversation_id)
-        .maybeSingle();
+      const response = await fetch(
+        '/api/inbox/conversations/' + encodeURIComponent(msg.conversation_id),
+        { cache: 'no-store' }
+      ).catch(() => null);
+      const data = response?.ok
+        ? await response.json().catch(() => null)
+        : null;
       if (cancelled) return;
-
-      const contact = (data as {
-        contact?: { name?: string | null; wa_username?: string | null; phone?: string | null } | null;
-      } | null)?.contact;
+      const contact = data?.conversation?.contact;
       const { title, body } = buildNotificationContent(
         msg,
         pickContactDisplayName(contact),
-        labelsRef.current,
+        labelsRef.current
       );
 
       try {
@@ -105,7 +123,7 @@ export function useBrowserNotifications(): void {
           // One alert per conversation: a second message from the same
           // customer replaces the first instead of stacking.
           tag: msg.conversation_id,
-          icon: "/icon",
+          icon: '/icon',
         });
         notification.onclick = () => {
           window.focus();
@@ -115,37 +133,14 @@ export function useBrowserNotifications(): void {
       } catch (err) {
         // Some browsers throw from the constructor (e.g. Android Chrome
         // requires a service worker). Non-fatal.
-        console.error("[useBrowserNotifications] failed to show:", err);
+        console.error('[useBrowserNotifications] failed to show:', err);
       }
     };
 
-    const channel = supabase
-      .channel("browser-notifications")
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "messages" },
-        (payload) => {
-          // Re-check every time: the user can revoke permission in the
-          // browser without the preference flipping.
-          if (getNotificationPermission() !== "granted") return;
-          const msg = payload.new as Message;
-          const shouldNotify = shouldNotifyForMessage(msg, {
-            documentVisible: document.visibilityState === "visible",
-            viewingConversationId: viewedConversationFromLocation(
-              window.location.pathname,
-              window.location.search,
-            ),
-            seen: seenRef.current,
-          });
-          if (!shouldNotify) return;
-          void notify(msg);
-        },
-      )
-      .subscribe();
-
+    notifyRef.current = notify;
     return () => {
       cancelled = true;
-      supabase.removeChannel(channel);
+      notifyRef.current = null;
     };
   }, [enabled, router]);
 }

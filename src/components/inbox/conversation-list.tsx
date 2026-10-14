@@ -1,11 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { apiResult } from "@/lib/api/client";
 import {
-  CONVERSATION_SELECT,
   matchesContactFilters,
-  normalizeConversations,
 } from "@/lib/inbox/conversations";
 import { cn } from "@/lib/utils";
 import type { Conversation, ConversationStatus, Tag } from "@/types";
@@ -91,30 +89,14 @@ export function ConversationList({
   });
 
   useEffect(() => {
-    const supabase = createClient();
     let cancelled = false;
 
     (async () => {
-      const { data, error } = await supabase
-        .from("conversations")
-        .select(CONVERSATION_SELECT)
-        .order("last_message_at", { ascending: false });
-
+      const { data, error } = await apiResult<{ conversations: Conversation[] }>('/api/inbox/conversations');
       if (cancelled) return;
+      if (error) { console.error('Failed to fetch conversations:', error.message); setLoading(false); return; }
 
-      if (error) {
-        // Supabase errors have non-enumerable properties — log fields explicitly
-        console.error("Failed to fetch conversations:", {
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-          code: error.code,
-        });
-        setLoading(false);
-        return;
-      }
-
-      onConversationsLoadedRef.current(normalizeConversations(data ?? []));
+      onConversationsLoadedRef.current(data?.conversations ?? []);
       setLoading(false);
     })();
 
@@ -129,11 +111,10 @@ export function ConversationList({
   // Tag definitions for the filter picker — loaded once so labels/colours
   // stay stable regardless of which conversations happen to be loaded.
   useEffect(() => {
-    const supabase = createClient();
     let cancelled = false;
     (async () => {
-      const { data } = await supabase.from("tags").select("*").order("name");
-      if (!cancelled && data) setTags(data as Tag[]);
+      const { data } = await apiResult<{ tags: Tag[] }>('/api/settings/tags');
+      if (!cancelled && data) setTags(data.tags);
     })();
     return () => {
       cancelled = true;

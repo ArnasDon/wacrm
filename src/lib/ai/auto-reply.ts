@@ -1,31 +1,33 @@
-import { supabaseAdmin } from './admin-client'
-import { loadAiConfig } from './config'
-import { buildConversationContext } from './context'
-import { retrieveKnowledge } from './knowledge'
-import { generateReply } from './generate'
-import { buildSystemPrompt } from './defaults'
-import { buildHandoffSummary } from './handoff'
-import { logAiUsage } from './usage'
-import { latestUserMessage } from './query'
+import { getPool } from '@/lib/db/pool';
+import { AiStore } from '@/lib/db/ai-store';
+import type { SqlConnection } from '@/lib/db/transaction';
+import { loadAiConfig } from './config';
+import { buildConversationContext } from './context';
+import { retrieveKnowledge } from './knowledge';
+import { generateReply } from './generate';
+import { buildSystemPrompt } from './defaults';
+import { buildHandoffSummary } from './handoff';
+import { logAiUsage } from './usage';
+import { latestUserMessage } from './query';
 import {
   engineSendText,
   loadAccountMetaCredentials,
-} from '@/lib/flows/meta-send'
-import { sendTypingIndicator } from '@/lib/whatsapp/meta-api'
-import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
+} from '@/lib/flows/meta-send';
+import { sendTypingIndicator } from '@/lib/whatsapp/meta-api';
+import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit';
 
 interface DispatchArgs {
   /** Tenancy key — drives config, contact, and whatsapp_config lookups. */
-  accountId: string
-  conversationId: string
-  contactId: string
+  accountId: string;
+  conversationId: string;
+  contactId: string;
   /** The account's WhatsApp config owner, used for the outbound send's
    *  audit columns (mirrors how the flow runner passes it through). */
-  configOwnerUserId: string
+  configOwnerUserId: string;
   /** Meta's wamid of the customer message we're replying to. When set,
    *  a typing indicator (which also marks it read) is shown while the
    *  reply is generated. Optional so older callers keep working. */
-  inboundMessageId?: string
+  inboundMessageId?: string;
 }
 
 /**
@@ -48,7 +50,7 @@ interface DispatchArgs {
  * window check is needed.
  */
 export async function dispatchInboundToAiReply(
-  args: DispatchArgs,
+  args: DispatchArgs
 ): Promise<void> {
   const {
     accountId,
@@ -56,13 +58,14 @@ export async function dispatchInboundToAiReply(
     contactId,
     configOwnerUserId,
     inboundMessageId,
-  } = args
+  } = args;
 
   try {
-    const db = supabaseAdmin()
+    const db = getPool('worker');
+    const store = new AiStore(db, accountId);
 
-    const config = await loadAiConfig(db, accountId)
-    if (!config || !config.autoReplyEnabled) return
+    const config = await loadAiConfig(db, accountId);
+    if (!config || !config.autoReplyEnabled) return;
 
     // Deterministic, user-configured responders win over the LLM — the
     // caller already excludes messages a Flow consumed. Message-level
@@ -72,29 +75,21 @@ export async function dispatchInboundToAiReply(
     // avoid double-texting the customer. (Relationship triggers like
     // `first_inbound_message` don't count — they're not per-message
     // auto-responders.)
-    const { data: autoResponders } = await db
-      .from('automations')
-      .select('id')
-      .eq('account_id', accountId)
-      .eq('is_active', true)
-      .in('trigger_type', ['new_message_received', 'keyword_match'])
-      .limit(1)
-    if (autoResponders && autoResponders.length > 0) return
-
-    const { data: conv, error: convErr } = await db
-      .from('conversations')
-      .select('assigned_agent_id, ai_autoreply_disabled, ai_reply_count')
-      .eq('id', conversationId)
-      .maybeSingle()
-    if (convErr || !conv) return
-    if (conv.assigned_agent_id) return // a human owns this thread
-    if (conv.ai_autoreply_disabled) return // handed off / turned off here
+    if (await store.hasResponders()) return;
+    const conv = await store.conversation(conversationId, contactId);
+    if (!conv) return;
+    if (conv.assigned_agent_id) return; // a human owns this thread
+    if (conv.ai_autoreply_disabled) return; // handed off / turned off here
     // Cheap early-out; the authoritative cap check is the atomic claim
     // below (this read can race a concurrent inbound).
-    if (conv.ai_reply_count >= config.autoReplyMaxPerConversation) return
+    if (conv.ai_reply_count >= config.autoReplyMaxPerConversation) return;
 
-    const messages = await buildConversationContext(db, conversationId)
-    if (messages.length === 0) return
+    const messages = await buildConversationContext(
+      db,
+      accountId,
+      conversationId
+    );
+    if (messages.length === 0) return;
 
     // Account-wide throttle on the shared BYO key. The per-conversation
     // cap bounds one thread; this bounds a burst across many threads (a
@@ -103,13 +98,13 @@ export async function dispatchInboundToAiReply(
     // the auto-reply; the inbound still sits in the inbox for a human.
     const acctLimit = checkRateLimit(
       `ai-autoreply:${accountId}`,
-      RATE_LIMITS.aiAutoReplyAccount,
-    )
+      RATE_LIMITS.aiAutoReplyAccount
+    );
     if (!acctLimit.success) {
       console.warn(
-        `[ai auto-reply] account ${accountId} hit the per-account rate limit — skipping this inbound.`,
-      )
-      return
+        `[ai auto-reply] account ${accountId} hit the per-account rate limit — skipping this inbound.`
+      );
+      return;
     }
 
     // Every gate has passed — we're committed to attempting a reply, so
@@ -119,7 +114,7 @@ export async function dispatchInboundToAiReply(
     // nothing to undo on the handoff / no-text path. Strictly
     // best-effort: a failed indicator must never cost us the reply.
     if (inboundMessageId) {
-      await showTypingIndicator(db, accountId, inboundMessageId)
+      await showTypingIndicator(db, accountId, inboundMessageId);
     }
 
     // Ground the reply in the account's knowledge base (best-effort).
@@ -127,34 +122,34 @@ export async function dispatchInboundToAiReply(
       db,
       accountId,
       config,
-      latestUserMessage(messages),
-    )
+      latestUserMessage(messages)
+    );
 
     const systemPrompt = buildSystemPrompt({
       userPrompt: config.systemPrompt,
       mode: 'auto_reply',
       knowledge,
-    })
+    });
 
     const { text, handoff, usage } = await generateReply({
       config,
       systemPrompt,
       messages,
-    })
+    });
 
     // Record token spend on the account's BYO key. Fire-and-forget so it
     // never adds latency to the customer-facing send: `logAiUsage`
     // swallows its own errors, so the floating promise can't reject.
     // Logged regardless of handoff — the provider call happened either
     // way.
-    void logAiUsage(db, {
+    await logAiUsage(db, {
       accountId,
       conversationId,
       mode: 'auto_reply',
       provider: config.provider,
       model: config.model,
       usage,
-    })
+    });
 
     if (handoff || !text) {
       // The model can't (or shouldn't) answer — stop auto-replying on
@@ -167,18 +162,9 @@ export async function dispatchInboundToAiReply(
       const summary = buildHandoffSummary({
         messages,
         replyCount: conv.ai_reply_count ?? 0,
-      })
-      const update: Record<string, unknown> = {
-        ai_autoreply_disabled: true,
-        ai_handoff_summary: summary,
-      }
-      // Only set the assignee when a target is configured AND the thread
-      // isn't already owned — never stomp an existing human assignment.
-      if (config.handoffAgentId && !conv.assigned_agent_id) {
-        update.assigned_agent_id = config.handoffAgentId
-      }
-      await db.from('conversations').update(update).eq('id', conversationId)
-      return
+      });
+      await store.handoff(conversationId, summary, config.handoffAgentId);
+      return;
     }
 
     // Atomically claim a reply slot: the cap check + increment happen in
@@ -186,22 +172,10 @@ export async function dispatchInboundToAiReply(
     // another inbound just took the last slot, `claimed` is false and we
     // skip the send. (We consume a slot slightly before the send lands —
     // fail-safe: under-reply rather than over-reply.)
-    const { data: claimed, error: claimErr } = await db.rpc(
-      'claim_ai_reply_slot',
-      {
-        conversation_id: conversationId,
-        max_replies: config.autoReplyMaxPerConversation,
-      },
+    if (
+      !(await store.claim(conversationId, config.autoReplyMaxPerConversation))
     )
-    if (claimErr) {
-      // A real error here (vs. losing the cap race) is almost always a
-      // deploy issue — e.g. `claim_ai_reply_slot` not EXECUTE-able by the
-      // service role, or the migration not applied. Log it loudly: a
-      // silent return makes "auto-reply never fires" undiagnosable.
-      console.error('[ai auto-reply] claim_ai_reply_slot failed:', claimErr)
-      return
-    }
-    if (claimed !== true) return // lost the per-conversation cap race
+      return;
 
     await engineSendText({
       accountId,
@@ -210,9 +184,9 @@ export async function dispatchInboundToAiReply(
       contactId,
       text,
       aiGenerated: true,
-    })
+    });
   } catch (err) {
-    console.error('[ai auto-reply] dispatch failed:', err)
+    console.error('[ai auto-reply] dispatch failed:', err);
   }
 }
 
@@ -222,21 +196,21 @@ export async function dispatchInboundToAiReply(
  * — the indicator is cosmetic, the reply is not.
  */
 async function showTypingIndicator(
-  db: ReturnType<typeof supabaseAdmin>,
+  db: SqlConnection,
   accountId: string,
-  inboundMessageId: string,
+  inboundMessageId: string
 ): Promise<void> {
   try {
     const { phoneNumberId, accessToken } = await loadAccountMetaCredentials(
       db,
-      accountId,
-    )
+      accountId
+    );
     await sendTypingIndicator({
       phoneNumberId,
       accessToken,
       messageId: inboundMessageId,
-    })
+    });
   } catch (err) {
-    console.warn('[ai auto-reply] typing indicator failed (continuing):', err)
+    console.warn('[ai auto-reply] typing indicator failed (continuing):', err);
   }
 }

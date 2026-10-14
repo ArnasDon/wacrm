@@ -61,7 +61,7 @@ import {
   blankListPayload,
 } from "@/components/interactive/interactive-builder"
 import { interactivePayloadPreviewText } from "@/lib/whatsapp/interactive"
-import { createClient } from "@/lib/supabase/client"
+import { apiResult } from "@/lib/api/client"
 import {
   childPath,
   insertAt,
@@ -256,34 +256,19 @@ function ResourcesProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false
-    const supabase = createClient()
-
-    // Tags, templates and custom fields come straight from the DB — RLS
-    // scopes them to the caller's account. Only APPROVED templates can
-    // actually be sent (anything else 400s at send time), matching the
-    // broadcast picker.
-    void (async () => {
-      const [tagsRes, templatesRes, customFieldsRes, pipelinesRes, stagesRes] =
-        await Promise.all([
-          supabase.from("tags").select("*").order("name"),
-          supabase
-            .from("message_templates")
-            .select("*")
-            .eq("status", "APPROVED")
-            .order("name"),
-          supabase.from("custom_fields").select("*").order("field_name"),
-          supabase.from("pipelines").select("id, name").order("name"),
-          supabase
-            .from("pipeline_stages")
-            .select("id, name, pipeline_id, position")
-            .order("position"),
-        ])
-      if (cancelled) return
-      setTags((tagsRes.data as TagRecord[] | null) ?? [])
-      setTemplates((templatesRes.data as MessageTemplate[] | null) ?? [])
-      setCustomFields((customFieldsRes.data as CustomField[] | null) ?? [])
-      setPipelines((pipelinesRes.data as PipelineOption[] | null) ?? [])
-      setStages((stagesRes.data as PipelineStageOption[] | null) ?? [])
+    void (async()=>{
+      const [tagsRes,templatesRes,fieldsRes,resourcesRes]=await Promise.all([
+        apiResult<{tags:TagRecord[]}>('/api/settings/tags'),
+        apiResult<{templates:MessageTemplate[]}>('/api/settings/templates?status=APPROVED'),
+        apiResult<{fields:CustomField[]}>('/api/settings/custom-fields'),
+        apiResult<{pipelines:PipelineOption[];stages:PipelineStageOption[]}>('/api/automations/resources'),
+      ])
+      if(cancelled)return
+      setTags(tagsRes.data?.tags??[])
+      setTemplates(templatesRes.data?.templates??[])
+      setCustomFields(fieldsRes.data?.fields??[])
+      setPipelines(resourcesRes.data?.pipelines??[])
+      setStages(resourcesRes.data?.stages??[])
     })()
 
     // Members go through the API so we inherit its email-visibility

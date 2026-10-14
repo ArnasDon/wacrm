@@ -1,0 +1,27 @@
+import { afterEach, expect, it, vi } from 'vitest';
+import { startPolling } from './polling';
+afterEach(() => { vi.useRealTimers(); });
+it('prevents overlapping requests, pauses hidden refreshes, and ignores completion after stop', async () => {
+  vi.useFakeTimers();
+  let resolve!: (value: number) => void;
+  let visible = true;
+  const load = vi.fn((_signal: AbortSignal) => new Promise<number>(done => { resolve = done; }));
+  const value = vi.fn();
+  const polling = startPolling(load, value, () => {}, 1000, () => visible);
+  await vi.advanceTimersByTimeAsync(3000);
+  expect(load).toHaveBeenCalledTimes(1);
+  resolve(1);
+  await Promise.resolve();
+  expect(value).toHaveBeenCalledWith(1);
+  visible = false;
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(load).toHaveBeenCalledTimes(1);
+  visible = true;
+  polling.refresh();
+  expect(load).toHaveBeenCalledTimes(2);
+  polling.stop();
+  resolve(2);
+  await Promise.resolve();
+  expect(value).toHaveBeenCalledTimes(1);
+  expect(load.mock.calls[1][0].aborted).toBe(true);
+});

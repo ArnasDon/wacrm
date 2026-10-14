@@ -13,11 +13,6 @@ updates:
     labels:
       - dependencies
     groups:
-      # Batch related upgrades into one PR so we're not closing six
-      # independent Supabase-bumps per week.
-      supabase:
-        patterns:
-          - "@supabase/*"
       types:
         patterns:
           - "@types/*"

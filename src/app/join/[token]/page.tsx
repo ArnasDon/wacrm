@@ -52,7 +52,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { createClient } from '@/lib/supabase/client';
+import { authClient } from '@/lib/auth/client';
 
 interface PeekOk {
   ok: true;
@@ -86,7 +86,7 @@ export default function JoinPage() {
 
   const [peek, setPeek] = useState<PeekResult | null>(null);
   // Local auth probe — the AuthProvider lives inside the (dashboard)
-  // route group, so it doesn't reach this page. We hit Supabase
+  // route group, so it doesn't reach this page. We hit PostgreSQL
   // directly the same way `/login` and `/signup` do.
   const [authedUserId, setAuthedUserId] = useState<string | null | undefined>(
     undefined, // undefined = unknown / still loading; null = signed out
@@ -110,11 +110,11 @@ export default function JoinPage() {
         fetch(`/api/invitations/${encodeURIComponent(token)}/peek`, {
           cache: 'no-store',
         }),
-        createClient().auth.getUser(),
+        authClient.getSession(),
       ]);
       const peekBody = (await peekRes.json()) as PeekResult;
       setPeek(peekBody);
-      setAuthedUserId(authRes.data.user?.id ?? null);
+      setAuthedUserId(authRes.data?.user.id ?? null);
     } catch (err) {
       console.error('[join] peek error:', err);
       setPeek({ ok: false, reason: 'server_error' });
@@ -135,12 +135,12 @@ export default function JoinPage() {
           fetch(`/api/invitations/${encodeURIComponent(token)}/peek`, {
             cache: 'no-store',
           }),
-          createClient().auth.getUser(),
+          authClient.getSession(),
         ]);
         const peekBody = (await peekRes.json()) as PeekResult;
         if (cancelled) return;
         setPeek(peekBody);
-        setAuthedUserId(authRes.data.user?.id ?? null);
+        setAuthedUserId(authRes.data?.user.id ?? null);
       } catch (err) {
         console.error('[join] peek error:', err);
         if (cancelled) return;
@@ -192,7 +192,8 @@ export default function JoinPage() {
   const handleSignOutAndRetry = useCallback(async () => {
     setSigningOut(true);
     try {
-      await createClient().auth.signOut();
+      const result = await authClient.signOut();
+      if (result.error) throw new Error(result.error.message ?? 'Unable to sign out.');
       // Hard reload so the new auth state propagates everywhere
       // (middleware, AuthProvider). Preserves the invite token in
       // the URL so the rebuilt page renders the signed-out CTA path.

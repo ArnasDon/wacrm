@@ -1,132 +1,47 @@
-import { NextResponse } from 'next/server'
-import {
-  getCurrentAccount,
-  requireRole,
-  toErrorResponse,
-} from '@/lib/auth/account'
-import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
-import { loadEmbeddingsKey } from '@/lib/ai/config'
-import { ingestDocument } from '@/lib/ai/knowledge'
-import { AiError } from '@/lib/ai/types'
-
-type Params = { params: Promise<{ id: string }> }
-
-/**
- * GET /api/ai/knowledge/[id] — full document (any member).
- */
-export async function GET(_request: Request, { params }: Params) {
-  try {
-    const { supabase, accountId } = await getCurrentAccount()
-    const { id } = await params
-    const { data, error } = await supabase
-      .from('ai_knowledge_documents')
-      .select('id, title, content, updated_at')
-      .eq('account_id', accountId)
-      .eq('id', id)
-      .maybeSingle()
-    if (error) {
-      console.error('[ai/knowledge/[id] GET] error:', error)
-      return NextResponse.json({ error: 'Failed to load document' }, { status: 500 })
-    }
-    if (!data) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-    return NextResponse.json(data)
-  } catch (err) {
-    return toErrorResponse(err)
-  }
+import { aiRoute } from '@/lib/ai/local-route';
+import { readObject, RequestError, requireUUID } from '@/lib/api/local-route';
+import { AiStore } from '@/lib/db/ai-store';
+import { indexDocument } from '@/lib/ai/index-document';
+type Params = { params: Promise<{ id: string }> };
+export function GET(request: Request, { params }: Params) {
+  return aiRoute(request, 'viewer', async (ctx) => {
+    const doc = await new AiStore(ctx.db, ctx.accountId).document(
+      requireUUID((await params).id)
+    );
+    if (!doc) throw new RequestError('Document not found.', 404);
+    return doc;
+  });
 }
-
-/**
- * PATCH /api/ai/knowledge/[id]  (admin+) — update title/content and
- * re-index when the content changed.
- */
-export async function PATCH(request: Request, { params }: Params) {
-  try {
-    const { supabase, accountId, userId } = await requireRole('admin')
-    const limit = checkRateLimit(`ai-kb:${userId}`, RATE_LIMITS.adminAction)
-    if (!limit.success) return rateLimitResponse(limit)
-
-    const { id } = await params
-    const body = await request.json().catch(() => null)
-    const title = typeof body?.title === 'string' ? body.title.trim() : undefined
-    const content = typeof body?.content === 'string' ? body.content.trim() : undefined
-    if (title === undefined && content === undefined) {
-      return NextResponse.json({ error: 'Nothing to update' }, { status: 400 })
-    }
-    if (title !== undefined && !title) {
-      return NextResponse.json({ error: 'title cannot be empty' }, { status: 400 })
-    }
-    if (content !== undefined && !content) {
-      return NextResponse.json({ error: 'content cannot be empty' }, { status: 400 })
-    }
-
-    const update: Record<string, string> = {}
-    if (title !== undefined) update.title = title
-    if (content !== undefined) update.content = content
-
-    const { data: updated, error } = await supabase
-      .from('ai_knowledge_documents')
-      .update(update)
-      .eq('account_id', accountId)
-      .eq('id', id)
-      .select('id')
-      .maybeSingle()
-    if (error) {
-      console.error('[ai/knowledge/[id] PATCH] error:', error)
-      return NextResponse.json({ error: 'Failed to update document' }, { status: 500 })
-    }
-    if (!updated) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-
-    if (content !== undefined) {
-      const { key: embeddingsApiKey, corrupt } = await loadEmbeddingsKey(
-        supabase,
-        accountId,
+export function DELETE(request: Request, { params }: Params) {
+  return aiRoute(request, 'admin', async (ctx) => {
+    await ctx.run(async (db) =>
+      new AiStore(db, ctx.accountId).deleteDocument(
+        requireUUID((await params).id)
       )
-      try {
-        await ingestDocument(supabase, accountId, { embeddingsApiKey }, id, content)
-      } catch (err) {
-        const message = err instanceof AiError ? err.message : 'indexing failed'
-        console.error('[ai/knowledge/[id] PATCH] ingest error:', err)
-        return NextResponse.json(
-          {
-            success: true,
-            warning: `Updated, but semantic indexing failed (${message}). Lexical search still works; use Reindex to retry.`,
-          },
-          { status: 200 },
-        )
-      }
-      if (corrupt) {
-        return NextResponse.json({
-          success: true,
-          warning:
-            'Updated with keyword search only — your embeddings key could not be decrypted (check ENCRYPTION_KEY, then re-enter the key).',
-        })
-      }
-    }
-
-    return NextResponse.json({ success: true })
-  } catch (err) {
-    return toErrorResponse(err)
-  }
+    );
+    return { success: true };
+  });
 }
-
-/**
- * DELETE /api/ai/knowledge/[id]  (admin+) — chunks cascade.
- */
-export async function DELETE(_request: Request, { params }: Params) {
-  try {
-    const { supabase, accountId } = await requireRole('admin')
-    const { id } = await params
-    const { error } = await supabase
-      .from('ai_knowledge_documents')
-      .delete()
-      .eq('account_id', accountId)
-      .eq('id', id)
-    if (error) {
-      console.error('[ai/knowledge/[id] DELETE] error:', error)
-      return NextResponse.json({ error: 'Failed to delete document' }, { status: 500 })
-    }
-    return NextResponse.json({ success: true })
-  } catch (err) {
-    return toErrorResponse(err)
-  }
+export function PATCH(request: Request, { params }: Params) {
+  return aiRoute(request, 'admin', async (ctx) => {
+    const id = requireUUID((await params).id);
+    const body = await readObject(request);
+    const input: { title?: string; content?: string } = {};
+    for (const key of ['title', 'content'] as const)
+      if (key in body) {
+        if (typeof body[key] !== 'string' || !body[key].trim())
+          throw new RequestError(key + ' cannot be empty.');
+        input[key] = body[key].trim();
+      }
+    if (!Object.keys(input).length)
+      throw new RequestError('Nothing to update.');
+    if ((input.content?.length ?? 0) > 1000000)
+      throw new RequestError('Document is too large.');
+    const doc = await ctx.run((db) =>
+      new AiStore(db, ctx.accountId).updateDocument(id, input)
+    );
+    return input.content !== undefined
+      ? indexDocument(ctx, id, doc.content)
+      : { success: true };
+  });
 }

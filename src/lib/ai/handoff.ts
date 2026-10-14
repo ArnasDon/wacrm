@@ -1,8 +1,8 @@
-import type { ChatMessage } from './types'
+import type { ChatMessage } from './types';
 
 /** Longest the quoted customer message runs before we ellipsize it —
  *  keeps the internal note to a glanceable one-liner. */
-const MAX_QUOTE_LEN = 160
+const MAX_QUOTE_LEN = 160;
 
 /**
  * Build the short internal note the auto-reply bot leaves on a
@@ -18,30 +18,30 @@ const MAX_QUOTE_LEN = 160
  * bailed on the very first inbound without answering).
  */
 export function buildHandoffSummary(args: {
-  messages: ChatMessage[]
-  replyCount: number
+  messages: ChatMessage[];
+  replyCount: number;
 }): string {
-  const { messages, replyCount } = args
+  const { messages, replyCount } = args;
 
   const lastCustomer = [...messages]
     .reverse()
-    .find((m) => m.role === 'user' && m.content.trim())
+    .find((m) => m.role === 'user' && m.content.trim());
 
   const replies =
     replyCount === 0
       ? 'without replying'
-      : `after ${replyCount} ${replyCount === 1 ? 'reply' : 'replies'}`
+      : `after ${replyCount} ${replyCount === 1 ? 'reply' : 'replies'}`;
 
-  const base = `🤖 AI agent handed off ${replies}.`
+  const base = `🤖 AI agent handed off ${replies}.`;
 
-  if (!lastCustomer) return base
+  if (!lastCustomer) return base;
 
-  const quote = truncate(lastCustomer.content.trim(), MAX_QUOTE_LEN)
-  return `${base} Last customer message: “${quote}”`
+  const quote = truncate(lastCustomer.content.trim(), MAX_QUOTE_LEN);
+  return `${base} Last customer message: “${quote}”`;
 }
 
 function truncate(text: string, max: number): string {
-  const collapsed = text.replace(/\s+/g, ' ')
-  if (collapsed.length <= max) return collapsed
-  return `${collapsed.slice(0, max - 1).trimEnd()}…`
+  const collapsed = text.replace(/\s+/g, ' ');
+  if (collapsed.length <= max) return collapsed;
+  return `${collapsed.slice(0, max - 1).trimEnd()}…`;
 }

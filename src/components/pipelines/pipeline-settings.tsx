@@ -16,7 +16,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { createClient } from "@/lib/supabase/client";
+import { apiResult } from "@/lib/api/client";
 import type { Pipeline, PipelineStage } from "@/types";
 import {
   Dialog,
@@ -70,7 +70,6 @@ export function PipelineSettings({
   onCreateNewPipeline,
 }: PipelineSettingsProps) {
   const t = useTranslations("Pipelines.settings");
-  const supabase = createClient();
 
   const [name, setName] = useState(pipeline.name);
   const [localStages, setLocalStages] = useState<PipelineStage[]>(stages);
@@ -107,31 +106,11 @@ export function PipelineSettings({
   async function handleSave() {
     setSaving(true);
 
-    // One upsert for all stages — batches N stage writes into a single
-    // round-trip. Previous implementation did N sequential UPDATEs which
-    // latency-scaled linearly with stage count.
-    const stageRows = localStages.map((s, i) => ({
-      id: s.id,
-      pipeline_id: s.pipeline_id,
-      name: s.name,
-      color: s.color,
-      position: i,
-    }));
-
-    const [renameRes, stagesRes] = await Promise.all([
-      supabase
-        .from("pipelines")
-        .update({ name: name.trim() })
-        .eq("id", pipeline.id),
-      supabase.from("pipeline_stages").upsert(stageRows, { onConflict: "id" }),
-    ]);
-
+    const { error } = await apiResult('/api/pipelines/' + pipeline.id, {
+      method: 'PATCH', body: JSON.stringify({ name: name.trim(), stages: localStages }),
+    });
     setSaving(false);
-
-    if (renameRes.error || stagesRes.error) {
-      toast.error(t("toastFailedSave"));
-      return;
-    }
+    if (error) { toast.error(t('toastFailedSave')); return; }
 
     onOpenChange(false);
     onPipelinesChanged();
@@ -142,16 +121,10 @@ export function PipelineSettings({
   async function handleAddStage() {
     const trimmed = newStageName.trim();
     if (!trimmed) return;
-    const { data, error } = await supabase
-      .from("pipeline_stages")
-      .insert({
-        pipeline_id: pipeline.id,
-        name: trimmed,
-        color: newStageColor,
-        position: localStages.length,
-      })
-      .select()
-      .single();
+    const { data: result, error } = await apiResult<{ stage: PipelineStage }>('/api/pipelines/' + pipeline.id, {
+      method: 'POST', body: JSON.stringify({ name: trimmed, color: newStageColor }),
+    });
+    const data = result?.stage;
     if (error || !data) {
       toast.error(t("toastFailedAddStage"));
       return;
@@ -162,19 +135,9 @@ export function PipelineSettings({
   }
 
   async function handleRemoveStage(stageId: string) {
-    // Refuse to delete if deals still reference the stage (FK would fail).
-    const { count } = await supabase
-      .from("deals")
-      .select("id", { count: "exact", head: true })
-      .eq("stage_id", stageId);
-    if (count && count > 0) {
-      toast.error(t("toastMoveOrDeleteDeals"));
-      return;
-    }
-    const { error } = await supabase
-      .from("pipeline_stages")
-      .delete()
-      .eq("id", stageId);
+    const { error } = await apiResult('/api/pipelines/' + pipeline.id, {
+      method: 'DELETE', body: JSON.stringify({ stageId }),
+    });
     if (error) {
       toast.error(t("toastFailedDeleteStage"));
       return;
@@ -185,10 +148,7 @@ export function PipelineSettings({
   async function handleDeletePipeline() {
     setDeleting(true);
     // ON DELETE CASCADE handles deals + stages.
-    const { error } = await supabase
-      .from("pipelines")
-      .delete()
-      .eq("id", pipeline.id);
+    const { error } = await apiResult('/api/pipelines/' + pipeline.id, { method: 'DELETE', body: '{}' });
     setDeleting(false);
     if (error) {
       toast.error(t("toastFailedDeletePipeline"));

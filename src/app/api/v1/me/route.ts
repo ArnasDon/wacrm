@@ -13,13 +13,13 @@
 // depends on is sound.
 // ============================================================
 
-import { requireApiKey } from '@/lib/auth/api-context';
+import { requireLocalApiKey } from '@/lib/auth/api-context-local';
 import { getAccountName } from '@/lib/api-keys/store';
 import { ok, toApiErrorResponse } from '@/lib/api/v1/respond';
 
 export async function GET(request: Request) {
   try {
-    const ctx = await requireApiKey(request);
+    const ctx = await requireLocalApiKey(request);
     const name = await getAccountName(ctx.accountId);
     return ok({
       account: { id: ctx.accountId, name },

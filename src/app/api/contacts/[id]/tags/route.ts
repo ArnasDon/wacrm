@@ -1,76 +1,71 @@
-import { NextResponse } from 'next/server';
-
-import { requireRole, toErrorResponse } from '@/lib/auth/account';
-import { addContactTagAndDispatch } from '@/lib/contacts/tag-events';
 import {
-  ContactTagWriteError,
-  removeContactTag,
-} from '@/lib/contacts/tag-write';
+  accountRoute,
+  readObject,
+  RequestError,
+  requireUUID,
+} from '@/lib/api/local-route';
+import { queryRows } from '@/lib/db/rows';
+import { setContactTag } from '@/lib/db/contacts';
+import { runAutomationsForTrigger } from '@/lib/automations/engine';
+import type { ContactTag } from '@/types';
 
-function tagWriteErrorResponse(error: ContactTagWriteError): NextResponse {
-  return NextResponse.json({ error: error.message }, { status: error.status });
+type Context = { params: Promise<{ id: string }> };
+export function GET(request: Request, { params }: Context) {
+  return accountRoute(request, 'viewer', async (db, ctx) => ({
+    tags: await queryRows<ContactTag>(
+      db,
+      `SELECT ct.id,ct.contact_id,ct.tag_id FROM public.contact_tags ct JOIN public.contacts c ON c.id=ct.contact_id
+     WHERE c.account_id=$1 AND c.id=$2`,
+      [ctx.accountId, requireUUID((await params).id)]
+    ),
+  }));
 }
-
-async function readTagId(request: Request): Promise<string | null> {
-  const body = (await request.json().catch(() => null)) as {
-    tag_id?: unknown;
-  } | null;
-  return typeof body?.tag_id === 'string' && body.tag_id.trim()
-    ? body.tag_id.trim()
-    : null;
+export function POST(request: Request, { params }: Context) {
+  let contactId: string;
+  let tagId: string;
+  return accountRoute(
+    request,
+    'agent',
+    async (db, ctx) => {
+      contactId = requireUUID((await params).id);
+      tagId = requireUUID((await readObject(request)).tag_id);
+      const added = await setContactTag(
+        db,
+        ctx.accountId,
+        contactId,
+        tagId,
+        true
+      );
+      return {
+        ok: true,
+        added,
+        dispatched: false,
+        ...(added ? {} : { reason: 'duplicate' as const }),
+      };
+    },
+    async (result, ctx) => {
+      if (!result.added) return;
+      await runAutomationsForTrigger({
+        accountId: ctx.accountId,
+        triggerType: 'tag_added',
+        contactId,
+        context: { tag_id: tagId, vars: { _tag_chain_depth: 1 } },
+      });
+      result.dispatched = true;
+    }
+  );
 }
-
-export async function POST(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const ctx = await requireRole('agent');
-    const { id: contactId } = await params;
-    const tagId = await readTagId(request);
-    if (!tagId) {
-      return NextResponse.json({ error: 'tag_id required' }, { status: 400 });
+export function DELETE(request: Request, { params }: Context) {
+  return accountRoute(request, 'agent', async (db, ctx) => {
+    const contactId = requireUUID((await params).id);
+    const tagId = requireUUID((await readObject(request)).tag_id);
+    try {
+      await setContactTag(db, ctx.accountId, contactId, tagId, false);
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('not found'))
+        throw new RequestError('Contact or tag not found.', 404);
+      throw error;
     }
-
-    const result = await addContactTagAndDispatch({
-      db: ctx.supabase,
-      accountId: ctx.accountId,
-      contactId,
-      tagId,
-    });
-
-    return NextResponse.json({ ok: true, ...result });
-  } catch (error) {
-    if (error instanceof ContactTagWriteError) {
-      return tagWriteErrorResponse(error);
-    }
-    return toErrorResponse(error);
-  }
-}
-
-export async function DELETE(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const ctx = await requireRole('agent');
-    const { id: contactId } = await params;
-    const tagId = await readTagId(request);
-    if (!tagId) {
-      return NextResponse.json({ error: 'tag_id required' }, { status: 400 });
-    }
-
-    await removeContactTag(ctx.supabase, {
-      accountId: ctx.accountId,
-      contactId,
-      tagId,
-    });
-
-    return NextResponse.json({ ok: true });
-  } catch (error) {
-    if (error instanceof ContactTagWriteError) {
-      return tagWriteErrorResponse(error);
-    }
-    return toErrorResponse(error);
-  }
+    return { ok: true };
+  });
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { SupabaseClient } from '@supabase/supabase-js';
+import type { SqlConnection } from '@/lib/db/transaction';
 
 import {
   renderTemplateBody,
@@ -27,21 +27,7 @@ function row(over: Partial<MessageTemplate>): MessageTemplate {
  * resolveTemplateRow uses. Records the filters so a test can assert
  * the lookup is account-scoped.
  */
-function dbReturning(
-  rows: unknown[],
-  filters: Record<string, unknown> = {}
-): SupabaseClient {
-  const builder = {
-    select: () => builder,
-    eq: (col: string, val: unknown) => {
-      filters[col] = val;
-      return builder;
-    },
-    then: (resolve: (r: { data: unknown[] }) => unknown) =>
-      resolve({ data: rows }),
-  };
-  return { from: () => builder } as unknown as SupabaseClient;
-}
+function dbReturning(rows:unknown[],filters:Record<string,unknown>={}):SqlConnection {return {query:async(_sql,values=[])=>{filters.account_id=values[0];filters.name=values[1];return {rows};}};}
 
 describe('renderTemplateBody', () => {
   it('substitutes positional placeholders', () => {

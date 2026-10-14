@@ -29,7 +29,7 @@ interface RequireRoleProps {
  *   2. role ≥ min     → render `children`.
  *   3. role < min     → render `fallback`.
  *
- * Mirrors the server-side `requireRole(min)` from `@/lib/auth/account`
+ * Mirrors the server-side `requireRole(min)` from `@/lib/db/context`
  * so client and server gates stay aligned by construction.
  */
 export function RequireRole({

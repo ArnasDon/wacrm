@@ -1,5 +1,4 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
-import { normalizePhone, phonesMatch } from "@/lib/whatsapp/phone-utils";
+import { normalizePhone } from "@/lib/whatsapp/phone-utils";
 
 /**
  * Contact de-duplication helpers, shared by the WhatsApp webhook, the
@@ -24,35 +23,6 @@ export interface ExistingContact {
   phone: string;
   name?: string | null;
   [key: string]: unknown;
-}
-
-/**
- * Find an existing contact in `accountId` whose phone matches `phone`,
- * or null. Pre-filters in SQL by the last-8-digit suffix (so we don't
- * pull every contact), then applies the strict `phonesMatch` in JS on
- * the small candidate set — the exact approach the webhook has used.
- */
-export async function findExistingContact(
-  db: SupabaseClient,
-  accountId: string,
-  phone: string,
-): Promise<ExistingContact | null> {
-  const normalized = normalizePhone(phone);
-  if (!normalized) return null;
-
-  const suffix = normalized.length >= 8 ? normalized.slice(-8) : normalized;
-
-  const { data, error } = await db
-    .from("contacts")
-    .select("*")
-    .eq("account_id", accountId)
-    .like("phone", `%${suffix}`);
-
-  if (error || !data) return null;
-
-  return (
-    (data as ExistingContact[]).find((c) => phonesMatch(c.phone, phone)) ?? null
-  );
 }
 
 /**

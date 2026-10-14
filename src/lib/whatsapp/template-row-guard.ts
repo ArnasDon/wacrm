@@ -1,7 +1,7 @@
 /**
- * Minimal shape check for a `message_templates` row loaded via Supabase.
+ * Minimal shape check for a `message_templates` row loaded via PostgreSQL.
  *
- * Supabase queries return `any` for untyped clients, so the routes
+ * PostgreSQL queries return `any` for untyped clients, so the routes
  * cast with `as MessageTemplate`. That cast is a lie — a row from
  * sync, a webhook race, or a malformed insert can land without the
  * fields the send-builder needs. When that happens, the builder

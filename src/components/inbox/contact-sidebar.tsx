@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { apiResult } from "@/lib/api/client";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
-import type { Contact, Deal, ContactNote, Tag } from "@/types";
+import type { Contact, Deal, ContactNote, Tag, ContactTag } from "@/types";
 import {
   Phone,
   Mail,
@@ -41,41 +41,25 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
   const fetchContactData = useCallback(async () => {
     if (!contact) return;
 
-    const supabase = createClient();
-
-    // Fetch deals, notes, and tags in parallel
-    const [dealsRes, notesRes, tagsRes] = await Promise.all([
-      supabase
-        .from("deals")
-        .select("*, stage:pipeline_stages(*)")
-        .eq("contact_id", contact.id)
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("contact_notes")
-        .select("*")
-        .eq("contact_id", contact.id)
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("contact_tags")
-        .select("id, tag_id, tags(*)")
-        .eq("contact_id", contact.id),
+    const [dealsRes, notesRes, tagsRes, catalogRes] = await Promise.all([
+      apiResult<{ deals: Deal[] }>('/api/contacts/' + contact.id + '/deals'),
+      apiResult<{ notes: ContactNote[] }>('/api/contacts/' + contact.id + '/notes'),
+      apiResult<{ tags: ContactTag[] }>('/api/contacts/' + contact.id + '/tags'),
+      apiResult<{ tags: Tag[] }>('/api/settings/tags'),
     ]);
-
-    if (dealsRes.data) setDeals(dealsRes.data);
-    if (notesRes.data) setNotes(notesRes.data);
-    if (tagsRes.data) {
-      const mapped = tagsRes.data
-        .filter((ct: Record<string, unknown>) => ct.tags)
-        .map((ct: Record<string, unknown>) => ({
-          ...(ct.tags as Tag),
-          contact_tag_id: ct.id as string,
-        }));
-      setTags(mapped);
+    if (dealsRes.data) setDeals(dealsRes.data.deals);
+    if (notesRes.data) setNotes(notesRes.data.notes);
+    if (tagsRes.data && catalogRes.data) {
+      const catalog = new Map(catalogRes.data.tags.map(tag => [tag.id, tag]));
+      setTags(tagsRes.data.tags.flatMap(link => {
+        const tag = catalog.get(link.tag_id);
+        return tag ? [{ ...tag, contact_tag_id: link.id }] : [];
+      }));
     }
   }, [contact]);
 
   // Load on contact change. setContactData/setTags run inside async
-  // Supabase callbacks, not synchronously in the effect body.
+  // PostgreSQL callbacks, not synchronously in the effect body.
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchContactData();
@@ -99,22 +83,10 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
     if (!accountId) return;
     setAddingNote(true);
 
-    const supabase = createClient();
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    const user = session?.user;
-
-    const { data, error } = await supabase
-      .from("contact_notes")
-      .insert({
-        contact_id: contact.id,
-        account_id: accountId,
-        user_id: user?.id,
-        note_text: newNote.trim(),
-      })
-      .select()
-      .single();
+    const { data: result, error } = await apiResult<{ note: ContactNote }>('/api/contacts/' + contact.id + '/notes', {
+      method: 'POST', body: JSON.stringify({ note_text: newNote.trim() }),
+    });
+    const data = result?.note;
 
     if (!error && data) {
       setNotes((prev) => [data, ...prev]);

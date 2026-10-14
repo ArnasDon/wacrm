@@ -22,7 +22,7 @@ import crypto from 'crypto'
  *   `decrypt()` auto-detects the format by counting parts, so legacy
  *   rows keep working. New `encrypt()` output is always GCM.
  *   Existing rows can be upgraded in place by call sites that hold a
- *   Supabase client — see the `isLegacyFormat` / `encrypt` pattern in
+ *   PostgreSQL client — see the `isLegacyFormat` / `encrypt` pattern in
  *   `src/app/api/whatsapp/send/route.ts`.
  */
 

@@ -1,13 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { createClient } from '@/lib/supabase/client';
+import { apiResult } from '@/lib/api/client';
+import { lookupContactDuplicate } from '@/lib/contacts/local-client';
 import { useAuth } from '@/hooks/use-auth';
 import { addContactTag, deleteContactTag } from '@/lib/contacts/tag-api';
 import { toast } from 'sonner';
 import type { Contact, Tag, ContactTag } from '@/types';
 import {
-  findExistingContact,
   isExactMatch,
   isUniqueViolation,
   type ExistingContact,
@@ -47,7 +47,7 @@ export function ContactForm({
   onViewExisting,
 }: ContactFormProps) {
   const t = useTranslations('Contacts.form');
-  const supabase = createClient();
+
   const { accountId } = useAuth();
   const isEdit = !!contact;
 
@@ -93,7 +93,7 @@ export function ContactForm({
     }
     setCheckingDup(true);
     try {
-      const existing = await findExistingContact(supabase, accountId, value);
+      const existing = await lookupContactDuplicate(value);
       setDupMatch(
         existing
           ? { contact: existing, exact: isExactMatch(existing, value) }
@@ -106,11 +106,8 @@ export function ContactForm({
 
   async function fetchTags() {
     setLoadingTags(true);
-    const { data } = await supabase
-      .from('tags')
-      .select('*')
-      .order('name');
-    if (data) setTags(data);
+    const result = await apiResult<{ tags: Tag[] }>('/api/settings/tags');
+    if (result.data) setTags(result.data.tags);
     setLoadingTags(false);
   }
 
@@ -140,45 +137,13 @@ export function ContactForm({
     setSaving(true);
 
     try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      const user = session?.user;
-      if (!user) throw new Error('Not authenticated');
-      if (!accountId) throw new Error('Your profile is not linked to an account.');
+      const result = await apiResult<{ contact: Contact }>(isEdit ? '/api/contacts/' + contact!.id : '/api/contacts', {
+        method: isEdit ? 'PATCH' : 'POST',
+        body: JSON.stringify({ name: name.trim() || null, phone: phone.trim(), email: email.trim() || null, company: company.trim() || null }),
+      });
+      if (result.error) throw result.error;
+      const contactId = result.data?.contact.id;
 
-      let contactId = contact?.id;
-
-      if (isEdit && contactId) {
-        const { error } = await supabase
-          .from('contacts')
-          .update({
-            name: name.trim() || null,
-            phone: phone.trim(),
-            email: email.trim() || null,
-            company: company.trim() || null,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', contactId);
-        if (error) throw error;
-      } else {
-        const { data, error } = await supabase
-          .from('contacts')
-          .insert({
-            user_id: user.id,
-            account_id: accountId,
-            name: name.trim() || null,
-            phone: phone.trim(),
-            email: email.trim() || null,
-            company: company.trim() || null,
-          })
-          .select('id')
-          .single();
-        if (error) throw error;
-        contactId = data.id;
-      }
-
-      // Sync tags
       if (contactId) {
         const existingTagIds = new Set(contactTags.map((tag) => tag.tag_id));
         const desiredTagIds = new Set(selectedTagIds);
@@ -204,11 +169,7 @@ export function ContactForm({
       if (isUniqueViolation(err)) {
         toast.error(t('toastConflict'));
         if (!isEdit && accountId) {
-          const existing = await findExistingContact(
-            supabase,
-            accountId,
-            phone.trim(),
-          );
+          const existing = await lookupContactDuplicate(phone.trim());
           if (existing) setDupMatch({ contact: existing, exact: true });
         }
         return;

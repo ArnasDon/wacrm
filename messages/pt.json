@@ -496,7 +496,13 @@
       "toastSkipped_plural": "{count} duplicados ignorados",
       "toastFailed": "{count} contato não pôde ser importado",
       "toastFailed_plural": "{count} contatos não puderam ser importados",
-      "toastError": "Falha na importação"
+      "toastError": "Falha na importação",
+      "failedRowsHeading": "Linhas com falha",
+      "unknownReason": "Erro desconhecido",
+      "resultInvalidPhone": "{count} telefone inválido",
+      "resultInvalidPhone_plural": "{count} telefones inválidos",
+      "toastInvalidPhone": "{count} contato não tinha um número de telefone válido",
+      "toastInvalidPhone_plural": "{count} contatos não tinham um número de telefone válido"
     },
     "customFields": {
       "title": "Campos personalizados",

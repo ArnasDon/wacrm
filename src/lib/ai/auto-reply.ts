@@ -1242,7 +1242,7 @@ For airport transport, record the guest's request in nota on the relevant existi
     // it off the guest's answer to the bot's own name question.
     const contactName = modelContactName ?? (isHotel ? nameFromAnswer(previousBotReply, latestInbound) ?? undefined : undefined)
     const photoRequested = guestAskedForPhotos(latestInbound) || acceptsPhotoOffer(latestInbound, previousBotReply)
-    if (!resolvedSendPhotoProductName && !quickReplyId && isHotel && photoRequested) {
+    if (!quickReplyId && isHotel && photoRequested) {
       const asked = productForPhotoRequest(
         latestInbound,
         previousBotReply,
@@ -1250,7 +1250,8 @@ For airport transport, record the guest's request in nota on the relevant existi
         hotelProductNames,
         businessName,
       )
-      if (asked) resolvedSendPhotoProductName = asked
+      // Guest intent takes precedence over an incorrect model media marker.
+      if (asked || /\b(habitacion|habitaciones|suite|suites|cuarto|cuartos|room|rooms)\b/i.test(latestInbound.normalize('NFD').replace(/[\u0300-\u036f]/g, ''))) resolvedSendPhotoProductName = asked
     }
     // Hotel item photos only when the guest asked to see something (owner,
     // 2026-09-24: "quiero 2 Suite Premium del 24 al 26" got four photos

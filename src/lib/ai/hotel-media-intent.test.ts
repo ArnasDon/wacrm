@@ -272,3 +272,15 @@ describe('isNewQuoteAsk (banner again in a thread in progress) — VSR 2026-10-0
     ]) expect(isNewQuoteAsk(t), t).toBe(false)
   })
 })
+
+describe('room photos inside a package', () => {
+  it('selects the included room even when the package is also named', () => {
+    expect(productForPhotoRequest('¿Podrían enviarme fotografías de la habitación?', 'El Paquete Romántico incluye habitación Master Suite Deluxe.', ['El paquete romántico'], HOTEL)).toBe('Suite Master Deluxe')
+  })
+  it('does not substitute a package flyer when no room is known', () => {
+    expect(productForPhotoRequest('Fotos de la habitación por favor', 'El Paquete Romántico cuesta Q1100.', ['El paquete romántico'], HOTEL)).toBeNull()
+  })
+  it('still sends the package image when that is requested', () => {
+    expect(productForPhotoRequest('Fotos del paquete romántico', 'Incluye Suite Master Deluxe.', [], HOTEL)).toBe('Paquete Romántico')
+  })
+})

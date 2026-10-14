@@ -238,8 +238,14 @@ export function productForPhotoRequest(
   productNames: readonly string[],
   businessName?: string | null,
 ): string | null {
+  // A room-photo request must never fall back to the package's flyer.
+  // Resolve only room products, including a room named in the package description.
+  const roomRequested = /\b(habitacion(?:es)?|cuarto(?:s)?|suite(?:s)?|room(?:s)?)\b/.test(normalizeForMatch(latestGuestMessage))
+  const candidates = roomRequested
+    ? productNames.filter((name) => /\b(suite(?:s)?|habitacion(?:es)?|cuarto(?:s)?|room(?:s)?|cabana(?:s)?)\b/.test(normalizeForMatch(name)) && !/\b(paquete|package)\b/.test(normalizeForMatch(name)))
+    : productNames
   for (const candidate of [latestGuestMessage, previousBotReply ?? '', ...earlierGuestMessages]) {
-    const hit = productAskedAbout(candidate, productNames, businessName)
+    const hit = productAskedAbout(candidate, candidates, businessName)
     if (hit) return hit
   }
   return null

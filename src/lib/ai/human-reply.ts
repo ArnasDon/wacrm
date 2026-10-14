@@ -13,6 +13,16 @@ import type { ChatMessage } from './types'
  * follow-ups, reminders) is persisted as `sender_type = 'bot'`.
  */
 
+/** Known WhatsApp Business greeting/away text, recognized by content even
+ * when an echo is delayed. Anchored matches avoid hiding a teammate's
+ * substantive reply that happens to start with a greeting. */
+export function isBusinessAutoReply(text: string | null | undefined): boolean {
+  const normalized = (text ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+  return normalized === 'gracias por comunicarse con villa san ricardo como podemos ayudarle'
+    || normalized === 'gracias por su mensaje nuestro horario de atencion es de 8 00am a 8 00pm todos los dias cuentenos como podemos ayudarle y le atenderemos lo mas pronto posible'
+}
+
 export interface OutboundRow {
   sender_type: string
   content_type: string
@@ -35,7 +45,7 @@ export type TrailingState =
  * needs to read.
  */
 export function classifyTrailingOutbound(rows: OutboundRow[]): TrailingState {
-  const outbound = rows.filter((r) => r.content_type !== 'internal_note' && r.sender_type !== 'customer')
+  const outbound = rows.filter((r) => r.content_type !== 'internal_note' && r.sender_type !== 'customer' && !(r.sender_type === 'agent' && isBusinessAutoReply(r.content_text)))
   if (outbound.length === 0) return { kind: 'unanswered' }
   if (outbound.some((r) => r.sender_type === 'bot')) return { kind: 'bot_answered' }
   const humanTexts = outbound
@@ -96,7 +106,7 @@ export async function loadTrailingOutbound(
     .order('created_at', { ascending: true })
   if (error) throw error
   const rows = ((data ?? []) as OutboundRow[]).filter(
-    (r) => r.sender_type !== 'agent' || Date.parse(r.created_at) > Date.parse(humanSince),
+    (r) => r.sender_type !== 'agent' || (!isBusinessAutoReply(r.content_text) && Date.parse(r.created_at) > Date.parse(humanSince)),
   )
   return { lastCustomerAt, humanSince, rows }
 }
@@ -107,15 +117,15 @@ export async function countHumanRepliesAfter(
   conversationId: string,
   afterISO: string,
 ): Promise<number> {
-  const { count, error } = await db
+  const { data, error } = await db
     .from('messages')
-    .select('id', { count: 'exact', head: true })
+    .select('content_text')
     .eq('conversation_id', conversationId)
     .eq('sender_type', 'agent')
     .neq('content_type', 'internal_note')
     .gt('created_at', afterISO)
   if (error) throw error
-  return count ?? 0
+  return (data ?? []).filter((r) => !isBusinessAutoReply(r.content_text)).length
 }
 
 /**
@@ -145,12 +155,12 @@ export function humanReplySince(customerAtISO: string, isNewConversation: boolea
 /** Pure: given customer + agent rows oldest-first, did a real teammate
  *  answer the customer? Agent rows before the customer's first message
  *  (a campaign or template the team started with) don't count. */
-export function hasTeammateReply(rows: { sender_type: string; created_at: string }[]): boolean {
+export function hasTeammateReply(rows: { sender_type: string; content_text?: string | null; created_at: string }[]): boolean {
   let lastCustomerAt: number | null = null
   for (const r of rows) {
     const at = Date.parse(r.created_at)
     if (r.sender_type === 'customer') lastCustomerAt = at
-    else if (r.sender_type === 'agent' && lastCustomerAt !== null && at - lastCustomerAt > AUTO_REPLY_MAX_MS) return true
+    else if (r.sender_type === 'agent' && !isBusinessAutoReply(r.content_text) && lastCustomerAt !== null && at - lastCustomerAt > AUTO_REPLY_MAX_MS) return true
   }
   return false
 }
@@ -169,7 +179,7 @@ export async function teammateTookOver(
 
   let q = db
     .from('messages')
-    .select('sender_type, created_at')
+    .select('sender_type, content_text, created_at')
     .eq('conversation_id', conversationId)
     .in('sender_type', ['customer', 'agent'])
     .neq('content_type', 'internal_note')
@@ -214,7 +224,7 @@ export function classifyRecentAgentRows(
       lastCustomerAt = at
       continue
     }
-    if (r.sender_type !== 'agent' || at <= since) continue
+    if (r.sender_type !== 'agent' || at <= since || isBusinessAutoReply(r.content_text)) continue
     const text = r.content_text?.trim() ?? ''
     if (text && lastCustomerAt !== null && at - lastCustomerAt <= AUTO_REPLY_MAX_MS) echoes.add(text)
     else return { humanReply: true, possibleEchoes: [] }

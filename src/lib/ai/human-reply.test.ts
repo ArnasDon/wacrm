@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import {
   classifyTrailingOutbound,
+  classifyRecentAgentRows,
+  isBusinessAutoReply,
+  countHumanRepliesAfter,
   hasTeammateReply,
   humanReplySince,
   trailingCustomerTurns,
@@ -87,5 +90,36 @@ describe('humanReplySince', () => {
   })
   it('counts every teammate reply in an active conversation, however fast', () => {
     expect(echoAt > Date.parse(humanReplySince(customerAt, false))).toBe(true)
+  })
+})
+
+describe('delayed WhatsApp Business automatic messages', () => {
+  const welcome = 'Gracias por comunicarse con Villa San Ricardo. ¿Cómo podemos ayudarle?'
+  const away = 'Gracias por su mensaje.\nNuestro horario de atención es de 8:00am a 8:00pm, todos los días. \n\nCuéntenos cómo podemos ayudarle y le atenderemos lo más pronto posible.'
+  const inbound = { sender_type: 'customer', content_text: 'Disponibilidad', created_at: '2026-10-14T19:57:25.542Z' }
+  const echoes = [row({ content_text: welcome, created_at: '2026-10-14T19:57:45.050Z' }), row({ content_text: away, created_at: '2026-10-14T19:57:47.758Z' })]
+  it('ignores both incident echoes without triggering the staff window or answering the customer', () => {
+    expect(classifyRecentAgentRows([inbound, ...echoes], '2026-10-14T17:00:00Z')).toEqual({ humanReply: false, possibleEchoes: [] })
+    expect(hasTeammateReply([inbound, ...echoes])).toBe(false)
+    expect(classifyTrailingOutbound(echoes)).toEqual({ kind: 'unanswered' })
+  })
+  it('recognizes the exact greeting even if it arrives minutes later in an existing thread', () => {
+    expect(classifyTrailingOutbound([row({ content_text: welcome, created_at: '2026-10-14T20:05:00Z' })])).toEqual({ kind: 'unanswered' })
+  })
+  it('preserves a real staff reply after the automatic messages', () => {
+    const human = row({ content_text: 'No tenemos disponibilidad para este fin de semana.', created_at: '2026-10-14T20:10:00Z' })
+    expect(classifyRecentAgentRows([inbound, ...echoes, human], '2026-10-14T17:00:00Z').humanReply).toBe(true)
+    expect(hasTeammateReply([inbound, ...echoes, human])).toBe(true)
+    expect(classifyTrailingOutbound([...echoes, human])).toEqual({ kind: 'human_answered', humanTexts: [human.content_text] })
+  })
+  it('does not discard a human answer that adds information after a greeting', () => {
+    expect(isBusinessAutoReply(welcome + ' No tenemos disponibilidad.')).toBe(false)
+    expect(isBusinessAutoReply('Gracias por su mensaje. Sí hay una habitación.')).toBe(false)
+    expect(classifyTrailingOutbound([row({ sender_type: 'bot', content_text: welcome })]).kind).toBe('bot_answered')
+  })
+  it('excludes delayed automatic messages from the mid-generation human guard', async () => {
+    const query = { select: () => query, eq: () => query, neq: () => query, gt: async () => ({ data: [...echoes, row({ content_text: 'Recepción debe revisar.' })], error: null }) }
+    const db = { from: () => query } as unknown as Parameters<typeof countHumanRepliesAfter>[0]
+    expect(await countHumanRepliesAfter(db, 'conversation', inbound.created_at)).toBe(1)
   })
 })

@@ -1,3 +1,4 @@
+import { shouldDeferHotelStaffFollowup, hasUnconfirmedStayDuration } from './hotel-assistance'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { supabaseAdmin } from './admin-client'
 import { waitForQuietPeriod } from './debounce'
@@ -643,6 +644,7 @@ export async function dispatchInboundToAiReply(
         imageResolver,
         conv.ai_context_reset_at,
         voiceTranscriber,
+        neverSelfPause,
       )
     } catch (err) {
       // Reading the thread failed. A single oversized / corrupt inbound
@@ -657,6 +659,8 @@ export async function dispatchInboundToAiReply(
           undefined,
           null,
           conv.ai_context_reset_at,
+          null,
+          neverSelfPause,
         )
       } catch (err2) {
         console.error('[ai auto-reply] buildConversationContext failed again (text-only):', err2)
@@ -958,6 +962,9 @@ export async function dispatchInboundToAiReply(
       if (slug && !bannerCategoryBySlug.has(slug)) bannerCategoryBySlug.set(slug, c)
     }
 
+    // Staff operations do not restart automatically when the quiet window ends.
+    if (isHotel && teammateNote && shouldDeferHotelStaffFollowup(messages, Boolean(activeReservations))) return
+
     const baseSystemPrompt = buildSystemPrompt({
       userPrompt: config.systemPrompt,
       mode: 'auto_reply',
@@ -1129,6 +1136,26 @@ For airport transport, record the guest's request in nota on the relevant existi
           conversationId,
           `🤖 El huésped pidió algo que la IA no pudo guardar en una reservación de este chat. Revisar y confirmarle: «${latestUserMessage(messages).slice(0, 300)}»`,
         )
+      }
+    }
+
+    if (isHotel && hasUnconfirmedStayDuration(messages) &&
+      ((generation.reservationProposals ?? []).some((p) => ['habitaciones', 'paquetes'].includes(p.category) && p.fields.salida)
+        || /\btotal\b|por (?:una|1) noche/i.test(generation.text))) {
+      generation = {
+        ...generation,
+        text: '¿Qué fecha de salida desea para su estadía? Así podemos calcular el total para las fechas correctas.',
+        handoff: false,
+        markDealWon: false,
+        quoteProposal: null,
+        quickReplyId: null,
+        reservationProposals: (generation.reservationProposals ?? []).map((p) => {
+          if (!['habitaciones', 'paquetes'].includes(p.category)) return p
+          const fields = { ...p.fields }
+          delete fields.salida
+          delete fields.precio
+          return { ...p, fields, confirmed: false }
+        }),
       }
     }
 

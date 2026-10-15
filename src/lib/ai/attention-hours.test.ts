@@ -11,16 +11,16 @@ describe('hotel meeting 2026-10-09', () => {
     expect(isAfterHours(gt(7), 'America/Guatemala')).toBe(false)
     expect(isAfterHours(gt(19), 'America/Guatemala')).toBe(false)
   })
-  it('rewrites team promises with the real time frame', () => {
+  it('removes unsupported deadlines and reports attention hours only at night', () => {
     expect(withAttentionHours('Un compañero le confirmará la disponibilidad en breve. 😊', false))
-      .toBe('Un compañero le confirmará la disponibilidad. Le darán seguimiento en un máximo de una hora. 😊')
+      .toBe('Un compañero le confirmará la disponibilidad. 😊')
     expect(withAttentionHours('El hotel le estará confirmando los métodos de pago en breve, en un máximo de 20 minutos.', true))
-      .toBe('El hotel le estará confirmando los métodos de pago. Nuestro horario de atención es de 8:00 am a 8:00 pm; en ese horario le darán seguimiento.')
+      .toBe('El hotel le estará confirmando los métodos de pago.')
     expect(withAttentionHours('Con mucho gusto, un compañero de nuestro equipo le atenderá por este chat. 🙌', true, true))
-      .toBe('Con mucho gusto, un compañero de nuestro equipo le atenderá por este chat. Nuestro horario de atención es de 8:00 am a 8:00 pm; en ese horario le darán seguimiento. 🙌')
+      .toBe('Con mucho gusto, un compañero de nuestro equipo le atenderá por este chat. Nuestro horario de atención es de 8:00 am a 8:00 pm. 🙌')
     // VSR 2026-10-10: the model already stated the time frame — never a second one.
     const own = '¡Con mucho gusto! Un compañero del área de reservaciones le ayudará con eso en un máximo de una hora. 😊'
-    expect(withAttentionHours(own, false, true)).toBe(own)
+    expect(withAttentionHours(own, false, true)).toBe('¡Con mucho gusto! Un compañero del área de reservaciones le ayudará con eso. 😊')
     expect(withAttentionHours('Nuestro horario de atención es de 8:00 am a 8:00 pm; en ese horario le confirmarán los métodos de pago.', true, true)).toContain('horario de atención')
     const plain = 'La Suite Clásica cuesta Q600 por noche. ¿Para qué fechas?'
     expect(withAttentionHours(plain, false)).toBe(plain)

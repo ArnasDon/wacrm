@@ -5038,3 +5038,38 @@ describe('dispatchInboundToAiReply — hotel: a teammate already answered (owner
     expect(h.generateReply).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('hotel discreet assistance regression', () => {
+  beforeEach(() => { h.state.account = { default_currency: 'GTQ', industry_vertical: 'hotel' } })
+  it('does not regenerate or send a cancellation after the staff window', async () => {
+    h.teammateTookOver.mockResolvedValue(true)
+    h.buildConversationContext.mockResolvedValue([{ role: 'assistant', content: 'Si hay Sr Santoyo las reservo' }, { role: 'user', content: 'Mañana cancelado' }])
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.generateReply).not.toHaveBeenCalled()
+    expect(h.engineSendText).not.toHaveBeenCalled()
+    expect(h.upsertReservationRequest).not.toHaveBeenCalled()
+  })
+  it('does not explain staff files as its own goodbye after three hours', async () => {
+    h.teammateTookOver.mockResolvedValue(true)
+    h.buildConversationContext.mockResolvedValue([{ role: 'assistant', senderType: 'agent', contentType: 'image', content: '(Archivo del hotel)' }, { role: 'user', content: 'Disculpe, no entiendo…' }])
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.generateReply).not.toHaveBeenCalled()
+    expect(h.engineSendText).not.toHaveBeenCalled()
+  })
+  it('keeps answering factual information after staff involvement', async () => {
+    h.teammateTookOver.mockResolvedValue(true)
+    h.buildConversationContext.mockResolvedValue([{ role: 'user', content: '¿A qué hora es el desayuno?' }])
+    h.generateReply.mockResolvedValue({ text: 'El desayuno se sirve de 7:00 a 11:30.', handoff: false, markDealWon: false, moveToStageName: null })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendText).toHaveBeenCalledWith(expect.objectContaining({ text: 'El desayuno se sirve de 7:00 a 11:30.' }))
+  })
+  it('does not save an inferred checkout or confirm Fanny’s one-night estimate', async () => {
+    h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'Estoy interesada en alojamiento para el domingo 18 de octubre' }, { role: 'user', content: 'Somos 3 adultos y 2 niños de 4 y 2 años' }])
+    h.generateReply.mockResolvedValue({ text: 'El total sería Q870 por una noche.', handoff: false, markDealWon: false, moveToStageName: null,
+      reservationProposals: [{ category: 'habitaciones', fields: { servicio: 'Junior Suite Familiar', personas: '5', adultos: '3', edades_ninos: '4,2', entrada: '2026-10-18', salida: '2026-10-19' }, confirmed: true }] })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.upsertReservationRequest).toHaveBeenCalledWith(expect.anything(), 'acct-1', expect.not.objectContaining({ check_out: '2026-10-19' }))
+    expect(h.engineSendText).toHaveBeenCalledWith(expect.objectContaining({ text: expect.stringContaining('fecha de salida') }))
+    expect(h.engineSendText.mock.calls.map(c => c[0].text).join(' ')).not.toContain('Q870')
+  })
+})

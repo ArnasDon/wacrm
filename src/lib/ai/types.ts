@@ -59,6 +59,9 @@ export interface ChatImage {
  *  auto-reply path only) carries photos the customer sent with that
  *  turn. Absent/empty `images` = a plain text turn, unchanged. */
 export interface ChatMessage {
+  /** Present on hotel staff turns so their messages are not attributed to the bot. */
+  senderType?: 'agent'
+  contentType?: string
   role: 'user' | 'assistant'
   content: string
   images?: ChatImage[]

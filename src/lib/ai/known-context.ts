@@ -64,8 +64,7 @@ interface ReservationSummaryRow {
  *    confirmed or denied it and the date came and went. Real gap found
  *    2026-09-21: a stale pending request keeps getting recapped to the
  *    model as "already captured, don't ask again" indefinitely, with
- *    its now-meaningless old dates, instead of being surfaced so the
- *    guest gets asked whether to reschedule it or start fresh.
+ *    its now-meaningless old dates, as historical context, without prompting an unsolicited reschedule.
  *
  * `todayISO` omitted (the handoff-recap caller, `appendActiveReservationsRecap`
  * — a human reads this, not the model) skips the split entirely: every

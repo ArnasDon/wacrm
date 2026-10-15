@@ -73,6 +73,19 @@ export async function middleware(request: NextRequest) {
   // Every top-level route under src/app/(dashboard)/ belongs here —
   // middleware.test.ts reads that directory and fails on a missing one.
   const protectedPaths = ['/dashboard', '/inbox', '/contacts', '/pipelines', '/broadcasts', '/automations', '/flows', '/agents', '/notifications', '/settings']
+  
+  if (
+  process.env.CLIENT_SUSPENDED === 'true' &&
+  protectedPaths.some(path =>
+    request.nextUrl.pathname.startsWith(path)
+  )
+) {
+  return new NextResponse(
+    'This CRM account is temporarily suspended.',
+    { status: 403 }
+  )
+}
+  
   if (!user && protectedPaths.some(path => request.nextUrl.pathname.startsWith(path))) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'

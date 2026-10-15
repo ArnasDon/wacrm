@@ -9,6 +9,15 @@ export class BaileysSendError extends Error {
   }
 }
 
+interface OnWhatsAppResult {
+  jid?: string | null
+  exists?: unknown
+}
+
+interface WhatsAppSocketLike {
+  onWhatsApp?: (...jids: string[]) => Promise<unknown>
+}
+
 /**
  * Resolves the real canonical JID on WhatsApp for a phone number.
  * For Brazilian numbers (+55), WhatsApp accounts may be registered with
@@ -16,7 +25,7 @@ export class BaileysSendError extends Error {
  * Querying sock.onWhatsApp() with both variants ensures the message is
  * sent to the exact JID registered on WhatsApp servers, avoiding silent drops.
  */
-export async function resolveRecipientJid(sock: any, rawPhone: string): Promise<string> {
+export async function resolveRecipientJid(sock: WhatsAppSocketLike, rawPhone: string): Promise<string> {
   const clean = sanitizePhoneForMeta(rawPhone)
   if (!clean) {
     throw new BaileysSendError('Número de telefone inválido')
@@ -44,14 +53,14 @@ export async function resolveRecipientJid(sock: any, rawPhone: string): Promise<
 
     try {
       if (typeof sock.onWhatsApp === 'function') {
-        const results = await sock.onWhatsApp(...variants)
+        const results = (await sock.onWhatsApp(...variants)) as OnWhatsAppResult[] | undefined
         if (Array.isArray(results) && results.length > 0) {
-          const valid = results.find((r: any) => r && r.exists && r.jid)
-          if (valid) {
+          const valid = results.find((r) => r && Boolean(r.exists) && r.jid)
+          if (valid?.jid) {
             return valid.jid
           }
           // If WhatsApp explicitly answered and none exists
-          const allExplicitlyFalse = results.every((r: any) => r && r.exists === false)
+          const allExplicitlyFalse = results.every((r) => r && r.exists === false)
           if (allExplicitlyFalse) {
             throw new BaileysSendError('Número não possui conta no WhatsApp')
           }
@@ -69,13 +78,13 @@ export async function resolveRecipientJid(sock: any, rawPhone: string): Promise<
   // Non-Brazilian international numbers
   try {
     if (typeof sock.onWhatsApp === 'function') {
-      const results = await sock.onWhatsApp(clean)
+      const results = (await sock.onWhatsApp(clean)) as OnWhatsAppResult[] | undefined
       if (Array.isArray(results) && results.length > 0) {
-        const valid = results.find((r: any) => r && r.exists && r.jid)
-        if (valid) {
+        const valid = results.find((r) => r && Boolean(r.exists) && r.jid)
+        if (valid?.jid) {
           return valid.jid
         }
-        if (results.every((r: any) => r && r.exists === false)) {
+        if (results.every((r) => r && r.exists === false)) {
           throw new BaileysSendError('Número não possui conta no WhatsApp')
         }
       }

@@ -23,7 +23,19 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  const { data: { user } } = await supabase.auth.getUser()
+  let user = null
+  try {
+    const authResult = await Promise.race([
+      supabase.auth.getUser(),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Auth check timeout')), 5000)
+      ),
+    ])
+    user = authResult.data?.user ?? null
+  } catch (error) {
+    console.warn('[middleware] Failed to resolve auth user:', error instanceof Error ? error.message : error)
+    user = null
+  }
 
   // getUser() transparently refreshes an expired access token, which
   // ROTATES the refresh token and writes the new cookies onto

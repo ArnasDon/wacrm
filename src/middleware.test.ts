@@ -9,6 +9,7 @@ import { NextRequest } from "next/server";
 //                      of the test is that these must survive onto whatever
 //                      response the middleware returns — including redirects.
 let mockUser: { id: string } | null = null;
+let mockGetUserError: Error | null = null;
 let refreshedCookies: Array<{
   name: string;
   value: string;
@@ -28,6 +29,7 @@ vi.mock("@supabase/ssr", () => ({
       // refreshed inside getUser(), which rotates the refresh token and
       // pushes the new cookies through setAll() before resolving.
       getUser: async () => {
+        if (mockGetUserError) throw mockGetUserError;
         if (refreshedCookies.length) opts.cookies.setAll(refreshedCookies);
         return { data: { user: mockUser } };
       },
@@ -42,6 +44,7 @@ beforeEach(() => {
   process.env.NEXT_PUBLIC_SUPABASE_URL = "https://test.supabase.co";
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "anon-key";
   mockUser = null;
+  mockGetUserError = null;
   refreshedCookies = [];
 });
 
@@ -109,5 +112,29 @@ describe("middleware — refreshed auth cookies survive redirects", () => {
     // No redirect — the normal NextResponse.next() already carries cookies.
     expect(res.headers.get("location")).toBeNull();
     expect(res.cookies.get(ROTATED.name)?.value).toBe(ROTATED.value);
+  });
+
+  it("handles getUser() gateway timeout or network error gracefully on protected routes", async () => {
+    mockGetUserError = new Error("Gateway Timeout");
+
+    const res = await middleware(
+      new NextRequest("https://app.test/dashboard"),
+    );
+
+    // Instead of crashing with an unhandled exception, it redirects safely to /login
+    expect(res.status).toBe(307);
+    expect(res.headers.get("location")).toContain("/login");
+  });
+
+  it("handles getUser() gateway timeout gracefully on /login without crashing", async () => {
+    mockGetUserError = new Error("Gateway Timeout");
+
+    const res = await middleware(
+      new NextRequest("https://app.test/login"),
+    );
+
+    // Allowed to render /login
+    expect(res.status).toBe(200);
+    expect(res.headers.get("location")).toBeNull();
   });
 });

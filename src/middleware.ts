@@ -2,6 +2,21 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl
+
+  // Completely bypass auth checks for unauthenticated public/cron endpoints:
+  // - /api/health (external uptime monitor like cron-job.org)
+  // - /api/envios/cron and /api/automations/cron (tick endpoints using x-cron-secret)
+  // - /api/whatsapp/webhook (WhatsApp webhooks have their own HMAC/token validation)
+  if (
+    pathname === '/api/health' ||
+    pathname.startsWith('/api/envios/') ||
+    pathname.startsWith('/api/automations/') ||
+    pathname.startsWith('/api/whatsapp/webhook')
+  ) {
+    return NextResponse.next({ request })
+  }
+
   let supabaseResponse = NextResponse.next({ request })
 
   const supabase = createServerClient(

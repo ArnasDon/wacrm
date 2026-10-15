@@ -137,4 +137,29 @@ describe("middleware — refreshed auth cookies survive redirects", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("location")).toBeNull();
   });
+
+  it("bypasses auth checks and passes through immediately for /api/health", async () => {
+    mockGetUserError = new Error("Should not be called");
+
+    const res = await middleware(
+      new NextRequest("https://app.test/api/health"),
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("location")).toBeNull();
+  });
+
+  it("bypasses auth checks and passes through immediately for cron tick routes", async () => {
+    mockGetUserError = new Error("Should not be called");
+
+    const resEnvios = await middleware(
+      new NextRequest("https://app.test/api/envios/cron"),
+    );
+    expect(resEnvios.status).toBe(200);
+
+    const resAutomations = await middleware(
+      new NextRequest("https://app.test/api/automations/cron"),
+    );
+    expect(resAutomations.status).toBe(200);
+  });
 });

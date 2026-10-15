@@ -23,6 +23,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { dispatchInboundToAiReply } from './auto-reply'
 import { loadTrailingOutbound, teammateRepliedRecently, TEAMMATE_QUIET_MS } from './human-reply'
 import { contactMutesAi } from './muted-contact'
+import { HOTEL_RECEPTION_PENDING_PREFIX } from './hotel-assistance'
 
 const MIN_AGE_MS = 4 * 60_000
 /** Older than this, a late automatic reply would read as odd — leave it
@@ -64,7 +65,7 @@ export async function recoverUnansweredInbound(
   // Keep ordinary recovery in its one-hour window. Scan older hotel
   // threads separately so stale traffic from other accounts cannot fill
   // the candidate limit and starve messages waiting behind staff.
-  const [recent, hotelWaiting] = await Promise.all([
+  const [recent, hotelWaiting, legacyHotelPaused] = await Promise.all([
     db.from('conversations')
       .select('id, account_id, contact_id, last_message_at')
       .eq('status', 'open')
@@ -82,11 +83,24 @@ export async function recoverUnansweredInbound(
       .lte('last_message_at', oldestRecent)
       .order('last_message_at', { ascending: true })
       .limit(MAX_PER_RUN * 3),
+    // PR #271 created automatic whole-thread pauses. Recover only those
+    // identified by our pending summary; manually paused chats are excluded.
+    db.from('conversations')
+      .select('id, account_id, contact_id, last_message_at, accounts!inner(industry_vertical)')
+      .eq('accounts.industry_vertical', 'hotel')
+      .eq('status', 'open')
+      .eq('ai_autoreply_disabled', true)
+      .like('ai_handoff_summary', HOTEL_RECEPTION_PENDING_PREFIX + '%')
+      .gte('last_message_at', new Date(now - HOTEL_MAX_AGE_MS).toISOString())
+      .lte('last_message_at', newestEligible)
+      .order('last_message_at', { ascending: true })
+      .limit(MAX_PER_RUN * 3),
   ])
   if (recent.error) throw recent.error
   if (hotelWaiting.error) throw hotelWaiting.error
+  if (legacyHotelPaused.error) throw legacyHotelPaused.error
   const data = [...new Map(
-    [...(recent.data ?? []), ...(hotelWaiting.data ?? [])].map((row) => [row.id, row]),
+    [...(recent.data ?? []), ...(hotelWaiting.data ?? []), ...(legacyHotelPaused.data ?? [])].map((row) => [row.id, row]),
   ).values()]
 
   const result: InboundRecoveryResult = { scanned: 0, recovered: 0 }

@@ -6,6 +6,31 @@ const OPERATIONAL = /\b(cancel\w*|reembols\w*|devol\w*|pago\w*|pagar|deposit\w*|
 const INFORMATION = /\b(horarios?|a que hora|check.?in|check.?out|desayun\w*|almuerz\w*|cena\w*|parqueo|wifi|wi.fi|mascotas?|piscina|gimnasio|jacuzzi|ubicacion|direccion|como lleg\w*|fotos?|fotograf\w*|imagenes?|menu|breakfast|parking|photos?|directions|amenities)\b/
 const NEW_INQUIRY = /\b(hospedaje|alojamiento|habitacion\w*|suite|paquete|masaje|spa|stay|room)\b/
 
+export const HOTEL_RECEPTION_PENDING_PREFIX = '🤝 Pendiente de recepción.'
+
+/** Only application-created reception notes qualify; manual takeovers use a different summary. */
+export function isHotelReceptionPending(summary: string | null | undefined): boolean {
+  return summary?.startsWith(HOTEL_RECEPTION_PENDING_PREFIX) ?? false
+}
+
+/** Route only messages received after an already-recorded handoff. Keep the
+ * full transcript for generation so existing staff agreements remain visible. */
+export function hotelCurrentRequest(messages: ChatMessage[], handoffAt?: string | null): ChatMessage[] {
+  const since = handoffAt ? Date.parse(handoffAt) : NaN
+  if (!Number.isFinite(since)) return messages
+  const start = messages.findIndex((m) => m.role === 'user' && m.createdAt && Date.parse(m.createdAt) > since)
+  if (start < 0) return messages
+  // Silent staff decisions do not add an assistant turn. A later, separate
+  // customer burst still needs to become eligible for a new factual topic.
+  let burstStart = start
+  for (let i = messages.length - 1; i > start; i--) {
+    if (messages[i - 1].role !== 'user') { burstStart = i; break }
+    const gap = Date.parse(messages[i].createdAt ?? '') - Date.parse(messages[i - 1].createdAt ?? '')
+    if (gap > 3 * 60_000) { burstStart = i; break }
+  }
+  return messages.slice(burstStart)
+}
+
 /** A hotel operation requiring a staff decision, rather than public information. */
 export function hotelReceptionReason(messages: ChatMessage[]): string | null {
   const trailing: string[] = []

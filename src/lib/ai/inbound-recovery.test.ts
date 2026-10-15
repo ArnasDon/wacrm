@@ -34,7 +34,7 @@ interface Fixture {
   quiet?: string[]
   recentStaff?: string[]
   muted?: string[]
-  conversations: { id: string; account_id: string; contact_id: string | null; last_message_at: string }[]
+  conversations: { id: string; account_id: string; contact_id: string | null; last_message_at: string; ai_autoreply_disabled?: boolean; ai_handoff_summary?: string }[]
   /** The customer's latest message per conversation. */
   lastCustomer: Record<string, { id: string; sender_type: string; content_type: string; created_at: string } | null>
   /** Conversations with an outbound TEXT after the customer's message. */
@@ -57,10 +57,10 @@ function db(fx: Fixture) {
   const inserts: Record<string, unknown>[] = []
   const client = {
     from(table: string) {
-      const filters: Record<string, string> = {}
+      const filters: Record<string, unknown> = {}
       const chain: Record<string, unknown> = {
         select: () => chain,
-        eq: (col: string, v: string) => {
+        eq: (col: string, v: unknown) => {
           filters[col] = v
           return chain
         },
@@ -69,7 +69,8 @@ function db(fx: Fixture) {
         is: () => chain,
         gte: () => chain,
         lte: () => chain,
-        or: () => chain,
+        or: () => { filters.eligibleOnly = true; return chain },
+        like: (_col: string, pattern: string) => { filters.pendingPrefix = pattern.slice(0, -1); return chain },
         order: () => chain,
         limit: () => chain,
         insert: async (row: Record<string, unknown>) => {
@@ -77,20 +78,25 @@ function db(fx: Fixture) {
           return { error: null }
         },
         maybeSingle: async () => {
-          if (table === 'messages') return { data: fx.lastCustomer[filters.conversation_id] ?? null, error: null }
+          if (table === 'messages') return { data: fx.lastCustomer[String(String(filters.conversation_id))] ?? null, error: null }
           if (table === 'accounts') return { data: { owner_user_id: 'owner-1', industry_vertical: fx.hotel ? 'hotel' : null }, error: null }
           return { data: null, error: null }
         },
         then: (resolve: (v: unknown) => void) => {
-          if (table === 'conversations') return resolve({ data: fx.conversations, error: null })
+          if (table === 'conversations') return resolve({ data: fx.conversations.filter(c => {
+            if (filters.eligibleOnly && c.ai_autoreply_disabled === true) return false
+            if (filters.ai_autoreply_disabled === true && c.ai_autoreply_disabled !== true) return false
+            if (filters.pendingPrefix && !c.ai_handoff_summary?.startsWith(String(filters.pendingPrefix))) return false
+            return true
+          }), error: null })
           if (table === 'messages') {
-            const answered = (fx.answered ?? []).includes(filters.conversation_id)
+            const answered = (fx.answered ?? []).includes(String(filters.conversation_id))
             return resolve({ data: answered ? [{ id: 'reply' }] : [], error: null })
           }
-          if (table === 'flow_runs') return resolve({ count: fx.flowTouches?.[filters.conversation_id] ?? 0, error: null })
+          if (table === 'flow_runs') return resolve({ count: fx.flowTouches?.[String(filters.conversation_id)] ?? 0, error: null })
           if (table === 'ai_action_log') {
             const attempts = filters['input->>staff_window_elapsed'] === 'true' ? fx.claimedAfterStaff : fx.claimed
-            const n = attempts?.[filters['input->>message_id']] ?? 0
+            const n = attempts?.[String(filters['input->>message_id'])] ?? 0
             return resolve({ data: Array.from({ length: n }, (_, i) => ({ id: `x${i}` })), error: null })
           }
           return resolve({ data: [], error: null })
@@ -203,5 +209,28 @@ describe('legacy attempts during the hotel pause', () => {
     await recoverUnansweredInbound(client, { now: NOW, dispatch })
     expect(dispatch).not.toHaveBeenCalled()
     expect(inserts).toHaveLength(0)
+  })
+})
+
+
+describe('legacy automatic reception pauses', () => {
+  it('includes only application-created hotel pauses for guarded automatic recovery', async () => {
+    const dispatch = vi.fn()
+    const { client } = db({ hotel: true, recentStaff: ['automatic', 'manual'], conversations: [
+      { ...conv('automatic', 175), ai_autoreply_disabled: true, ai_handoff_summary: '🤝 Pendiente de recepción. Una cancelación.' },
+      { ...conv('manual', 175), ai_autoreply_disabled: true, ai_handoff_summary: '🤖 Ana tomó el control de esta conversación manualmente y pausó la IA.' },
+    ], lastCustomer: { automatic: customerText('m1', 175), manual: customerText('m2', 175) } })
+    await recoverUnansweredInbound(client, { now: NOW, dispatch })
+    expect(dispatch).toHaveBeenCalledOnce()
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ conversationId: 'automatic' }))
+  })
+  it('does not consume attempts for an automatic pending case while staff are still answering', async () => {
+    const dispatch = vi.fn()
+    const { client, inserts } = db({ hotel: true, quiet: ['c1'], conversations: [
+      { ...conv('c1'), ai_autoreply_disabled: true, ai_handoff_summary: '🤝 Pendiente de recepción. Un pago.' },
+    ], lastCustomer: { c1: customerText('m1') } })
+    await recoverUnansweredInbound(client, { now: NOW, dispatch })
+    expect(dispatch).not.toHaveBeenCalled()
+    expect(inserts).toEqual([])
   })
 })

@@ -574,6 +574,7 @@ vi.mock('./admin-client', () => ({
           const chain: Record<string, unknown> = {
             eq: () => chain,
             or: () => chain,
+            is: () => chain,
             select: () =>
               Promise.resolve({ data: h.state.recoveryUpdateRows, error: null }),
             then: (onF: (v: unknown) => unknown, onR?: (e: unknown) => unknown) =>
@@ -3299,7 +3300,7 @@ describe('dispatchInboundToAiReply — hotel findings, 20-chat test run 2026-09-
     await dispatchInboundToAiReply(ARGS)
     expect(h.sendMessageToConversation).not.toHaveBeenCalled()
     expect(h.generateReply).not.toHaveBeenCalled()
-    expect(h.state.updatePayload?.ai_autoreply_disabled).toBe(true)
+    expect(h.state.updatePayload).not.toHaveProperty('ai_autoreply_disabled')
     expect(h.state.updatePayload?.ai_handoff_summary).toEqual(expect.any(String))
   })
 
@@ -4939,10 +4940,11 @@ describe('dispatchInboundToAiReply — hotel vertical: ordinary assistance and e
     expect(h.state.messageInserts).toEqual([])
   })
 
-  it('a reception handoff pauses the hotel bot until a human resumes', async () => {
+  it('a reception handoff records the pending topic without requiring manual resumption', async () => {
     h.generateReply.mockResolvedValue({ text: '', handoff: true, markDealWon: false, moveToStageName: null })
     await dispatchInboundToAiReply(ARGS)
-    expect(h.state.updatePayload).toMatchObject({ ai_autoreply_disabled: true, ai_handoff_transient: null })
+    expect(h.state.updatePayload).not.toHaveProperty('ai_autoreply_disabled')
+    expect(h.state.updatePayload).toMatchObject({ ai_handoff_transient: null })
     expect(h.state.updatePayload?.ai_handoff_at).toEqual(expect.any(String))
   })
 
@@ -5072,7 +5074,7 @@ describe('hotel discreet assistance regression', () => {
 
 describe('hotel silent reception ownership', () => {
   beforeEach(() => { h.state.account = { default_currency: 'GTQ', industry_vertical: 'hotel' } })
-  it.each(['Quiero cancelar mi reserva', 'Le envío el comprobante del pago', 'Tengo un voucher de regalo', 'Necesito tarifa especial de tour operador', 'Necesito cotización para un grupo de 51 personas', 'Quiero hablar con recepción'])('pauses and records the pending case without generating or sending: %s', async (text) => {
+  it.each(['Quiero cancelar mi reserva', 'Le envío el comprobante del pago', 'Tengo un voucher de regalo', 'Necesito tarifa especial de tour operador', 'Necesito cotización para un grupo de 51 personas', 'Quiero hablar con recepción'])('records the pending topic without a whole-thread pause or guest message: %s', async (text) => {
     h.buildConversationContext.mockResolvedValue([{ role: 'user', content: text }])
     await dispatchInboundToAiReply(ARGS)
     expect(h.generateReply).not.toHaveBeenCalled()
@@ -5082,7 +5084,8 @@ describe('hotel silent reception ownership', () => {
     expect(h.sendRestaurantMenuToConversation).not.toHaveBeenCalled()
     expect(h.createQuote).not.toHaveBeenCalled()
     expect(h.upsertReservationRequest).not.toHaveBeenCalled()
-    expect(h.state.updatePayload).toMatchObject({ ai_autoreply_disabled: true, ai_handoff_transient: null })
+    expect(h.state.updatePayload).not.toHaveProperty('ai_autoreply_disabled')
+    expect(h.state.updatePayload).toMatchObject({ ai_handoff_transient: null })
     expect(h.state.messageInserts).toEqual([expect.objectContaining({ content_type: 'internal_note', content_text: expect.stringContaining('Pendiente de recepción') })])
   })
   it('preserves the existing staff assignee', async () => {
@@ -5100,7 +5103,7 @@ describe('hotel silent reception ownership', () => {
     expect(h.state.notificationInserts).toEqual([])
     expect(h.sendMessageToConversation).not.toHaveBeenCalled()
   })
-  it('keeps a persisted reception pause silent on later customer messages, including recovery', async () => {
+  it('keeps a manual pause silent on later customer messages, including recovery', async () => {
     h.state.conv = { assigned_agent_id: null, ai_autoreply_disabled: true, ai_handoff_transient: null, ai_reply_count: 0 }
     await dispatchInboundToAiReply({ ...ARGS, skipDebounce: true })
     expect(h.generateReply).not.toHaveBeenCalled()
@@ -5146,7 +5149,8 @@ describe('hotel reception control during the staff window', () => {
     expect(h.generateReply).not.toHaveBeenCalled()
     expect(h.sendMessageToConversation).not.toHaveBeenCalled()
     expect(h.engineSendText).not.toHaveBeenCalled()
-    expect(h.state.updatePayload).toMatchObject({ ai_autoreply_disabled: true, ai_handoff_transient: null })
+    expect(h.state.updatePayload).not.toHaveProperty('ai_autoreply_disabled')
+    expect(h.state.updatePayload).toMatchObject({ ai_handoff_transient: null })
     expect(h.state.messageInserts).toHaveLength(1)
   })
   it('leaves an ordinary question to the existing staff window without permanently pausing it', async () => {
@@ -5172,4 +5176,106 @@ describe('hotel reception control during the staff window', () => {
     expect(h.engineSendText).not.toHaveBeenCalled()
     expect(h.state.updatePayload).toBeNull()
   })
+})
+
+
+describe('hotel automatic reception topic recovery', () => {
+  const pendingAt = '2026-10-14T15:00:00.000Z'
+  const pendingSummary = '🤝 Pendiente de recepción. Recepción debe revisar una cancelación.'
+  const old = { role: 'user' as const, content: 'Quiero cancelar mi reserva', createdAt: '2026-10-14T14:55:00.000Z' }
+  const fresh = (content: string) => ({ role: 'user' as const, content, createdAt: '2026-10-14T19:00:00.000Z' })
+  beforeEach(() => {
+    h.state.account = { default_currency: 'GTQ', industry_vertical: 'hotel' }
+    h.state.conv = { assigned_agent_id: 'agent-existing', ai_autoreply_disabled: false, ai_handoff_transient: null, ai_reply_count: 0, ai_handoff_summary: pendingSummary, ai_handoff_at: pendingAt }
+  })
+  it('answers a new breakfast question after a cancellation without a button press or changing the booking', async () => {
+    h.buildConversationContext.mockResolvedValue([old, fresh('¿A qué hora sirven el desayuno?')])
+    h.generateReply.mockResolvedValue({ text: 'El desayuno se sirve de 7:00 a 11:30.', handoff: false, markDealWon: true, moveToStageName: 'Confirmado', quoteProposal: { format: 'text', items: [] }, reservationProposals: [{ category: 'habitaciones', fields: { entrada: '2026-10-18', salida: '2026-10-19' }, confirmed: true }] })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendText).toHaveBeenCalledWith(expect.objectContaining({ text: 'El desayuno se sirve de 7:00 a 11:30.' }))
+    expect(h.upsertReservationRequest).not.toHaveBeenCalled()
+    expect(h.createQuote).not.toHaveBeenCalled()
+    expect(h.moveDeal).not.toHaveBeenCalled()
+    expect(h.state.messageInserts).toEqual([])
+    expect(h.generateReply.mock.calls[0][0].systemPrompt).toContain('older reception case remains pending')
+  })
+  it.each(['¿Ya cancelaron mi reserva?', 'Le mando el comprobante', 'Sí', 'Muchas gracias', '¿Y eso?'])('keeps the operation or ambiguous follow-up silent with no repeated internal note: %s', async (content) => {
+    h.buildConversationContext.mockResolvedValue([old, fresh(content)])
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.generateReply).not.toHaveBeenCalled()
+    expect(h.engineSendText).not.toHaveBeenCalled()
+    expect(h.sendMessageToConversation).not.toHaveBeenCalled()
+    expect(h.state.messageInserts).toEqual([])
+    expect(h.state.notificationInserts).toEqual([])
+  })
+  it('does not release an informational question during the three-hour staff window', async () => {
+    h.teammateRepliedRecently.mockResolvedValue(true)
+    h.buildConversationContext.mockResolvedValue([old, fresh('¿A qué hora sirven el desayuno?')])
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.generateReply).not.toHaveBeenCalled()
+    expect(h.engineSendText).not.toHaveBeenCalled()
+    expect(h.state.messageInserts).toEqual([])
+  })
+  it('releases only a legacy application-created pause and answers the new informational question', async () => {
+    h.state.conv!.ai_autoreply_disabled = true
+    h.buildConversationContext.mockResolvedValue([old, fresh('¿Tienen parqueo?')])
+    h.generateReply.mockResolvedValue({ text: 'Sí, contamos con parqueo.', handoff: false, markDealWon: false, moveToStageName: null })
+    await dispatchInboundToAiReply({ ...ARGS, skipDebounce: true })
+    expect(h.state.updatePayload).toEqual({ ai_autoreply_disabled: false })
+    expect(h.engineSendText).toHaveBeenCalledWith(expect.objectContaining({ text: 'Sí, contamos con parqueo.' }))
+    expect(h.state.messageInserts).toEqual([])
+  })
+  it('leaves a legacy pending cancellation silent after releasing the obsolete whole-thread flag', async () => {
+    h.state.conv!.ai_autoreply_disabled = true
+    h.buildConversationContext.mockResolvedValue([old, fresh('¿Ya cancelaron mi reserva?')])
+    await dispatchInboundToAiReply({ ...ARGS, skipDebounce: true })
+    expect(h.generateReply).not.toHaveBeenCalled()
+    expect(h.engineSendText).not.toHaveBeenCalled()
+    expect(h.state.messageInserts).toEqual([])
+  })
+  it('does not release a manual takeover even if it follows an automatic pending case', async () => {
+    h.state.conv!.ai_autoreply_disabled = true
+    h.state.conv!.ai_handoff_summary = '🤖 Ana tomó el control de esta conversación manualmente y pausó la IA.'
+    await dispatchInboundToAiReply({ ...ARGS, skipDebounce: true })
+    expect(h.state.updatePayload).toBeNull()
+    expect(h.generateReply).not.toHaveBeenCalled()
+  })
+  it('stands down if a concurrent manual takeover wins the guarded legacy release', async () => {
+    h.state.conv!.ai_autoreply_disabled = true
+    h.state.recoveryUpdateRows = []
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.generateReply).not.toHaveBeenCalled()
+    expect(h.engineSendText).not.toHaveBeenCalled()
+  })
+  it('stays silent on staff decisions even when the account rate limiter would send a fallback', async () => {
+    h.state.conv!.ai_handoff_summary = null
+    h.buildConversationContext.mockResolvedValue([fresh('Necesito un reembolso')])
+    vi.mocked(checkSharedRateLimit).mockResolvedValueOnce({ success: false, limit: 1, remaining: 0, reset: Date.now() + 60_000 })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendText).not.toHaveBeenCalled()
+    expect(h.sendMessageToConversation).not.toHaveBeenCalled()
+    expect(h.state.messageInserts).toHaveLength(1)
+  })
+})
+
+
+it('does not reactivate a pending reception case for an uncaptioned customer photo', async () => {
+  h.state.account = { default_currency: 'GTQ', industry_vertical: 'hotel' }
+  h.state.conv = { assigned_agent_id: null, ai_autoreply_disabled: false, ai_handoff_transient: null, ai_reply_count: 0, ai_handoff_summary: '🤝 Pendiente de recepción. Un pago.', ai_handoff_at: '2026-10-14T15:00:00.000Z' }
+  h.buildConversationContext.mockResolvedValue([{ role: 'user', content: '(El cliente envió una foto.)', images: [{ mimeType: 'image/jpeg', dataBase64: 'AAAA' }], createdAt: '2026-10-14T19:00:00.000Z' }])
+  await dispatchInboundToAiReply(ARGS)
+  expect(h.generateReply).not.toHaveBeenCalled()
+  expect(h.engineSendText).not.toHaveBeenCalled()
+  expect(h.state.messageInserts).toEqual([])
+})
+
+
+it('preserves the pending reception case when a rate-limit fallback interrupts a later factual reply', async () => {
+  h.state.account = { default_currency: 'GTQ', industry_vertical: 'hotel' }
+  h.state.conv = { assigned_agent_id: null, ai_autoreply_disabled: false, ai_handoff_transient: null, ai_reply_count: 0, ai_handoff_summary: '🤝 Pendiente de recepción. Un pago.', ai_handoff_at: '2026-10-14T15:00:00.000Z' }
+  h.buildConversationContext.mockResolvedValue([{ role: 'user', content: '¿Tienen parqueo?', createdAt: '2026-10-14T19:00:00.000Z' }])
+  vi.mocked(checkSharedRateLimit).mockResolvedValueOnce({ success: false, limit: 1, remaining: 0, reset: Date.now() + 60_000 })
+  await dispatchInboundToAiReply(ARGS)
+  expect(h.state.updatePayload).toBeNull()
+  expect(h.state.messageInserts).toEqual([])
 })

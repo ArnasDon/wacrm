@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { shouldDeferHotelStaffFollowup, hasUnconfirmedStayDuration, hotelReceptionReason } from './hotel-assistance'
+import { shouldDeferHotelStaffFollowup, hasUnconfirmedStayDuration, hotelReceptionReason, hotelCurrentRequest, isHotelReceptionPending } from './hotel-assistance'
 import type { ChatMessage } from './types'
 const user = (content: string): ChatMessage => ({ role: 'user', content })
 describe('staff-owned hotel conversations', () => {
@@ -35,4 +35,37 @@ describe('silent reception routing', () => {
   it.each(['¿A qué hora es el desayuno?', '¿Cuál es su política de cancelación?', '¿Qué formas de pago aceptan?', '¿Cuánto vale la habitación?', 'Quiero reservar una habitación para hoy', 'Hospedaje de domingo a lunes', '¿Me manda fotos de la Suite Premium?'])('keeps ordinary information eligible: %s', (text) => {
     expect(hotelReceptionReason([user(text)])).toBeNull()
   })
+})
+
+
+describe('current topic after a reception handoff', () => {
+  const handoffAt = '2026-10-14T15:00:00.000Z'
+  it('separates a later informational question from an unanswered cancellation', () => {
+    const messages = [ { ...user('Quiero cancelar mi reserva'), createdAt: '2026-10-14T14:59:00.000Z' }, { ...user('¿Tienen parqueo?'), createdAt: '2026-10-14T19:00:00.000Z' } ]
+    expect(hotelReceptionReason(hotelCurrentRequest(messages, handoffAt))).toBeNull()
+    expect(shouldDeferHotelStaffFollowup(hotelCurrentRequest(messages, handoffAt), true)).toBe(false)
+  })
+  it('keeps all new messages together so a mixed payment and information burst stays with staff', () => {
+    const messages = [ { ...user('Quiero cancelar mi reserva'), createdAt: '2026-10-14T14:59:00.000Z' }, { ...user('Le envío mi comprobante'), createdAt: '2026-10-14T19:00:00.000Z' }, { ...user('¿Tienen parqueo?'), createdAt: '2026-10-14T19:00:10.000Z' } ]
+    expect(hotelReceptionReason(hotelCurrentRequest(messages, handoffAt))).toBeTruthy()
+  })
+  it('does not discard the original pending request when no new message has arrived', () => {
+    const messages = [{ ...user('Quiero cancelar mi reserva'), createdAt: '2026-10-14T14:59:00.000Z' }]
+    expect(hotelReceptionReason(hotelCurrentRequest(messages, handoffAt))).toBeTruthy()
+  })
+  it('recognizes only the application pending marker, not a manual pause', () => {
+    expect(isHotelReceptionPending('🤝 Pendiente de recepción. Un pago.')).toBe(true)
+    expect(isHotelReceptionPending('🤖 Ana tomó el control de esta conversación manualmente y pausó la IA.')).toBe(false)
+    expect(isHotelReceptionPending(null)).toBe(false)
+  })
+})
+
+
+it('lets a separate later question resume after an unanswered operational follow-up', () => {
+  const messages = [
+    { ...user('Quiero cancelar mi reserva'), createdAt: '2026-10-14T14:59:00.000Z' },
+    { ...user('Le envío el comprobante'), createdAt: '2026-10-14T18:00:00.000Z' },
+    { ...user('¿Tienen parqueo?'), createdAt: '2026-10-14T19:00:00.000Z' },
+  ]
+  expect(hotelReceptionReason(hotelCurrentRequest(messages, '2026-10-14T15:00:00.000Z'))).toBeNull()
 })

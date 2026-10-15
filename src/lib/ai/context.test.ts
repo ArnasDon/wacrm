@@ -261,3 +261,12 @@ it('preserves staff attachments and author identity for hotel short follow-ups',
   expect(note).toContain('contenido no está disponible')
   expect(note).not.toContain('Que tenga linda noche.')
 })
+
+
+it('retains source timestamps for routing new questions after an internal handoff', async () => {
+  const messages = await buildConversationContext(fakeDb([
+    { sender_type: 'customer', content_type: 'text', content_text: '¿Tienen parqueo?', created_at: '2026-10-14T19:00:00.000Z' },
+    { sender_type: 'customer', content_type: 'text', content_text: 'Quiero cancelar mi reserva', created_at: '2026-10-14T14:59:00.000Z' },
+  ]), 'conv', undefined, null, null, null, true)
+  expect(messages.map(m => m.createdAt)).toEqual(['2026-10-14T14:59:00.000Z', '2026-10-14T19:00:00.000Z'])
+})

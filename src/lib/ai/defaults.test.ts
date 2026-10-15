@@ -129,21 +129,17 @@ describe('buildSystemPrompt — hotel category: ask-which-item, not a repeated d
     expect(p).not.toContain(SEND_CATEGORY_BANNER_SENTINEL_PREFIX)
   })
 
-  it('tells the model to ask which specific item interests the guest instead of restating prices/benefits in text', () => {
+  it('moves category inquiries to practical details and specific items to verified facts', () => {
     const p = buildSystemPrompt({
       userPrompt: null,
       mode: 'auto_reply',
       catalog: ['- Paquete Romántico (Q1,100)'],
       hotelCategoryBanners: [{ name: 'Paquetes', hasWeekendVariant: false }],
     })
-    // Warm brief description, item names, then a very kind question —
-    // without repeating the banner's price list.
-    expect(p.toLowerCase()).toContain('not the full price list')
-    expect(p.toLowerCase()).toContain('which one interests them most')
-    expect(p.toLowerCase()).toContain('vary your wording every time')
-    // Specific item: describe it, then a warm, varied booking invitation.
-    expect(p.toLowerCase()).toContain('invitation to book it')
-    expect(p.toLowerCase()).toContain('never repeat the same invitation sentence')
+    expect(p.toLowerCase()).toContain('missing practical details')
+    expect(p.toLowerCase()).not.toContain('which one interests them most')
+    expect(p.toLowerCase()).not.toContain('invitation to book it')
+    expect(p.toLowerCase()).toContain('never promise to apartar, reserve or confirm')
     expect(p).toContain(SEND_CATALOG_SENTINEL)
   })
 

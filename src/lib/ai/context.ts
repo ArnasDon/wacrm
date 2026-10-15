@@ -24,6 +24,7 @@ export function recentExchangeNote(messages: ChatMessage[]): string {
 }
 
 interface DbMessage {
+  created_at?: string
   id?: string
   transcript?: string | null
   sender_type: 'customer' | 'agent' | 'bot'
@@ -83,8 +84,8 @@ export async function buildConversationContext(
     .from('messages')
     .select(
       voiceTranscriber
-        ? 'id, transcript, sender_type, content_type, content_text, media_url'
-        : 'sender_type, content_type, content_text, media_url',
+        ? 'id, transcript, sender_type, content_type, content_text, media_url, created_at'
+        : 'sender_type, content_type, content_text, media_url, created_at',
     )
     .eq('conversation_id', conversationId)
     // Automation templates persist the rendered/substituted body in
@@ -142,12 +143,13 @@ export async function buildConversationContext(
 
   const out: ChatMessage[] = []
   rows.forEach((m, i) => {
+    const timestamp = m.created_at ? { createdAt: m.created_at } : {}
     const role: ChatMessage['role'] = m.sender_type === 'customer' ? 'user' : 'assistant'
     const text = m.content_text?.trim() ?? ''
     const images = imageByRow.get(i)
     if (preserveStaffMessages && m.sender_type === 'agent') {
       const unknown = !text || text === '[interactive]' || !['text', 'template'].includes(m.content_type)
-      out.push({ role: 'assistant', senderType: 'agent', contentType: m.content_type,
+      out.push({ ...timestamp, role: 'assistant', senderType: 'agent', contentType: m.content_type,
         content: unknown ? '(El personal del hotel envió un archivo o mensaje interactivo; su contenido no está disponible para la IA.)' : text })
       return
     }
@@ -158,7 +160,7 @@ export async function buildConversationContext(
       // become a bare "(el cliente envió una foto)" with no content.
       if (!images || images.length === 0) return
       out.push({
-        role,
+        ...timestamp, role,
         content: text || '(El cliente envió una foto.)',
         images,
       })
@@ -169,12 +171,12 @@ export async function buildConversationContext(
       const transcript = transcriptByRow.get(i)
       // A note we couldn't transcribe adds nothing the model can use.
       if (!transcript) return
-      out.push({ role, content: `(Nota de voz del cliente, transcrita): ${transcript}` })
+      out.push({ ...timestamp, role, content: `(Nota de voz del cliente, transcrita): ${transcript}` })
       return
     }
 
     if (!text) return
-    out.push({ role, content: text })
+    out.push({ ...timestamp, role, content: text })
   })
 
   return out

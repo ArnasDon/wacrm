@@ -188,11 +188,38 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
             close button is hidden since the sidebar is always-visible. */}
         <div className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border px-4">
           <Link href="/dashboard" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <MessageSquare className="h-4 w-4" />
-            </div>
+
+
+
+
+
+
+
+
+
+
+
+            <div className="flex h-8 w-8 items-center justify-center">
+  <img
+    src="/Digital%20Magnet.png"
+    alt="Digital Magnet Logo"
+    className="h-8 w-8 rounded-lg object-contain"
+  />
+</div>
+
+
+
+
+            
+          
+
+
+
+
+
+            
             <span className="text-sm font-semibold text-foreground">
-              {t("title")}
+              Digital Magnet WACRM
             </span>
           </Link>
           <button

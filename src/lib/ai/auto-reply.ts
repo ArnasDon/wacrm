@@ -101,7 +101,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
  *  on its own. Postgres `integer` max. */
 const UNBOUNDED_REPLY_SLOTS = 2147483647
 /** Hotel: how long the AI waits for the staff to answer a message first. */
-const HOTEL_STAFF_WAIT_MS = 120_000
+const HOTEL_STAFF_WAIT_MS = 180_000
 
 /**
  * Hotel vertical only (owner, 2026-09-26 — Villa San Ricardo): the bot
@@ -492,7 +492,7 @@ export async function dispatchInboundToAiReply(
   // drop the customer's message (worst case a duplicate, far better
   // than silence).
   let isLatest: boolean
-  // Hotels give the staff 2 minutes to answer first (owner, 2026-10-07);
+  // Hotels wait 3 minutes after the latest inbound before answering (owner, 2026-10-14);
   // the AI only replies if nobody from the hotel did. Other verticals keep
   // the global debounce; recovery-sweep dispatches skip either wait.
   let neverSelfPause = false

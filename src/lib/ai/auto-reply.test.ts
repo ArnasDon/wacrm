@@ -711,10 +711,10 @@ describe('dispatchInboundToAiReply — debounce', () => {
     expect(h.waitForQuietPeriod).toHaveBeenCalledWith('conv-1')
   })
 
-  it('gives hotel staff 2 minutes to answer before the AI generates (owner, 2026-10-07)', async () => {
+  it('waits 3 minutes after the latest hotel message before the AI generates (owner, 2026-10-14)', async () => {
     h.state.account = { default_currency: 'GTQ', industry_vertical: 'hotel' }
     await dispatchInboundToAiReply(ARGS)
-    expect(h.waitForQuietPeriod).toHaveBeenCalledWith('conv-1', 120_000)
+    expect(h.waitForQuietPeriod).toHaveBeenCalledWith('conv-1', 180_000)
   })
 
   it('passes the recent staff exchange to the hotel generation prompt', async () => {

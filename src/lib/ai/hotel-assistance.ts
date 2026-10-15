@@ -1,9 +1,32 @@
 import type { ChatMessage } from './types'
+import { isExplicitHumanRequest, isGiftVoucherAsk, isSpecialRateTalk } from './hotel-media-intent'
 
 const normalize = (text: string) => text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
 const OPERATIONAL = /\b(cancel\w*|reembols\w*|devol\w*|pago\w*|pagar|deposit\w*|anticipo|comprobante|factura|cotiz\w*|voucher|cupon|certificado|tour operador|toperador|tarifa especial|precio especial|clientes? frecuentes?|corporativ\w*|mi reserva|nuestra reserva|confirm\w*|reprogram\w*|reagend\w*|no entiendo|no entendi|no comprendo|i don.t understand|refund|cancel|payment|invoice|quote)\b/
 const INFORMATION = /\b(horarios?|a que hora|check.?in|check.?out|desayun\w*|almuerz\w*|cena\w*|parqueo|wifi|wi.fi|mascotas?|piscina|gimnasio|jacuzzi|ubicacion|direccion|como lleg\w*|fotos?|fotograf\w*|imagenes?|menu|breakfast|parking|photos?|directions|amenities)\b/
 const NEW_INQUIRY = /\b(hospedaje|alojamiento|habitacion\w*|suite|paquete|masaje|spa|stay|room)\b/
+
+/** A hotel operation requiring a staff decision, rather than public information. */
+export function hotelReceptionReason(messages: ChatMessage[]): string | null {
+  const trailing: string[] = []
+  for (let i = messages.length - 1; i >= 0 && messages[i].role === 'user'; i--) trailing.unshift(messages[i].content)
+  const text = normalize(trailing.join(' '))
+  if (isExplicitHumanRequest(text)) return 'El cliente solicita atención de una persona.'
+  if (isGiftVoucherAsk(text)) return 'Recepción debe validar el voucher o certificado.'
+  if (isSpecialRateTalk([text])) return 'Recepción debe revisar una tarifa especial o un convenio.'
+  if (/\b(numero de cuenta|cuenta bancaria|datos bancarios|link de pago|enlace de pago|comprobante|boleta|ya pague|ya pagamos|deposite|transferi|quiero pagar|necesito pagar|pagar el anticipo|hacer el deposito|bank account|payment receipt)\b/.test(text)) return 'Recepción debe coordinar o verificar un pago.'
+  const policyOnly = /\b(politicas?|condiciones|plazo|antelacion|policy)\b/.test(text)
+    && !/\b(mi reserva|nuestra reserva|ya pague|mi pago|my booking)\b/.test(text)
+  if (!policyOnly && /\b(cancel\w*|reembols\w*|devolucion|refund|cancell?ation)\b/.test(text)) return 'Recepción debe revisar una cancelación o devolución.'
+  if (/\b(reprogram\w*|reagend\w*)\b/.test(text)
+    || (/\b(cambiar|modificar|mover|cambio)\b/.test(text) && /\b(mi reserva|nuestra reserva|la reserva|mi reservacion|my booking)\b/.test(text))) return 'Recepción debe revisar un cambio de reserva.'
+  if (/\b(mi factura|necesito (?:una |la )?factura|envie\w* (?:la |mi )?factura|factura a nombre|my invoice)\b/.test(text)) return 'Recepción debe revisar la facturación solicitada.'
+  if (/\b(ya (?:llene|complete|envie|llenamos|completamos) el formulario|mi cotizacion|nuestra cotizacion|la cotizacion|mi reserva esta confirmada|confirmad[oa] mi|estado de mi reserva)\b/.test(text)) return 'El cliente da seguimiento a una gestión pendiente del hotel.'
+  const group = /\b(grupos?|eventos?|bodas?|salon|delegacion|excursion|empresas?|group|wedding|event)\b/.test(text)
+    || Array.from(text.matchAll(/\b(\d+)\s*(?:personas|adultos|huespedes|people|guests)\b/g)).some((m) => Number(m[1]) > 6)
+  if (group && /\b(cotiz\w*|presupuesto|precio\w*|tarifa\w*|cuanto|quote|price)\b/.test(text)) return 'Recepción debe preparar la cotización de grupo o evento.'
+  return null
+}
 
 /** After the three-hour window, staff business stays with staff. Only
  * factual information (or an unmistakable new inquiry with no open request)

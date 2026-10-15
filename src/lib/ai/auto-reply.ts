@@ -1,4 +1,4 @@
-import { shouldDeferHotelStaffFollowup, hasUnconfirmedStayDuration } from './hotel-assistance'
+import { shouldDeferHotelStaffFollowup, hasUnconfirmedStayDuration, hotelReceptionReason } from './hotel-assistance'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { supabaseAdmin } from './admin-client'
 import { waitForQuietPeriod } from './debounce'
@@ -71,12 +71,9 @@ import {
   isExplicitHumanRequest,
   isLocationQuestion,
   isMedicalCaution,
-  isPaymentRequest,
   isPhotoPromise,
   isPolicyQuestion,
   mapsLinkIn,
-  PAYMENT_HANDOFF_OFFER,
-  PAYMENT_HANDOFF_OFFER_EN,
   photoOnlyReplyText,
   productForPhotoRequest,
   replyNamesProduct,
@@ -288,8 +285,6 @@ const TEAMMATE_PRESENT_NOTE =
 
 const HUMAN_HANDOFF_ACK_TEXT =
   'Con gusto, en un momento le comunico con alguien del equipo para que le ayude. 🙌'
-/** Hotel: the hours line is appended by `withAttentionHours`. */
-const HOTEL_HANDOFF_ACK_TEXT = 'Con mucho gusto, un compañero de nuestro equipo le atenderá por este chat. 🙌'
 
 interface DispatchArgs {
   /** Tenancy key — drives config, contact, and whatsapp_config lookups. */
@@ -550,11 +545,10 @@ export async function dispatchInboundToAiReply(
 
     const conv = await loadConvEligibility(db, accountId, conversationId)
     if (!conv) return
-    // Hotel vertical (owner's rule, 2026-09-26): the bot never goes quiet
-    // on its own — an assigned teammate doesn't silence it, only a person
-    // switching it off (`ai_autoreply_disabled`, the inbox "Take over"
-    // toggle) does, and the human-reply check below decides whether it
-    // still has anything to add. Other verticals: a human owns the thread.
+    // Hotel: assignment alone does not silence the bot. Manual takeovers and
+    // reception-owned operations pause it until the team resumes; ordinary
+    // replies also respect the staff quiet window below.
+    // Other verticals: an assigned human owns the thread.
     if (conv.assigned_agent_id && !neverSelfPause) return
     if (conv.ai_autoreply_disabled) {
       // The bot is paused here. If it was paused by a TRANSIENT fault
@@ -581,12 +575,26 @@ export async function dispatchInboundToAiReply(
     }
     // Hotel: a teammate replied in the last 3 hours — the conversation is
     // theirs; the AI stays out (owner meeting, 2026-10-09). The hotel's
-    // automatic WhatsApp greeting/away messages don't count. Fails open.
+    // automatic WhatsApp greeting/away messages don't count. If the check fails,
+    // leave the message unanswered so recovery can check again safely.
     if (neverSelfPause) {
       try {
-        if (await teammateRepliedRecently(db, accountId, conversationId, conv.ai_context_reset_at ?? null)) return
+        if (await teammateRepliedRecently(db, accountId, conversationId, conv.ai_context_reset_at ?? null)) {
+          // Read text only: no provider or media download while staff own the chat.
+          const pending = await buildConversationContext(db, conversationId, undefined, null, conv.ai_context_reset_at, null, true)
+          const reason = hotelReceptionReason(pending)
+          if (reason) await handOffToHuman({
+            db, accountId, conversationId,
+            handoffAgentId: config.handoffAgentId,
+            alreadyAssigned: Boolean(conv.assigned_agent_id),
+            summary: '🤝 Pendiente de recepción. ' + reason + ' La IA no envió respuesta y queda pausada hasta que el equipo elija «Reanudar IA».\n' + buildHandoffSummary({ messages: pending, replyCount: conv.ai_reply_count ?? 0 }),
+            forceHotelPause: true,
+          })
+          return
+        }
       } catch (err) {
-        console.error('[ai auto-reply] teammate quiet-window check failed, replying anyway:', describeError(err))
+        console.error('[ai auto-reply] staff state unavailable; leaving this hotel message for recovery:', describeError(err))
+        return
       }
     }
     // Hotel vertical: the per-conversation reply budget is a "long
@@ -962,8 +970,19 @@ export async function dispatchInboundToAiReply(
       if (slug && !bannerCategoryBySlug.has(slug)) bannerCategoryBySlug.set(slug, c)
     }
 
-    // Staff operations do not restart automatically when the quiet window ends.
-    if (isHotel && teammateNote && shouldDeferHotelStaffFollowup(messages, Boolean(activeReservations))) return
+    // Reception-owned operations stay silent and paused until a human resumes.
+    const receptionReason = isHotel ? hotelReceptionReason(messages) : null
+    if (isHotel && teammateNote && !receptionReason && trailingCustomerTurns(messages).every((t) => isClosingMessage(t))) return
+    if (isHotel && (receptionReason || (teammateNote && shouldDeferHotelStaffFollowup(messages, Boolean(activeReservations))))) {
+      await handOffToHuman({
+        db, accountId, conversationId,
+        handoffAgentId: config.handoffAgentId,
+        alreadyAssigned: Boolean(conv.assigned_agent_id),
+        summary: '🤝 Pendiente de recepción. ' + (receptionReason ?? 'El cliente continúa una gestión que el personal ya está atendiendo.') + ' La IA no envió respuesta y queda pausada hasta que el equipo elija «Reanudar IA».\n' + buildHandoffSummary({ messages, replyCount: conv.ai_reply_count ?? 0 }),
+        forceHotelPause: true,
+      })
+      return
+    }
 
     const baseSystemPrompt = buildSystemPrompt({
       userPrompt: config.systemPrompt,
@@ -1139,7 +1158,7 @@ For airport transport, record the guest's request in nota on the relevant existi
       }
     }
 
-    if (isHotel && hasUnconfirmedStayDuration(messages) &&
+    if (isHotel && !generation.handoff && hasUnconfirmedStayDuration(messages) &&
       ((generation.reservationProposals ?? []).some((p) => ['habitaciones', 'paquetes'].includes(p.category) && p.fields.salida)
         || /\btotal\b|por (?:una|1) noche/i.test(generation.text))) {
       generation = {
@@ -1443,38 +1462,25 @@ For airport transport, record the guest's request in nota on the relevant existi
     }
 
     if (handoff || explicitHumanAsk) {
-      // The customer explicitly asked for a human AND then confirmed
-      // it (the two-step protocol taught in `buildSystemPrompt` — the
-      // model only ever emits this sentinel on that confirming turn,
-      // never on the same turn as the initial request). Hand it to one:
-      // (a) pause the bot here (sticky until re-enabled; in the hotel
-      // vertical it is NOT paused — only a person can switch it off,
-      // owner's rule 2026-09-26), (b) route the conversation to the
-      // configured handoff agent — null leaves it in the shared queue —
-      // and (c) leave a short internal note so whoever picks it up has
-      // context. Assigning fires the `on_conversation_assigned` trigger,
-      // which notifies the agent.
-      //
-      // Also acknowledge the transfer to the CUSTOMER — the model is
-      // told to emit ONLY the sentinel here, so `outboundText` is
-      // normally empty; without this, the guest who just confirmed
-      // "sí, pásame con alguien" got silence until a human opened the
-      // thread (real gap, 2026-09-20). Best-effort: a failed send must
-      // never skip the handoff itself.
+      if (isHotel) {
+        await handOffToHuman({
+          db, accountId, conversationId,
+          handoffAgentId: config.handoffAgentId,
+          alreadyAssigned: Boolean(conv.assigned_agent_id),
+          summary: '🤝 Pendiente de recepción. Esta solicitud requiere atención del equipo. La IA no envió respuesta y queda pausada hasta que el equipo elija «Reanudar IA».\n' + buildHandoffSummary({ messages, replyCount: conv.ai_reply_count ?? 0 }),
+          forceHotelPause: true,
+        })
+        return
+      }
+      // Other verticals keep their existing customer acknowledgment, sticky
+      // pause, routing and internal note. A failed acknowledgment must not
+      // skip the handoff itself.
       try {
         await sendMessageToConversation(db, accountId, {
           conversationId,
           messageType: 'text',
           // An explicit ask skips the model's own (usually "¿le conecto?") text.
-          contentText: isHotel
-            ? withAttentionHours(
-                explicitHumanAsk || !outboundText ? HOTEL_HANDOFF_ACK_TEXT : outboundText,
-                isAfterHours(new Date(), businessTimeZone),
-                true,
-              )
-            : explicitHumanAsk ? HUMAN_HANDOFF_ACK_TEXT : outboundText || HUMAN_HANDOFF_ACK_TEXT,
-          // Platform-sent, not a teammate — the hotel human-reply check keys on this.
-          ...(neverSelfPause ? { senderType: 'bot' as const } : {}),
+          contentText: explicitHumanAsk ? HUMAN_HANDOFF_ACK_TEXT : outboundText || HUMAN_HANDOFF_ACK_TEXT,
         })
       } catch (err) {
         console.error('[ai auto-reply] handoff acknowledgment message failed:', describeError(err))
@@ -1788,22 +1794,8 @@ For airport transport, record the guest's request in nota on the relevant existi
       }
     }
 
-    // The bot never handles money: a payment ask ("¿me pasa el número de
-    // cuenta para el anticipo?") gets step 1 of the handoff protocol when
-    // the model didn't already offer a person (test run 2026-09-24, B8).
-    // The close check below keeps looking at the text WITHOUT this offer,
-    // so a complete request still closes and reaches the team.
+    // Staff-only payment requests were routed silently before generation.
     const textBeforePaymentOffer = outboundText
-    // Offered once per conversation, and in the reply's language — QA
-    // 2026-10-01: an English guest who had just said "no need" got the
-    // Spanish offer again.
-    const PERSON_OFFER_RE = /conect|connect|comunic|asesor|team member|colleague|someone from the team/i
-    const paymentOfferedBefore = messages.some((m) => m.role === 'assistant' && PERSON_OFFER_RE.test(m.content))
-    if (isHotel && isPaymentRequest(latestInbound) && !paymentOfferedBefore && !PERSON_OFFER_RE.test(outboundText)) {
-      outboundText = `${outboundText.trim()}
-
-${isEnglishText(outboundText) ? PAYMENT_HANDOFF_OFFER_EN : PAYMENT_HANDOFF_OFFER}`
-    }
 
     // A teammate replied WHILE this reply was being generated (the model
     // call takes tens of seconds): their answer stands, drop ours.
@@ -2633,8 +2625,9 @@ async function notifyAiKeyInvalid(db: SupabaseClient, accountId: string): Promis
 
 /**
  * Shared conversation-update for every way the bot hands a conversation
- * off to a human: pauses the bot (sticky until re-enabled) — except in
- * the hotel vertical, where only a person can switch it off — records
+ * off to a human: pauses the bot (sticky until re-enabled) for reception-owned hotel cases
+ * and ordinary handoffs in other verticals; technical hotel handoffs retain
+ * automatic recovery. Records
  * when it happened (drives the dashboard's "average human wait time"
  * card — migration 070), leaves an internal note — both on
  * `conversations.ai_handoff_summary` (the thread banner) and as an
@@ -2659,25 +2652,32 @@ async function handOffToHuman(args: {
    *  which never auto-recovers. Always written, so a later explicit
    *  handoff clears a stale `true` from an earlier recovered one. */
   transient?: boolean
+  /** Hotel operation: silent, persistent handoff until the team resumes. */
+  forceHotelPause?: boolean
 }): Promise<void> {
-  const { db, accountId, conversationId, handoffAgentId, alreadyAssigned, summary, transient = false } = args
+  const { db, accountId, conversationId, handoffAgentId, alreadyAssigned, summary, transient = false, forceHotelPause = false } = args
   const fullSummary = await appendActiveReservationsRecap(db, accountId, conversationId, summary)
-  // Hotel vertical (owner's rule, 2026-09-26): a handoff routes +
-  // notifies the team but does NOT pause the bot — only a PERSON switches
-  // it off, and a teammate's own replies are read by the human-reply
-  // check before the bot says anything. Other verticals: sticky pause.
+  // Hotel vertical (owner's rule, 2026-09-26): ordinary technical handoffs keep the bot eligible.
+  // A reception-owned operation explicitly pauses it until the team resumes.
+  // Other verticals retain their existing sticky handoff.
   const neverSelfPause = await botNeverSelfPauses(db, accountId)
   const update: Record<string, unknown> = {
-    ...(neverSelfPause ? {} : { ai_autoreply_disabled: true }),
+    ...(!neverSelfPause || forceHotelPause ? { ai_autoreply_disabled: true } : {}),
     ai_handoff_summary: fullSummary,
     ai_handoff_at: new Date().toISOString(),
-    ai_handoff_transient: transient ? true : null,
+    ai_handoff_transient: !forceHotelPause && transient ? true : null,
   }
   const willAssign = Boolean(handoffAgentId) && !alreadyAssigned
   if (willAssign) {
     update.assigned_agent_id = handoffAgentId
   }
-  const { error: updError } = await db.from('conversations').update(update).eq('id', conversationId)
+  const updateQuery = db.from('conversations').update(update).eq('id', conversationId).eq('account_id', accountId)
+  const result = forceHotelPause
+    ? await updateQuery.or('ai_autoreply_disabled.is.null,ai_autoreply_disabled.is.false').select('id')
+    : await updateQuery
+  const updError = result.error
+  // Another dispatch or a manual takeover already owns the paused case.
+  if (forceHotelPause && !updError && !result.data?.length) return
   if (updError) {
     // The one thing this function MUST do is pause the bot (non-hotel) +
     // record the reason. If even that failed, the bot may keep replying
@@ -2691,6 +2691,7 @@ async function handOffToHuman(args: {
       dedupKey: `ai_handoff_fail:${conversationId}`,
       throttleMinutes: 60,
     })
+    if (forceHotelPause) return
   }
 
   // Best-effort — a failed insert here must never block the handoff

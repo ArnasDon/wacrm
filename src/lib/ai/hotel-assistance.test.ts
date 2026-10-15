@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { shouldDeferHotelStaffFollowup, hasUnconfirmedStayDuration } from './hotel-assistance'
+import { shouldDeferHotelStaffFollowup, hasUnconfirmedStayDuration, hotelReceptionReason } from './hotel-assistance'
 import type { ChatMessage } from './types'
 const user = (content: string): ChatMessage => ({ role: 'user', content })
 describe('staff-owned hotel conversations', () => {
@@ -25,5 +25,14 @@ describe('explicit stay length', () => {
   })
   it('accepts a guest confirmation to an explicit checkout question', () => {
     expect(hasUnconfirmedStayDuration([user('Hospedaje el domingo 18'), { role: 'assistant', content: '¿Entrada el 18 y salida el 19?' }, user('Sí')])).toBe(false)
+  })
+})
+
+describe('silent reception routing', () => {
+  it.each(['Quiero cancelar mi reserva', 'Necesito un reembolso', 'Le envío mi comprobante', 'Me pasa el número de cuenta', 'Tengo un voucher', 'Soy tour operador, tengo tarifa especial', 'Necesito cambiar mi reserva', 'Ya completé el formulario', 'Mi cotización sigue pendiente', 'Cotización para una boda', 'Quiero cotizar para 51 personas', 'Quiero hablar con una persona'])('routes the staff decision without a customer reply: %s', (text) => {
+    expect(hotelReceptionReason([user(text)])).toBeTruthy()
+  })
+  it.each(['¿A qué hora es el desayuno?', '¿Cuál es su política de cancelación?', '¿Qué formas de pago aceptan?', '¿Cuánto vale la habitación?', 'Quiero reservar una habitación para hoy', 'Hospedaje de domingo a lunes', '¿Me manda fotos de la Suite Premium?'])('keeps ordinary information eligible: %s', (text) => {
+    expect(hotelReceptionReason([user(text)])).toBeNull()
   })
 })

@@ -1,3 +1,4 @@
+import { loadAutoReplySchedule, withinAiAttentionHours } from './auto-reply-schedule'
 // ============================================================
 // Recover customer messages whose AI reply was lost.
 //
@@ -108,6 +109,10 @@ export async function recoverUnansweredInbound(
     if (result.recovered >= MAX_PER_RUN) break
     if (!conv.contact_id) continue
     result.scanned++
+    // Closed hours must not consume recovery attempts or create handoffs.
+    try {
+      if (!withinAiAttentionHours(await loadAutoReplySchedule(db, conv.account_id), new Date(now))) continue
+    } catch { continue }
 
     // The customer's latest message must be a plain text — the only
     // inbound the webhooks hand to the AI (interactive replies and media

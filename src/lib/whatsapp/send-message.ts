@@ -1,3 +1,4 @@
+import { assertAiAttentionHours, OutsideAiAttentionHours } from '@/lib/ai/auto-reply-schedule';
 // ============================================================
 // Outbound message send — the core that both the dashboard's
 // `/api/whatsapp/send` route and the public `/api/v1/messages`
@@ -193,6 +194,8 @@ export async function sendMessageToConversation(
     );
   }
 
+  if (params.senderType === 'bot') await assertAiAttentionHours(db, accountId);
+
   validateSendMessageParams({
     messageType,
     contentText,
@@ -345,6 +348,7 @@ export async function sendMessageToConversation(
   // phone. A failure here throws straight out (not an
   // `isRecipientNotAllowedError`, so the retry loop won't spin on it).
   const attempt = async (phone: string): Promise<string> => {
+    if (params.senderType === 'bot') await assertAiAttentionHours(db, accountId);
     if (config.provider === 'zernio') {
       const zernioCtx = {
         config: { zernio_api_key: config.zernio_api_key, zernio_account_id: config.zernio_account_id },
@@ -476,7 +480,7 @@ export async function sendMessageToConversation(
     // upstream message + status. Don't relabel it as a generic
     // "Meta API error … 502"; that's what buried "template name (1) does
     // not exist in en_US" behind an opaque HTTP 502 for Zernio accounts.
-    if (err instanceof SendMessageError) throw err;
+    if (err instanceof SendMessageError || err instanceof OutsideAiAttentionHours) throw err;
     const message =
       err instanceof Error ? err.message : 'Unknown Meta API error';
     console.error('[send-message] Meta send failed for all variants:', message);

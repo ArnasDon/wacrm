@@ -1,3 +1,4 @@
+import { OutsideAiAttentionHours } from '@/lib/ai/auto-reply-schedule';
 import { describe, expect, it, vi } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
@@ -215,7 +216,8 @@ interface CapturedWrites {
  */
 function sendPathDb(
   templateRows: unknown[],
-  captured: CapturedWrites
+  captured: CapturedWrites,
+  attentionHours = false
 ): SupabaseClient {
   const conversation = {
     id: 'cv-1',
@@ -248,6 +250,7 @@ function sendPathDb(
         // both terminal methods agree regardless of which one a given
         // query path uses.
         maybeSingle: async () => {
+          if (table === 'accounts') return { data: { feature_flags: attentionHours ? ['ai_attention_hours_8_20'] : [], timezone: 'America/Guatemala' }, error: null };
           if (table === 'conversations') return { data: conversation, error: null };
           if (table === 'whatsapp_config') return { data: config, error: null };
           return { data: null, error: null };
@@ -429,5 +432,22 @@ describe('sendMessageToConversation — Zernio provider error passthrough', () =
     // Was relabelled 'Meta API error: …' / 502 before the fix.
     expect(err.status).toBe(404);
     expect(err.message).toBe('template name (1) does not exist in en_US');
+  });
+});
+
+
+describe('automatic attention transport guard', () => {
+  it('blocks bot text and attachments at 8 pm while preserving manual staff replies', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-16T02:00:00Z'));
+    try {
+      const captured: CapturedWrites = {};
+      const db = sendPathDb([], captured, true);
+      await expect(sendMessageToConversation(db, 'acct-1', { conversationId: 'cv-1', messageType: 'text', contentText: 'Automated reply', senderType: 'bot' })).rejects.toBeInstanceOf(OutsideAiAttentionHours);
+      await expect(sendMessageToConversation(db, 'acct-1', { conversationId: 'cv-1', messageType: 'image', mediaUrl: 'https://example.com/room.jpg', senderType: 'bot' })).rejects.toBeInstanceOf(OutsideAiAttentionHours);
+      expect(captured.message).toBeUndefined();
+      await sendMessageToConversation(db, 'acct-1', { conversationId: 'cv-1', messageType: 'text', contentText: 'Staff reply' });
+      expect(captured.message).toMatchObject({ sender_type: 'agent', content_text: 'Staff reply' });
+    } finally { vi.useRealTimers(); }
   });
 });

@@ -1,3 +1,4 @@
+import { loadAutoReplySchedule } from './auto-reply-schedule'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { AiError, type AiConfig } from './types'
@@ -99,6 +100,7 @@ export async function loadAiConfig(
     systemPrompt: row.system_prompt,
     isActive: row.is_active,
     autoReplyEnabled: row.auto_reply_enabled,
+    autoReplySchedule: await loadAutoReplySchedule(db, accountId),
     autoReplyMaxPerConversation: row.auto_reply_max_per_conversation,
     autoScheduleAppointmentsEnabled: row.auto_schedule_appointments_enabled,
     askCustomerTaxInfo: row.ask_customer_tax_info,

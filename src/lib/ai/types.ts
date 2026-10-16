@@ -1,3 +1,4 @@
+import type { AutoReplySchedule } from './auto-reply-schedule'
 // ============================================================
 // Shared types for the AI reply assistant (bring-your-own-key).
 //
@@ -19,6 +20,8 @@ export interface AiConfig {
   apiKey: string
   systemPrompt: string | null
   isActive: boolean
+  /** Optional per-account schedule for automatic attention only. */
+  autoReplySchedule?: AutoReplySchedule | null
   autoReplyEnabled: boolean
   autoReplyMaxPerConversation: number
   /** Master switch for the AI to autonomously book a real Google

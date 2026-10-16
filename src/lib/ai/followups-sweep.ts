@@ -1,3 +1,4 @@
+import { autoReplyScheduleForAccount, withinAiAttentionHours, OutsideAiAttentionHours } from './auto-reply-schedule';
 // ============================================================
 // Follow-up sweep — the DB side of automated nudges. Called once per
 // tick by /api/ai/followups/cron.
@@ -61,8 +62,8 @@ interface AccountCfg {
   followups_window_start_hour: number;
   followups_window_end_hour: number;
   accounts:
-    | { timezone: string; industry_vertical: string | null }
-    | { timezone: string; industry_vertical: string | null }[]
+    | { timezone: string; industry_vertical: string | null; feature_flags?: unknown }
+    | { timezone: string; industry_vertical: string | null; feature_flags?: unknown }[]
     | null;
 }
 
@@ -81,7 +82,7 @@ export async function runFollowupSweep(
   const { data: configs, error } = await admin
     .from('ai_configs')
     .select(
-      'account_id, followups, followups_goal, followups_business_hours_only, followups_window_start_hour, followups_window_end_hour, accounts(timezone, industry_vertical)',
+      'account_id, followups, followups_goal, followups_business_hours_only, followups_window_start_hour, followups_window_end_hour, accounts(timezone, industry_vertical, feature_flags)',
     )
     .eq('followups_enabled', true)
     .limit(MAX_ACCOUNTS);
@@ -93,6 +94,12 @@ export async function runFollowupSweep(
 
   for (const cfg of configs as AccountCfg[]) {
     if (sendsLeft <= 0) break;
+    try {
+      if (!withinAiAttentionHours(autoReplyScheduleForAccount(Array.isArray(cfg.accounts) ? cfg.accounts[0] : cfg.accounts), now)) continue;
+    } catch (error) {
+      console.error('[followups] invalid attention schedule', cfg.account_id, error);
+      continue;
+    }
 
     const parsed = parseFollowupSteps(cfg.followups);
     if (!parsed.ok || parsed.steps.length === 0) continue;
@@ -182,6 +189,7 @@ export async function runFollowupSweep(
         messageId = sent.messageId;
         res.sent++;
       } catch (e) {
+        if (e instanceof OutsideAiAttentionHours) { res.skipped++; continue; }
         errText =
           e instanceof SendMessageError
             ? `${e.code}: ${e.message}`

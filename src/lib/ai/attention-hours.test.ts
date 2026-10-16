@@ -4,11 +4,12 @@ import { isGiftVoucherAsk } from './hotel-media-intent'
 import { classifyRecentAgentRows } from './human-reply'
 
 describe('hotel meeting 2026-10-09', () => {
-  it('after hours = 8 pm to 7 am, Guatemala time', () => {
+  it('after hours = 8 pm to 8 am, Guatemala time', () => {
     const gt = (h: number) => new Date(Date.UTC(2026, 9, 9, h + 6, 15))
     expect(isAfterHours(gt(20), 'America/Guatemala')).toBe(true)
     expect(isAfterHours(gt(6), 'America/Guatemala')).toBe(true)
-    expect(isAfterHours(gt(7), 'America/Guatemala')).toBe(false)
+    expect(isAfterHours(gt(7), 'America/Guatemala')).toBe(true)
+    expect(isAfterHours(gt(8), 'America/Guatemala')).toBe(false)
     expect(isAfterHours(gt(19), 'America/Guatemala')).toBe(false)
   })
   it('removes unsupported deadlines and reports attention hours only at night', () => {

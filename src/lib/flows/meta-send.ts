@@ -1,3 +1,4 @@
+import { assertAiAttentionHours } from '@/lib/ai/auto-reply-schedule'
 import {
   sendInteractiveButtons,
   sendInteractiveList,
@@ -135,6 +136,7 @@ export async function engineSendText(
   args: SendTextEngineArgs,
 ): Promise<{ whatsapp_message_id: string }> {
   const db = supabaseAdmin()
+  if (args.aiGenerated) await assertAiAttentionHours(db, args.accountId)
 
   const engineChannel = await resolveConversationChannel(db, args.conversationId)
   if (engineChannel === 'instagram') {
@@ -168,6 +170,7 @@ export async function engineSendText(
     throw new Error('WhatsApp not configured for this account')
   }
 
+  if (args.aiGenerated) await assertAiAttentionHours(db, args.accountId)
   if (config.provider === 'zernio') {
     const zernioCtx: ZernioSendContext = {
       config: { zernio_api_key: config.zernio_api_key, zernio_account_id: config.zernio_account_id },
@@ -201,6 +204,7 @@ export async function engineSendText(
   const accessToken = decrypt(config.access_token)
 
   const attempt = async (phone: string): Promise<string> => {
+    if (args.aiGenerated) await assertAiAttentionHours(db, args.accountId)
     const r = await sendTextMessage({
       phoneNumberId: config.phone_number_id,
       accessToken,

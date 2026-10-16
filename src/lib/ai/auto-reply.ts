@@ -1,3 +1,4 @@
+import { withinAiAttentionHours, OutsideAiAttentionHours } from './auto-reply-schedule'
 import { repairHotelPartyFields } from './hotel-party'
 import { shouldDeferHotelStaffFollowup, hasUnconfirmedStayDuration, hotelReceptionReason, hotelCurrentRequest, isHotelReceptionPending, HOTEL_RECEPTION_PENDING_PREFIX } from './hotel-assistance'
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -336,6 +337,7 @@ async function sendAiContinuityFallback(args: DispatchArgs): Promise<void> {
       aiGenerated: true,
     })
   } catch (error) {
+    if (error instanceof OutsideAiAttentionHours) return
     // Every OTHER failure path in this file that reaches for this
     // fallback already raises an alert of its own; this send is the one
     // thing they all have in common, and until now its own failure was
@@ -497,6 +499,7 @@ export async function dispatchInboundToAiReply(
   try {
     neverSelfPause = await botNeverSelfPauses(supabaseAdmin(), accountId)
   } catch (err) {
+    if (err instanceof OutsideAiAttentionHours) throw err
     console.error('[ai auto-reply] hotel debounce lookup failed:', err)
   }
   try {
@@ -504,6 +507,7 @@ export async function dispatchInboundToAiReply(
       ? await waitForQuietPeriod(conversationId, HOTEL_STAFF_WAIT_MS)
       : await waitForQuietPeriod(conversationId)
   } catch (err) {
+    if (err instanceof OutsideAiAttentionHours) throw err
     console.error('[ai auto-reply] debounce check failed, proceeding without it:', err)
     isLatest = true
   }
@@ -521,6 +525,7 @@ export async function dispatchInboundToAiReply(
     try {
       config = await loadAiConfig(db, accountId)
     } catch (err) {
+      if (err instanceof OutsideAiAttentionHours) throw err
       if (err instanceof AiError && err.code === 'invalid_key') {
         await surfaceInvalidKey(db, accountId, err.message)
       } else {
@@ -542,6 +547,7 @@ export async function dispatchInboundToAiReply(
       return
     }
     if (!config || !config.autoReplyEnabled) return
+    if (!withinAiAttentionHours(config.autoReplySchedule)) return
     // Staff / personal / supplier contact (tag "Interno", "Personal",
     // "Proveedor" or "Sin IA") — never the bot's conversation.
     if (await contactMutesAi(db, contactId)) return
@@ -608,6 +614,7 @@ export async function dispatchInboundToAiReply(
           return
         }
       } catch (err) {
+        if (err instanceof OutsideAiAttentionHours) throw err
         console.error('[ai auto-reply] staff state unavailable; leaving this hotel message for recovery:', describeError(err))
         return
       }
@@ -670,6 +677,7 @@ export async function dispatchInboundToAiReply(
         neverSelfPause,
       )
     } catch (err) {
+      if (err instanceof OutsideAiAttentionHours) throw err
       // Reading the thread failed. A single oversized / corrupt inbound
       // image feeding the vision resolver is the usual culprit and the
       // resolver is the only new failure surface here — retry text-only
@@ -748,6 +756,7 @@ export async function dispatchInboundToAiReply(
       try {
         if (await teammateTookOver(db, conversationId, conv.ai_context_reset_at)) teammateNote = TEAMMATE_PRESENT_NOTE
       } catch (err) {
+        if (err instanceof OutsideAiAttentionHours) throw err
         console.error('[ai auto-reply] teammate-presence check failed:', describeError(err))
       }
     }
@@ -762,6 +771,7 @@ export async function dispatchInboundToAiReply(
       // 2026-10-08, Silvia: a new lead got no reply).
       if (state.kind === 'unanswered') messages = trimTrailingAssistant(messages)
     } catch (err) {
+      if (err instanceof OutsideAiAttentionHours) throw err
       console.error('[ai auto-reply] human-reply check failed:', describeError(err))
     }
     if (messages.length === 0 || messages[messages.length - 1].role !== 'user') return
@@ -963,6 +973,7 @@ export async function dispatchInboundToAiReply(
       const failed = enrichment.find((result) => result.status === 'rejected')
       if (failed?.status === 'rejected') throw failed.reason
     } catch (err) {
+      if (err instanceof OutsideAiAttentionHours) throw err
       console.error('[ai auto-reply] context enrichment failed, replying with a minimal prompt:', err)
       void dispatchSystemAlert({
         severity: 'warning',
@@ -1053,6 +1064,7 @@ export async function dispatchInboundToAiReply(
     try {
       generation = await generateReplyWithOneRetry({ config, systemPrompt, messages })
     } catch (err) {
+      if (err instanceof OutsideAiAttentionHours) throw err
       // The provider call failed even after the transient-error retry.
       // Handled here (not the outer catch) so we know it was generation
       // that failed, not the send or an autonomous action below — a bad
@@ -1109,6 +1121,7 @@ export async function dispatchInboundToAiReply(
           })
         }
       } catch (err) {
+        if (err instanceof OutsideAiAttentionHours) throw err
         // A thrown error on the retry is a normal generation failure —
         // handle it exactly like the first call would have.
         await handleAiGenerationFailure({
@@ -1174,6 +1187,7 @@ For airport transport, record the guest's request in nota on the relevant existi
           })
         }
       } catch (err) {
+        if (err instanceof OutsideAiAttentionHours) throw err
         // Keep the first reply: a failed retry must not cost the guest
         // their answer.
         console.error('[ai auto-reply] missing-record-marker retry failed:', describeError(err))
@@ -1245,6 +1259,7 @@ For airport transport, record the guest's request in nota on the relevant existi
     // the customer plainly asked for: if THIS turn's inbound reads as a
     // catalog/menu request, the account has one to offer, and the model
     // didn't already send it, send it anyway.
+    if (!withinAiAttentionHours(config.autoReplySchedule)) return
     const latestInbound = latestUserMessage(messages)
     // Hotel: a guest who plainly asks for a person is transferred now, not
     // asked "¿le gustaría que le conecte…?" (owner's rule; live test
@@ -1532,6 +1547,7 @@ For airport transport, record the guest's request in nota on the relevant existi
           contentText: explicitHumanAsk ? HUMAN_HANDOFF_ACK_TEXT : outboundText || HUMAN_HANDOFF_ACK_TEXT,
         })
       } catch (err) {
+        if (err instanceof OutsideAiAttentionHours) throw err
         console.error('[ai auto-reply] handoff acknowledgment message failed:', describeError(err))
       }
 
@@ -1600,6 +1616,7 @@ For airport transport, record the guest's request in nota on the relevant existi
           },
         )
       } catch (err) {
+        if (err instanceof OutsideAiAttentionHours) throw err
         console.error('[ai auto-reply] autonomous appointment action threw:', err)
         actionResult = { ok: false, error: describeError(err), status: 500 }
       }
@@ -1614,6 +1631,7 @@ For airport transport, record the guest's request in nota on the relevant existi
           result: actionResult.ok ? { status: next } : { error: actionResult.error },
         })
       } catch (err) {
+        if (err instanceof OutsideAiAttentionHours) throw err
         // Audit logging must not turn a successful patient action into a
         // failed customer turn; the mutation itself remains authoritative.
         console.error('[ai auto-reply] appointment action audit log failed:', err)
@@ -1722,6 +1740,7 @@ For airport transport, record the guest's request in nota on the relevant existi
             sinceISO: conv.ai_context_reset_at,
           })
         } catch (err) {
+          if (err instanceof OutsideAiAttentionHours) throw err
           console.error('[ai auto-reply] deterministic send_category_banner failed:', describeError(err))
           void dispatchSystemAlert({
             severity: 'warning',
@@ -1757,6 +1776,7 @@ For airport transport, record the guest's request in nota on the relevant existi
           sinceISO: conv.ai_context_reset_at,
         })
       } catch (err) {
+        if (err instanceof OutsideAiAttentionHours) throw err
         // Same reasoning as send_catalog above: never rethrow, always
         // alert on an actual send failure (a real product/photo was
         // found — Meta/network is what broke). A no-match or
@@ -1839,6 +1859,7 @@ For airport transport, record the guest's request in nota on the relevant existi
           }
         }
       } catch (err) {
+        if (err instanceof OutsideAiAttentionHours) throw err
         console.error('[ai auto-reply] close enforcement check failed (sending the reply as-is):', err)
       }
     }
@@ -1865,6 +1886,7 @@ For airport transport, record the guest's request in nota on the relevant existi
           await autoRecordReservation({ db, accountId, contactId, conversationId, configOwnerUserId, proposal })
           savedReservationProposals.push(proposal)
         } catch (err) {
+          if (err instanceof OutsideAiAttentionHours) throw err
           console.error('[ai auto-reply] record_reservation before send failed:', err)
           outboundText = 'No pude guardar todos los cambios de su solicitud. Por favor, coordínelos con el equipo del hotel por este chat; siguen pendientes de confirmación.'
         }
@@ -1887,6 +1909,7 @@ For airport transport, record the guest's request in nota on the relevant existi
           verifiedEstimateInReply = { reservationRequestId: estimate.reservationRequestId, total: estimate.total }
         }
       } catch (err) {
+        if (err instanceof OutsideAiAttentionHours) throw err
         console.error('[ai auto-reply] pre-send stay price check failed:', describeError(err))
       }
     }
@@ -1902,6 +1925,7 @@ For airport transport, record the guest's request in nota on the relevant existi
         text: outboundText,
       })
     } catch (err) {
+      if (err instanceof OutsideAiAttentionHours) throw err
       // The clinic appointment mutation above already committed — the
       // database is correct — but the patient was never actually told,
       // because the channel send itself just failed. Left to the outer
@@ -2044,6 +2068,7 @@ For airport transport, record the guest's request in nota on the relevant existi
           result: { conversation_id: conversationId },
         })
       } catch (err) {
+        if (err instanceof OutsideAiAttentionHours) throw err
         console.error('[ai auto-reply] send_quick_reply audit log failed:', err)
       }
     }
@@ -2063,12 +2088,14 @@ For airport transport, record the guest's request in nota on the relevant existi
       try {
         await flagDealClosing({ db, accountId, conversationId, configOwnerUserId, handoffAgentId: config.handoffAgentId, alreadyAssigned: Boolean(conv.assigned_agent_id), isHotel })
       } catch (err) {
+        if (err instanceof OutsideAiAttentionHours) throw err
         console.error('[ai auto-reply] flagDealClosing failed:', err)
       }
     } else if (moveToStageName) {
       try {
         await autoMoveDealStage({ db, accountId, contactId, conversationId, configOwnerUserId, stageName: moveToStageName, isHotel })
       } catch (err) {
+        if (err instanceof OutsideAiAttentionHours) throw err
         console.error('[ai auto-reply] autonomous move_deal failed:', err)
       }
     }
@@ -2077,6 +2104,7 @@ For airport transport, record the guest's request in nota on the relevant existi
       try {
         await sendCatalogToConversation(db, accountId, conversationId, neverSelfPause ? 'bot' : 'agent')
       } catch (err) {
+        if (err instanceof OutsideAiAttentionHours) throw err
         // Never rethrow: the customer already got their text reply above,
         // this is a "bonus" delivery on top of it, and every other
         // autonomous action below (menu, temperature, contact name,
@@ -2120,6 +2148,7 @@ For airport transport, record the guest's request in nota on the relevant existi
       try {
         await sendRestaurantMenuToConversation(db, accountId, conversationId, neverSelfPause ? 'bot' : 'agent')
       } catch (err) {
+        if (err instanceof OutsideAiAttentionHours) throw err
         // Same reasoning as send_catalog above: never rethrow (it would
         // skip every autonomous action still queued after this one), and
         // always alert — an expected `SendRestaurantMenuError` used to be
@@ -2147,6 +2176,7 @@ For airport transport, record the guest's request in nota on the relevant existi
       try {
         await autoSetLeadTemperature({ db, accountId, contactId, configOwnerUserId, temperature: leadTemperature })
       } catch (err) {
+        if (err instanceof OutsideAiAttentionHours) throw err
         console.error('[ai auto-reply] autonomous set_temperature failed:', err)
       }
     }
@@ -2155,6 +2185,7 @@ For airport transport, record the guest's request in nota on the relevant existi
       try {
         await autoSetContactName({ db, accountId, contactId, configOwnerUserId, name: contactName })
       } catch (err) {
+        if (err instanceof OutsideAiAttentionHours) throw err
         console.error('[ai auto-reply] autonomous set_contact_name failed:', err)
       }
     }
@@ -2175,6 +2206,7 @@ For airport transport, record the guest's request in nota on the relevant existi
           alreadyAssigned: Boolean(conv.assigned_agent_id),
         })
       } catch (err) {
+        if (err instanceof OutsideAiAttentionHours) throw err
         console.error('[ai auto-reply] autonomous schedule_appointment failed:', err)
       }
     }
@@ -2195,6 +2227,7 @@ For airport transport, record the guest's request in nota on the relevant existi
           senderType: neverSelfPause ? 'bot' : 'agent',
         })
       } catch (err) {
+        if (err instanceof OutsideAiAttentionHours) throw err
         console.error('[ai auto-reply] autonomous create_quote_chat failed:', err)
       }
     }
@@ -2230,6 +2263,7 @@ For airport transport, record the guest's request in nota on the relevant existi
           })
           if (closed && (proposal.category === 'habitaciones' || proposal.category === 'paquetes')) closedStayThisTurn = true
         } catch (err) {
+          if (err instanceof OutsideAiAttentionHours) throw err
           console.error('[ai auto-reply] handOffIfReservationComplete failed:', err)
         }
       }
@@ -2251,6 +2285,7 @@ For airport transport, record the guest's request in nota on the relevant existi
             specialRate: staffQuotedPrice || isSpecialRateTalk(messages.filter((m) => m.role === 'user').map((m) => m.content)),
           })
         } catch (err) {
+          if (err instanceof OutsideAiAttentionHours) throw err
           console.error('[ai auto-reply] proactive stay estimate follow-up failed:', err)
         }
       }
@@ -2292,11 +2327,13 @@ For airport transport, record the guest's request in nota on the relevant existi
           sinceISO: conv.ai_context_reset_at,
         })
       } catch (err) {
+        if (err instanceof OutsideAiAttentionHours) throw err
         console.error('[ai auto-reply] post-photo reservation nudge failed:', err)
       }
     }
 
   } catch (err) {
+    if (err instanceof OutsideAiAttentionHours) return
     // Last-resort safety net. A provider/generation failure is caught at
     // the `generateReplyWithOneRetry` call site; a config/context/read
     // failure is caught above — so anything reaching here is unexpected

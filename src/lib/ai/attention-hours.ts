@@ -7,7 +7,7 @@ const DEADLINE_SENTENCE_RE = /(?:Le dar[aá]n seguimiento|Le atender[aá]n|Le re
 
 export function isAfterHours(now: Date, timeZone: string): boolean {
   const h = hourInTimeZone(now, timeZone)
-  return h >= 20 || h < 7
+  return h >= 20 || h < 8
 }
 
 export function withAttentionHours(text: string, afterHours: boolean, force = false): string {

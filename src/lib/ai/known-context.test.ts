@@ -289,3 +289,11 @@ describe('loadKnownContactFacts', () => {
     expect(await loadKnownContactFacts(db, 'acct-1', 'contact-1')).toBe('Medidas: 2x3m')
   })
 })
+
+
+it.each([null, []])('never describes an incomplete five-person party as child-free: %j', async (children_ages) => {
+  const db = makeDb({ reservation_requests: { rows: [{ category: 'habitaciones', service_name: 'Junior Suite Familiar', guests: 5, adults: 4, children_ages, notes: '1 niño de 5 años' }] } })
+  const summary = await loadActiveReservationsSummary(db, 'acct-1', 'cv-1', 'GTQ')
+  expect(summary.current).not.toContain('sin niños')
+  expect(summary.current).toContain('edades de niños pendientes')
+})

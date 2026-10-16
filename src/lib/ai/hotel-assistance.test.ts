@@ -69,3 +69,17 @@ it('lets a separate later question resume after an unanswered operational follow
   ]
   expect(hotelReceptionReason(hotelCurrentRequest(messages, '2026-10-14T15:00:00.000Z'))).toBeNull()
 })
+
+
+it.each([
+  'Solo que según veo falta que me confirmen disponibilidad',
+  'Ya estarán laborando para poder validar disponibilidad',
+  'Ya no vamos a usar 1 habitación doble. La distribución quedará as?: 9 dobles y 4 sencillas',
+  'Le comparto el menú de almuerzos para el grupo de hoy',
+])('routes an unresolved operation before generating a polite non-answer: %s', (text) => {
+  expect(hotelReceptionReason([user(text), user('Muchas gracias')])).toBeTruthy()
+})
+
+it.each(['?Tiene disponibilidad para el s?bado?', '?Me comparte el menú de almuerzos?', '?Cu?nto cuesta una habitación doble?'])('does not route a new ordinary inquiry to staff: %s', (text) => {
+  expect(hotelReceptionReason([user(text)])).toBeNull()
+})

@@ -1,3 +1,4 @@
+import { repairHotelPartyFields } from './hotel-party'
 import { shouldDeferHotelStaffFollowup, hasUnconfirmedStayDuration, hotelReceptionReason, hotelCurrentRequest, isHotelReceptionPending, HOTEL_RECEPTION_PENDING_PREFIX } from './hotel-assistance'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { supabaseAdmin } from './admin-client'
@@ -79,7 +80,7 @@ import {
   replyNamesProduct,
   stripTrailingPhotoOffer,
 } from './hotel-media-intent'
-import { claimsRequestNoted, closeLine, replyWithoutCloseClaim, replyWithoutNotedClaim,hasConflictingAmount, isPastDate, isStillAsking, nameFromAnswer, stripTrailingAttachmentOffer, stripTrailingPermissionQuestion } from './hotel-close'
+import { mentionedAmounts, withoutConflictingStayPrices, claimsRequestNoted, closeLine, replyWithoutCloseClaim, replyWithoutNotedClaim,hasConflictingAmount, isPastDate, isStillAsking, nameFromAnswer, stripTrailingAttachmentOffer, stripTrailingPermissionQuestion } from './hotel-close'
 import { estimateDeposit, resolveStayProductId } from '@/lib/reservations/price'
 import { formatDateEs } from '@/lib/products/rates'
 import { teammateRepliedRecently,
@@ -1216,6 +1217,16 @@ For airport transport, record the guest's request in nota on the relevant existi
       }
     }
 
+    if (isHotel && !receptionPending) {
+      generation = {
+        ...generation,
+        reservationProposals: (generation.reservationProposals ?? []).map((proposal) =>
+          isStayCategoryName(proposal.category)
+            ? { ...proposal, fields: repairHotelPartyFields(proposal.fields) }
+            : proposal),
+      }
+    }
+
     const {
       text, handoff, markDealWon, moveToStageName, sendCatalog: modelSendCatalog, sendPhotoProductName, sendCategoryBannerName, sendRestaurantMenu: modelSendRestaurantMenu, leadTemperature, contactName: modelContactName, appointmentProposal, sentinelLeakDetected, quoteProposal, quickReplyId, reservationProposals = [], appointmentAction, usage,
     } = generation
@@ -1860,6 +1871,26 @@ For airport transport, record the guest's request in nota on the relevant existi
       }
     }
 
+    // Validate against the freshly saved request BEFORE sending a price.
+    // A guest count containing a free child must never select the adult tier.
+    let verifiedEstimateInReply: { reservationRequestId: string; total: number } | undefined
+    const savedStays = savedReservationProposals.filter((p) => isStayCategoryName(p.category))
+    const staffQuotedPrice = messages.some((m) => m.senderType === 'agent' && mentionedAmounts(m.content).length > 0)
+    if (isHotel && savedStays.length === 1 && mentionedAmounts(outboundText).length > 0
+      && !staffQuotedPrice && !isSpecialRateTalk(messages.filter((m) => m.role === 'user').map((m) => m.content))) {
+      try {
+        const estimate = await computeStayEstimateStatus(db, accountId, conversationId, hotelCurrency, hotelDepositPercent, dateKeyInZone(new Date(), businessTimeZone))
+        if (estimate.status === 'priced' && hasConflictingAmount(outboundText, estimate.total, estimateDeposit(estimate.total, hotelDepositPercent))) {
+          const kept = withoutConflictingStayPrices(outboundText, estimate.total, estimateDeposit(estimate.total, hotelDepositPercent))
+          const verifiedText = isEnglishText(outboundText) ? estimate.textEn : estimate.text
+          outboundText = [kept, verifiedText].filter(Boolean).join('\n\n')
+          verifiedEstimateInReply = { reservationRequestId: estimate.reservationRequestId, total: estimate.total }
+        }
+      } catch (err) {
+        console.error('[ai auto-reply] pre-send stay price check failed:', describeError(err))
+      }
+    }
+
     if (isHotel) outboundText = withAttentionHours(outboundText, isAfterHours(new Date(), businessTimeZone))
 
     try {
@@ -2213,10 +2244,11 @@ For airport transport, record the guest's request in nota on the relevant existi
             currency: hotelCurrency, depositPercent: hotelDepositPercent,
             sinceISO: conv.ai_context_reset_at,
             modelText: outboundText,
+            estimateAlreadySent: verifiedEstimateInReply,
             todayISO: dateKeyInZone(new Date(), businessTimeZone),
             closing: closedStayThisTurn,
             afterHours: isAfterHours(new Date(), businessTimeZone),
-            specialRate: isSpecialRateTalk(messages.filter((m) => m.role === 'user').map((m) => m.content)),
+            specialRate: staffQuotedPrice || isSpecialRateTalk(messages.filter((m) => m.role === 'user').map((m) => m.content)),
           })
         } catch (err) {
           console.error('[ai auto-reply] proactive stay estimate follow-up failed:', err)
@@ -4176,6 +4208,8 @@ async function sendStayEstimateFollowUpIfDue(args: {
   /** Voucher / certificate / negotiated rate in the thread: the
    *  published-rate total doesn't apply — the team confirms it. */
   specialRate?: boolean
+  /** A conflicting model price was replaced before sending the main reply. */
+  estimateAlreadySent?: { reservationRequestId: string; total: number }
   /** Hotel attention hours for the "un compañero le confirmará" line. */
   afterHours?: boolean
 }): Promise<void> {
@@ -4194,6 +4228,17 @@ async function sendStayEstimateFollowUpIfDue(args: {
 
   if (specialRate) {
     if (closing) await sendLine(availabilityAndTotalLine)
+    return
+  }
+  if (args.estimateAlreadySent) {
+    await db.from('ai_action_log').insert({
+      account_id: accountId,
+      actor_user_id: configOwnerUserId,
+      action: 'send_stay_estimate',
+      target_id: args.estimateAlreadySent.reservationRequestId,
+      input: { conversation_id: conversationId, source: 'auto_reply_autonomous' },
+      result: { total: args.estimateAlreadySent.total },
+    })
     return
   }
   const result = await computeStayEstimateStatus(db, accountId, conversationId, currency, depositPercent, todayISO)

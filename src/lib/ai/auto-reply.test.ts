@@ -5279,3 +5279,73 @@ it('preserves the pending reception case when a rate-limit fallback interrupts a
   expect(h.state.updatePayload).toBeNull()
   expect(h.state.messageInserts).toEqual([])
 })
+
+
+describe('hotel price validation before send (Mery regression)', () => {
+  beforeEach(() => {
+    vi.mocked(checkSharedRateLimit).mockReset().mockResolvedValue({ success: true, limit: 100, remaining: 99, reset: Date.now() + 60_000 })
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-15T15:00:00Z'))
+    h.state.account = { default_currency: 'GTQ', industry_vertical: 'hotel', deposit_percent: 50 }
+    h.state.products = [{ id: 'p1', name: 'Junior Suite Familiar' }]
+    h.state.productRates = [
+      { day_of_week: 'sat', occupancy: 'quad', price: 1500, date_from: null, date_to: null },
+      { day_of_week: 'sat', occupancy: 'quint', price: 1800, date_from: null, date_to: null },
+      { day_of_week: 'sat', occupancy: 'child', price: 200, date_from: null, date_to: null },
+    ]
+    h.state.reservationRow = {
+      id: 'rr-mery', category: 'habitaciones', service_name: 'Junior Suite Familiar', guests: 5,
+      adults: 4, children_ages: [], check_in: '2026-10-17', check_out: '2026-10-18', estimated_price: null,
+    }
+    h.upsertReservationRequest.mockImplementation(async (_db, _account, input) => {
+      h.state.reservationRow = { ...h.state.reservationRow, ...input }
+      return 'rr-mery'
+    })
+    h.buildConversationContext.mockResolvedValue([{ role: 'user', content: '4 adultos y un nino de 5 anos, entrada 17 y salida 18, una noche' }])
+    h.generateReply.mockResolvedValue({
+      text: 'Para la Junior Suite Familiar, 4 adultos y 1 ni\u00f1o de 5 a\u00f1os, la tarifa es Q1,800. El ni\u00f1o no paga. \u00bfA nombre de qui\u00e9n?',
+      handoff: false, markDealWon: false, moveToStageName: null,
+      reservationProposals: [{ category: 'habitaciones', fields: { servicio: 'Junior Suite Familiar', personas: '5', adultos: '4', ninos: '0', nota: '1 nino de 5 anos' }, confirmed: false }],
+    })
+  })
+  afterEach(() => { vi.useRealTimers() })
+
+  it('repairs the saved ages and sends only the correct total, preserving the missing-data question', async () => {
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.upsertReservationRequest).toHaveBeenCalledWith(expect.anything(), 'acct-1', expect.objectContaining({ children_ages: [5], adults: 4, guests: 5 }))
+    const sent = h.engineSendText.mock.calls.map((call) => call[0].text).join(' ')
+    expect(sent).not.toContain('1,800')
+    expect(sent).toContain('1,500')
+    expect(sent).toContain('nombre de qui\u00e9n')
+    expect(sent).toContain('Recepci\u00f3n debe verificar')
+    expect(h.state.aiActionLogInserts).toContainEqual(expect.objectContaining({ action: 'send_stay_estimate', target_id: 'rr-mery', result: { total: 1500 } }))
+    expect(h.sendMessageToConversation).not.toHaveBeenCalledWith(expect.anything(), 'acct-1', expect.objectContaining({ contentText: expect.stringContaining('1,500') }))
+  })
+
+  it('does not overwrite an explicit staff quote with a published-rate total', async () => {
+    h.buildConversationContext.mockResolvedValue([
+      { role: 'assistant', senderType: 'agent', content: 'La tarifa acordada es Q1,800.' },
+      { role: 'user', content: 'Cual es el precio que acordamos?' },
+    ])
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendText.mock.calls[0][0].text).toContain('1,800')
+    expect(h.sendMessageToConversation).not.toHaveBeenCalledWith(expect.anything(), 'acct-1', expect.objectContaining({ contentText: expect.stringContaining('1,500') }))
+  })
+})
+
+
+describe('hotel pending operations from the conversation audit', () => {
+  beforeEach(() => { h.state.account = { default_currency: 'GTQ', industry_vertical: 'hotel' } })
+  it.each([
+    'Solo que segun veo falta que me confirmen disponibilidad',
+    'Ya no vamos a usar 1 habitacion doble, la distribucion quedara en 9 dobles y 4 sencillas',
+    'Le comparto el menu de almuerzos para el grupo de hoy',
+  ])('records an internal staff task instead of a generic sign-off: %s', async (content) => {
+    h.buildConversationContext.mockResolvedValue([{ role: 'user', content }, { role: 'user', content: 'Muchas gracias' }])
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.generateReply).not.toHaveBeenCalled()
+    expect(h.engineSendText).not.toHaveBeenCalled()
+    expect(h.upsertReservationRequest).not.toHaveBeenCalled()
+    expect(h.state.messageInserts).toContainEqual(expect.objectContaining({ content_type: 'internal_note', content_text: expect.stringContaining('Pendiente de recepci\u00f3n') }))
+  })
+})

@@ -37,6 +37,13 @@ export function hotelReceptionReason(messages: ChatMessage[]): string | null {
   for (let i = messages.length - 1; i >= 0 && messages[i].role === 'user'; i--) trailing.unshift(messages[i].content)
   const text = normalize(trailing.join(' '))
   if (isExplicitHumanRequest(text)) return 'El cliente solicita atención de una persona.'
+  // A follow-up needs a staff decision, even when the last line is a greeting
+  // or thanks. Ordinary first-time availability inquiries remain eligible.
+  if (/\bdisponibilidad\b/.test(text) && /\b(falta que|sigo esperando|seguimos esperando|quedo pendiente|validar|validen|ya estaran|aun no|todavia no|me confirmen|nos confirmen)\b/.test(text)) return 'Recepción debe responder la confirmación de disponibilidad pendiente.'
+  if (/\b(ya no (?:vamos a )?(?:usar|necesitar|utilizar)|reducir|reducimos|distribucion quedara)\b/.test(text)
+    && /\b(habitaciones?|dobles?|sencillas?|huespedes)\b/.test(text)) return 'Recepción debe revisar un cambio en las habitaciones del grupo.'
+  if (/\b(le[s]? comparto|le[s]? envio)\b/.test(text) && /\b(menu|pedido)\b/.test(text)
+    && /\b(grupo de hoy|almuerzos? de hoy|para hoy)\b/.test(text)) return 'Restaurante debe confirmar el pedido enviado para hoy.'
   if (isGiftVoucherAsk(text)) return 'Recepción debe validar el voucher o certificado.'
   if (isSpecialRateTalk([text])) return 'Recepción debe revisar una tarifa especial o un convenio.'
   if (/\b(numero de cuenta|cuenta bancaria|datos bancarios|link de pago|enlace de pago|comprobante|boleta|ya pague|ya pagamos|deposite|transferi|quiero pagar|necesito pagar|pagar el anticipo|hacer el deposito|bank account|payment receipt)\b/.test(text)) return 'Recepción debe coordinar o verificar un pago.'

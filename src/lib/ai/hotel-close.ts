@@ -147,6 +147,22 @@ export function mentionedAmounts(text: string): number[] {
 const ADD_ON_PRICE_RE =
   /\b(?:cama\s+(?:adicional|extra)|persona\s+adicional|ni[ñn]os?|ni[ñn]as?|menores|spa|masajes?|cuatrimotos?|bicicletas?|tours?|actividad(?:es)?|mascotas?|decoraci[oó]n|catering|men[uú])\b/i
 
+function isAddOnPriceSentence(sentence: string): boolean {
+  // Mentioning a child in the party does not make the room's price an
+  // add-on: Mery's Q1,800 sentence included "4 adultos y 1 niño de 5 años".
+  const stayTotal = /\b(?:total|suite|habitaci[oó]n|hospedaje|estad[ií]a)\b/i.test(sentence)
+    && !/\b(?:cama\s+(?:adicional|extra)|persona\s+adicional)\b/i.test(sentence)
+  return ADD_ON_PRICE_RE.test(sentence) && !stayTotal
+}
+
+/** Remove only unsupported price sentences; preserve questions and facts. */
+export function withoutConflictingStayPrices(text: string, total: number, deposit: number): string {
+  return text.split(/(?<=[!?])\s+|\n+|(?<=\.)(?=\s|$)\s*/)
+    .filter((sentence) => isAddOnPriceSentence(sentence)
+      || !mentionedAmounts(sentence).some((n) => n !== Math.round(total) && n !== Math.round(deposit)))
+    .join(' ').trim()
+}
+
 /**
  * Some amount in `text` that is neither the real total nor its deposit.
  * Amounts in a sentence about an add-on's own price are skipped (live
@@ -157,7 +173,7 @@ const ADD_ON_PRICE_RE =
 export function hasConflictingAmount(text: string, total: number, deposit: number): boolean {
   return text
     .split(/[!?\n]+|\.(?=\s|$)/)
-    .filter((sentence) => !ADD_ON_PRICE_RE.test(sentence))
+    .filter((sentence) => !isAddOnPriceSentence(sentence))
     .some((sentence) => mentionedAmounts(sentence).some((n) => n !== Math.round(total) && n !== Math.round(deposit)))
 }
 

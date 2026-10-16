@@ -114,10 +114,11 @@ export async function loadActiveReservationsSummary(
     if (r.guests) bits.push(`${r.guests} ${r.guests === 1 ? 'persona' : 'personas'}${r.rooms && r.rooms > 1 ? ' en total' : ''}`)
     if (r.adults) {
       const ages = r.children_ages ?? []
+      const completeSplit = r.children_ages != null && (!r.guests || r.adults + ages.length === r.guests)
       bits.push(
         ages.length > 0
           ? `${r.adults} ${r.adults === 1 ? 'adulto' : 'adultos'} + ${ages.length} ${ages.length === 1 ? 'niño' : 'niños'} (${ages.join(', ')} años)`
-          : `${r.adults} ${r.adults === 1 ? 'adulto' : 'adultos'}, sin niños`,
+          : `${r.adults} ${r.adults === 1 ? 'adulto' : 'adultos'}, ${completeSplit ? 'sin niños' : 'edades de niños pendientes'}`,
       )
     }
     if (r.duration_minutes) bits.push(`${r.duration_minutes} min`)

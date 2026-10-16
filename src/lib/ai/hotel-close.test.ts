@@ -8,6 +8,7 @@ import {
   nameFromAnswer,
   stripTrailingAttachmentOffer,
   hasConflictingAmount,
+  withoutConflictingStayPrices,
   isPastDate,
   mentionedAmounts,
   stripTrailingPermissionQuestion,
@@ -180,4 +181,11 @@ describe('replyWithoutNotedClaim — no duplicated team line', () => {
     expect(replyWithoutNotedClaim('Con gusto, el equipo le escribe para el ingreso temprano. Le dejo anotada su solicitud.'))
       .toBe('Con gusto, el equipo le escribe para el ingreso temprano.')
   })
+})
+
+
+it('detects a room total even when the same sentence mentions a child', () => {
+  const text = 'Para la Junior Suite Familiar con 4 adultos y 1 niño de 5 años, la tarifa es Q1,800. El niño no paga. ?A nombre de quién?'
+  expect(hasConflictingAmount(text, 1500, 750)).toBe(true)
+  expect(withoutConflictingStayPrices(text, 1500, 750)).toBe('El niño no paga. ?A nombre de quién?')
 })

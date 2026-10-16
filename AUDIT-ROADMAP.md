@@ -1888,7 +1888,9 @@ integración real.
   `AUDIT-ROADMAP.md` (la sesión de documentación en curso).
 
 **Clasificación final: `Punto 5 — Precisión decimal y exclusión mutua
-de refrescos: CERRADO END-TO-END (H-4, H-5)`.**
+de refrescos: CERRADO END-TO-END EN CÓDIGO (H-4, H-5) — MIGRACIÓN 059
+NO APLICADA EN PRODUCCIÓN`.** Ver "HALLAZGO CRÍTICO — migraciones
+058–062 nunca aplicadas en producción" al final de este documento.
 
 ---
 
@@ -2019,7 +2021,9 @@ A drena.
   `AUDIT-ROADMAP.md`.
 
 **Clasificación final: `Punto 6 — Exclusión mutua de auto-respuesta
-concurrente: CERRADO END-TO-END (H-6)`.**
+concurrente: CERRADO END-TO-END EN CÓDIGO (H-6) — MIGRACIÓN 060 NO
+APLICADA EN PRODUCCIÓN`.** Ver "HALLAZGO CRÍTICO — migraciones 058–062
+nunca aplicadas en producción" al final de este documento.
 
 ---
 
@@ -2150,13 +2154,14 @@ del handoff; `bea9994` Punto 10/F-P10-4 — try/catch de
 - `git status --short`: sin cambios de código — el único archivo
   modificado durante esta sesión de documentación es este mismo
   `AUDIT-ROADMAP.md`.
-- No se verificó si la migración 061 fue aplicada a ninguna base de
-  datos real (local/staging/producción) — solo que el archivo SQL
-  existe, es idempotente y está íntegro en `HEAD`.
+- **CONFIRMADO (esta sesión, `supabase migration list` contra el
+  proyecto remoto vinculado):** la migración 061 NO está aplicada en
+  producción — ver "HALLAZGO CRÍTICO" al final de este documento.
 
 **Clasificación final: `Punto 8 — Observabilidad de generación IA:
-CERRADO END-TO-END (H8-1, H8-2)`. F-2 registrado como hallazgo
-adjunto sin numeración reconciliada.**
+CERRADO END-TO-END EN CÓDIGO (H8-1, H8-2) — MIGRACIÓN 061 NO APLICADA
+EN PRODUCCIÓN`. F-2 registrado como hallazgo adjunto sin numeración
+reconciliada.** Ver "HALLAZGO CRÍTICO" al final de este documento.
 
 ---
 
@@ -2301,11 +2306,13 @@ una sección completamente distinta (manejo de error de
 
 **Caveats genuinos (no inventados):** los 6 archivos `*.rls.test.ts`
 no fueron ejecutados en esta sesión (Docker no disponible) — su
-corrección se evaluó solo por lectura de código. No se verificó si la
-migración 062 ya fue aplicada a la base de datos de producción
-hospedada — solo que el archivo de migración existe, es correcto y
-está en `HEAD`; aplicarla a producción está fuera del alcance de una
-auditoría de solo lectura del repositorio.
+corrección se evaluó solo por lectura de código. **CONFIRMADO (esta
+sesión, `supabase migration list` contra el proyecto remoto
+vinculado, NO solo lectura del repositorio):** la migración 062 —
+el guard de FK que es la defensa de fondo real de H9-1 — NO está
+aplicada en producción. Ver "HALLAZGO CRÍTICO" al final de este
+documento: esto significa que la vulnerabilidad H9-1 sigue
+estructuralmente abierta en la base de datos real hoy.
 
 ## Validación ejecutada en esta sesión de documentación (retroactiva)
 
@@ -2319,9 +2326,10 @@ auditoría de solo lectura del repositorio.
   `AUDIT-ROADMAP.md`.
 
 **Clasificación final: `Punto 9 — Handoff cross-tenant: CERRADO
-END-TO-END (H9-1)`. Migración 062 pendiente de confirmación de
-aplicación en producción (fuera de alcance de esta auditoría de solo
-lectura — ver Fase 5 de la instrucción vigente).**
+END-TO-END EN CÓDIGO (H9-1) — MIGRACIÓN 062 NO APLICADA EN
+PRODUCCIÓN, VULNERABILIDAD ESTRUCTURAL AÚN ABIERTA EN LA BASE DE DATOS
+REAL`.** Ver "HALLAZGO CRÍTICO — migraciones 058–062 nunca aplicadas
+en producción" al final de este documento.
 
 ---
 
@@ -2714,6 +2722,89 @@ una cita literal.)
 
 **Clasificación final: `Punto 11 — Cobertura de integración real
 sobre Punto 10: CERRADO END-TO-END (G1, G2)`.**
+
+---
+
+# HALLAZGO CRÍTICO — migraciones 058–062 nunca aplicadas en producción
+
+**ESTADO: ABIERTO — SEVERIDAD ALTA (seguridad + posible rotura
+funcional). Descubierto en esta sesión de reconciliación documental,
+NO durante una auditoría de implementación nueva. Ninguna acción
+correctiva tomada — solo lectura/verificación, conforme a la
+disciplina de este proyecto de detenerse y reportar antes de tocar
+producción.**
+
+**Comando ejecutado** (lectura contra el proyecto Supabase remoto
+vinculado — `project_ref vqxobbrzygsoxargixhl`, nombre interno `kcrm`
+— no contra Docker local, que sigue sin estar disponible en este
+entorno): `npx supabase migration list`.
+
+**Resultado real, verbatim (campo `remote` vacío = nunca aplicada):**
+las migraciones `001` a `057` tienen `local` y `remote` idénticos — SÍ
+aplicadas. Las migraciones `058`, `059`, `060`, `061`, `062` tienen
+`"remote":""` — **NINGUNA de las 5 está aplicada en la base de datos
+de producción**, aunque sus archivos existen, están completos y están
+en `HEAD` desde hace más de 6 semanas (migraciones del 31 de agosto al
+3 de septiembre de 2026; sesión de esta auditoría: 16 de octubre de
+2026).
+
+**Qué significa esto, migración por migración:**
+- `058_ai_agent_behavior.sql` — feature no relacionada con ningún
+  "Punto" de seguridad ("Fase 10" de un proyecto distinto, ver nota de
+  alcance de Punto 10). Si el código de `ai_configs.agent_behavior`
+  está desplegado en producción, cualquier lectura/escritura de esa
+  columna fallaría (la columna no existe).
+- `059_data_source_refresh_lock.sql` (Punto 5) — si el código
+  desplegado en producción ya incluye `claimDataSourceRefresh()`
+  (que hace `UPDATE ai_data_sources SET refresh_started_at = ...`),
+  **todo refresh de fuente de datos en producción fallaría hoy** con
+  un error de columna inexistente — no es solo "el fix de H-5 no
+  protege", es una posible ROTURA FUNCIONAL activa.
+- `060_ai_processing_claim.sql` (Punto 6) — si el código de
+  `claimAiProcessing()`/`releaseOrContinueAiProcessing()` está
+  desplegado, **cada auto-respuesta de IA en producción fallaría**
+  (columna `conversations.ai_processing_started_at` y el RPC
+  `release_or_continue_ai_processing` no existen) — esto, de estar
+  desplegado, sería un incidente activo que afecta el núcleo del
+  producto (el bot de WhatsApp dejaría de responder).
+- `061_ai_usage_log_observability.sql` (Punto 8) — si está desplegado,
+  los `INSERT`/`UPDATE` de `logAiUsage` que referencian
+  `finish_reason`/`tool_turns_exhausted`/`error_code`/`error_message`
+  fallarían (columnas inexistentes); dependiendo de si esos fallos
+  están envueltos en try/catch silencioso, esto podría degradar solo
+  la observabilidad o interrumpir el flujo de generación real.
+- `062_handoff_cross_tenant_guard.sql` (Punto 9, H9-1) — **la
+  vulnerabilidad de seguridad original sigue estructuralmente abierta
+  en la base de datos real.** Las verificaciones a nivel de aplicación
+  (`isAccountMember`, SÍ desplegadas si el código de `152ecad` está en
+  producción) cubren los 4 puntos de escritura ya auditados, pero sin
+  las FKs compuestas ni el endurecimiento de RLS de `notifications`,
+  cualquier otra vía de escritura — presente o futura — puede volver a
+  asignar una conversación/contacto a un usuario de otra cuenta sin
+  ninguna barrera de base de datos, y una notificación cross-tenant
+  mal dirigida seguiría siendo legible por su destinatario erróneo.
+
+**Lo que esta sesión NO pudo determinar (fuera de alcance de una
+verificación de solo lectura del repositorio/CLI):** si el código de
+aplicación correspondiente a estos commits (`fbdfec6`, `8c31b6e`,
+`00c2bf8`, `152ecad`, y `b19a37a`) está actualmente DESPLEGADO en el
+entorno de producción que sirve tráfico real (p. ej. Vercel). Si SÍ lo
+está, los puntos marcados arriba como "rotura funcional" son un
+incidente activo, no una hipótesis. Si NO lo está (el deploy de
+producción sigue en un commit anterior a `fbdfec6`), no hay rotura
+funcional todavía, pero la migración seguirá siendo un prerrequisito
+obligatorio para el próximo deploy que incluya este código — y Punto 9
+seguiría sin su defensa de base de datos mientras tanto.
+
+**Ninguna migración fue aplicada por esta sesión.** `supabase db
+push` (o el mecanismo de despliegue de migraciones que use este
+proyecto) requiere autorización explícita y específica antes de
+ejecutarse contra producción, conforme a la disciplina de cambio de
+este proyecto — no se ejecuta como parte de este cierre documental.
+
+**Clasificación final: `HALLAZGO CRÍTICO — 5 migraciones (058–062)
+pendientes de aplicar en producción, severidad ALTA, bloqueante para
+declarar Punto 5/6/8/9 verdaderamente CERRADO END-TO-END`.**
 
 ---
 

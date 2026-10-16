@@ -1518,17 +1518,30 @@ resultado — ver corrección en la sección de gaps de esta misma fase).
 (`{conversation_id, max_replies}`) enviado a `rpc()`, además de su
 rama de "pierde la carrera".
 
-**Draft:** sin cobertura de test. No existe `src/app/api/ai/draft/
-route.test.ts` ni ningún archivo que importe `draft/route.ts`. Todo lo
-documentado en 2.5/2.7 sobre `hasCatalog: false`, la ausencia de
-catalog tools, el comportamiento ante precio/stock, y que nunca envía
-WhatsApp es CONFIRMADO POR CÓDIGO, NO POR TEST.
+**Draft: CORRECCIÓN RETROACTIVA — ya tiene cobertura de test**, desde
+el commit `e240471` (1 sep. 2026, posterior a esta fase, nunca
+reconciliado aquí hasta ahora). `src/app/api/ai/draft/route.test.ts`
+existe (18 tests, todos en verde en esta sesión de reconciliación) y
+cubre autorización (403/401 reales de `requireRole`), validación
+(conversación invisible por RLS → 404, error real de Supabase → 500,
+`ai_not_configured`, `no_messages`, clave no desencriptable), el
+camino feliz, que nunca envía WhatsApp, que nunca adjunta catalog
+tools (`hasCatalog: false` real, no solo documentado), aislamiento de
+`accountId`, y 2 tests "H8-2" (Punto 8) sobre el registro de fallos de
+`generateReply`. Lo único de 2.5/2.7 que sigue confirmado solo por
+código, no por test dedicado, es el contenido exacto del prompt ante
+preguntas de precio/stock (cubierto indirectamente por el test de
+`hasCatalog`, no con una aserción de texto propia).
 
-**Playground:** sin cobertura de test. No existe `src/app/api/ai/
-playground/route.test.ts`. `requireRole('agent')`, el aislamiento por
-`accountId`, el catálogo real, las tools reales, y la ausencia de
-`wrapWithMediaSideEffect` están confirmados únicamente por lectura de
-código.
+**Playground: CORRECCIÓN RETROACTIVA — ya tiene cobertura de test**,
+mismo commit `e240471`. `src/app/api/ai/playground/route.test.ts`
+existe (cobertura real en esta sesión de reconciliación) y cubre
+autorización (`requireRole('agent')` real), validación, el camino
+feliz sin catálogo, catálogo real (`search_catalog`/`get_product`
+resueltos por el resolver real, aislamiento de `accountId` incluido),
+que `get_product_media` nunca dispara `wrapWithMediaSideEffect` (a
+diferencia de auto-reply), y el round-trip real de `ai_catalog_context`
+entre turnos. Confirmado por test, ya no solo por lectura de código.
 
 **Catálogo y tools:** cobertura efectiva y real (ejecutada, en verde):
 `search_catalog` (forwarding, clamping, corte en query vacía, facets),
@@ -1597,13 +1610,54 @@ severidad muy baja`.** Ninguno reabierto ni reclasificado.
 valor exacto fuera del escenario de facets. **CORRECCIÓN:**
 `claim_ai_reply_slot` NO es una deuda técnica — su payload exacto en el
 camino feliz ya estaba verificado (ver corrección arriba); se elimina
-de esta lista.
+de esta lista. **CORRECCIÓN RETROACTIVA (commit `e240471`, nunca
+reconciliado hasta esta sesión):** las dos deudas restantes de este
+párrafo ya NO existen — `draft/route.test.ts` y `playground/
+route.test.ts` existen y pasan (ver corrección más abajo en esta
+misma fase), y `ai_catalog_context` tiene su propio describe block
+dedicado (`auto-reply.test.ts`, "ai_catalog_context persistence — real
+glue between updateCatalogContext and auto-reply.ts (hardening, Paso
+6)") que verifica que `conversations.update({ai_catalog_context})`
+recibe EXACTAMENTE el resultado de `updateCatalogContext`, campo por
+campo, fuera del escenario de facets.
 
 **Gaps de cobertura:** ningún test conecta `dispatchInboundToAiReply`
 con un `generateReply` REAL; cero pruebas adversariales ejecutadas;
 sin test de "intención de compra sin handoff"; `draft`/`playground` sin
 cobertura; aislamiento multi-tenant solo unitario, nunca contra RLS
-real ejecutándose.
+real ejecutándose. **CORRECCIÓN RETROACTIVA — los 3 primeros gaps de
+este párrafo ya NO existen, cerrados en dos commits nunca reconciliados
+hasta esta sesión:**
+- "ningún test conecta `dispatchInboundToAiReply` con un `generateReply`
+  REAL": cerrado por `b134cb2` (Punto 11, G1) —
+  `integration-pipeline.test.ts` ejercita el pipeline real completo
+  (webhook → flows/automations → `dispatchInboundToAiReply` real →
+  `generateReply` real, `fetch` mockeado solo en la frontera de red),
+  10/10 tests en verde.
+- "cero pruebas adversariales ejecutadas": cerrado por `e240471` —
+  `src/lib/ai/adversarial-scenarios.test.ts` (prompt injection desde
+  mensaje de cliente, descripción de catálogo envenenada, contenido de
+  Knowledge Base/Business Profile/Agent Behavior envenenado, un
+  `system_prompt` admin en conflicto, y un caso explícito — test F —
+  que confirma que NINGÚN guardrail de código detecta una respuesta
+  del proveedor que contradice el resultado real de una tool, lo cual
+  no cierra R1/R2 pero sí los confirma empíricamente en vez de dejarlos
+  solo como análisis estático; ver nota de R1/R2 más abajo).
+- "sin test de intención de compra sin handoff": cerrado por `e240471`
+  — `auto-reply.test.ts`, "Paso 7 — a commercial reply with NO
+  [[HANDOFF]] never gets turned into a handoff by the application code,
+  even for an explicit purchase-intent message" (con el mismo límite
+  epistemológico ya declarado para R2: prueba que el CÓDIGO no fuerza
+  un handoff, no que un modelo real nunca decida emitir `[[HANDOFF]]`
+  ante intención de compra).
+
+El único gap que permanece exactamente como estaba es el aislamiento
+multi-tenant contra RLS real: los archivos de test (`tests/rls/*.rls.test.ts`,
+commits `cce5155`/`152ecad`, ver Punto 9) SÍ existen ahora, pero
+siguen SIN EJECUTARSE en ninguna sesión documentada hasta la fecha —
+Docker/Supabase local confirmado no disponible en todas las sesiones
+que lo intentaron. El gap pasó de "no existe el test" a "existe pero
+nunca se ha corrido" — no está cerrado.
 
 **Controles existentes:** 582 tests ejecutados y en verde en esta
 fase, cubriendo elegibilidad/routing/handoff/F2 de auto-reply,
@@ -1626,28 +1680,47 @@ archivos/aserciones.
 - Pipeline real casi end-to-end: `catalog-agent-scenarios.test.ts`.
 - Wire-format/proveedor (código real + `fetch` simulado):
   `generate.test.ts`.
-- Estáticos/solo inspección de código (sin ningún test): la totalidad
-  de `draft/route.ts` y `playground/route.ts`; el flujo webhook→
-  `accountId` real; casos adversariales de prompt injection.
+- Estáticos/solo inspección de código (sin ningún test): **CORRECCIÓN
+  RETROACTIVA —** ya no aplica a `draft/route.ts`, `playground/route.ts`
+  ni a casos adversariales de prompt injection (ver corrección arriba);
+  el flujo webhook→`accountId` real SÍ tiene cobertura real desde
+  `b134cb2`/Punto 11 (G1, `integration-pipeline.test.ts`, caso
+  "multi-tenant isolation").
 - End-to-end verdadero (webhook HTTP real → Postgres real → proveedor
-  real): ninguno — no existe en este repositorio para el agente IA.
+  real): sigue sin existir contra Postgres FÍSICO — `b134cb2` (Punto
+  11, G1) sí ejercita el webhook real → pipeline real → frontera real
+  del proveedor, pero contra un backend compartido en memoria, nunca
+  contra Postgres/RLS reales (clasificación explícita del propio
+  archivo). Contra Postgres real solo existen `tests/rls/*.rls.test.ts`
+  (Punto 9/11), y esos nunca se han ejecutado (Docker no disponible).
 
-**Recomendaciones (SIN IMPLEMENTAR), priorizadas por impacto:**
+**Recomendaciones — CORRECCIÓN RETROACTIVA: las 5 SÍ se implementaron,
+en dos commits nunca reconciliados con este documento hasta esta
+sesión** (texto original de cada recomendación conservado, con su
+cierre real anotado):
 1. Alto impacto: crear un archivo de test para `draft/route.ts` y otro
-   para `playground/route.ts`.
+   para `playground/route.ts`. → **IMPLEMENTADO, `e240471`.**
 2. Alto impacto: un test que conecte `dispatchInboundToAiReply` con un
-   `generateReply` real (mockeando solo `fetch`).
+   `generateReply` real (mockeando solo `fetch`). → **IMPLEMENTADO,
+   `b134cb2` (Punto 11, G1) — ver corrección de gaps arriba.**
 3. Medio impacto: al menos un test ejecutado de prompt injection
    (mensaje de cliente y descripción de catálogo con instrucciones
-   embebidas).
+   embebidas). → **IMPLEMENTADO, `e240471`
+   (`adversarial-scenarios.test.ts`).**
 4. Bajo impacto: test dedicado para el valor persistido de
    `ai_catalog_context` fuera del escenario de facets. **CORRECCIÓN:**
    se elimina de este punto la referencia a `claim_ai_reply_slot` — su
    payload exacto en el camino feliz ya estaba verificado (ver
-   corrección en la sección de gaps de esta misma fase).
+   corrección en la sección de gaps de esta misma fase). →
+   **IMPLEMENTADO, `e240471` ("hardening, Paso 6").**
 5. Bajo impacto: test explícito de "intención de compra sin handoff".
+   → **IMPLEMENTADO, `e240471` ("Paso 7").**
 
-No se implementó ninguna de estas recomendaciones.
+**"No se implementó ninguna de estas recomendaciones" — FALSO,
+corregido en esta sesión.** Las 5 se implementaron; ninguna fue
+reconciliada con este documento en su momento. Esta es exactamente la
+misma clase de brecha documental, ya cerrada para Punto 5/6/8/9/10/11
+en esta misma sesión.
 
 **Estado F2/F3/R1/R2/AUTH-N1–N6:** F2 `RESUELTO / CERRADO END-TO-END`
 (commit `db22113fe3903e7749cf7953000ada0e606ad0f5`); F3 `DEUDA TÉCNICA
@@ -1666,12 +1739,981 @@ fase; no fue necesaria ninguna consulta SQL nueva; ninguna operación de
 escritura ni migración ejecutada.
 
 **Clasificación final: `2.8 — Pruebas integrales del agente: GAP DE
-COBERTURA / SIN VULNERABILIDAD ACTIVA`.**
+COBERTURA / SIN VULNERABILIDAD ACTIVA`.** **CORRECCIÓN RETROACTIVA
+(esta sesión):** de los 5 gaps identificados en esta fase, 4 quedaron
+cerrados por trabajo posterior (`e240471`, `b134cb2`/Punto 11) nunca
+reconciliado con este documento hasta ahora; el quinto (RLS real
+ejecutándose) sigue abierto — ver corrección detallada en "Gaps de
+cobertura" arriba. La clasificación de esta fase en sí (como
+diagnóstico de SU PROPIO momento, 100% read-only) se conserva sin
+alterar; lo que cambia es que esos gaps ya no describen el estado
+actual del código. **R1/R2 no se reclasifican** — las pruebas
+adversariales de `e240471` confirman empíricamente el riesgo (ningún
+guardrail de código detecta una respuesta del proveedor que
+contradiga un resultado real de tool, test F) en vez de dejarlo solo
+como análisis estático, pero no lo cierran ni lo agravan.
 
 **Integridad de esta fase:** 100% read-only — no se modificó código,
 no se modificaron tests, no se crearon tests nuevos, no hubo cambios
 en Supabase, no se crearon ni ejecutaron migraciones, no se implementó
-ninguna recomendación.
+ninguna recomendación. **(Cierto para la sesión que escribió ESTA
+fase; las recomendaciones sí se implementaron en sesiones
+posteriores, ver corrección arriba.)**
+
+---
+
+# PUNTO 5 — Precisión decimal de precios de catálogo y exclusión mutua en refrescos de fuentes de datos
+
+ESTADO: CERRADO END-TO-END (H-4, H-5).
+COMMIT: `fbdfec68e57063b1eed3e06d268259ce6eae2ffb` —
+`fix(ai): preserve catalog price precision and lock concurrent
+data-source refreshes`
+
+**Nota de reconciliación documental:** este commit nunca se registró
+en este archivo cuando se hizo — se documenta aquí retroactivamente,
+por auditoría directa del commit real y del código actual en `HEAD`
+(no por memoria ni inferencia). "Punto 5" es la numeración que ya
+usaban el propio commit y los comentarios de código; ver la nota de
+alcance de la sección de Punto 10 sobre los números sin rastro en el
+repositorio (1–4, 7).
+
+## H-4 — Pérdida de precisión decimal en precios de catálogo
+
+**Problema:** `parsePrice()` en `src/lib/ai/inventory-parser.ts`
+terminaba en `return isFinite(num) ? Math.round(num) : null`. Todo
+precio proveniente de Google Sheets/CSV/Excel se redondeaba a entero
+antes de llegar a `ai_catalog_products.price` (columna `numeric`, que
+sí admite decimales) — ej. 19.99 → 20, 1499.95 → 1500.
+
+**Causa raíz:** uso de `Math.round()` heredado, aparentemente, de la
+convención de UI "los montos de deal se trackean al dólar"
+(`src/lib/currency.ts`, `formatCurrency`), aplicado por error también
+a la capa de almacenamiento/consulta del catálogo que las tools
+`search_catalog`/`get_product` leen directamente — capa donde esa
+convención de UI no aplica.
+
+**Fix:** se elimina el `Math.round()`; ahora `return isFinite(num) ?
+num : null`. La capa de visualización (texto de Knowledge Base vía
+`formatCurrency`) permanece intencionalmente sin decimales —
+comportamiento preexistente, no tocado.
+
+**Tests:** `src/lib/ai/inventory-parser.test.ts`, bloque `price
+precision (H-4) — decimals are preserved, never rounded`: entero sin
+cambios, 19.99 y 1499.95 exactos, precio con símbolo de moneda +
+separador de miles + decimales (`RD$1,499.95` → `1499.95`), más de 2
+decimales preservados, precio inválido → `null`, y el texto KB plano
+confirmado sin decimales (sin regresión).
+
+## H-5 — Condición de carrera en refrescos concurrentes de una misma fuente de datos
+
+**Problema:** `refreshDataSource()`/`persistDataSource()` en
+`src/lib/ai/data-sources/service.ts` inserta la nueva generación de
+filas de `ai_catalog_products` antes de borrar la generación anterior
+— secuencia correcta para UN refresh en curso, heredada de una
+corrección previa ("Bug #1"), pero sin ninguna exclusión mutua entre
+DOS refrescos concurrentes del mismo `data_source_id` (doble clic, dos
+pestañas, dos admins, reintento de cliente): podían entrelazar sus
+propias secuencias insert-then-delete y dejar filas duplicadas, o que
+un proceso borrara filas recién insertadas por el otro.
+
+**Causa raíz:** ausencia total de exclusión mutua a nivel de
+aplicación o de base de datos para el refresco de un mismo
+`source_id`; el código asumía implícitamente un solo invocador a la
+vez.
+
+**Fix:** nueva clase `DataSourceRefreshInProgressError`. Nueva función
+`claimDataSourceRefresh()`: un único `UPDATE ai_data_sources SET
+refresh_started_at = now() WHERE id = ... AND account_id = ... AND
+(refresh_started_at IS NULL OR < stale) RETURNING id` vía PostgREST —
+atómico como una sola sentencia SQL (no un advisory lock de sesión; el
+propio código documenta por qué `pg_advisory_lock` no sirve al pasar
+por el pool de conexiones de PostgREST). Sin fila devuelta → lanza
+`DataSourceRefreshInProgressError`. `releaseDataSourceRefreshClaim()`
+(best-effort, nunca enmascara el resultado real) limpia
+`refresh_started_at` en un `finally` que envuelve el trabajo real
+(extraído a `doRefreshDataSource`). Claim caduco a los 5 minutos
+(`REFRESH_CLAIM_STALE_AFTER_MS`), para no dejar una fuente bloqueada
+permanentemente ante un proceso muerto. La ruta
+`/api/ai/data-sources/[id]/refresh` mapea ese error específico a HTTP
+409 (antes del `catch` genérico de `DataSourceError` → 422, para que
+la subclase no caiga en la rama equivocada).
+
+**Migración `059_data_source_refresh_lock.sql`:** dos cambios DDL —
+(1) columna nullable `ai_data_sources.refresh_started_at` (la "columna
+de claim" que el código anterior lee/escribe atómicamente; el
+mecanismo de exclusión mutua vive en el código de aplicación, apoyado
+en la atomicidad de una sola sentencia que PostgREST garantiza — la
+migración solo provee el almacenamiento); (2) índice único real
+`ai_catalog_products_source_product_unique_idx` sobre
+`(data_source_id, source_product_id)`, declarado explícitamente como
+defensa en profundidad, no como el fix primario (el propio header del
+archivo aclara que un `UNIQUE` por sí solo no impide que un refresh
+concurrente borre filas que el otro acaba de insertar). **Caveat
+autodeclarado en la propia migración:** no hace deduplicación
+automática antes de crear el índice único — si ya existieran
+duplicados reales en producción, `CREATE UNIQUE INDEX` fallaría de
+forma ruidosa (intencional, consistente con la disciplina del
+proyecto de nunca borrar datos silenciosamente); el autor documenta no
+haber tenido acceso a una base de datos de producción/staging real
+para verificar la ausencia de duplicados previos.
+
+**Tests:** `src/lib/ai/data-sources/service.test.ts`, bloque
+`refreshDataSource — H-5 fix: refresh mutual exclusion`: refrescos
+secuenciales OK; dos refrescos concurrentes del mismo source → exactamente
+uno cumple, el otro rechaza con `DataSourceRefreshInProgressError`, sin
+duplicados; dos sources distintos nunca se bloquean entre sí; aislamiento
+por cuenta bajo concurrencia; un refresh fallido libera el claim igual; un
+claim caduco (10 min) no bloquea un nuevo refresh; un claim vivo rechaza
+sin tocar filas existentes. `route.test.ts`: claim vivo → 409 (fuente
+intacta); claim caduco → 200. **Límite epistemológico autodeclarado por
+el propio test** (no inventado en esta sesión): su `fakeDb()` reproduce
+la atomicidad de una sola sentencia PostgREST, pero no puede demostrar
+que Postgres/MVCC da esa misma atomicidad bajo solicitudes de red
+genuinamente simultáneas contra una base de datos real — sin
+Docker/Supabase local disponible, no se ejecutó esa prueba de
+integración real.
+
+## Validación ejecutada en esta sesión de documentación (retroactiva)
+
+- `git log --oneline fbdfec6..HEAD -- <archivo>` para los 8 archivos
+  tocados por este commit (incluida la migración 059): salida vacía en
+  los 8 — el código actual en `HEAD` es exactamente el que introdujo
+  `fbdfec6`.
+- `npx vitest run src/lib/ai/inventory-parser.test.ts
+  src/lib/ai/data-sources/service.test.ts
+  "src/app/api/ai/data-sources/[id]/refresh/route.test.ts"` →
+  **3 archivos, 80 tests, todos en verde.**
+- `git status --short`: sin cambios de código — el único archivo con
+  modificaciones durante esta auditoría fue este mismo
+  `AUDIT-ROADMAP.md` (la sesión de documentación en curso).
+
+**Clasificación final: `Punto 5 — Precisión decimal y exclusión mutua
+de refrescos: CERRADO END-TO-END (H-4, H-5)`.**
+
+---
+
+# PUNTO 6 — Exclusión mutua entre dispatches concurrentes de auto-respuesta IA para la misma conversación
+
+ESTADO: CERRADO END-TO-END (H-6).
+COMMIT: `8c31b6e4d12e16b8a6425a1bfc4d030901e206ce` —
+`fix(ai): serialize concurrent auto-replies per conversation`
+
+**Nota de reconciliación documental:** este commit nunca se registró
+en este archivo cuando se hizo — se documenta aquí retroactivamente,
+por auditoría directa del commit real y del código actual en `HEAD`.
+"Punto 6" es la numeración que ya usaban el propio commit y los
+comentarios de código.
+
+## H-6 — Dos dispatches concurrentes de la misma conversación podían generar/enviar en paralelo
+
+**Problema:** cada webhook de WhatsApp entrante se procesa en su
+propio `after()` serverless, sin lock compartido entre invocaciones.
+Si Meta entrega dos mensajes del mismo contacto en dos llamadas de
+webhook casi simultáneas, cada una invoca independientemente
+`dispatchInboundToAiReply()` para la MISMA conversación. La inserción
+del mensaje en sí ya era atómica (`insert_inbound_customer_message`,
+migración 053), pero nada aguas abajo de esa inserción lo era: ambos
+dispatches podían construir contexto, llamar al modelo y enviar una
+respuesta al mismo tiempo — riesgo de respuestas duplicadas/casi
+duplicadas, o del mensaje más antiguo de los dos quedando sin una
+respuesta dedicada.
+
+**Nota de precisión (del propio hallazgo):** `claim_ai_reply_slot()`
+(migración 029, mecanismo preexistente y sin cambios) limita CUÁNTAS
+respuestas puede recibir una conversación (un cap), pero no impedía
+que dos de esas respuestas compitieran por el mismo contexto — es un
+control ortogonal, no el fix de H-6.
+
+**Causa raíz:** ausencia de exclusión mutua a nivel de
+aplicación/DB entre el punto donde termina la serialización de la
+inserción (migración 053) y el punto donde arranca el pipeline de IA
+(contexto → generación → envío). Dos requests HTTP independientes no
+comparten transacción ni lock en ese tramo.
+
+**Fix** (`src/lib/ai/auto-reply.ts`), mecanismo de 3 piezas:
+- **Claim atómico** — `claimAiProcessing()`: un único `UPDATE
+  conversations SET ai_processing_started_at = now() WHERE id = ...
+  AND account_id = ... AND (ai_processing_started_at IS NULL OR <
+  stale) RETURNING id`. Devuelve `true` solo si la fila fue afectada;
+  `false` en cualquier otro caso (incluido error, sin lanzar
+  excepción). Staleness: 10 minutos.
+- **Punto de adquisición** — en `dispatchInboundToAiReply()`, el claim
+  se adquiere ANTES de construir contexto o llamar al modelo. Un
+  segundo dispatch concurrente para la misma conversación falla este
+  claim y retorna en silencio (no se trata como error).
+- **Drain loop + RPC liberar-o-continuar** — para que el dispatch
+  "perdedor" no implique pérdida de mensaje: el dispatch que sí tiene
+  el claim, tras procesar un turno, llama a
+  `releaseOrContinueAiProcessing()` → RPC
+  `release_or_continue_ai_processing(p_conversation_id,
+  p_last_seen_message_id)` (sentencia SQL atómica, con un JOIN
+  `messages`/`conversations` que un filtro PostgREST no puede
+  expresar): si no llegó un mensaje más nuevo, libera el claim; si sí,
+  refresca el claim y hace que el MISMO dispatch itere de nuevo
+  (acotado a 3 iteraciones). Liberación incondicional de respaldo en
+  un `finally`.
+
+**Migración `060_ai_processing_claim.sql`:** añade
+`conversations.ai_processing_started_at timestamptz` (idempotente) y
+la función `release_or_continue_ai_processing`
+(`SECURITY DEFINER`, `search_path=public`, `GRANT EXECUTE` solo a
+`service_role`). **Limitación residual aceptada explícitamente por el
+propio archivo** (no oculta): no cierra la ventana teórica
+infinitesimal en que el INSERT del mensaje y el SELECT interno del RPC
+coincidieran en el mismo instante exacto — estructuralmente no se
+puede cerrar al venir de dos requests HTTP independientes sin
+transacción compartida; declarada fuera de alcance por estar muy por
+encima de la velocidad real de tecleo de un cliente.
+
+**Tests:** `src/lib/ai/auto-reply-concurrency.test.ts` (9 tests
+deterministas, mocks puramente síncronos sin `setTimeout`, misma
+disciplina que `first-inbound-race.test.ts` de la migración 053):
+dos/tres dispatches concurrentes de la misma conversación → como
+máximo una generación+envío a la vez; fallo de `generateReply` libera
+el claim sin bloquear al siguiente; claim obsoleto recuperado; claim
+vivo bloquea limpiamente sin generar ni enviar; dos conversaciones
+distintas nunca se bloquean entre sí; handoff nunca retiene el claim;
+un mensaje llegado durante la generación se drena por el MISMO
+dispatch, nunca por una segunda generación competidora; un dispatch B
+genuinamente concurrente sigue sin poder generar en paralelo mientras
+A drena.
+
+**Caveats genuinos encontrados en esta sesión (no inventados):**
+- **Inconsistencia de nomenclatura interna del propio commit:** el
+  hallazgo de fondo se llama "H-6" en todas partes (comentarios de
+  `auto-reply.ts`, mensaje del commit), pero el `describe()` del
+  archivo de test y el propio cuerpo del commit llaman "H-7" a la
+  cobertura de test asociada ("H-7: added
+  auto-reply-concurrency.test.ts..."). Es una inconsistencia
+  preexistente del código/commit, señalada aquí para no confundir
+  "H-6" (el hallazgo) con "H-7" (usado como id de su cobertura).
+- **Ruido benigno de test, no una falla:** al correr
+  `auto-reply-concurrency.test.ts` en TEST 3 aparece un
+  `console.error` de `logAiUsage` ("unexpected table in H-7
+  concurrency fake: ai_usage_log") porque el commit posterior
+  `00c2bf8` (Punto 8) añadió una llamada de logging en la misma rama
+  de error que este test ejercita, y el fake DB de este archivo no
+  modela la tabla `ai_usage_log`. El error se traga y loggea, nunca se
+  propaga — el test sigue en verde — pero es una deuda de
+  mantenimiento del fixture, no del mecanismo H-6 en sí.
+- La limitación residual aceptada de la migración 060 (ventana
+  infinitesimal, ver arriba) es el único caveat estructural, y ya
+  estaba declarada por el propio código.
+
+## Validación ejecutada en esta sesión de documentación (retroactiva)
+
+- `git log --oneline 8c31b6e..HEAD -- src/lib/ai/auto-reply.ts
+  src/lib/ai/auto-reply-concurrency.test.ts
+  supabase/migrations/060_ai_processing_claim.sql`: 3 commits
+  posteriores tocan `auto-reply.ts` (`00c2bf8` Punto 8 — observabilidad,
+  añade un `logAiUsage` en la rama de error; `152ecad` Punto 9 —
+  cambia la resolución de `resolvedAssignee` para el handoff; `bea9994`
+  Punto 10/F-P10-4 — envuelve `engineSendText` en try/catch), ninguno
+  toca el mecanismo de claim de H-6. El test y la migración 060 no
+  tienen ningún commit posterior que los modifique.
+- `npx vitest run src/lib/ai/auto-reply-concurrency.test.ts
+  src/lib/ai/auto-reply.test.ts` → **2 archivos, 63 tests, todos en
+  verde** (9/9 específicos de H-6 al correr el archivo dedicado solo).
+- `git status --short`: sin cambios de código — el único archivo
+  modificado durante esta sesión de documentación es este mismo
+  `AUDIT-ROADMAP.md`.
+
+**Clasificación final: `Punto 6 — Exclusión mutua de auto-respuesta
+concurrente: CERRADO END-TO-END (H-6)`.**
+
+---
+
+# PUNTO 8 — Observabilidad de generación IA: finish_reason/stop_reason, agotamiento de turnos de herramientas, y registro de intentos fallidos
+
+ESTADO: CERRADO END-TO-END (H8-1, H8-2). Ver nota sobre "F-2" al final
+— viaja en el mismo commit/migración pero NO es parte de Punto 8.
+COMMIT: `00c2bf8a9522628463905c9ef71517bac6e677ce` —
+`feat(ai): improve generation observability and usage diagnostics`
+
+**Nota de reconciliación documental:** este commit nunca se registró
+en este archivo cuando se hizo — se documenta aquí retroactivamente,
+por auditoría directa del commit real y del código actual en `HEAD`.
+"Punto 8" es la numeración que ya usaban el propio commit y los
+comentarios de código.
+
+## H8-1 — Sin visibilidad sobre finish_reason/stop_reason ni sobre el agotamiento de MAX_TOOL_TURNS
+
+**Problema:** `generateReply()` y los adaptadores de proveedor
+(`generateAnthropic`, `generateChatCompletion`) descartaban
+silenciosamente dos señales de diagnóstico que el proveedor sí
+entrega: (a) el motivo real de finalización del turno —
+`finish_reason` en OpenAI/OpenRouter, `stop_reason` en Anthropic—,
+nunca capturado ni devuelto al llamador; (b) no había forma de
+distinguir "el modelo decidió responder en texto" de "nuestro propio
+límite `MAX_TOOL_TURNS` cortó el bucle mientras el modelo todavía
+quería invocar una herramienta" — ambos casos lucían idénticos desde
+fuera (mismo texto de fallback).
+
+**Causa raíz:** los tipos de retorno internos (`ProviderResult`,
+`GenerateResult`) no tenían campos para esta información;
+`parseGeneration()` la descartaba aunque hubiera estado disponible.
+
+**Fix:** `src/lib/ai/types.ts` gana `finishReason?: string` y
+`toolTurnsExhausted?: boolean` en `ProviderResult` y en
+`GenerateResult`. `providers/anthropic.ts` captura el `stop_reason`
+crudo de Anthropic en cada turno y calcula
+`toolTurnsExhausted = toolUseBlocks.length > 0 && Boolean(executeTool)
+&& turn >= maxTurns`. `providers/openai-compatible.ts` hace lo mismo
+para el campo `finish_reason` (cubre OpenAI directo y OpenRouter, que
+comparten el mismo adaptador). `generate.ts`'s `parseGeneration()`
+propaga ambos campos sin tocar el resto de la firma. `usage.ts`
+(`LogAiUsageArgs`) los persiste; migración 061 añade las columnas
+`finish_reason text`/`tool_turns_exhausted boolean` a `ai_usage_log`.
+Enganchado en los dos llamadores reales (`auto-reply.ts`,
+`draft/route.ts`). **Deliberadamente NO normalizado entre
+proveedores** (decisión documentada en el propio código): los
+vocabularios de Anthropic y OpenAI no son equivalentes 1:1, se guarda
+el valor crudo tal cual y el campo `provider` (ya existente) permite
+interpretarlo. **Diagnóstico puro, por diseño:** el propio código
+afirma explícitamente que ningún comportamiento de producción lee
+estos campos ("never read by any behavior in this codebase") — no se
+hizo un grep exhaustivo de todo `src/` para confirmar ausencia total
+de otros consumidores fuera de `usage.ts`/tests.
+
+**Tests:** `src/lib/ai/generate.test.ts`, bloques "Punto 8, H8-1" (y
+"Punto 8, F-2", ver nota abajo).
+
+## H8-2 — Los intentos fallidos de generateReply() no dejaban ningún rastro persistente
+
+**Problema:** `ai_usage_log` solo recibía una fila cuando
+`generateReply()` tenía éxito (`logAiUsage`'s guard era `if
+(!args.usage) return`). Un intento fallido (timeout, API key inválida,
+rate limit, error de red, respuesta malformada) no dejaba rastro más
+allá de un `console.error` efímero — sin forma de auditar después
+cuántos fallos hubo, de qué tipo, ni su latencia.
+
+**Causa raíz:** `logAiUsage()` trataba "sin usage" como sinónimo de
+"nada que registrar", sin distinguir éxito-sin-tokens (no ocurre en la
+práctica) de fallo completo.
+
+**Fix:** nueva función `classifyGenerateFailure(err: unknown): {code,
+message}` en `usage.ts` — reutiliza la taxonomía ya existente de
+`AiError.code` (`invalid_key`/`rate_limited`/`provider_error`/
+`timeout`/`network_error`/`empty_response`/`unsupported_provider`) sin
+inventar categorías nuevas; una excepción no-`AiError` recibe
+`unknown_error`. Mensaje truncado a 500 caracteres.
+`LogAiUsageArgs` gana `errorCode?`/`errorMessage?`. Guard relajado a
+`if (!args.usage && !args.errorCode) return` — una fila se escribe si
+hay `usage` O `errorCode`, sigue sin escribir nada si no hay ninguno.
+Las columnas de tokens pasan a escribirse como `args.usage?.campo ??
+null` (antes `args.usage.campo` directo, que habría lanzado si `usage`
+fuera null). Migración 061: `ALTER COLUMN` quita `NOT NULL DEFAULT 0`
+de `prompt_tokens`/`completion_tokens`/`total_tokens` (ensanchamiento
+estricto, ninguna fila existente afectada), añade `error_code text`/
+`error_message text`. Enganchado en `draft/route.ts` (catch alrededor
+de `generateReply`, `logAiUsage` fire-and-forget con `void`, luego
+**re-lanza el error sin modificar** para que el manejo HTTP externo
+siga igual) y en `auto-reply.ts`/`processOneTurn()` (mismo patrón,
+única llamada a `logAiUsage` en esa rama, sin duplicar el camino de
+éxito).
+
+**Tests:** `src/lib/ai/usage.test.ts` (`classifyGenerateFailure`,
+"logAiUsage — H8-2 failed-attempt rows"), `src/lib/ai/auto-reply.test.ts`
+(2 tests "H8-2:" dentro de "F2: provider failure"),
+`src/app/api/ai/draft/route.test.ts` (2 tests "H8-2:").
+
+## Nota — "F-2" viaja en el mismo commit/migración pero NO es Punto 8
+
+El propio header de la migración 061 lista los tres hallazgos juntos
+("H8-1, H8-2, F-2"), pero F-2 usa un prefijo de numeración distinto
+(`F-`, no `H8-`) — indicio de que pertenece a otra lista de hallazgos,
+simplemente empaquetado en el mismo commit por tocar los mismos
+archivos. **Qué es, concretamente:** antes de este commit, cuando
+OpenAI (o un modelo vía OpenRouter) servía parte del prompt desde su
+caché automático (`prompt_tokens_details.cached_tokens`, disponible
+para prompts ≥1024 tokens con prefijo repetido), ese dato se
+descartaba. El fix lo captura (`openai-compatible.ts`) y lo reexpone
+como `cacheReadInputTokens`, reutilizando la MISMA columna que ya
+existía para el caché de Anthropic (`cache_read_input_tokens`,
+migración 051), distinguible por el campo `provider`. **No hay
+evidencia de a qué número de "Punto" pertenece F-2 realmente — no
+confundir con H8-1/H8-2.** Queda registrado aquí como hallazgo
+adjunto, pendiente de reconciliar su numeración real en una fase
+futura, sin inventar a cuál corresponde.
+
+**Confirmado presente en HEAD, sin drift:** `git log 00c2bf8..HEAD`
+sobre los 8 archivos clave solo muestra 2 commits posteriores tocando
+`auto-reply.ts` (`152ecad` Punto 9 — resolución de `resolvedAssignee`
+del handoff; `bea9994` Punto 10/F-P10-4 — try/catch de
+`engineSendText`), ninguno modifica las líneas de H8-1/H8-2.
+
+## Validación ejecutada en esta sesión de documentación (retroactiva)
+
+- `npx vitest run src/lib/ai/generate.test.ts src/lib/ai/usage.test.ts
+  src/lib/ai/auto-reply.test.ts "src/app/api/ai/draft/route.test.ts"`
+  → **4 archivos, 144 tests, todos en verde** (45 + 27 + 54 + 18).
+- `git status --short`: sin cambios de código — el único archivo
+  modificado durante esta sesión de documentación es este mismo
+  `AUDIT-ROADMAP.md`.
+- No se verificó si la migración 061 fue aplicada a ninguna base de
+  datos real (local/staging/producción) — solo que el archivo SQL
+  existe, es idempotente y está íntegro en `HEAD`.
+
+**Clasificación final: `Punto 8 — Observabilidad de generación IA:
+CERRADO END-TO-END (H8-1, H8-2)`. F-2 registrado como hallazgo
+adjunto sin numeración reconciliada.**
+
+---
+
+# PUNTO 9 — Asignación de conversaciones/contactos a un usuario fuera de su propia cuenta (handoff cross-tenant)
+
+ESTADO: CERRADO END-TO-END (H9-1).
+COMMIT PRINCIPAL: `152ecad61d9ad271c2eddc638f74b984cd754986` —
+`fix(ai): prevent cross-tenant handoff assignments`
+COMMITS DE SOPORTE (suite RLS/CI, ver nota de alcance): `cce51559109c40831a9e5ca1c63ad1ce7e635073`,
+`21e104416d9f5f6a357d6c40c2416b3bbfb8a630`,
+`09f4c2f5248108b09d241af63af8a0219a61ef75`,
+`721525cbd36c496fcc2209a2bd968f10c6788dae`,
+`976026412c38256a82dc069a40b1e1324793badd`,
+`6866d766368c266630d8e169cfdb4c872bb99381`,
+`3e3ab72ab031c27aeb2fed1ab5e303630781f69b`.
+
+**Nota de reconciliación documental:** este commit nunca se registró
+en este archivo cuando se hizo — se documenta aquí retroactivamente,
+por auditoría directa de los commits reales y del código actual en
+`HEAD`. "Punto 9" es la numeración que ya usaban el propio commit y
+los comentarios de código.
+
+## H9-1 — Fuga cross-tenant real vía asignación de conversación/contacto
+
+**Problema:** dos columnas de aplicación podían terminar escritas en
+`conversations.assigned_agent_id` sin ninguna verificación de que el
+usuario destino perteneciera a la misma cuenta que la conversación:
+(a) `account_business_contacts.linked_user_id` (migración 050) — sin
+ninguna verificación de membresía, ni en la ruta de creación/
+actualización del contacto ni en la base de datos; (b)
+`ai_configs.handoff_agent_id` — la ruta ya tenía una verificación
+inline de membresía, la única de los tres puntos de escritura que la
+tenía. `conversations.assigned_agent_id` en sí (migración 001) no
+tenía FK ni CHECK — cualquier vía de escritura podía fijarlo a un UUID
+arbitrario.
+
+**Efecto cascada real, no solo teórico:** una conversación asignada a
+un usuario fuera de su cuenta dispara el trigger
+`on_conversation_assigned` (migración 027), que inserta una fila en
+`notifications` dirigida a ese usuario. La policy `notifications_select`
+solo comprobaba `auth.uid() = user_id`, sin verificación de cuenta —
+ese usuario ajeno podía leer la notificación (nombre del contacto +
+hecho de la asignación): una fuga de información cross-tenant real.
+
+**Causa raíz:** falta de un vínculo estructural (FK) entre el
+`account_id` de la fila origen (contacto o config) y el `account_id`
+del usuario referenciado por `linked_user_id`/`handoff_agent_id`/
+`assigned_agent_id`. La verificación, cuando existía, era solo a nivel
+de aplicación y no cubría todas las vías de escritura; la policy de
+`notifications` no tenía defensa en profundidad.
+
+**Fix — nivel base de datos** (migración
+`062_handoff_cross_tenant_guard.sql`, 221 líneas):
+- `UNIQUE (account_id, user_id)` nueva en `profiles` (no puede fallar
+  contra datos existentes: `user_id` ya era `UNIQUE` global).
+- Dos FKs compuestas reales —
+  `conversations (account_id, assigned_agent_id) REFERENCES profiles
+  (account_id, user_id)` y `account_business_contacts (account_id,
+  linked_user_id) REFERENCES profiles (account_id, user_id)` — con
+  bloque de pre-chequeo que hace `RAISE EXCEPTION` (nunca borra/
+  reasigna en silencio) si hay datos históricos que violarían la FK.
+  `MATCH SIMPLE` (default de Postgres): un valor `NULL` nunca se valida
+  contra la FK — ambos campos siguen siendo opcionales exactamente
+  como antes; la restricción solo actúa cuando se escribe un user_id
+  real, y entonces solo puede ser un miembro de esa misma cuenta.
+- RLS de `notifications` endurecida como defensa en profundidad
+  independiente: `notifications_select`/`notifications_update` ahora
+  exigen `auth.uid() = user_id AND is_account_member(account_id)` (un
+  AND, nunca un OR — estrictamente reduce el conjunto visible, un
+  destinatario legítimo no pierde nada).
+
+**Fix — nivel aplicación:** nuevo helper centralizado
+`isAccountMember(db, accountId, userId)`
+(`src/lib/ai/business-profile/service.ts`) — SELECT a `profiles`
+filtrando por `account_id`+`user_id`; ante error de la query **falla
+cerrado** (`return false`, nunca trata un error como "sí es miembro").
+Usado en 4 puntos: creación de contacto (POST
+`business-profile/contacts`) y actualización (PATCH
+`business-profile/contacts/[id]`) — `linked_user_id` no vacío exige
+membresía, 400 en caso contrario; `null` explícito limpia el campo sin
+chequeo, omitir el campo lo deja intacto; guardado de
+`handoff_agent_id` (POST `ai/config`) — refactor del chequeo inline
+preexistente al helper compartido, sin cambio funcional; y, como
+última línea de defensa, dentro de `handOffToHuman()`/`processOneTurn()`
+en `auto-reply.ts` — re-verifica AMBOS candidatos justo antes de
+escribir `assigned_agent_id`, con fallback encadenado (contacto válido
+→ agente de config válido → sin asignar). Esta última también
+"autosana" el caso de un contacto/agente que era miembro válido al
+guardarse pero fue removido de la cuenta después.
+
+**Tests (ejecutados de verdad, sin Docker):**
+`src/lib/ai/business-profile/service.test.ts`,
+`src/app/api/ai/business-profile/contacts/route.test.ts`,
+`src/app/api/ai/business-profile/contacts/[id]/route.test.ts`,
+`src/app/api/ai/config/route.test.ts` → **4 archivos, 42 tests, todos
+en verde** (15 de los 42 específicamente etiquetados "Punto 9, H9-1":
+4 en `isAccountMember` — incluye el caso exacto de usuario de otra
+cuenta y fallo-cerrado ante error de query —, 4 en POST contacts, 4 en
+PATCH contacts/[id], 3 en config/handoff_agent_id).
+
+**Tests RLS — NO ejecutados en esta sesión** (Docker/Supabase local
+confirmado no disponible, misma limitación ya declarada en fases
+anteriores): `tests/rls/conversations.rls.test.ts` (2 tests
+"Punto 9, H9-1": un `UPDATE assigned_agent_id` a un usuario de otra
+cuenta debe fallar por la FK, y la fila debe seguir en `NULL`; asignar
+dentro de la propia cuenta sigue funcionando), `tests/rls/
+business-profile.rls.test.ts` (2 tests análogos sobre
+`linked_user_id`), y `tests/rls/notifications.rls.test.ts` (archivo
+nuevo, 93 líneas, 100% dedicado a H9-1: una notificación insertada
+directamente con `account_id` de A pero `user_id` de B no es legible
+ni por B ni por un miembro real de A que no sea el destinatario; el
+caso legítimo sí es legible por su destinatario). Solo se describe lo
+que estas aserciones comprueban por lectura de código — ningún
+resultado de PASS/FAIL se afirma para ellas.
+
+**Nota de alcance — separación entre "Punto 9, H9-1" y la suite RLS
+general:** el commit `cce5155` ("test(rls): add real end-to-end RLS
+coverage") creó TODO el directorio `tests/rls/` el 1 de septiembre,
+ANTES del fix de Punto 9 (`152ecad`, 3 de septiembre), como
+endurecimiento general de FASE 2/2.7-2.8 ("aislamiento multi-tenant
+probado solo contra mocks, nunca contra RLS real de Postgres") — en
+esa versión original, ni `business-profile.rls.test.ts` ni
+`conversations.rls.test.ts` tenían todavía ningún test de H9-1.
+`152ecad` les AÑADIÓ sus 2 tests H9-1 cada uno (+29/+30 líneas) y creó
+`notifications.rls.test.ts` desde cero — el resto de esos dos archivos,
+y los archivos completos `ai-configs.rls.test.ts`,
+`catalog.rls.test.ts`, `knowledge-base.rls.test.ts`, son RLS general
+de FASE 2, NO Punto 9 (cero coincidencias de "Punto" en ellos). Los
+commits `21e1044` (otorga privilegios de fixture para que
+`notifications.rls.test.ts` pueda ejecutarse) y `09f4c2f` (fix mecánico
+de bootstrap) son soporte directo de los tests H9-1. Los commits
+`721525c`, `9760264`, `6866d76`, `3e3ab72` son pura plomería de CI para
+toda la suite `tests/rls/` (normalizar env vars, transporte WebSocket
+para Node 20, diagnóstico de privilegios, bootstrap de privilegios de
+`service_role` en CI) — no son hallazgos de seguridad.
+
+**Confirmado presente en HEAD, sin drift:** `git log --oneline
+152ecad..HEAD` sobre los archivos de aplicación y la migración 062
+solo muestra `bea9994` (Punto 10/F-P10-4) tocando `auto-reply.ts`, en
+una sección completamente distinta (manejo de error de
+`engineSendText`), sin tocar las líneas del guard H9-1.
+
+**Caveats genuinos (no inventados):** los 6 archivos `*.rls.test.ts`
+no fueron ejecutados en esta sesión (Docker no disponible) — su
+corrección se evaluó solo por lectura de código. No se verificó si la
+migración 062 ya fue aplicada a la base de datos de producción
+hospedada — solo que el archivo de migración existe, es correcto y
+está en `HEAD`; aplicarla a producción está fuera del alcance de una
+auditoría de solo lectura del repositorio.
+
+## Validación ejecutada en esta sesión de documentación (retroactiva)
+
+- `npx vitest run src/lib/ai/business-profile/service.test.ts
+  "src/app/api/ai/business-profile/contacts/route.test.ts"
+  "src/app/api/ai/business-profile/contacts/[id]/route.test.ts"
+  "src/app/api/ai/config/route.test.ts"` → **4 archivos, 42 tests,
+  todos en verde.**
+- `git status --short`: sin cambios de código — el único archivo
+  modificado durante esta sesión de documentación es este mismo
+  `AUDIT-ROADMAP.md`.
+
+**Clasificación final: `Punto 9 — Handoff cross-tenant: CERRADO
+END-TO-END (H9-1)`. Migración 062 pendiente de confirmación de
+aplicación en producción (fuera de alcance de esta auditoría de solo
+lectura — ver Fase 5 de la instrucción vigente).**
+
+---
+
+# PUNTO 10 — Endurecimiento de WhatsApp: timeouts a Meta, pausa de IA en envío humano e idempotencia real
+
+ESTADO: CERRADO END-TO-END (F-P10-1 a F-P10-5). F-P10-6 queda ABIERTO/
+INFORMATIVO, sin implementar (ver detalle abajo).
+COMMITS:
+- `e23ec90c87b6a113c0622b35075b621a91e4ab82` —
+  `fix(whatsapp): add Meta API timeouts and pause AI on human sends`
+  (F-P10-1, F-P10-2)
+- `bea9994ecee2e432a903a54b66078444aa4889d1` —
+  `fix(whatsapp): close remaining P10 security and idempotency gaps`
+  (F-P10-3, F-P10-4, F-P10-5)
+
+**Nota de reconciliación documental:** estos dos commits (4 y 5 de
+septiembre de 2026) nunca se registraron en este archivo cuando se
+hicieron — se documentan aquí retroactivamente, por auditoría directa
+de los commits reales y del código actual en `HEAD`, no por memoria ni
+inferencia. "Punto 10" es la numeración que ya usaban los propios
+mensajes de commit; este archivo no contiene (todavía) un registro de
+los "Puntos" 1–9. Ver nota de alcance al final de esta sección.
+
+## F-P10-1 — Llamadas a la API de Meta sin timeout
+
+**Problema:** todo `fetch()` en `src/lib/whatsapp/meta-api.ts` hacia
+`graph.facebook.com` carecía de límite de tiempo propio. Una respuesta
+colgada de Meta no tenía ningún límite salvo el `maxDuration = 60` de
+la propia ruta del webhook matando la función completa a mitad de
+ejecución — antes incluso de que `insert_inbound_customer_message` se
+ejecutara para un mensaje con adjunto, ya que la resolución de media
+ocurre primero.
+
+**Corrección:** nueva función interna `fetchWithTimeout()` (basada en
+`AbortController`) por la que pasan ahora todas las llamadas a Meta —
+10s por defecto, 20s para las dos únicas llamadas que mueven bytes de
+archivo reales (`downloadMedia`, el paso de subida de bytes de
+`uploadResumableMedia`). Un timeout se convierte en un `Error` plano
+(nunca un `AbortError` crudo), para que cada manejador existente
+(`verifyAndBuildUrl` del webhook, `mirrorInboundMedia`) lo trate como
+cualquier otro fallo de Meta que ya sabe recuperar (log + fallback a
+URL de proxy, el mensaje se persiste igual). `mirror-inbound-media.ts`
+no necesitó cambios — no tiene `fetch()` propio, delega en
+`downloadMedia`.
+
+**Tests:** `src/lib/whatsapp/meta-api.timeout.test.ts` (nuevo).
+
+## F-P10-2 — Envío manual de un agente humano no pausaba la IA
+
+**Problema:** cuando un agente humano respondía manualmente desde el
+dashboard, nada marcaba la conversación como tomada por un humano — el
+bot de IA podía seguir respondiendo encima de la respuesta del agente.
+
+**Corrección:** se auditaron todos los llamadores reales de
+`send-message.ts`, `automations/meta-send.ts` y `flows/meta-send.ts`
+antes de asumir que representan una toma de control humana. Solo uno
+lo es de verdad: la ruta manual del dashboard `/api/whatsapp/send`,
+que tiene un agente real, autenticado en el momento
+(`requireRole('agent')`). El endpoint público `/api/v1/messages`
+autentica por API key sin identidad humana viva y se deja
+deliberadamente sin cambios; Automations, Flows y el propio bot de
+auto-respuesta de IA (que comparte `flows/meta-send.ts` para entregar
+sus propias respuestas) nunca pausan la IA — hacerlo ahí significaría
+que el bot se desactivaría a sí mismo en el instante de enviar.
+
+`send-message.ts` gana un parámetro opcional `humanAgentUserId`:
+cuando se provee y se verifica (vía `isAccountMember` existente) como
+miembro de la cuenta de la conversación, y la conversación aún no está
+asignada, el envío ahora marca `assigned_agent_id` +
+`ai_autoreply_disabled` — replicando exactamente lo que ya hace la
+acción "Take over" del inbox. Nunca sobrescribe una asignación
+existente.
+
+**Tests:** `src/lib/automations/meta-send.test.ts`,
+`src/lib/flows/meta-send.test.ts`, `src/lib/whatsapp/send-message.test.ts`
+(ampliados).
+
+## F-P10-3 — Proxy de media sin verificación de tenencia
+
+**Problema:** `GET /api/whatsapp/media/[mediaId]` llamaba a Meta con
+cualquier `mediaId` suministrado por el cliente sin confirmar primero
+que ese `mediaId` perteneciera a un mensaje de una conversación de la
+propia cuenta del caller.
+
+**Corrección:** antes de gastar una llamada a Meta, la ruta verifica
+—vía el cliente `supabase` con RLS, acotado a `accountId` resuelto
+exclusivamente del perfil del caller, nunca del cliente— que existe un
+mensaje cuyo `media_url` es exactamente ese `/api/whatsapp/media/
+{mediaId}` y cuya conversación pertenece a esa cuenta. Un fallo
+(`mediaId` no existe, o pertenece a otra cuenta) devuelve el mismo 404
+en ambos casos — nunca revela cuál de los dos ocurrió. Replica el
+patrón de acotación `conversations!inner(account_id)` que ya usa
+`handleStatusUpdate()` del webhook para el mismo tipo de problema (un
+id de Meta no garantizado único/acotado entre tenants).
+
+**Tests:** `src/app/api/whatsapp/media/[mediaId]/route.test.ts`
+(ampliado).
+
+## F-P10-4 — Reenvío duplicado a Meta tras fallo de inserción local
+
+**Problema (el bug real de doble envío):** si Meta ya aceptaba un
+envío pero el `messages.insert()` local posterior fallaba, un retry
+del cliente con la misma `Idempotency-Key` podía volver a enviar el
+mismo mensaje a Meta una segunda vez, porque `withIdempotency()`
+marcaba la reclamación de idempotencia como fallida (no completada)
+ante ese error.
+
+**Corrección:** `SendMessageError` gana `externalEffectOccurred` +
+`waMessageId`, puestos a verdadero/presente SOLO cuando Meta ya aceptó
+el envío antes de que la inserción local fallara. `/api/v1/messages/
+route.ts` deja propagar sin capturar ese error específico para que el
+`catch` de `withIdempotency()` lo vea y COMPLETE (nunca falle) la
+reclamación de idempotencia — así un retry bajo la misma
+`Idempotency-Key` repite el fallo cacheado en vez de reenviar a Meta.
+La ruta del dashboard (`/api/whatsapp/send`) expone
+`whatsapp_message_id` en el cuerpo de error como evidencia de
+reconciliación; `message-thread.tsx` ya muestra el texto completo del
+error vía su toast existente, sin cambios de UI necesarios. El camino
+de auto-respuesta de IA (`auto-reply.ts`) ahora hace handoff a un
+humano cuando `engineSendText` falla después de reclamado el
+`ai_reply_slot`, en vez de dejar la conversación varada sin registro ni
+handoff — usa la misma ruta determinística de `handOffToHuman()` que
+ya usa F2, sin inventar un mecanismo nuevo.
+
+**Tests:** `src/app/api/v1/messages/route.test.ts`,
+`src/app/api/whatsapp/send/route.test.ts`, `src/lib/ai/auto-reply.test.ts`
+(ampliados). La prueba de concurrencia real contra el RPC de
+idempotencia en Postgres (confirmando este contrato exacto) se hizo
+después, fuera de Punto 10 — ver nota de Punto 11 al final de esta
+sección.
+
+## F-P10-5 — Firma del webhook nunca probada end-to-end con la ruta real
+
+**Problema:** todos los demás archivos de test del webhook mockeaban
+la verificación de firma; no existía ninguna prueba que ejercitara la
+comprobación real de firma de la propia ruta.
+
+**Corrección (ningún cambio de código, solo cobertura):** nuevo
+`route.signature.test.ts` que ejercita la ruta real con firma
+válida/inválida/ausente, confirmando que `processWebhook()` nunca
+llega a programarse ante un rechazo de firma.
+
+**Tests:** `src/app/api/whatsapp/webhook/route.signature.test.ts`
+(nuevo).
+
+## F-P10-6 — Sin reintentos ante fallo del envío a Meta
+
+**ESTADO: ABIERTO / INFORMATIVO — NO IMPLEMENTADO.** Declarado así
+explícitamente en el propio mensaje del commit `bea9994`
+("F-P10-6 remains INFO/documented — no retries implemented"). Esta
+sesión no encontró en ningún commit ni archivo del repositorio una
+definición más detallada de su alcance original — se documenta aquí
+tal cual quedó declarado, sin inventar contenido adicional. Queda como
+deuda técnica pendiente de alcance a definir en una fase futura.
+
+## Nota verificada — bytes nulos en `idempotency.ts`
+
+El propio mensaje de `bea9994` advertía de "a pre-existing null byte
+in idempotency.ts's computeRequestHash... found and deliberately left
+untouched — out of scope for P10". Verificado directamente en el
+`HEAD` actual: es un único byte `\0` usado deliberadamente como
+separador de dominio dentro del hash —
+`` createHash('sha256').update(`${endpoint}\0${canonical}`) `` en
+`src/lib/api/v1/idempotency.ts` — para evitar colisiones de
+canonicalización entre `endpoint` y `canonical` concatenados sin
+separador. **No es corrupción ni vulnerabilidad**; Node maneja bytes
+nulos en strings/Buffers sin problema. El único efecto observable es
+que Git clasifica el archivo como binario al mostrar su diff (por la
+heurística estándar de Git ante cualquier NUL). No se tocó este
+archivo en esta sesión de documentación.
+
+## Validación ejecutada en esta sesión de documentación (retroactiva)
+
+- Archivos de test directamente relacionados con Punto 10 ejecutados
+  de forma aislada: `meta-api.timeout.test.ts`, `send-message.test.ts`,
+  `automations/meta-send.test.ts`, `flows/meta-send.test.ts`,
+  `webhook/route.signature.test.ts`,
+  `whatsapp/media/[mediaId]/route.test.ts`, `whatsapp/send/route.test.ts`,
+  `v1/messages/route.test.ts`, `ai/auto-reply.test.ts`, más
+  `webhook/integration-pipeline.test.ts` (Punto 11, ver nota de
+  alcance) → **10 archivos, 116 tests, todos en verde.**
+- Suite completa (`vitest run`): **148 archivos, 1819 tests, todos en
+  verde.**
+- `tsc --noEmit`: **0 errores.**
+- `eslint .`: **0 errores, 37 warnings preexistentes** (idénticas a
+  las ya documentadas en fases anteriores — ningún warning nuevo).
+- `git status`: limpio antes y después de esta sesión — ningún archivo
+  de código tocado, solo esta entrada de documentación en
+  `AUDIT-ROADMAP.md`.
+- `tests/rls/idempotency.rls.test.ts` (que prueba el contrato de
+  F-P10-4 contra el RPC real de Postgres, no un doble) **NO se
+  ejecutó en esta sesión** — requiere Docker/Supabase local
+  (`supabase start`), no disponible en este entorno. Mismo límite ya
+  declarado explícitamente por `tests/rls/README.md` para la sesión
+  que escribió esa suite. No se inventa un resultado para esta prueba.
+
+## Nota de alcance — Punto 9 y Punto 11, y el resto de la numeración
+
+Durante la auditoría de Punto 10 se encontraron, dentro de comentarios
+del propio código (`send-message.ts`), referencias a un "Punto 9,
+H9-1" anterior a Punto 10, y los archivos
+`tests/rls/idempotency.rls.test.ts`/`integration-pipeline.test.ts`
+(commits `3ef9530`, `94d3363`, `b134cb2`) rotulados en su propio código
+como "Punto 11, G1"/"G2" — posteriores a Punto 10. **Ambos quedaron
+documentados en esta misma sesión** (ver las secciones Punto 9 y Punto
+11 más arriba/abajo de esta), junto con Punto 5, 6 y 8, también
+descubiertos y reconciliados en esta sesión. Una auditoría de todo el
+código/historial del repositorio no encontró ningún rastro, en ningún
+commit ni archivo, de "Punto 1" a "Punto 4" ni de "Punto 7" — ni bajo
+ese nombre ni con ningún otro: pueden corresponder a trabajo ya
+descrito bajo otro nombre en este documento (AUTH-N*, FASE 2), a
+auditorías que no requirieron ningún cambio de código, o simplemente
+no dejaron rastro. No se inventa aquí a qué corresponden.
+
+**Clasificación final: `Punto 10 — Endurecimiento de WhatsApp:
+CERRADO END-TO-END (F-P10-1 a F-P10-5) / F-P10-6 ABIERTO-INFORMATIVO`.**
+
+---
+
+# PUNTO 11 — Cobertura de integración real sobre Punto 10: pipeline completo del webhook y concurrencia real de idempotencia en Postgres
+
+ESTADO: CERRADO END-TO-END (G1, G2). Esta fase es exclusivamente de
+TESTS — ningún archivo de código de producción fue tocado por ninguno
+de sus 3 commits.
+COMMITS: `b134cb26b7fb266f6bd0baee2c2383f24237edb5` —
+`test(whatsapp): add end-to-end webhook integration pipeline` (G1);
+`3ef9530e407bc669425460c2397ec92dc3524178` —
+`test(rls): add real idempotency concurrency coverage` (G2);
+`94d336316d1aff61ea16c7966e695ffc173eba2b` —
+`test(rls): grant idempotency table privileges in local bootstrap`
+(soporte de G2, sin lógica propia).
+
+**Nota de reconciliación documental:** estos tres commits nunca se
+registraron en este archivo cuando se hicieron — se documentan aquí
+retroactivamente. "Punto 11" es la numeración que ya usaban los
+propios archivos de test en sus encabezados. Orden cronológico real
+(más antiguo→más reciente): `3ef9530` (G2) → `94d3363` (soporte de G2)
+→ `b134cb2` (G1).
+
+## G1 — `src/app/api/whatsapp/webhook/integration-pipeline.test.ts` (1045 líneas, archivo nuevo, único cambio del commit)
+
+**Qué es:** un fake de Postgres en memoria COMPARTIDO entre todos los
+módulos de la petición — explícitamente clasificado por el propio
+archivo como "internal integration test with shared stateful test
+backend. Does not exercise physical Postgres or RLS". Un dispatcher
+genérico de tablas soporta `select/insert/update/delete`, filtros
+estilo PostgREST (`eq/neq/in/like/contains/is/gt/lt`, `.or()`,
+`.order()`, `.limit()`) y embeds relacionales, y reimplementa, con la
+MISMA firma/semántica, los RPCs reales `insert_inbound_customer_message`,
+`claim_ai_reply_slot`, `release_or_continue_ai_processing` y
+`search_ai_catalog_products`.
+
+**Lo que SÍ es código real (importado, nunca copiado):** el `POST()`
+real del route handler, `verifyMetaWebhookSignature` (HMAC-SHA256
+real), `processWebhook`/`processMessage` internos de `route.ts`,
+`dispatchInboundToFlows`, `runAutomationsForTrigger`,
+`dispatchInboundToAiReply`/`processOneTurn` (incluye
+`detectHandoffIntent`, `buildSystemPrompt`, `sendMessageToConversation`),
+y el resolver real de catálogo/`executeCatalogTool`. Lo único falseado
+es la frontera de red (`global.fetch`, discriminando por URL entre
+`graph.facebook.com` y `api.anthropic.com`), `next/server`'s `after()`
+(no puede funcionar fuera del `AsyncLocalStorage` real de una petición
+Next.js), `@/lib/whatsapp/encryption` (mock identidad) y el cliente
+Supabase, apuntado vía un Proxy delegante a ese mismo backend
+compartido — de modo que `route.ts`, `auto-reply.ts`,
+`flows/engine.ts` y `automations/engine.ts` observan las escrituras
+entre sí, igual que con una base de datos real.
+
+**Por qué es más realista que los tests mockeados previos:** el
+patrón anterior mockea cada módulo por separado; aquí el estado se
+comparte entre TODOS los módulos de la cadena real (webhook → flows →
+automations → ai/auto-reply → send), detectando bugs de integración
+cruzada que un mock por módulo no puede ver.
+
+**Por qué NO se usó Postgres real (`tests/rls/`) — razón documentada
+explícitamente en el propio archivo:** `route.ts`'s `supabaseAdmin()`
+lee las variables de entorno reales de la app
+(`NEXT_PUBLIC_SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY`), mientras que
+`tests/rls/env-guard.ts` usa nombres deliberadamente DISTINTOS
+precisamente para que un `.env.local` cargado por accidente nunca
+haga que esa suite toque credenciales reales. Copiar el valor local
+verificado por RLS a los nombres de variable de la app subvertiría esa
+barrera de seguridad; la alternativa (inyección de dependencias en
+`supabaseAdmin()`) es un cambio de código de producción, fuera de
+alcance de esta fase. Ninguna de las dos se hizo.
+
+**10 casos de prueba reales** (no 11 — varias letras comparten un
+mismo bloque `it`, confirmado por lectura y por el resultado de
+ejecución):
+- A/B/C — webhook válido y firmado → crea contacto+conversación+mensaje
+  en la cuenta correcta, nunca toca la cuenta B.
+- D/E/F — el pipeline real construye un prompt real (Core + Business
+  Profile) con el mensaje recién persistido, llega a la frontera real
+  del proveedor de IA, y la respuesta se persiste como mensaje
+  saliente.
+- G — un tool call de catálogo real ejecutado por el resolver real;
+  precio exacto 19.99 (no redondeado a 20 — regresión de H-4/Punto 5)
+  llega al segundo turno real del modelo.
+- H — handoff real: `detectHandoffIntent` resuelve "general", desactiva
+  la IA, marca `pending` y asigna el agente de handoff por defecto real
+  y válido de la cuenta.
+- J / J-bis — firma HMAC inválida o ausente → 401 y CERO cambios de
+  estado en todo el backend compartido.
+- K — el mismo webhook entregado dos veces (mismo message id,
+  simulando un reintento real de Meta) nunca duplica contacto/
+  conversación/mensaje.
+- L — nuevo mensaje tras handoff se persiste, pero la IA real
+  permanece en silencio (gate de Punto 6/9).
+- M — envío humano real tras handoff se persiste por el mismo núcleo
+  real de `/api/whatsapp/send`, sin reactivar la IA ni sobrescribir la
+  asignación existente (ligado a Punto 10, F-P10-2).
+- multi-tenant isolation — el mismo número de teléfono contactando dos
+  cuentas distintas crea dos contactos separados, sin fuga cruzada.
+
+**Tests:** ejecutado de verdad (sin Docker, no es un archivo de
+`tests/rls/`) → **1 archivo, 10 tests, todos en verde.**
+
+## G2 — `tests/rls/idempotency.rls.test.ts` (193 líneas, archivo nuevo) + `tests/rls/bootstrap-privileges.sql` (+17 líneas de soporte)
+
+**Qué es:** llama directamente a los RPCs reales
+`begin_idempotent_request`/`complete_idempotent_request` (`SECURITY
+DEFINER`, migración 056), nunca a través de `withIdempotency()` de
+`src/lib/api/v1/idempotency.ts` — por convención deliberada de esta
+suite (cero dependencia de imports de `src/`).
+
+**TEST A–F:**
+- TEST A — dos llamadas genuinamente concurrentes (`Promise.all`),
+  misma cuenta + misma clave: exactamente una "proceed", la otra
+  "in_progress" — decidido por el `UNIQUE`/row lock de Postgres real,
+  nunca por timing de JS; solo una fila en `api_idempotency_keys` para
+  ese par.
+- TEST B — la MISMA clave literal en DOS cuentas distintas,
+  concurrentemente: ambas "proceed" independientemente — sin colisión
+  cross-tenant.
+- TEST C — misma cuenta, dos claves DIFERENTES, concurrentemente:
+  ambas "proceed" independientemente.
+- TEST D — misma cuenta + misma clave + hash de request DIFERENTE:
+  "conflict" (contrato preexistente, probado ahora contra el RPC
+  real).
+- TEST E — una solicitud ya completada se repite (replay) verbatim en
+  una llamada posterior con la misma clave; el "efecto real" simulado
+  nunca se incrementa una segunda vez.
+- TEST F — valida el contrato F-P10-4 (Punto 10): cuando el efecto
+  externo ya ocurrió pero la escritura local falla, se llama
+  `complete_idempotent_request` (nunca `fail_idempotent_request`); un
+  reintento posterior con la misma clave devuelve "replay" (no
+  "proceed") y el contador de efecto real permanece en 1 — probado
+  contra el RPC real de Postgres, no un mock.
+
+**Verificación cruzada de fidelidad (hecha por el agente auditor, no
+solo lectura del test):** confirmado en `src/lib/api/v1/idempotency.ts`
+que el `catch` de `withIdempotency()` efectivamente ramifica con
+`hasExternalEffect(err)` y llama a `completeIdempotentRequest(...)`
+(nunca `failIdempotentRequest(...)`) en ese caso — exactamente lo que
+TEST F replica. **Precisión importante:** TEST F no ejecuta
+`withIdempotency()` en sí (por diseño, cero import de `src/`) — prueba
+el contrato a nivel de RPC/Postgres de forma aislada; la
+correspondencia exacta con `withIdempotency()` se sostiene por lectura
+de código, no por un único test que cubra ambas capas a la vez.
+
+**`bootstrap-privileges.sql` (+17 líneas):** exclusivamente un `GRANT
+SELECT, INSERT, UPDATE, DELETE ON TABLE public.api_idempotency_keys TO
+service_role` — sin lógica propia, sin política RLS nueva. El grant es
+solo a `service_role` (nunca `authenticated`/`anon`) porque la tabla
+tiene RLS habilitado pero CERO políticas: el aislamiento de tenant
+depende enteramente del `WHERE account_id = p_account_id` dentro de
+las funciones `SECURITY DEFINER`, no de una política RLS.
+
+**Tests — NO ejecutados en esta sesión:** `tests/rls/
+idempotency.rls.test.ts` requiere `npm run test:rls` contra una
+instancia local de Supabase/Postgres vía Docker, confirmado no
+disponible en este entorno. No se fabricó ningún resultado. (Precisión
+sobre el caveat de `tests/rls/README.md`: su "Caveat, stated plainly"
+se refiere textualmente a los nombres de variables de entorno de CI,
+no a una declaración nominal sobre este archivo específico — la
+analogía con la limitación de Docker es una inferencia razonable, no
+una cita literal.)
+
+## Validación ejecutada en esta sesión de documentación (retroactiva)
+
+- `git log --oneline b134cb2..HEAD` sobre los 3 archivos: vacío —
+  `b134cb2` es la punta, sin drift posterior.
+- `npx vitest run "src/app/api/whatsapp/webhook/integration-pipeline.test.ts"`
+  → **1 archivo, 10 tests, todos en verde.**
+- `tests/rls/idempotency.rls.test.ts`: no ejecutado (Docker no
+  disponible), ver arriba.
+- `git status --short`: sin cambios de código — el único archivo
+  modificado durante esta sesión de documentación es este mismo
+  `AUDIT-ROADMAP.md`.
+
+**Clasificación final: `Punto 11 — Cobertura de integración real
+sobre Punto 10: CERRADO END-TO-END (G1, G2)`.**
 
 ---
 

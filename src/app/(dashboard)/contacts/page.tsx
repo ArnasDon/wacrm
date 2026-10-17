@@ -57,8 +57,11 @@ import { CustomFieldsManager } from '@/components/contacts/custom-fields-manager
 import { useCan } from '@/hooks/use-can';
 import { GatedButton } from '@/components/ui/gated-button';
 import { useTranslations } from 'next-intl';
-import { contactSearchFilter } from '@/lib/contacts/search-filter';
-import { pageAfterShrink } from '@/lib/contacts/page-bounds';
+import {
+  contactSearchFilter,
+  contactSearchPattern,
+} from '@/lib/contacts/search-filter';
+import { pageAfterRangeError, pageAfterShrink } from '@/lib/contacts/page-bounds';
 
 const PAGE_SIZE = 25;
 
@@ -144,7 +147,7 @@ export default function ContactsPage() {
       // clause. See migration 025_filter_contacts_by_tags.
       const { data, error } = await supabase.rpc('filter_contacts_by_tags', {
         p_tag_ids: selectedTagIds,
-        p_search: term || null,
+        p_search: contactSearchPattern(term),
         p_limit: PAGE_SIZE,
         p_offset: from,
       });
@@ -170,6 +173,13 @@ export default function ContactsPage() {
 
       const { data, count: exactCount, error } = await query;
       if (seq !== fetchSeq.current) return; // superseded by a newer fetch
+      const pageInRange = error
+        ? pageAfterRangeError(page, PAGE_SIZE, error)
+        : null;
+      if (pageInRange !== null && pageInRange !== page) {
+        setPage(pageInRange);
+        return;
+      }
       if (error) {
         toast.error(t('toastFailedLoad'));
         setLoading(false);

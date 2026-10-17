@@ -83,3 +83,11 @@ it.each([
 it.each(['?Tiene disponibilidad para el s?bado?', '?Me comparte el menú de almuerzos?', '?Cu?nto cuesta una habitación doble?'])('does not route a new ordinary inquiry to staff: %s', (text) => {
   expect(hotelReceptionReason([user(text)])).toBeNull()
 })
+
+
+it.each(['Preferiria 2 habitaciones con 1 cama, aunque depende del precio', 'Que tarifas de referencia tienen?', 'Cuanto cuestan dos habitaciones individuales?'])('answers ordinary price references after staff participation: %s', (text) => {
+  expect(shouldDeferHotelStaffFollowup([user(text)], true)).toBe(false)
+})
+it.each(['Tengo una tarifa especial', 'Me confirma la disponibilidad?', 'Quiero pagar el anticipo'])('keeps staff decisions with reception despite reference-price eligibility: %s', (text) => {
+  expect(shouldDeferHotelStaffFollowup([user(text)], true)).toBe(true)
+})

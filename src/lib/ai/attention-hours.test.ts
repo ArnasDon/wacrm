@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isAfterHours, withAttentionHours } from './attention-hours'
+import { availabilityConfirmationLine, withAvailabilityConfirmationTiming, isAfterHours, withAttentionHours } from './attention-hours'
 import { isGiftVoucherAsk } from './hotel-media-intent'
 import { classifyRecentAgentRows } from './human-reply'
 
@@ -41,4 +41,14 @@ describe('hotel meeting 2026-10-09', () => {
     // Before the window → ignored.
     expect(classifyRecentAgentRows([{ sender_type: 'agent', content_text: 'ok', created_at: '2026-10-09T10:00:00Z' }], '2026-10-09T17:00:00Z').humanReply).toBe(false)
   })
+})
+
+
+it('uses the authorized daytime deadline and reception hours at night', () => {
+  expect(availabilityConfirmationLine(false)).toContain('2 horas')
+  expect(availabilityConfirmationLine(true)).toContain('horario h\u00e1bil')
+  const night = withAvailabilityConfirmationTiming('El hotel confirma en un m\u00e1ximo de 2 horas.', true)
+  expect(night).not.toContain('2 horas')
+  expect(night).toContain('8:00 a. m.')
+  expect(withAvailabilityConfirmationTiming(night, true)).toBe(night)
 })

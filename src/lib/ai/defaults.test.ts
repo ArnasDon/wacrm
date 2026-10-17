@@ -529,3 +529,13 @@ describe('buildSystemPrompt — cache-friendly ordering', () => {
     expect(a.slice(0, fixedEnd)).not.toContain('10:01')
   })
 })
+
+
+it('requires lodging intake before banners and separates reference prices from availability', () => {
+  const p = buildSystemPrompt({ userPrompt: null, mode: 'auto_reply', hotelReservations: true, hotelCategoryBanners: [{ name: 'Habitaciones', hasWeekendVariant: true }] })
+  expect(p).toContain('no room price banners are sent before this intake')
+  expect(p).not.toContain('weekday AND a weekend price sheet together')
+  expect(p).toContain('maximum of 2 hours')
+  expect(p).toContain('never promise a two-hour response overnight')
+  expect(p).toContain('Public price references may be answered even after staff participated')
+})

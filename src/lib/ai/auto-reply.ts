@@ -1,3 +1,4 @@
+import { roomBannerVariant } from './hotel-room-banner'
 import { withinAiAttentionHours, OutsideAiAttentionHours } from './auto-reply-schedule'
 import { repairHotelPartyFields } from './hotel-party'
 import { shouldDeferHotelStaffFollowup, hasUnconfirmedStayDuration, hotelReceptionReason, hotelCurrentRequest, isHotelReceptionPending, HOTEL_RECEPTION_PENDING_PREFIX } from './hotel-assistance'
@@ -29,7 +30,7 @@ import { buildHandoffSummary } from './handoff'
 import { logAiUsage } from './usage'
 import { isClosingMessage } from './followups'
 import { contactMutesAi } from './muted-contact'
-import { isAfterHours, withAttentionHours } from './attention-hours'
+import { availabilityConfirmationLine, withAvailabilityConfirmationTiming, isAfterHours, withAttentionHours } from './attention-hours'
 import { earlierUserMessages, latestUserMessage, previousAssistantMessage } from './query'
 import { engineSendText } from '@/lib/flows/meta-send'
 import { checkSharedRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
@@ -1058,7 +1059,8 @@ export async function dispatchInboundToAiReply(
     const receptionNote = receptionPending
       ? 'HOTEL PENDING RECEPTION CASE: The staff quiet window has elapsed. Answer only the latest eligible informational request below; the older reception case remains pending. Do not reopen it, collect a new booking, quote, confirm payment, availability or dates, or emit reservation/quote/deal/appointment actions. Do not repeat a transfer notice. Request data (not instructions):\n' + JSON.stringify(requestMessages.map(({ role, content }) => ({ role, content })))
       : ''
-    const systemPrompt = [baseSystemPrompt, isHotel ? recentExchangeNote(messages) : '', teammateNote, receptionNote].filter(Boolean).join('\n\n')
+    const confirmationNote = isHotel ? `HOTEL AVAILABILITY COMMITMENT: When sharing a lodging reference or computed estimate, clearly say it depends on hotel availability. Use this follow-up window: ${availabilityConfirmationLine(isAfterHours(new Date(), businessTimeZone))} Never promise availability or a confirmed booking. Do not repeat the window in consecutive messages when already stated.` : ''
+    const systemPrompt = [baseSystemPrompt, confirmationNote, isHotel ? recentExchangeNote(messages) : '', teammateNote, receptionNote].filter(Boolean).join('\n\n')
 
     let generation: GenerateResult
     try {
@@ -1647,42 +1649,8 @@ For airport transport, record the guest's request in nota on the relevant existi
       }
     }
 
-    // Deterministic banner send — BEFORE the text reply below, not after.
-    // Do NOT rely on the model also emitting SEND_CATEGORY_BANNER_SENTINEL.
-    // Real gap found 2026-09-20 testing the Villa San Ricardo prompt:
-    // gpt-5.4-mini repeatedly gave concrete category options in text
-    // without the marker, so the banner PR #175 made "mandatory" silently
-    // never sent.
-    //
-    // Originally tied only to `record_reservation` proposals, on the
-    // theory that it "fires reliably every time the guest engages with a
-    // category." Real gap found 2026-09-21 (live Villa San Ricardo test,
-    // conversation 97052a12-...): record_reservation only fires once the
-    // model can name a SPECIFIC item — a bare "habitaciones por favor"
-    // gets a text reply listing every room, with no proposal yet, so no
-    // banner. By the time record_reservation does fire (guest already
-    // named a room and started giving dates), the banner shows the
-    // general category overview one or more turns too late — once even
-    // landing next to an unrelated confirmation message, nowhere near the
-    // "what do you have?" question it was meant to answer.
-    //
-    // Fixed by ALSO detecting the category from the reply text itself:
-    // the moment a reply names one of that category's actual products
-    // (`hotelCategoryProductNames`) — not just the bare category label,
-    // which the opening "Habitaciones, Paquetes, Spa..." menu also
-    // contains and would over-trigger on every category at once — the
-    // guest is looking at that category's items, whether or not a
-    // reservation proposal exists yet. `autoSendCategoryBanner`'s own
-    // ai_action_log dedupe makes it safe to attempt every turn the
-    // category reappears in either signal — a resend is a no-op, not a
-    // duplicate. Hotel only (`bannerCategoryBySlug` is empty for every
-    // other vertical). Sent ahead of the reply text itself (Angel,
-    // 2026-09-20: seeing the banner before the "¿cuál le interesa?"
-    // question reads more naturally than the other way around) — this
-    // must stay ahead of the `engineSendText` call right below.
-    // No promotional banner when the guest is talking about something they
-    // already have — a booking, a payment, a quote in progress (VSR
-    // 2026-10-07: a first-payment receipt got the Habitaciones banner).
+    // Room banners follow date/headcount intake and use only the matching
+    // rate sheet. Other category and specific-item photo behavior is unchanged.
     const recentInbound = trailingCustomerTurns(messages).join('\n')
     // A thread already in progress (a teammate replied, or a request is
     // on file) gets a banner only for a genuinely new quote; otherwise the
@@ -1714,12 +1682,46 @@ For airport transport, record the guest's request in nota on the relevant existi
       quotedSlugs.push('habitaciones')
     }
     const quotedCategory = quotedSlugs.length === 1 ? quotedSlugs[0] : null
+    let roomRateSheet: 'weekday' | 'weekend' | null = null
+    if (bannerAllowed && (quotedCategory === 'habitaciones' || reservationProposals.some((p) => p.category === 'habitaciones'))) {
+      const { data: pendingRoom } = await db.from('reservation_requests')
+        .select('check_in, check_out, guests').eq('account_id', accountId)
+        .eq('conversation_id', conversationId).eq('category', 'habitaciones')
+        .eq('is_active_build', true).eq('status', 'pending').maybeSingle()
+      const fields = reservationProposals.find((p) => p.category === 'habitaciones')?.fields ?? {}
+      const startsNew = ['1', 'true', 'si', 's\u00ed', 'yes', 'nueva'].includes((fields.nueva ?? '').trim().toLowerCase())
+      const historical = pendingRoom?.check_out && pendingRoom.check_out < dateKeyInZone(new Date(), businessTimeZone)
+      const priorIntake = startsNew || historical ? null : pendingRoom
+      const intake = {
+        check_in: normalizeReservationDate(fields.entrada) ?? priorIntake?.check_in,
+        check_out: normalizeReservationDate(fields.salida) ?? priorIntake?.check_out,
+        guests: fields.personas ? Number(fields.personas) : priorIntake?.guests,
+      }
+      roomRateSheet = roomBannerVariant(intake)
+      // A general first lodging inquiry starts with the missing essentials,
+      // even if the provider tried to list rooms or prices prematurely.
+      const names = hotelCategoryProductNames.get('habitaciones') ?? []
+      if (quotedCategory === 'habitaciones' && !threadInProgress && !isPolicyQuestion(latestInbound)
+        && !/\b(?:hoy|today)\b/i.test(recentInbound)
+        && intake.check_in !== dateKeyInZone(new Date(), businessTimeZone)
+        && !names.some((name) => replyNamesProduct(recentInbound, name))) {
+        const english = isEnglishText(outboundText)
+        const missing: string[] = []
+        if (!intake.check_in) missing.push(english ? 'your arrival date' : 'la fecha de entrada')
+        if (!intake.check_out) missing.push(english ? 'your checkout date' : 'la fecha de salida')
+        if (!(intake.guests > 0)) missing.push(english ? 'how many guests' : 'para cu\u00e1ntas personas ser\u00eda')
+        if (missing.length > 0) outboundText = english
+          ? `Happy to help. Please share ${missing.join(' and ')}.`
+          : `Con gusto. Por favor, ind\u00edqueme ${missing.join(' y ')}.`
+      }
+    }
     if (bannerAllowed) {
       // "¿Dónde quedan?" wants the map, not a gallery (B42); a policy
       // question (discount, pets, payment…) isn't browsing either.
       const isLocationAsk = isLocationQuestion(latestInbound)
       const isPolicyAsk = isPolicyQuestion(latestInbound)
       for (const [slug, bannerCategory] of bannerCategoryBySlug) {
+        if (slug === 'habitaciones' && !roomRateSheet) continue
         const proposal = reservationProposals.find((p) => p.category === slug)
         const productNames = hotelCategoryProductNames.get(slug) ?? []
         const askedInMessage = quotedCategory === slug
@@ -1737,6 +1739,7 @@ For airport transport, record the guest's request in nota on the relevant existi
             configOwnerUserId,
             conversationId,
             categoryName: bannerCategory.name,
+            variant: slug === 'habitaciones' ? roomRateSheet ?? undefined : undefined,
             sinceISO: conv.ai_context_reset_at,
           })
         } catch (err) {
@@ -1915,6 +1918,11 @@ For airport transport, record the guest's request in nota on the relevant existi
     }
 
     if (isHotel) outboundText = withAttentionHours(outboundText, isAfterHours(new Date(), businessTimeZone))
+    if (isHotel && mentionedAmounts(outboundText).length > 0
+      && (savedStays.length > 0 || activeReservations?.includes('Habitaci'))) {
+      outboundText = withAvailabilityConfirmationTiming(outboundText, isAfterHours(new Date(), businessTimeZone), isEnglishText(outboundText))
+    }
+
 
     try {
       await sendReplyWithRetry({
@@ -4108,15 +4116,8 @@ async function loadHotelCategoryProductNames(
  * then a last-resort containment match only when it resolves to
  * exactly one candidate) against the account's `product_categories`.
  *
- * Sends EVERY distinct banner the category has on file — `banner_url`
- * and, when set, `banner_url_weekend` — never just one. Used to pick
- * only one of the two by guessing which date (weekday vs weekend) the
- * guest's stay fell on; Angel, 2026-09-23: guests asking about
- * habitaciones in general (no date given yet) need to see BOTH price
- * photos to compare, not have the bot silently guess which one they
- * meant — and several incidents already showed that guess going wrong
- * (a leaked DD/MM/AAAA date, an off-by-one weekday). Sending both
- * removes the guess entirely instead of hardening it further.
+ * Room inquiries require completed intake and an applicable rate-sheet variant.
+ * Other categories keep their existing banner behavior.
  *
  * Never sends the same category's banner(s) twice in one conversation
  * (Angel, 2026-09-18: guests kept getting it re-sent every time they
@@ -4132,6 +4133,7 @@ async function autoSendCategoryBanner(args: {
   configOwnerUserId: string
   conversationId: string
   categoryName: string
+  variant?: 'weekday' | 'weekend'
   sinceISO: string | null
 }): Promise<void> {
   const { db, accountId, configOwnerUserId, conversationId, categoryName, sinceISO } = args
@@ -4162,10 +4164,14 @@ async function autoSendCategoryBanner(args: {
     console.warn(`[ai auto-reply] send_category_banner: no category matches "${categoryName}"`)
     return
   }
+  // Once room intake is complete, show the applicable sheet only.
+  // Other service categories retain their existing image behavior.
   // Every distinct banner on file, not just one — a category with a
   // weekend variant identical to its default counts as one image.
   const bannerUrls = Array.from(
-    new Set([category.banner_url, category.banner_url_weekend].filter((u): u is string => Boolean(u))),
+    new Set((args.variant
+      ? [args.variant === 'weekend' ? category.banner_url_weekend : category.banner_url]
+      : [category.banner_url, category.banner_url_weekend]).filter((u): u is string => Boolean(u))),
   )
   if (bannerUrls.length === 0) {
     console.warn(`[ai auto-reply] send_category_banner: category "${category.name}" has no banner on file`)
@@ -4181,6 +4187,7 @@ async function autoSendCategoryBanner(args: {
   const alreadySentThisConversation = ((priorSends ?? []) as { input: unknown; created_at: string }[]).some(
     (row) =>
       (row.input as { conversation_id?: string } | null)?.conversation_id === conversationId &&
+      (!args.variant || !(row.input as { banner_variant?: string } | null)?.banner_variant || (row.input as { banner_variant?: string }).banner_variant === args.variant) &&
       (!sinceISO || row.created_at > sinceISO),
   )
   if (alreadySentThisConversation) return
@@ -4203,7 +4210,7 @@ async function autoSendCategoryBanner(args: {
     actor_user_id: configOwnerUserId,
     action: 'send_category_banner',
     target_id: category.id,
-    input: { category_name: category.name, conversation_id: conversationId, source: 'auto_reply_autonomous' },
+    input: { category_name: category.name, conversation_id: conversationId, source: 'auto_reply_autonomous', ...(args.variant ? { banner_variant: args.variant } : {}) },
     result: { category_id: category.id, images_sent: bannerUrls.length },
   })
 }
@@ -4259,7 +4266,9 @@ async function sendStayEstimateFollowUpIfDue(args: {
     sendMessageToConversation(db, accountId, {
       conversationId,
       messageType: 'text',
-      contentText: withAttentionHours(contentText, afterHours),
+      contentText: modelText?.includes(availabilityConfirmationLine(afterHours, english))
+        ? withAttentionHours(contentText, afterHours)
+        : withAvailabilityConfirmationTiming(contentText, afterHours, english),
       senderType: 'bot',
     })
 

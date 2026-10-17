@@ -2983,6 +2983,8 @@ describe('dispatchInboundToAiReply — autonomous send_photo', () => {
 describe('dispatchInboundToAiReply — autonomous send_category_banner', () => {
   beforeEach(() => {
     h.state.account = { default_currency: 'USD', industry_vertical: 'hotel' }
+    // These banner/dedup fixtures represent a stay already qualified.
+    h.state.reservationRow = { check_in: '2026-10-26', check_out: '2026-10-28', guests: 2 }
     // A guest genuinely quoting rooms — the only time a banner may go out (owner, 2026-10-09).
     h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'Quiero ver si tienen habitaciones?' }])
   })
@@ -3073,7 +3075,7 @@ describe('dispatchInboundToAiReply — autonomous send_category_banner', () => {
   // on file — both the weekday and weekend price sheet together — never
   // picks just one, so the guest can see every rate without the bot
   // guessing which date applies.
-  it('sends BOTH banners when the category has a weekend variant on file', async () => {
+  it('sends only the weekday sheet matching the qualified stay', async () => {
     h.state.categories = [
       {
         id: 'cat-1',
@@ -3096,12 +3098,12 @@ describe('dispatchInboundToAiReply — autonomous send_category_banner', () => {
       'acct-1',
       expect.objectContaining({ mediaUrl: 'https://cdn.example.com/weekday.jpg' }),
     )
-    expect(h.sendMessageToConversation).toHaveBeenCalledWith(
+    expect(h.sendMessageToConversation).not.toHaveBeenCalledWith(
       expect.anything(),
       'acct-1',
       expect.objectContaining({ mediaUrl: 'https://cdn.example.com/weekend.jpg' }),
     )
-    expect(h.sendMessageToConversation).toHaveBeenCalledTimes(2)
+    expect(h.sendMessageToConversation).toHaveBeenCalledTimes(1)
   })
 
   it('sends just the one banner on file when there is no weekend variant', async () => {
@@ -3746,6 +3748,8 @@ describe('dispatchInboundToAiReply — deterministic category banner (tied to re
   // THAT instead of trusting the model to also remember its own marker.
   beforeEach(() => {
     h.state.account = { default_currency: 'USD', industry_vertical: 'hotel' }
+    // These banner/dedup fixtures represent a stay already qualified.
+    h.state.reservationRow = { check_in: '2026-10-26', check_out: '2026-10-28', guests: 2 }
   })
 
   it('sends the banner image BEFORE the text reply, not after — Angel, 2026-09-20: "quisiera que primero mande el banner y luego el mensaje... para que sea más natural"', async () => {
@@ -4037,7 +4041,7 @@ describe('dispatchInboundToAiReply — deterministic category banner (tied to re
   // also sidesteps every weekday/weekend date-guessing bug found this
   // week (a leaked DD/MM/AAAA date, an off-by-one weekday): there's no
   // guess left to get wrong.
-  it('sends BOTH the weekday and weekend banner together, regardless of the proposal\'s dates', async () => {
+  it('sends only the applicable room banner after intake, based on the proposal\'s dates', async () => {
     h.state.categories = [
       {
         id: 'cat-1',
@@ -4059,12 +4063,12 @@ describe('dispatchInboundToAiReply — deterministic category banner (tied to re
       'acct-1',
       expect.objectContaining({ mediaUrl: 'https://cdn.example.com/weekday.jpg', contentText: 'Habitaciones' }),
     )
-    expect(h.sendMessageToConversation).toHaveBeenCalledWith(
+    expect(h.sendMessageToConversation).not.toHaveBeenCalledWith(
       expect.anything(),
       'acct-1',
       expect.objectContaining({ mediaUrl: 'https://cdn.example.com/weekend.jpg', contentText: undefined }),
     )
-    expect(h.sendMessageToConversation).toHaveBeenCalledTimes(2)
+    expect(h.sendMessageToConversation).toHaveBeenCalledTimes(1)
   })
 
   it('sends just the one banner on file for a category with no weekend variant', async () => {
@@ -5407,5 +5411,42 @@ describe('Villa San Ricardo overnight attention', () => {
     await dispatchInboundToAiReply(ARGS)
     expect(h.generateReply.mock.calls.length > 0).toBe(allowed)
     expect(h.engineSendText.mock.calls.length > 0).toBe(allowed)
+  })
+})
+
+
+describe('room intake before rate sheets (Ana)', () => {
+  beforeEach(() => {
+    h.state.account = { default_currency: 'GTQ', industry_vertical: 'hotel' }
+    h.state.categories = [{ id: 'cat-1', name: 'Habitaciones', banner_url: 'https://cdn.example.com/weekday.jpg', banner_url_weekend: 'https://cdn.example.com/weekend.jpg' }]
+    h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'Quiero informacion para hospedarme' }])
+    h.generateReply.mockResolvedValue({ text: 'Para que fechas de entrada y salida, y cuantas personas?', handoff: false, markDealWon: false, moveToStageName: null, reservationProposals: [{ category: 'habitaciones', fields: {}, confirmed: false }] })
+  })
+  it.each([null, { check_in: '2026-10-26', check_out: '2026-10-28' }, { guests: 2 }])('does not send either room banner while dates or party are missing: %j', async (row) => {
+    h.state.reservationRow = row
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.sendMessageToConversation).not.toHaveBeenCalledWith(expect.anything(), 'acct-1', expect.objectContaining({ messageType: 'image' }))
+    expect(h.engineSendText).toHaveBeenCalledWith(expect.objectContaining({ text: expect.stringContaining('ind\u00edqueme') }))
+  })
+  it('does not borrow old stay dates when the guest starts a separate new request', async () => {
+    h.state.reservationRow = { check_in: '2026-10-26', check_out: '2026-10-28', guests: 2 }
+    h.generateReply.mockResolvedValue({ text: 'Para que fechas?', handoff: false, markDealWon: false, moveToStageName: null, reservationProposals: [{ category: 'habitaciones', fields: { nueva: '1' }, confirmed: false }] })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.sendMessageToConversation).not.toHaveBeenCalledWith(expect.anything(), 'acct-1', expect.objectContaining({ messageType: 'image' }))
+  })
+  it('uses fresh marker dates and guest count to send only the weekend sheet', async () => {
+    h.generateReply.mockResolvedValue({ text: 'Le comparto la referencia para su visita.', handoff: false, markDealWon: false, moveToStageName: null, reservationProposals: [{ category: 'habitaciones', fields: { entrada: '2026-10-23', salida: '2026-10-25', personas: '2' }, confirmed: false }] })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.sendMessageToConversation).toHaveBeenCalledWith(expect.anything(), 'acct-1', expect.objectContaining({ mediaUrl: 'https://cdn.example.com/weekend.jpg' }))
+    expect(h.sendMessageToConversation).not.toHaveBeenCalledWith(expect.anything(), 'acct-1', expect.objectContaining({ mediaUrl: 'https://cdn.example.com/weekday.jpg' }))
+  })
+  it('answers Ingrid\u2019s ordinary reference-price question after staff participation', async () => {
+    h.teammateTookOver.mockResolvedValue(true)
+    h.state.activeReservationRows = [{ category: 'habitaciones', guests: 2, rooms: 2, check_in: '2026-10-26', check_out: '2026-10-28' }]
+    h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'Preferiria 2 habitaciones con 1 cama, aunque depende del precio' }])
+    h.generateReply.mockResolvedValue({ text: 'La referencia individual es Q300 por noche.', handoff: false, markDealWon: false, moveToStageName: null })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.generateReply).toHaveBeenCalled()
+    expect(h.engineSendText).toHaveBeenCalledWith(expect.objectContaining({ text: expect.stringContaining('Q300') }))
   })
 })

@@ -18,3 +18,23 @@ export function withAttentionHours(text: string, afterHours: boolean, force = fa
   const emoji = base.match(/\s*[\p{Extended_Pictographic}️]+$/u)?.[0] ?? ''
   return `${base.slice(0, base.length - emoji.length)} ${NIGHT_LINE}${emoji}`
 }
+
+
+/** The hotel owner has authorized these availability follow-up windows. */
+export function availabilityConfirmationLine(afterHours: boolean, english = false): string {
+  if (english) return afterHours
+    ? 'The hotel will confirm which room is available during reception hours, from 8:00 am to 8:00 pm.'
+    : 'The hotel will confirm availability within a maximum of 2 hours.'
+  return afterHours
+    ? 'El hotel le confirmar\u00e1 qu\u00e9 habitaci\u00f3n estar\u00eda disponible en horario h\u00e1bil, de 8:00 a. m. a 8:00 p. m.'
+    : 'El hotel le confirmar\u00e1 la disponibilidad en un m\u00e1ximo de 2 horas.'
+}
+
+export function withAvailabilityConfirmationTiming(text: string, afterHours: boolean, english = false): string {
+  const line = availabilityConfirmationLine(afterHours, english)
+  if (text.includes(line)) return text
+  let base = withAttentionHours(text, afterHours)
+  if (afterHours) base = base.replace(/\s*(?:en (?:un m[aá]ximo de )?(?:2|dos) horas|within (?:a maximum of )?(?:2|two) hours)/gi, '')
+    .replace(/\s+([.,;!?])/g, '$1').trim()
+  return [base, line].filter(Boolean).join(' ')
+}

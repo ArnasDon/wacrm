@@ -86,6 +86,7 @@ export async function POST(request: Request) {
         total_recipients: plan.planned.length,
         accepted: plan.planned.length,
         rejected: plan.rejected,
+        duplicates: plan.duplicates,
       },
       202
     );

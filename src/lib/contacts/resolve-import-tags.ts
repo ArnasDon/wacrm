@@ -2,6 +2,113 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 const DEFAULT_TAG_COLOR = '#3b82f6';
 
+const NAME_LOOKUP_CHUNK_SIZE = 50;
+
+const LOOKUP_PAGE_SIZE = 1000;
+
+function tagKey(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+function quotedNamePattern(name: string): string {
+  return `"${name.replace(/["\\%*]/g, '_')}"`;
+}
+
+async function findTagIdsByName(
+  supabase: SupabaseClient,
+  accountId: string,
+  names: string[]
+): Promise<Map<string, string>> {
+  const wantedKeys = new Set(names.map(tagKey));
+  const tagIdByKey = new Map<string, string>();
+
+  for (let i = 0; i < names.length; i += NAME_LOOKUP_CHUNK_SIZE) {
+    const patterns = names
+      .slice(i, i + NAME_LOOKUP_CHUNK_SIZE)
+      .map(quotedNamePattern);
+
+    for (let offset = 0; ; offset += LOOKUP_PAGE_SIZE) {
+      const { data, error } = await supabase
+        .from('tags')
+        .select('id, name')
+        .eq('account_id', accountId)
+        .ilikeAnyOf('name', patterns)
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true })
+        .range(offset, offset + LOOKUP_PAGE_SIZE - 1);
+
+      if (error) throw error;
+
+      const page = data ?? [];
+      for (const tag of page) {
+        const key = tagKey(tag.name);
+        if (wantedKeys.has(key) && !tagIdByKey.has(key)) {
+          tagIdByKey.set(key, tag.id);
+        }
+      }
+
+      if (page.length < LOOKUP_PAGE_SIZE) break;
+    }
+  }
+
+  return tagIdByKey;
+}
+
+interface SupersededTag {
+  loserId: string;
+  winnerId: string;
+}
+
+async function moveContactTagLinks(
+  supabase: SupabaseClient,
+  { loserId, winnerId }: SupersededTag
+): Promise<void> {
+  for (let offset = 0; ; offset += LOOKUP_PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from('contact_tags')
+      .select('contact_id')
+      .eq('tag_id', loserId)
+      .order('contact_id', { ascending: true })
+      .range(offset, offset + LOOKUP_PAGE_SIZE - 1);
+
+    if (error) throw error;
+
+    const page = data ?? [];
+    if (page.length > 0) {
+      const { error: upsertError } = await supabase
+        .from('contact_tags')
+        .upsert(
+          page.map((row) => ({ contact_id: row.contact_id, tag_id: winnerId })),
+          { onConflict: 'contact_id,tag_id', ignoreDuplicates: true }
+        );
+      if (upsertError) throw upsertError;
+    }
+
+    if (page.length < LOOKUP_PAGE_SIZE) return;
+  }
+}
+
+async function retireSupersededTag(
+  supabase: SupabaseClient,
+  accountId: string,
+  superseded: SupersededTag
+): Promise<void> {
+  try {
+    await moveContactTagLinks(supabase, superseded);
+    const { error } = await supabase
+      .from('tags')
+      .delete()
+      .eq('account_id', accountId)
+      .eq('id', superseded.loserId);
+    if (error) throw error;
+  } catch (error) {
+    console.warn(
+      '[resolve-import-tags] duplicate tag cleanup failed:',
+      (error as { message?: string }).message
+    );
+  }
+}
+
 export interface ResolveImportTagsResult {
   /** Lowercase tag name → tag id. */
   tagIdByKey: Map<string, string>;
@@ -36,7 +143,7 @@ export async function resolveImportTagIds(
   for (const raw of tagNames) {
     const name = raw.trim();
     if (!name) continue;
-    const key = name.toLowerCase();
+    const key = tagKey(name);
     if (seen.has(key)) continue;
     seen.add(key);
     uniqueNames.push(name);
@@ -46,24 +153,13 @@ export async function resolveImportTagIds(
     return { tagIdByKey: new Map(), skippedNames: [] };
   }
 
-  const { data: existing, error: fetchError } = await supabase
-    .from('tags')
-    .select('id, name')
-    .eq('account_id', accountId);
-
-  if (fetchError) throw fetchError;
-
-  const tagIdByKey = new Map<string, string>();
-  for (const tag of existing ?? []) {
-    const key = tag.name.trim().toLowerCase();
-    if (!tagIdByKey.has(key)) tagIdByKey.set(key, tag.id);
-  }
+  const tagIdByKey = await findTagIdsByName(supabase, accountId, uniqueNames);
 
   const skippedNames: string[] = [];
   const toCreate: string[] = [];
 
   for (const name of uniqueNames) {
-    const key = name.toLowerCase();
+    const key = tagKey(name);
     if (tagIdByKey.has(key)) continue;
     if (canCreateTags) toCreate.push(name);
     else skippedNames.push(name);
@@ -84,8 +180,23 @@ export async function resolveImportTagIds(
 
     if (createError) throw createError;
 
+    const canonical = await findTagIdsByName(supabase, accountId, toCreate);
+    const supersededTags: SupersededTag[] = [];
     for (const tag of created ?? []) {
-      tagIdByKey.set(tag.name.trim().toLowerCase(), tag.id);
+      const key = tagKey(tag.name);
+      const winnerId = canonical.get(key);
+      if (!winnerId) {
+        tagIdByKey.set(key, tag.id);
+      } else {
+        tagIdByKey.set(key, winnerId);
+        if (winnerId !== tag.id) {
+          supersededTags.push({ loserId: tag.id, winnerId });
+        }
+      }
+    }
+
+    for (const superseded of supersededTags) {
+      await retireSupersededTag(supabase, accountId, superseded);
     }
   }
 

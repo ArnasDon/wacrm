@@ -4,12 +4,14 @@ const DEFAULT_TAG_COLOR = '#3b82f6';
 
 const NAME_LOOKUP_CHUNK_SIZE = 50;
 
+const LOOKUP_PAGE_SIZE = 1000;
+
 function tagKey(name: string): string {
   return name.trim().toLowerCase();
 }
 
 function quotedNamePattern(name: string): string {
-  return `"${name.replace(/["\\]/g, '_')}"`;
+  return `"${name.replace(/["\\%*]/g, '_')}"`;
 }
 
 async function findTagIdsByName(
@@ -21,26 +23,90 @@ async function findTagIdsByName(
   const tagIdByKey = new Map<string, string>();
 
   for (let i = 0; i < names.length; i += NAME_LOOKUP_CHUNK_SIZE) {
-    const chunk = names.slice(i, i + NAME_LOOKUP_CHUNK_SIZE);
-    const { data, error } = await supabase
-      .from('tags')
-      .select('id, name')
-      .eq('account_id', accountId)
-      .ilikeAnyOf('name', chunk.map(quotedNamePattern))
-      .order('created_at', { ascending: true })
-      .order('id', { ascending: true });
+    const patterns = names
+      .slice(i, i + NAME_LOOKUP_CHUNK_SIZE)
+      .map(quotedNamePattern);
 
-    if (error) throw error;
+    for (let offset = 0; ; offset += LOOKUP_PAGE_SIZE) {
+      const { data, error } = await supabase
+        .from('tags')
+        .select('id, name')
+        .eq('account_id', accountId)
+        .ilikeAnyOf('name', patterns)
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true })
+        .range(offset, offset + LOOKUP_PAGE_SIZE - 1);
 
-    for (const tag of data ?? []) {
-      const key = tagKey(tag.name);
-      if (wantedKeys.has(key) && !tagIdByKey.has(key)) {
-        tagIdByKey.set(key, tag.id);
+      if (error) throw error;
+
+      const page = data ?? [];
+      for (const tag of page) {
+        const key = tagKey(tag.name);
+        if (wantedKeys.has(key) && !tagIdByKey.has(key)) {
+          tagIdByKey.set(key, tag.id);
+        }
       }
+
+      if (page.length < LOOKUP_PAGE_SIZE) break;
     }
   }
 
   return tagIdByKey;
+}
+
+interface SupersededTag {
+  loserId: string;
+  winnerId: string;
+}
+
+async function moveContactTagLinks(
+  supabase: SupabaseClient,
+  { loserId, winnerId }: SupersededTag
+): Promise<void> {
+  for (let offset = 0; ; offset += LOOKUP_PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from('contact_tags')
+      .select('contact_id')
+      .eq('tag_id', loserId)
+      .order('contact_id', { ascending: true })
+      .range(offset, offset + LOOKUP_PAGE_SIZE - 1);
+
+    if (error) throw error;
+
+    const page = data ?? [];
+    if (page.length > 0) {
+      const { error: upsertError } = await supabase
+        .from('contact_tags')
+        .upsert(
+          page.map((row) => ({ contact_id: row.contact_id, tag_id: winnerId })),
+          { onConflict: 'contact_id,tag_id', ignoreDuplicates: true }
+        );
+      if (upsertError) throw upsertError;
+    }
+
+    if (page.length < LOOKUP_PAGE_SIZE) return;
+  }
+}
+
+async function retireSupersededTag(
+  supabase: SupabaseClient,
+  accountId: string,
+  superseded: SupersededTag
+): Promise<void> {
+  try {
+    await moveContactTagLinks(supabase, superseded);
+    const { error } = await supabase
+      .from('tags')
+      .delete()
+      .eq('account_id', accountId)
+      .eq('id', superseded.loserId);
+    if (error) throw error;
+  } catch (error) {
+    console.warn(
+      '[resolve-import-tags] duplicate tag cleanup failed:',
+      (error as { message?: string }).message
+    );
+  }
 }
 
 export interface ResolveImportTagsResult {
@@ -115,7 +181,7 @@ export async function resolveImportTagIds(
     if (createError) throw createError;
 
     const canonical = await findTagIdsByName(supabase, accountId, toCreate);
-    const supersededIds: string[] = [];
+    const supersededTags: SupersededTag[] = [];
     for (const tag of created ?? []) {
       const key = tagKey(tag.name);
       const winnerId = canonical.get(key);
@@ -123,22 +189,14 @@ export async function resolveImportTagIds(
         tagIdByKey.set(key, tag.id);
       } else {
         tagIdByKey.set(key, winnerId);
-        if (winnerId !== tag.id) supersededIds.push(tag.id);
+        if (winnerId !== tag.id) {
+          supersededTags.push({ loserId: tag.id, winnerId });
+        }
       }
     }
 
-    if (supersededIds.length > 0) {
-      const { error: cleanupError } = await supabase
-        .from('tags')
-        .delete()
-        .eq('account_id', accountId)
-        .in('id', supersededIds);
-      if (cleanupError) {
-        console.warn(
-          '[resolve-import-tags] duplicate tag cleanup failed:',
-          cleanupError.message
-        );
-      }
+    for (const superseded of supersededTags) {
+      await retireSupersededTag(supabase, accountId, superseded);
     }
   }
 

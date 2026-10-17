@@ -11,48 +11,103 @@ interface TagRow {
 function fakeTagsDb(options: {
   lookups: TagRow[][];
   inserted?: TagRow[];
+  linksByTagId?: Record<string, string[]>;
+  linkUpsertError?: { message: string };
 }) {
   const calls = {
     patterns: [] as string[][],
+    ranges: [] as [number, number][],
     inserts: [] as unknown[],
-    deletedIds: [] as string[][],
+    deletedIds: [] as string[],
+    events: [] as string[],
+    linkUpserts: [] as { contact_id: string; tag_id: string }[][],
   };
   let lookupIndex = 0;
 
+  function tagsTable() {
+    return {
+      select: () => {
+        const query = {
+          eq: () => query,
+          ilikeAnyOf: (_column: string, patterns: string[]) => {
+            calls.patterns.push(patterns);
+            return query;
+          },
+          order: () => query,
+          range: (from: number, to: number) => {
+            calls.ranges.push([from, to]);
+            return query;
+          },
+          then: (resolve: (v: { data: TagRow[]; error: null }) => void) =>
+            resolve({ data: options.lookups[lookupIndex++] ?? [], error: null }),
+        };
+        return query;
+      },
+      insert: (rows: unknown) => {
+        calls.inserts.push(rows);
+        return {
+          select: async () => ({ data: options.inserted ?? [], error: null }),
+        };
+      },
+      delete: () => {
+        const query = {
+          eq: (column: string, value: string) => {
+            if (column === 'id') {
+              calls.deletedIds.push(value);
+              calls.events.push(`delete-tag:${value}`);
+              return Promise.resolve({ error: null });
+            }
+            return query;
+          },
+        };
+        return query;
+      },
+    };
+  }
+
+  function contactTagsTable() {
+    return {
+      select: () => {
+        let tagId = '';
+        let from = 0;
+        let to = 0;
+        const query = {
+          eq: (_column: string, value: string) => {
+            tagId = value;
+            return query;
+          },
+          order: () => query,
+          range: (start: number, end: number) => {
+            from = start;
+            to = end;
+            return query;
+          },
+          then: (
+            resolve: (v: { data: { contact_id: string }[]; error: null }) => void
+          ) => {
+            const links = (options.linksByTagId?.[tagId] ?? []).slice(from, to + 1);
+            calls.events.push(`read-links:${tagId}`);
+            resolve({
+              data: links.map((contactId) => ({ contact_id: contactId })),
+              error: null,
+            });
+          },
+        };
+        return query;
+      },
+      upsert: async (rows: { contact_id: string; tag_id: string }[]) => {
+        calls.linkUpserts.push(rows);
+        calls.events.push('upsert-links');
+        return { error: options.linkUpsertError ?? null };
+      },
+    };
+  }
+
   const db = {
     from(table: string) {
-      expect(table).toBe('tags');
-      return {
-        select: () => {
-          const query = {
-            eq: () => query,
-            ilikeAnyOf: (_column: string, patterns: string[]) => {
-              calls.patterns.push(patterns);
-              return query;
-            },
-            order: () => query,
-            then: (resolve: (v: { data: TagRow[]; error: null }) => void) =>
-              resolve({ data: options.lookups[lookupIndex++] ?? [], error: null }),
-          };
-          return query;
-        },
-        insert: (rows: unknown) => {
-          calls.inserts.push(rows);
-          return {
-            select: async () => ({ data: options.inserted ?? [], error: null }),
-          };
-        },
-        delete: () => {
-          const query = {
-            eq: () => query,
-            in: async (_column: string, ids: string[]) => {
-              calls.deletedIds.push(ids);
-              return { error: null };
-            },
-          };
-          return query;
-        },
-      };
+      if (table === 'tags') return tagsTable();
+      if (table === 'contact_tags') return contactTagsTable();
+      throw new Error(`unexpected table ${table}`);
     },
   } as unknown as SupabaseClient;
 
@@ -179,8 +234,99 @@ describe('resolveImportTagIds', () => {
     });
 
     expect(result.tagIdByKey.get('lead')).toBe('t-winner');
-    expect(calls.deletedIds).toEqual([['t-mine']]);
+    expect(calls.deletedIds).toEqual(['t-mine']);
     expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('turns LIKE wildcards into single-character matches so they cannot match every tag', async () => {
+    const { db, calls } = fakeTagsDb({ lookups: [[]] });
+
+    await resolveImportTagIds(db, {
+      ...params,
+      canCreateTags: false,
+      tagNames: ['%', '*', '50% off'],
+    });
+
+    expect(calls.patterns).toEqual([['"_"', '"_"', '"50_ off"']]);
+  });
+
+  it('pages through look-alike matches instead of trusting the first 1000 rows', async () => {
+    const lookAlikes = Array.from({ length: 1000 }, (_, i) => ({
+      id: `t-${i}`,
+      name: String(i % 10),
+    }));
+    const { db, calls } = fakeTagsDb({
+      lookups: [lookAlikes, [{ id: 't-percent', name: '%' }]],
+    });
+
+    const result = await resolveImportTagIds(db, {
+      ...params,
+      tagNames: ['%'],
+    });
+
+    expect(calls.ranges).toEqual([
+      [0, 999],
+      [1000, 1999],
+    ]);
+    expect(result.tagIdByKey).toEqual(new Map([['%', 't-percent']]));
+    expect(calls.inserts).toEqual([]);
+  });
+
+  it('moves contacts linked to the losing copy onto the winner before deleting it', async () => {
+    const { db, calls } = fakeTagsDb({
+      lookups: [
+        [],
+        [
+          { id: 't-winner', name: 'Lead' },
+          { id: 't-mine', name: 'lead' },
+        ],
+      ],
+      inserted: [{ id: 't-mine', name: 'lead' }],
+      linksByTagId: { 't-mine': ['c-1', 'c-2'] },
+    });
+
+    await resolveImportTagIds(db, { ...params, tagNames: ['lead'] });
+
+    expect(calls.linkUpserts).toEqual([
+      [
+        { contact_id: 'c-1', tag_id: 't-winner' },
+        { contact_id: 'c-2', tag_id: 't-winner' },
+      ],
+    ]);
+    expect(calls.events).toEqual([
+      'read-links:t-mine',
+      'upsert-links',
+      'delete-tag:t-mine',
+    ]);
+  });
+
+  it('keeps the losing copy when its contacts could not be moved', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { db, calls } = fakeTagsDb({
+      lookups: [
+        [],
+        [
+          { id: 't-winner', name: 'Lead' },
+          { id: 't-mine', name: 'lead' },
+        ],
+      ],
+      inserted: [{ id: 't-mine', name: 'lead' }],
+      linksByTagId: { 't-mine': ['c-1'] },
+      linkUpsertError: { message: 'boom' },
+    });
+
+    const result = await resolveImportTagIds(db, {
+      ...params,
+      tagNames: ['lead'],
+    });
+
+    expect(result.tagIdByKey.get('lead')).toBe('t-winner');
+    expect(calls.deletedIds).toEqual([]);
+    expect(warn).toHaveBeenCalledWith(
+      '[resolve-import-tags] duplicate tag cleanup failed:',
+      'boom'
+    );
     warn.mockRestore();
   });
 });

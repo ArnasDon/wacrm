@@ -208,6 +208,7 @@
       "waitForSending": "Aguarde a mensagem terminar de ser enviada",
       "reactionFailed": "Falha na reação: {reason}",
       "assignmentUpdateFailed": "Falha ao atualizar a atribuição",
+      "assigneeNoLongerMember": "Esse colega não é mais membro desta conta",
       "networkError": "erro de rede",
       "documentFallback": "Documento",
       "you": "Você"
@@ -2095,6 +2096,8 @@
       "usedBody": "Este convite já foi aceito. Se não foi você, peça ao administrador da conta para enviar um novo link.",
       "expiredTitle": "Convite expirado",
       "expiredBody": "Este convite expirou. Peça ao administrador da conta para enviar um novo — leva apenas alguns segundos para gerar.",
+      "rateLimitedTitle": "Muitas tentativas",
+      "rateLimitedBody": "Você verificou este convite muitas vezes em pouco tempo. Aguarde um minuto e tente novamente.",
       "serverErrorTitle": "Algo deu errado",
       "serverErrorBody": "Não conseguimos verificar este convite agora. Tente recarregar a página em instantes."
     },

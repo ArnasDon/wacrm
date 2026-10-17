@@ -27,6 +27,7 @@
     "aiAgents": "AI 에이전트",
     "aiHub": "AI 허브",
     "calculadora": "계산기",
+    "sentinela": "센티넬라",
     "match": "매칭",
     "settings": "설정",
     "beta": "베타",
@@ -47,6 +48,7 @@
     "dashboard": "대시보드",
     "inbox": "인박스",
     "notifications": "알림",
+    "sentinela": "센티넬라",
     "contacts": "연락처",
     "pipelines": "파이프라인",
     "broadcasts": "캠페인",
@@ -227,6 +229,7 @@
       "unclassifiedLeadsTooltip": "아직 Moradia 또는 Investimento로 분류되지 않은 연락처입니다."
     },
     "quickActions": {
+      "sentinela": "센티넬라",
       "newContact": "새 연락처",
       "aiCenter": "AI 센터",
       "newBroadcast": "새 캠페인",

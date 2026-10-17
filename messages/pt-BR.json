@@ -28,6 +28,7 @@
     "aiAgents": "Agentes de IA",
     "aiHub": "Central de IA",
     "calculadora": "Calculadora",
+    "sentinela": "Sentinela",
     "settings": "Configurações",
     "beta": "Beta",
     "unreadConversations": "{count} {count, plural, =1 {conversa não lida} other {conversas não lidas}}",
@@ -47,6 +48,7 @@
     "dashboard": "Painel",
     "inbox": "Caixa de entrada",
     "notifications": "Notificações",
+    "sentinela": "Sentinela",
     "contacts": "Contatos",
     "pipelines": "Pipeline",
     "broadcasts": "Campanhas",
@@ -227,6 +229,7 @@
       "unclassifiedLeadsTooltip": "Contatos que ainda não foram classificados como Moradia ou Investimento."
     },
     "quickActions": {
+      "sentinela": "Sentinela",
       "newContact": "Novo contato",
       "aiCenter": "Central de IA",
       "newBroadcast": "Nova campanha",

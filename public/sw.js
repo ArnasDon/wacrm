@@ -26,8 +26,12 @@ self.addEventListener("push", (event) => {
     body: payload.body || "",
     icon: "/icon-192",
     badge: "/icon-192",
-    data: { url: payload.url || "/inbox" },
+    data: {
+      url: payload.url || "/inbox",
+      ...(payload.data || {}),
+    },
     tag: payload.tag || undefined,
+    actions: Array.isArray(payload.actions) ? payload.actions : undefined,
   };
 
   event.waitUntil(self.registration.showNotification(title, options));
@@ -35,7 +39,71 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const targetUrl = event.notification.data?.url || "/inbox";
+
+  const notificationData = event.notification.data || {};
+  const action = event.action;
+
+  if (action === "fix_auto") {
+    const actionToken = notificationData.actionToken || "";
+    const headers = {
+      "Content-Type": "application/json",
+    };
+
+    if (actionToken) {
+      headers["Authorization"] = `Bearer ${actionToken}`;
+    }
+
+    event.waitUntil(
+      fetch("/api/sentinela/actions", {
+        method: "POST",
+        headers,
+        credentials: "include",
+        body: JSON.stringify({ action: "fix_auto" }),
+      })
+        .then(async (response) => {
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+          const result = await response.json().catch(() => ({}));
+          const rem = result.remediation || {};
+          const summaryBody =
+            `Lotes: ${rem.envioLotesResumed ?? 0} | ` +
+            `IA/Clara: ${rem.aiConversationsRecovered ?? 0} | ` +
+            `Filas: ${(rem.scheduledSendsRescheduled ?? 0) + (rem.automationsRescheduled ?? 0)}`;
+
+          return self.registration.showNotification(
+            "Sentinela: Filas reprocessadas!",
+            {
+              body: summaryBody,
+              icon: "/icon-192",
+              badge: "/icon-192",
+              tag: "sentinela-fix-toast",
+              data: { url: "/sentinela" },
+            }
+          );
+        })
+        .catch((err) => {
+          console.error("[sw] Sentinela fix_auto failed:", err);
+          return self.registration.showNotification(
+            "⚠️ Sentinela: Falha ao reprocessar",
+            {
+              body: "Não foi possível executar a correção automática em background.",
+              icon: "/icon-192",
+              badge: "/icon-192",
+              tag: "sentinela-fix-error",
+              data: { url: "/sentinela" },
+            }
+          );
+        })
+    );
+    return;
+  }
+
+  // Default click or action === "open_dashboard"
+  const targetUrl =
+    action === "open_dashboard"
+      ? notificationData.url || "/sentinela"
+      : notificationData.url || "/";
 
   event.waitUntil(
     self.clients

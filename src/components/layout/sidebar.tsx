@@ -19,6 +19,7 @@ import {
   Megaphone,
   Settings,
   Shield,
+  ShieldAlert,
   Sparkles,
   User,
   UserCog,
@@ -88,6 +89,7 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { href: "/dashboard", labelKey: "dashboard", icon: LayoutDashboard },
+  { href: "/sentinela", labelKey: "sentinela", icon: ShieldAlert },
   { href: "/inbox", labelKey: "inbox", icon: MessageSquare },
   { href: "/notifications", labelKey: "actionCenter", icon: ListChecks },
   { href: "/contacts", labelKey: "contacts", icon: Users },

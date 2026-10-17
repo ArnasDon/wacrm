@@ -28,6 +28,7 @@
     "aiAgents": "AI Agents",
     "aiHub": "AI Hub",
     "calculadora": "Calculator",
+    "sentinela": "Sentinela",
     "settings": "Settings",
     "beta": "Beta",
     "unreadConversations": "{count} unread {count, plural, =1 {conversation} other {conversations}}",
@@ -47,6 +48,7 @@
     "dashboard": "Dashboard",
     "inbox": "Inbox",
     "notifications": "Notifications",
+    "sentinela": "Sentinela",
     "contacts": "Contacts",
     "pipelines": "Pipelines",
     "broadcasts": "Campaigns",
@@ -227,6 +229,7 @@
       "unclassifiedLeadsTooltip": "Contacts not yet classified as Moradia or Investimento."
     },
     "quickActions": {
+      "sentinela": "Sentinela",
       "newContact": "New Contact",
       "aiCenter": "AI Center",
       "newBroadcast": "New Campaign",

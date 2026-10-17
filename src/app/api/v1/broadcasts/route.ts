@@ -22,9 +22,9 @@
 //               "total_recipients", "accepted", "rejected" } }
 // ============================================================
 
-import { after } from 'next/server';
+import { after, NextResponse } from 'next/server';
 
-import { requireApiKey } from '@/lib/auth/api-context';
+import { withApiKey, type ApiKeyContext } from '@/lib/auth/api-context';
 
 // The `after()` fan-out below sends to every recipient sequentially and
 // runs within this route's max duration (the same constraint the
@@ -35,7 +35,8 @@ import { requireApiKey } from '@/lib/auth/api-context';
 // still exceed 60s, so very large sends should be split across
 // requests. A durable queue/cron drain is the complete fix (follow-up).
 export const maxDuration = 60;
-import { ok, fail, toApiErrorResponse } from '@/lib/api/v1/respond';
+import { ok, fail } from '@/lib/api/v1/respond';
+import { withIdempotency } from '@/lib/api/v1/idempotency';
 import { resolveAuditUserId, ContactError } from '@/lib/api/v1/contacts';
 import {
   createBroadcast,
@@ -44,9 +45,7 @@ import {
 } from '@/lib/whatsapp/broadcast-core';
 
 export async function POST(request: Request) {
-  try {
-    const ctx = await requireApiKey(request, 'broadcasts:send');
-
+  return withApiKey(request, 'broadcasts:send', async (ctx) => {
     const body = (await request.json().catch(() => null)) as Record<
       string,
       unknown
@@ -55,24 +54,50 @@ export async function POST(request: Request) {
       return fail('bad_request', 'Request body must be a JSON object', 400);
     }
 
+    // Idempotency (API-N1) — see src/lib/api/v1/idempotency.ts. A
+    // replayed launch returns the ORIGINAL broadcast_id without
+    // re-creating the broadcast or re-running the after() fan-out —
+    // that fan-out only ever runs inside launchBroadcast(), which a
+    // replay never calls again.
+    return withIdempotency(
+      request,
+      ctx.supabase,
+      ctx.accountId,
+      'broadcasts:send',
+      body,
+      () => launchBroadcast(ctx, body)
+    );
+  });
+}
+
+async function launchBroadcast(
+  ctx: ApiKeyContext,
+  body: Record<string, unknown>
+): Promise<NextResponse> {
+  try {
     const templateName =
       typeof body.template_name === 'string' ? body.template_name : '';
     const recipients = Array.isArray(body.recipients) ? body.recipients : [];
 
     const auditUserId = await resolveAuditUserId(ctx.supabase, ctx.accountId);
 
-    const plan = await createBroadcast(ctx.supabase, ctx.accountId, auditUserId, {
-      name: typeof body.name === 'string' ? body.name : null,
-      templateName,
-      templateLanguage:
-        typeof body.template_language === 'string'
-          ? body.template_language
-          : null,
-      recipients: recipients.map((r) => ({
-        to: typeof r?.to === 'string' ? r.to : '',
-        params: Array.isArray(r?.params) ? r.params : undefined,
-      })),
-    });
+    const plan = await createBroadcast(
+      ctx.supabase,
+      ctx.accountId,
+      auditUserId,
+      {
+        name: typeof body.name === 'string' ? body.name : null,
+        templateName,
+        templateLanguage:
+          typeof body.template_language === 'string'
+            ? body.template_language
+            : null,
+        recipients: recipients.map((r) => ({
+          to: typeof r?.to === 'string' ? r.to : '',
+          params: Array.isArray(r?.params) ? r.params : undefined,
+        })),
+      }
+    );
 
     // Fan out after the response is sent. Uses the same service-role
     // client — no request-scoped auth needed for the Meta calls or
@@ -100,6 +125,6 @@ export async function POST(request: Request) {
         err.status
       );
     }
-    return toApiErrorResponse(err);
+    throw err;
   }
 }

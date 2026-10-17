@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/automations/admin-client'
 import {
@@ -12,28 +11,29 @@ import {
   validateTriggerForActivation,
 } from '@/lib/automations/validate'
 
-async function requireUser() {
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  return user
-}
-
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params
-  const user = await requireUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  // Ownership is account-wide (RLS automations_select: is_account_member
+  // (account_id), migration 017 — replaces the old per-creator model).
+  // `viewer` matches that policy's own minimum: any account member may
+  // read, not just the automation's original author.
+  let accountId: string
+  try {
+    ;({ accountId } = await requireRole('viewer'))
+  } catch (err) {
+    return toErrorResponse(err)
+  }
 
   const admin = supabaseAdmin()
   const { data: automation, error } = await admin
     .from('automations')
     .select('*')
     .eq('id', id)
-    .eq('user_id', user.id)
+    .eq('account_id', accountId)
     .maybeSingle()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
@@ -52,28 +52,30 @@ export async function PATCH(
   // Editing an automation is a write — the RLS automations_update policy
   // requires `agent`, but this route mutates via the service-role client
   // which bypasses RLS, so enforce the role here.
+  let accountId: string
   try {
-    await requireRole('agent')
+    ;({ accountId } = await requireRole('agent'))
   } catch (err) {
     return toErrorResponse(err)
   }
-
-  const user = await requireUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await request.json().catch(() => null)
   if (!body) return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
 
   const admin = supabaseAdmin()
 
-  // Ownership check before we touch anything. Load the fields we need
-  // to compute the post-patch "effective" state for validation.
+  // Ownership check before we touch anything. Account-wide (RLS
+  // automations_update: is_account_member(account_id, 'agent'), migration
+  // 017) — any agent+ teammate on the account may edit, not just the
+  // automation's original creator. Load the fields we need to compute
+  // the post-patch "effective" state for validation.
   const { data: existing } = await admin
     .from('automations')
-    .select('id, user_id, is_active, trigger_type, trigger_config')
+    .select('id, account_id, is_active, trigger_type, trigger_config')
     .eq('id', id)
+    .eq('account_id', accountId)
     .maybeSingle()
-  if (!existing || existing.user_id !== user.id) {
+  if (!existing) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 
@@ -120,6 +122,7 @@ export async function PATCH(
       .from('automations')
       .update(update)
       .eq('id', id)
+      .eq('account_id', accountId)
     if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 })
   }
 
@@ -139,20 +142,37 @@ export async function DELETE(
 
   // Deleting an automation is a write — enforce `agent` (the service-role
   // client below bypasses the agent-gated automations_delete RLS).
+  let accountId: string
   try {
-    await requireRole('agent')
+    ;({ accountId } = await requireRole('agent'))
   } catch (err) {
     return toErrorResponse(err)
   }
 
-  const user = await requireUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const admin = supabaseAdmin()
 
-  const { error } = await supabaseAdmin()
+  // Existence check first, account-wide (RLS automations_delete:
+  // is_account_member(account_id, 'agent'), migration 017 — any agent+
+  // teammate may delete, not just the creator). The old `.eq('user_id',
+  // ...)` delete below matched 0 rows for a foreign/nonexistent id
+  // without ever erroring, which silently reported `{ok:true}` even
+  // though nothing was deleted — this check gives that case its correct
+  // 404 instead.
+  const { data: existing } = await admin
+    .from('automations')
+    .select('id')
+    .eq('id', id)
+    .eq('account_id', accountId)
+    .maybeSingle()
+  if (!existing) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  }
+
+  const { error } = await admin
     .from('automations')
     .delete()
     .eq('id', id)
-    .eq('user_id', user.id)
+    .eq('account_id', accountId)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ ok: true })
 }

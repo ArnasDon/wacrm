@@ -9,7 +9,19 @@ vi.mock('@/lib/whatsapp/encryption', () => ({
   decrypt: (v: string) => v.replace(/^enc:/, ''),
 }))
 
-import { saveCatalogIntegration, loadActiveCatalogIntegrations, listCatalogIntegrations } from './integrations'
+// SSRF guard (IC-A1) — mocked `true` by default so the existing
+// `https://...example.com`-style fixtures below (never resolved by
+// real DNS in this suite) keep passing; overridden per-test in the
+// dedicated block that proves the guard is actually called.
+const budunUrlSafetyMocks = vi.hoisted(() => ({ isSafeBudunUrl: vi.fn(async () => true) }))
+vi.mock('@/lib/budun/url-safety', () => ({ isSafeBudunUrl: budunUrlSafetyMocks.isSafeBudunUrl }))
+
+import {
+  CatalogIntegrationValidationError,
+  saveCatalogIntegration,
+  loadActiveCatalogIntegrations,
+  listCatalogIntegrations,
+} from './integrations'
 
 /**
  * Minimal in-memory fake covering exactly the query shapes
@@ -83,7 +95,65 @@ function fakeDb(initialRows: Record<string, unknown>[] = []) {
   }
 }
 
-beforeEach(() => vi.clearAllMocks())
+beforeEach(() => {
+  vi.clearAllMocks()
+  budunUrlSafetyMocks.isSafeBudunUrl.mockResolvedValue(true)
+})
+
+describe('saveCatalogIntegration — SSRF guard (IC-A1)', () => {
+  it('rejects an unsafe base_url on create — nothing is written', async () => {
+    budunUrlSafetyMocks.isSafeBudunUrl.mockResolvedValue(false)
+    const { db, rows } = fakeDb()
+
+    await expect(
+      saveCatalogIntegration(db, 'acct-1', 'user-1', {
+        provider: 'budun',
+        displayName: 'Budun ERP',
+        baseUrl: 'https://169.254.169.254',
+        secret: 'plaintext-secret-value',
+      }),
+    ).rejects.toBeInstanceOf(CatalogIntegrationValidationError)
+    expect(rows()).toHaveLength(0)
+  })
+
+  it('rejects an unsafe base_url on update — the existing row is left untouched', async () => {
+    budunUrlSafetyMocks.isSafeBudunUrl.mockResolvedValue(false)
+    const { db, rows } = fakeDb([
+      {
+        id: 'int-1',
+        account_id: 'acct-1',
+        base_url: 'https://original.example.com',
+        encrypted_secret: 'enc:original-secret',
+      },
+    ])
+
+    await expect(
+      saveCatalogIntegration(db, 'acct-1', 'user-1', {
+        id: 'int-1',
+        provider: 'budun',
+        baseUrl: 'http://10.0.0.5',
+      }),
+    ).rejects.toBeInstanceOf(CatalogIntegrationValidationError)
+    expect(rows()[0].base_url).toBe('https://original.example.com')
+  })
+
+  it('a save that does not touch base_url never calls the guard', async () => {
+    const { db } = fakeDb([
+      {
+        id: 'int-1',
+        account_id: 'acct-1',
+        base_url: 'https://original.example.com',
+        encrypted_secret: 'enc:original-secret',
+      },
+    ])
+    await saveCatalogIntegration(db, 'acct-1', 'user-1', {
+      id: 'int-1',
+      provider: 'budun',
+      displayName: 'Renamed',
+    })
+    expect(budunUrlSafetyMocks.isSafeBudunUrl).not.toHaveBeenCalled()
+  })
+})
 
 describe('saveCatalogIntegration — encryption', () => {
   it('never stores the plaintext secret — encrypted_secret differs from the input', async () => {

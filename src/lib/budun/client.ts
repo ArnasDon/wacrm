@@ -27,7 +27,13 @@
  * this one file.
  */
 
+import { isSafeBudunUrl } from './url-safety'
+
 const CATALOG_PATH = '/api/v1/catalog'
+// Mirrors `fetchCsv`'s redirect cap in `@/lib/ai/data-sources/service.ts`
+// — bounds a malicious/misbehaving ERP that redirects in a loop, and
+// caps how many hops the SSRF re-check below has to run.
+const MAX_REDIRECTS = 5
 
 export interface BudunClientArgs {
   baseUrl: string
@@ -138,16 +144,60 @@ export class BudunClient {
   }
 
   private async get<T>(path: string, params?: Record<string, string | number | undefined>): Promise<T> {
-    const url = buildUrl(this.baseUrl, path, params)
+    // SSRF guard (IC-A1): re-validated here, immediately before every
+    // network call — not just once at config-save time — and again on
+    // every redirect hop below, so neither a pre-existing row saved
+    // before this guard shipped, nor a 3xx response, can steer this
+    // request at an internal address. `redirect: 'manual'` is load-
+    // bearing: without it, `fetch` would follow a redirect to a
+    // private/loopback/metadata target on its own before we ever see
+    // the response.
+    let currentUrl = buildUrl(this.baseUrl, path, params)
     let res: Response
-    try {
-      res = await fetch(url, { headers: this.headers(), signal: AbortSignal.timeout(this.timeoutMs) })
-    } catch (err) {
-      if (err instanceof DOMException && err.name === 'TimeoutError') {
-        throw new BudunApiError('Budun ERP did not respond in time.', { code: 'timeout', status: 504 })
+    for (let hop = 0; ; hop++) {
+      if (!(await isSafeBudunUrl(currentUrl))) {
+        // Deliberately generic — never echoes the rejected host/IP back
+        // to the caller (that detail could itself help an attacker map
+        // the internal network from the outside).
+        throw new BudunApiError('Budun ERP base URL is not allowed.', {
+          code: 'unsafe_url',
+          status: 400,
+        })
       }
-      const msg = err instanceof Error ? err.message : String(err)
-      throw new BudunApiError(`Could not reach Budun ERP: ${msg}`, { code: 'network_error', status: 502 })
+      if (hop > MAX_REDIRECTS) {
+        throw new BudunApiError('Too many redirects while contacting Budun ERP.', {
+          code: 'network_error',
+          status: 502,
+        })
+      }
+      try {
+        res = await fetch(currentUrl, {
+          headers: this.headers(),
+          redirect: 'manual',
+          signal: AbortSignal.timeout(this.timeoutMs),
+        })
+      } catch (err) {
+        if (err instanceof DOMException && err.name === 'TimeoutError') {
+          throw new BudunApiError('Budun ERP did not respond in time.', { code: 'timeout', status: 504 })
+        }
+        const msg = err instanceof Error ? err.message : String(err)
+        throw new BudunApiError(`Could not reach Budun ERP: ${msg}`, { code: 'network_error', status: 502 })
+      }
+      if (res.status >= 300 && res.status < 400) {
+        const location = res.headers.get('location')
+        if (!location) {
+          throw new BudunApiError('Budun ERP redirected without a destination.', {
+            code: 'network_error',
+            status: 502,
+          })
+        }
+        // Resolve relative to the CURRENT hop, then loop back to the top
+        // so the new URL is re-validated before it is ever fetched — a
+        // public base_url can't 3xx its way to a private address.
+        currentUrl = new URL(location, currentUrl).toString()
+        continue
+      }
+      break
     }
     if (!res.ok) throw await toApiError(res)
     return (await res.json()) as T

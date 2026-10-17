@@ -1,7 +1,11 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
-import { updateContact, deleteContact } from '@/lib/ai/business-profile/service'
+import { updateContact, deleteContact, isAccountMember } from '@/lib/ai/business-profile/service'
+
+function bad(message: string) {
+  return NextResponse.json({ error: message }, { status: 400 })
+}
 
 /** PATCH /api/ai/business-profile/contacts/[id]  (admin+) */
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -12,6 +16,25 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
     const { id } = await params
     const body = await request.json().catch(() => ({}))
+
+    // Punto 9, H9-1 — same membership check as the create route (see its
+    // comment). A body that omits the field leaves it untouched
+    // (`undefined`); an explicit `null` clears it (both already allowed
+    // by the model below); a non-empty string must resolve to a member
+    // of THIS account before it's accepted.
+    let linkedUserId: string | null | undefined
+    if ('linked_user_id' in body) {
+      const raw = typeof body.linked_user_id === 'string' ? body.linked_user_id.trim() : ''
+      if (raw) {
+        if (!(await isAccountMember(supabase, accountId, raw))) {
+          return bad('linked_user_id must be a member of this account')
+        }
+        linkedUserId = raw
+      } else {
+        linkedUserId = null
+      }
+    }
+
     const contact = await updateContact(supabase, accountId, id, {
       name: typeof body.name === 'string' ? body.name.trim() : undefined,
       departmentId: 'department_id' in body ? (typeof body.department_id === 'string' ? body.department_id : null) : undefined,
@@ -22,8 +45,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       notes: 'notes' in body ? (typeof body.notes === 'string' ? body.notes : null) : undefined,
       active: typeof body.active === 'boolean' ? body.active : undefined,
       sortOrder: typeof body.sort_order === 'number' ? body.sort_order : undefined,
-      linkedUserId:
-        'linked_user_id' in body ? (typeof body.linked_user_id === 'string' ? body.linked_user_id : null) : undefined,
+      linkedUserId,
     })
     return NextResponse.json({ success: true, contact })
   } catch (err) {

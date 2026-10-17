@@ -37,11 +37,26 @@ interface OpenAiMessage {
 }
 
 interface ChatCompletionsResponse {
-  choices?: { message?: { content?: string | null; tool_calls?: OpenAiToolCall[] } }[]
+  choices?: {
+    message?: { content?: string | null; tool_calls?: OpenAiToolCall[] }
+    /** Punto 8, H8-1 — e.g. `'stop'`/`'length'`/`'tool_calls'`/
+     *  `'content_filter'`. Present on every real OpenAI/OpenRouter
+     *  response; declared optional here because a malformed/empty body
+     *  (already handled defensively throughout this file) has none. */
+    finish_reason?: string
+  }[]
   usage?: {
     prompt_tokens?: number
     completion_tokens?: number
     total_tokens?: number
+    /** Punto 8, F-2 — only present when the provider actually served
+     *  part of the prompt from its own automatic cache (OpenAI: prompts
+     *  ≥1024 tokens with a repeated prefix). Not every OpenAI-compatible
+     *  backend reports this — OpenRouter shares this same adapter and
+     *  proxies many different upstream models, not all of which surface
+     *  it — so every access below is defensive/optional, never assumed
+     *  present. */
+    prompt_tokens_details?: { cached_tokens?: number }
   }
   /** OpenRouter reports upstream failures as a 200 with an error body
    *  (the gateway call succeeded; the model behind it did not). */
@@ -83,6 +98,17 @@ export async function generateChatCompletion(
   ]
 
   const aggregatedUsage = { prompt: 0, completion: 0, total: 0 }
+  // Punto 8, F-2 — OpenAI's automatic prompt-cache discount, summed
+  // across turns exactly like Anthropic's cache_read_input_tokens.
+  // Tracked separately from `sawCachedTokens` for the same reason
+  // Anthropic's adapter tracks its own cache flags apart from the
+  // running sums: a call that never reports this field at all must
+  // stay distinguishable from one that reported zero.
+  let aggregatedCachedTokens = 0
+  let sawCachedTokens = false
+  // Punto 8, H8-1 — the raw finish_reason of the LAST turn actually
+  // executed.
+  let lastFinishReason: string | undefined
   const toolCallLog: ToolCallLogEntry[] = []
   const wireTools = tools && tools.length > 0 ? toOpenAiTools(tools) : undefined
 
@@ -137,10 +163,24 @@ export async function generateChatCompletion(
       aggregatedUsage.prompt += data.usage.prompt_tokens ?? 0
       aggregatedUsage.completion += data.usage.completion_tokens ?? 0
       aggregatedUsage.total += data.usage.total_tokens ?? 0
+      // F-2 — defensive: OpenRouter proxies many upstream models, not
+      // all of which populate `prompt_tokens_details`. Never assume
+      // presence; never treat absence as a confirmed zero.
+      const cachedTokens = data.usage.prompt_tokens_details?.cached_tokens
+      if (typeof cachedTokens === 'number') {
+        aggregatedCachedTokens += cachedTokens
+        sawCachedTokens = true
+      }
     }
 
-    const message = data?.choices?.[0]?.message
+    const choice = data?.choices?.[0]
+    lastFinishReason = choice?.finish_reason
+    const message = choice?.message
     const requestedCalls = message?.tool_calls ?? []
+    // H8-1 — see anthropic.ts's identical reasoning: true only on the
+    // exact turn the model still wants a tool but our own cap forbids
+    // continuing.
+    const toolTurnsExhausted = requestedCalls.length > 0 && Boolean(executeTool) && turn >= maxTurns
 
     if (requestedCalls.length > 0 && executeTool && turn < maxTurns) {
       wireMessages.push({ role: 'assistant', content: message?.content ?? null, tool_calls: requestedCalls })
@@ -168,8 +208,13 @@ export async function generateChatCompletion(
       if (toolCallLog.length > 0) {
         return {
           text: 'Un momento, permíteme confirmar esa información.',
-          usage: normalizeUsage(aggregatedUsage),
+          usage: normalizeUsage({
+            ...aggregatedUsage,
+            cacheReadInputTokens: sawCachedTokens ? aggregatedCachedTokens : undefined,
+          }),
           toolCalls: toolCallLog,
+          finishReason: lastFinishReason,
+          toolTurnsExhausted,
         }
       }
       throw new AiError(`${endpoint.label} returned an empty response.`, { code: 'empty_response' })
@@ -177,8 +222,13 @@ export async function generateChatCompletion(
 
     return {
       text,
-      usage: normalizeUsage(aggregatedUsage),
+      usage: normalizeUsage({
+        ...aggregatedUsage,
+        cacheReadInputTokens: sawCachedTokens ? aggregatedCachedTokens : undefined,
+      }),
       toolCalls: toolCallLog,
+      finishReason: lastFinishReason,
+      toolTurnsExhausted,
     }
   }
 }

@@ -140,6 +140,31 @@ describe("middleware — public and API routes (Auth healthy)", () => {
     expect(res.status).toBe(401);
   });
 
+  // AUTH-N1: /reset-password only ever does anything useful for a
+  // visitor /auth/callback already gave a session to — gate it at the
+  // edge the same as any other protected page rather than relying
+  // solely on the page's own client-side getUser() check.
+  it("redirects an unauthenticated visit to /reset-password to /login", async () => {
+    mockUser = null;
+
+    const res = await middleware(
+      new NextRequest("https://app.test/reset-password"),
+    );
+
+    expect(res.status).toBe(307);
+    expect(res.headers.get("location")).toContain("/login");
+  });
+
+  it("lets an authenticated visit to /reset-password through (no redirect)", async () => {
+    mockUser = { id: "user-1" };
+
+    const res = await middleware(
+      new NextRequest("https://app.test/reset-password"),
+    );
+
+    expect(res.headers.get("location")).toBeNull();
+  });
+
   it("does not require auth for /api/whatsapp/webhook", async () => {
     mockUser = null;
 

@@ -103,6 +103,61 @@ describe('parseSheetCsv — structured product rows', () => {
     expect(parsed.products[0].price).toBe(34900)
   })
 
+  // ============================================================
+  // Punto 5 audit, H-4: parsePrice() used to Math.round() every price
+  // before it reached ai_catalog_products.price (a `numeric` column
+  // that fully supports decimals), silently turning $19.99 into $20.
+  // These cases prove the real decimal value from the source now
+  // survives all the way into the structured product row.
+  // ============================================================
+  describe('price precision (H-4) — decimals are preserved, never rounded', () => {
+    it('a whole-number price is unaffected (existing behavior)', () => {
+      const text = csv([['Nombre', 'Precio'], ['Producto', '20']])
+      expect(parseSheetCsv(text, 'https://x/sheet.csv').products[0].price).toBe(20)
+    })
+
+    it('a price with two decimals keeps them exactly — 19.99 → 19.99, never 20', () => {
+      const text = csv([['Nombre', 'Precio'], ['Producto', '19.99']])
+      expect(parseSheetCsv(text, 'https://x/sheet.csv').products[0].price).toBe(19.99)
+    })
+
+    it('a larger price with two decimals keeps them exactly — 1499.95 → 1499.95', () => {
+      const text = csv([['Nombre', 'Precio'], ['Producto', '1499.95']])
+      expect(parseSheetCsv(text, 'https://x/sheet.csv').products[0].price).toBe(1499.95)
+    })
+
+    it('a price with a trailing .00 is numerically the same whole value (no distinct "20.00" in JS)', () => {
+      const text = csv([['Nombre', 'Precio'], ['Producto', '20.00']])
+      expect(parseSheetCsv(text, 'https://x/sheet.csv').products[0].price).toBe(20)
+    })
+
+    it('a currency-symbol + thousands-separator price with decimals keeps them exactly — RD$1,499.95 → 1499.95', () => {
+      const text = csv([['Nombre', 'Precio'], ['Producto', '"RD$1,499.95"']])
+      expect(parseSheetCsv(text, 'https://x/sheet.csv').products[0].price).toBe(1499.95)
+    })
+
+    it('a price with more than two decimals is still preserved exactly, not rounded to 2 (no such rule exists in this project)', () => {
+      const text = csv([['Nombre', 'Precio'], ['Producto', '24999.999']])
+      expect(parseSheetCsv(text, 'https://x/sheet.csv').products[0].price).toBe(24999.999)
+    })
+
+    it('an invalid/empty price still becomes null — unchanged behavior', () => {
+      const text = csv([['Nombre', 'Precio'], ['Producto', 'no-price']])
+      expect(parseSheetCsv(text, 'https://x/sheet.csv').products[0].price).toBeNull()
+    })
+
+    it('the flattened KB content text is unaffected — formatCurrency() still displays whole numbers by the app-wide convention (src/lib/currency.ts), unrelated to this fix', () => {
+      const text = csv([['Nombre', 'Precio'], ['Producto', '19.99']])
+      const parsed = parseSheetCsv(text, 'https://x/sheet.csv', undefined, 'USD')
+      expect(parsed.products[0].price).toBe(19.99)
+      expect(parsed.content).toContain('Producto')
+      // formatCurrency's own, pre-existing whole-number-only formatting
+      // (untouched by H-4) — this is the display layer, not the stored
+      // catalog value asserted above.
+      expect(parsed.content).not.toContain('19.99')
+    })
+  })
+
   it('preserves special / accented characters in the name', () => {
     const text = csv([
       ['Nombre', 'Precio'],

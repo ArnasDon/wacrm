@@ -259,3 +259,57 @@ describe('DataSourceCatalogProvider — getProduct/getAvailability/getMedia unto
     expect(product?.name).toBe('Producto X')
   })
 })
+
+// ============================================================
+// Bug #4 fix (service.ts's toCatalogProductRows — see service.test.ts
+// for the persistence-side dedup tests) resolved through the ACTUAL
+// consumer path: once two originally-duplicate-SKU rows are persisted
+// with distinct `source_product_id`s, search_catalog must surface both
+// with distinct composite ids, and a follow-up get_product/
+// getAvailability on EACH of those ids must resolve to the CORRECT,
+// distinct product — never "not_found" for either, and never one
+// answer bleeding into the other.
+// ============================================================
+describe('DataSourceCatalogProvider — Bug #4 fix: two originally-duplicate-SKU rows resolve independently', () => {
+  const rowA = row({ id: 'row-A', source_product_id: 'DUP1', sku: 'DUP1', name: 'Producto Negro', color: 'Negro', total_count: 2 })
+  const rowB = row({ id: 'row-B', source_product_id: 'row-1', sku: 'DUP1', name: 'Producto Blanco', color: 'Blanco', total_count: 2 })
+
+  it('search_catalog returns BOTH rows with DISTINCT composite ids, even though their sku is identical', async () => {
+    const { db } = fakeDb({ rpcRows: [rowA, rowB] })
+    const provider = new DataSourceCatalogProvider(db, 'acct-1', 'ds-1', 'PRUEBA')
+
+    const result = await provider.searchCatalog({ query: 'producto' })
+    expect(result.products).toHaveLength(2)
+    const ids = result.products.map((p) => p.id)
+    expect(new Set(ids).size).toBe(2) // distinct ids — this is what the fix guarantees
+    expect(result.products.every((p) => p.sku === 'DUP1')).toBe(true) // sku itself still shown, duplicated, on both
+  })
+
+  it('getProduct resolves EACH id to its own, correct, distinct product — never "not found", never crossed', async () => {
+    const { db } = fakeDb({ scanRows: [rowA, rowB] })
+    const provider = new DataSourceCatalogProvider(db, 'acct-1', 'ds-1', 'PRUEBA')
+
+    const productA = await provider.getProduct('DUP1')
+    const productB = await provider.getProduct('row-1')
+    expect(productA?.name).toBe('Producto Negro')
+    expect(productB?.name).toBe('Producto Blanco')
+    expect(productA?.id).not.toBe(productB?.id)
+  })
+
+  it('getAvailability resolves EACH id independently too', async () => {
+    const { db } = fakeDb({
+      scanRows: [
+        { ...rowA, available: true, available_quantity: 3 },
+        { ...rowB, available: false, available_quantity: 0 },
+      ],
+    })
+    const provider = new DataSourceCatalogProvider(db, 'acct-1', 'ds-1', 'PRUEBA')
+
+    const availA = await provider.getAvailability('DUP1')
+    const availB = await provider.getAvailability('row-1')
+    expect(availA?.available).toBe(true)
+    expect(availA?.availableQuantity).toBe(3)
+    expect(availB?.available).toBe(false)
+    expect(availB?.availableQuantity).toBe(0)
+  })
+})

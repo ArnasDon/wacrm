@@ -7,8 +7,8 @@
 // an encrypted copy and can never show it again.
 // ============================================================
 
-import { requireApiKey } from '@/lib/auth/api-context';
-import { ok, okList, fail, toApiErrorResponse } from '@/lib/api/v1/respond';
+import { withApiKey } from '@/lib/auth/api-context';
+import { ok, okList, fail } from '@/lib/api/v1/respond';
 import { encrypt } from '@/lib/whatsapp/encryption';
 import { normalizeEvents } from '@/lib/webhooks/events';
 import {
@@ -19,9 +19,7 @@ import {
 } from '@/lib/webhooks/endpoints';
 
 export async function GET(request: Request) {
-  try {
-    const ctx = await requireApiKey(request, 'webhooks:manage');
-
+  return withApiKey(request, 'webhooks:manage', async (ctx) => {
     const { data, error } = await ctx.supabase
       .from('webhook_endpoints')
       .select(WEBHOOK_PUBLIC_COLUMNS)
@@ -41,15 +39,11 @@ export async function GET(request: Request) {
       ),
       null
     );
-  } catch (err) {
-    return toApiErrorResponse(err);
-  }
+  });
 }
 
 export async function POST(request: Request) {
-  try {
-    const ctx = await requireApiKey(request, 'webhooks:manage');
-
+  return withApiKey(request, 'webhooks:manage', async (ctx) => {
     const body = (await request.json().catch(() => null)) as Record<
       string,
       unknown
@@ -93,10 +87,11 @@ export async function POST(request: Request) {
 
     // Secret shown exactly once.
     return ok(
-      { ...serializeWebhookEndpoint(created as Record<string, unknown>), secret },
+      {
+        ...serializeWebhookEndpoint(created as Record<string, unknown>),
+        secret,
+      },
       201
     );
-  } catch (err) {
-    return toApiErrorResponse(err);
-  }
+  });
 }

@@ -23,6 +23,7 @@ const ROW = {
   model: 'gpt-x',
   api_key: 'enc-key',
   system_prompt: null,
+  agent_behavior: null,
   is_active: false,
   auto_reply_enabled: false,
   auto_reply_max_per_conversation: 3,
@@ -47,5 +48,33 @@ describe('loadAiConfig requireActive', () => {
     expect(
       await loadAiConfig(dbReturning(null), 'acct', { requireActive: false }),
     ).toBeNull()
+  })
+})
+
+// ============================================================
+// Fase 10 — agent_behavior (structurally separate from system_prompt).
+// Backward compatibility: a row from BEFORE migration 058 has no
+// `agent_behavior` column at all (undefined, not null, on the raw row) —
+// loadAiConfig must not throw and must surface it as a plain absence,
+// exactly like a row that explicitly stores NULL there.
+// ============================================================
+describe('loadAiConfig agentBehavior', () => {
+  it('surfaces a configured agent_behavior', async () => {
+    const config = await loadAiConfig(
+      dbReturning({ ...ROW, agent_behavior: 'Sé formal y directo.' }),
+      'acct',
+      { requireActive: false },
+    )
+    expect(config!.agentBehavior).toBe('Sé formal y directo.')
+  })
+
+  it('a legacy row predating the column (agent_behavior absent, not just null) does not throw and reads as empty', async () => {
+    const legacyRow: Record<string, unknown> = { ...ROW }
+    delete legacyRow.agent_behavior
+    const config = await loadAiConfig(dbReturning(legacyRow), 'acct', {
+      requireActive: false,
+    })
+    expect(config).not.toBeNull()
+    expect(config!.agentBehavior).toBeFalsy()
   })
 })

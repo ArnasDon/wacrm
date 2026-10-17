@@ -126,8 +126,13 @@ export async function middleware(request: NextRequest) {
     return withRefreshedCookies(NextResponse.redirect(url))
   }
 
-  // Protected pages - redirect to login if not authenticated
-  const protectedPaths = ['/dashboard', '/inbox', '/contacts', '/pipelines', '/broadcasts', '/automations', '/settings']
+  // Protected pages - redirect to login if not authenticated.
+  // `/reset-password` is included (AUTH-N1): it only ever does
+  // anything useful for a visitor who already has a session —
+  // /auth/callback establishes one before ever redirecting here — so
+  // an anonymous visit is gated at the edge rather than relying solely
+  // on the page's own client-side getUser() check.
+  const protectedPaths = ['/dashboard', '/inbox', '/contacts', '/pipelines', '/broadcasts', '/automations', '/settings', '/reset-password']
   if (!user && protectedPaths.some(path => request.nextUrl.pathname.startsWith(path))) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'

@@ -2,6 +2,12 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import {
+  ForbiddenError,
+  UnauthorizedError,
+  requireRole,
+  toErrorResponse,
+} from '@/lib/auth/account'
+import {
   registerPhoneNumber,
   subscribeWabaToApp,
   verifyPhoneNumber,
@@ -165,24 +171,15 @@ export async function GET() {
  */
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient()
-
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const accountId = await resolveAccountId(supabase, user.id)
-    if (!accountId) {
-      return NextResponse.json(
-        { error: 'Your profile is not linked to an account.' },
-        { status: 403 },
-      )
-    }
+    // Saving WhatsApp config calls Meta for real (verifyPhoneNumber,
+    // registerPhoneNumber, subscribeWabaToApp) BEFORE any local write —
+    // settings-class data: `canEditSettings` and the whatsapp_config
+    // insert/update RLS policies (migration 017) both require 'admin'.
+    // Resolving account_id off the profile only proved membership, so a
+    // viewer or agent could trigger those real, external calls — RLS
+    // can't undo them — before the local save was refused. Same fix
+    // already applied to templates/submit and templates/sync.
+    const { supabase, accountId, userId } = await requireRole('admin')
 
     const body = await request.json()
     const { phone_number_id, waba_id, access_token, verify_token, pin } = body
@@ -388,7 +385,7 @@ export async function POST(request: Request) {
         .from('whatsapp_config')
         .insert({
           account_id: accountId,
-          user_id: user.id,
+          user_id: userId,
           ...baseRow,
         })
 
@@ -426,6 +423,12 @@ export async function POST(request: Request) {
       phone_info: phoneInfo,
     })
   } catch (error) {
+    // Auth failures map to 401/403 rather than the generic 500 below —
+    // reporting "you aren't an admin" as a config-save failure would
+    // send the user chasing the wrong problem.
+    if (error instanceof UnauthorizedError || error instanceof ForbiddenError) {
+      return toErrorResponse(error)
+    }
     console.error('Error in WhatsApp config POST:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
@@ -440,24 +443,9 @@ export async function POST(request: Request) {
  */
 export async function DELETE() {
   try {
-    const supabase = await createClient()
-
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const accountId = await resolveAccountId(supabase, user.id)
-    if (!accountId) {
-      return NextResponse.json(
-        { error: 'Your profile is not linked to an account.' },
-        { status: 403 },
-      )
-    }
+    // Same settings-class rationale as POST above: deleting the
+    // account's WhatsApp config requires 'admin'.
+    const { supabase, accountId } = await requireRole('admin')
 
     const { error: deleteError } = await supabase
       .from('whatsapp_config')
@@ -474,6 +462,9 @@ export async function DELETE() {
 
     return NextResponse.json({ success: true })
   } catch (error) {
+    if (error instanceof UnauthorizedError || error instanceof ForbiddenError) {
+      return toErrorResponse(error)
+    }
     console.error('Error in WhatsApp config DELETE:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }

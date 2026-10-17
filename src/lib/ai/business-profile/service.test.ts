@@ -12,6 +12,7 @@ import {
   updateContact,
   deleteContact,
   loadBusinessProfileForAgent,
+  isAccountMember,
 } from './service'
 
 // ------------------------------------------------------------
@@ -206,5 +207,39 @@ describe('loadBusinessProfileForAgent', () => {
     const { db } = fakeDb()
     const result = await loadBusinessProfileForAgent(db, 'acct-1')
     expect(result).toEqual({ profile: null, departments: [], contacts: [] })
+  })
+})
+
+describe('isAccountMember (Punto 9, H9-1)', () => {
+  it('true when a profiles row matches both account_id and user_id', async () => {
+    const { db, table } = fakeDb()
+    table('profiles').push({ account_id: 'acct-1', user_id: 'user-1' })
+    expect(await isAccountMember(db, 'acct-1', 'user-1')).toBe(true)
+  })
+
+  it('false when the user exists but belongs to a DIFFERENT account (the exact H9-1 shape)', async () => {
+    const { db, table } = fakeDb()
+    table('profiles').push({ account_id: 'acct-2', user_id: 'user-1' })
+    expect(await isAccountMember(db, 'acct-1', 'user-1')).toBe(false)
+  })
+
+  it('false when no profiles row exists for that user at all', async () => {
+    const { db } = fakeDb()
+    expect(await isAccountMember(db, 'acct-1', 'ghost-user')).toBe(false)
+  })
+
+  it('fails closed (false, not thrown) when the membership query itself errors', async () => {
+    const db = {
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            eq: () => ({
+              maybeSingle: () => Promise.resolve({ data: null, error: new Error('db unreachable') }),
+            }),
+          }),
+        }),
+      }),
+    } as never
+    expect(await isAccountMember(db, 'acct-1', 'user-1')).toBe(false)
   })
 })

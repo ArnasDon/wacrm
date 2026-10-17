@@ -1,0 +1,84 @@
+-- ============================================================
+-- 054_record_webhook_failure_grant.sql — lock down EXECUTE on
+--                                          record_webhook_failure (IC-M1)
+--
+-- The problem
+--
+--   `record_webhook_failure(endpoint_id, max_failures)` (migration 028)
+--   is SECURITY DEFINER — it bypasses RLS on `webhook_endpoints` by
+--   design, the same way `set_member_role`/`insert_inbound_customer_
+--   message`/`claim_ai_reply_slot` do for their own tables. Unlike
+--   every one of those siblings, migration 028 never added a matching
+--   `REVOKE ALL ... FROM PUBLIC` + scoped `GRANT EXECUTE`. Postgres
+--   grants EXECUTE on a newly created function to PUBLIC by default,
+--   so — on a database where that default was never narrowed — ANY
+--   authenticated (or even anonymous) caller could invoke this RPC
+--   directly via PostgREST with an arbitrary `endpoint_id`, bypassing
+--   RLS and `requireRole('admin')` entirely, and disable another
+--   account's webhook by guessing/obtaining its UUID.
+--
+--   This is exactly the bug class already fixed twice before in this
+--   schema: migration 031 (`claim_ai_reply_slot`, issue #345) and
+--   migration 032 (`match_ai_knowledge_fts`/`match_ai_knowledge_
+--   semantic`). This migration applies the same fix to the one
+--   function that was missed.
+--
+-- The fix
+--
+--   `deliver.ts` (the ONLY caller — see `src/lib/webhooks/deliver.ts`,
+--   `recordFailure()`) always invokes this RPC through the service-role
+--   client: every `dispatchWebhookEvent(...)` call site in
+--   `src/app/api/whatsapp/webhook/route.ts` passes `supabaseAdmin()`
+--   explicitly. No dashboard route, no public-API route, and no other
+--   application code calls it. Locking EXECUTE to `service_role` alone
+--   therefore changes nothing about the legitimate flow.
+--
+--   No ownership check is added INSIDE the function itself: the only
+--   caller runs under `service_role`, which carries no `auth.uid()` —
+--   an `auth.uid()`-based check would break the one legitimate call
+--   path, not secure it, and would just be a superficial validation
+--   standing in for the real fix. The GRANT/REVOKE pair below is the
+--   actual control, matching the pattern already used by
+--   `insert_inbound_customer_message` (053) and
+--   `create_broadcast_with_recipients`, which are also service-role-
+--   only with no internal ownership check.
+--
+-- SECURITY DEFINER / SET search_path = public are both left exactly as
+-- migration 028 defined them — this migration only touches privileges,
+-- never the function body.
+--
+-- Idempotent — REVOKE/GRANT are no-ops when the privilege state already
+-- matches.
+-- ============================================================
+
+REVOKE ALL ON FUNCTION public.record_webhook_failure(uuid, integer) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.record_webhook_failure(uuid, integer) FROM anon;
+REVOKE ALL ON FUNCTION public.record_webhook_failure(uuid, integer) FROM authenticated;
+GRANT EXECUTE ON FUNCTION public.record_webhook_failure(uuid, integer) TO service_role;
+
+-- ============================================================
+-- Manual validation (run against a live instance — no automated SQL
+-- test harness exists in this repo; same caveat as migration 034):
+--
+--   1. As an `authenticated` JWT via PostgREST, this must now return
+--      42501 (insufficient_privilege):
+--        POST /rest/v1/rpc/record_webhook_failure
+--        { "endpoint_id": "<any uuid>", "max_failures": 1 }
+--   2. The same call as `anon` must also fail with 42501.
+--   3. The application's own delivery path (`service_role`, via
+--      `src/lib/webhooks/deliver.ts`) must be unaffected: trigger a
+--      failing delivery (e.g. a webhook URL that 500s) and confirm
+--      `webhook_endpoints.failure_count` still increments.
+--   4. Confirm the existing auto-disable behavior is unchanged: after
+--      `failure_count` reaches `MAX_CONSECUTIVE_FAILURES`
+--      (`src/lib/webhooks/deliver.ts`), `is_active` still flips to
+--      `false` — the function body was not touched by this migration,
+--      only its privileges.
+--
+-- At the application/JS layer, `src/lib/webhooks/deliver.test.ts`
+-- already exercises the exact RPC call shape
+-- (`record_webhook_failure({ endpoint_id, max_failures })`) against a
+-- mocked Supabase client and is unaffected by this migration (DB-level
+-- grants are invisible to that mock) — it continues to pin that the
+-- legitimate call path is unchanged.
+-- ============================================================

@@ -1,7 +1,12 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
-import { deleteCatalogIntegration, saveCatalogIntegration } from '@/lib/ai/catalog/integrations'
+import {
+  CatalogIntegrationNotFoundError,
+  CatalogIntegrationValidationError,
+  deleteCatalogIntegration,
+  saveCatalogIntegration,
+} from '@/lib/ai/catalog/integrations'
 
 /**
  * PATCH /api/integrations/catalog/[id]  (admin+)
@@ -19,6 +24,15 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const { id } = await params
     const body = await request.json().catch(() => ({}))
 
+    // Only the account's own Enable/Disable toggle may set `status`
+    // through this route — 'error' is reserved exclusively for
+    // testCatalogIntegration()'s own real connection-test outcome, and
+    // anything else is simply not a valid value. Rejected up front
+    // (400) rather than silently ignored or forwarded as-is.
+    if (body.status !== undefined && body.status !== 'active' && body.status !== 'disabled') {
+      return NextResponse.json({ error: "status must be 'active' or 'disabled'." }, { status: 400 })
+    }
+
     // Every field below is passed only when present in the body — the
     // service layer treats an omitted key as "leave unchanged" (see
     // saveCatalogIntegration), so a PATCH that only rotates the secret
@@ -33,9 +47,20 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       scopes: Array.isArray(body.scopes) ? body.scopes : undefined,
       isPrimary: body.is_primary !== undefined ? Boolean(body.is_primary) : undefined,
       priority: body.priority,
+      status: body.status === 'active' || body.status === 'disabled' ? body.status : undefined,
     })
     return NextResponse.json({ success: true, integration })
   } catch (err) {
+    // Nonexistent/foreign id → 404, not the generic 500 toErrorResponse
+    // would otherwise produce for this throw. Checked before the
+    // fallback so a genuine backend/Supabase error still reaches
+    // toErrorResponse unchanged (Bug E2 fix).
+    if (err instanceof CatalogIntegrationNotFoundError) {
+      return NextResponse.json({ error: err.message }, { status: 404 })
+    }
+    if (err instanceof CatalogIntegrationValidationError) {
+      return NextResponse.json({ error: err.message }, { status: 400 })
+    }
     return toErrorResponse(err)
   }
 }
@@ -51,6 +76,9 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
     await deleteCatalogIntegration(supabase, accountId, id)
     return NextResponse.json({ success: true })
   } catch (err) {
+    if (err instanceof CatalogIntegrationNotFoundError) {
+      return NextResponse.json({ error: err.message }, { status: 404 })
+    }
     return toErrorResponse(err)
   }
 }

@@ -96,45 +96,26 @@ vi.mock('@supabase/supabase-js', () => ({
             }),
           }
         case 'messages':
+          // BUG B1 fix (migration 053): the prior-customer-message COUNT,
+          // the message upsert, and the unread-count bump used to be
+          // three separate calls here (a `select('id',{count,head:true})`,
+          // an `upsert()`, and a `rpc('bump_conversation_on_inbound')`)
+          // — collapsed into one atomic `rpc('insert_inbound_customer_message')`
+          // call, simulated below. Only `lookupInternalIdByMetaId`'s
+          // select (swipe-reply / reaction target lookup) still reads
+          // this table directly.
           return {
-            // Two different chains land here, told apart by the count
-            // option: the prior-message count (head request) and the
-            // reply-context parent lookup.
-            select: (_columns: string, options?: { head?: boolean }) =>
-              options?.head
-                ? // priorCustomerMsgCount: select('id',{count,head}).eq().eq()
-                  {
-                    eq: () => ({
-                      eq: () =>
-                        Promise.resolve({
-                          count: h.state.priorCustomerMsgCount,
-                          error: null,
-                        }),
+            select: () => ({
+              eq: () => ({
+                eq: () => ({
+                  maybeSingle: () =>
+                    Promise.resolve({
+                      data: h.state.replyContextParent,
+                      error: null,
                     }),
-                  }
-                : // lookupInternalIdByMetaId: select('id').eq().eq().maybeSingle()
-                  {
-                    eq: () => ({
-                      eq: () => ({
-                        maybeSingle: () =>
-                          Promise.resolve({
-                            data: h.state.replyContextParent,
-                            error: null,
-                          }),
-                      }),
-                    }),
-                  },
-            // Idempotent insert: upsert(...).select('id')
-            upsert: (row: Record<string, unknown>, options: unknown) => {
-              h.state.upsertCalls.push({ row, options })
-              return {
-                select: () =>
-                  Promise.resolve({
-                    data: h.state.messageUpsertResult,
-                    error: null,
-                  }),
-              }
-            },
+                }),
+              }),
+            }),
           }
         default:
           throw new Error(`unexpected table: ${table}`)
@@ -142,6 +123,52 @@ vi.mock('@supabase/supabase-js', () => ({
     },
     rpc: (name: string, args: Record<string, unknown>) => {
       h.state.rpcCalls.push({ name, args })
+      if (name === 'insert_inbound_customer_message') {
+        // Simulates insert_inbound_customer_message (migration 053).
+        // The insert attempt is recorded unconditionally — mirrors the
+        // pre-fix mock, where the bare `upsert()` call always happened
+        // regardless of whether Postgres's ON CONFLICT ended up
+        // discarding it. `h.state.messageUpsertResult` still drives
+        // "was this a genuine insert vs a replay" (empty = replay),
+        // and `h.state.priorCustomerMsgCount` still drives whether it
+        // was the conversation's first customer message — same two
+        // knobs every existing test already sets, now feeding one RPC
+        // instead of three separate calls.
+        const row = {
+          conversation_id: args.p_conversation_id,
+          sender_type: 'customer',
+          content_type: args.p_content_type,
+          content_text: args.p_content_text,
+          media_url: args.p_media_url,
+          media_type: args.p_media_type,
+          message_id: args.p_message_id,
+          status: 'delivered',
+          created_at: args.p_created_at,
+          reply_to_message_id: args.p_reply_to_message_id,
+          interactive_reply_id: args.p_interactive_reply_id,
+        }
+        h.state.upsertCalls.push({
+          row,
+          options: { onConflict: 'conversation_id,message_id', ignoreDuplicates: true },
+        })
+        const wasInserted = h.state.messageUpsertResult.length > 0
+        if (!wasInserted) {
+          return Promise.resolve({
+            data: [{ message_id: null, was_inserted: false, is_first_customer_message: false }],
+            error: null,
+          })
+        }
+        return Promise.resolve({
+          data: [
+            {
+              message_id: h.state.messageUpsertResult[0].id,
+              was_inserted: true,
+              is_first_customer_message: h.state.priorCustomerMsgCount === 0,
+            },
+          ],
+          error: null,
+        })
+      }
       return Promise.resolve({ data: null, error: null })
     },
     // Service-role Storage, used by the inbound-media mirror (#466).
@@ -301,14 +328,21 @@ describe('inbound webhook: idempotent insert (#367)', () => {
   })
 
   it('a replayed delivery is a no-op: no unread bump, no fan-out', async () => {
-    // Upsert hits the unique index and returns no row.
+    // insert_inbound_customer_message hits the unique index server-side
+    // and reports was_inserted:false.
     h.state.messageUpsertResult = []
 
     await runWebhook()
 
+    // The insert is still ATTEMPTED (one RPC call, migration 053 — it
+    // folds the old separate upsert() into itself), but it reports
+    // was_inserted:false; the SQL function's own early return (see the
+    // migration) is what actually skips the unread bump before any of
+    // this ever reaches the app.
     expect(h.state.upsertCalls).toHaveLength(1)
+    expect(h.state.rpcCalls).toHaveLength(1)
+    expect(h.state.rpcCalls[0].name).toBe('insert_inbound_customer_message')
     // None of the downstream side effects fire on a replay.
-    expect(h.state.rpcCalls).toHaveLength(0)
     expect(h.dispatchInboundToFlows).not.toHaveBeenCalled()
     expect(h.runAutomationsForTrigger).not.toHaveBeenCalled()
     expect(h.dispatchInboundToAiReply).not.toHaveBeenCalled()
@@ -320,9 +354,14 @@ describe('inbound webhook: atomic unread bump (#369)', () => {
   it('increments unread through the DB-side RPC, not a read-modify-write', async () => {
     await runWebhook()
 
+    // Migration 053 folds the bump_conversation_on_inbound call (still
+    // unchanged and still called, now from inside
+    // insert_inbound_customer_message's own SQL body) into the same
+    // atomic call that inserts the message — one RPC round-trip from
+    // the app's point of view instead of two.
     expect(h.state.rpcCalls).toHaveLength(1)
     expect(h.state.rpcCalls[0]).toMatchObject({
-      name: 'bump_conversation_on_inbound',
+      name: 'insert_inbound_customer_message',
       args: { p_conversation_id: 'conv-1' },
     })
   })

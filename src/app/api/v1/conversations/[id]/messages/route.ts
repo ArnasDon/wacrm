@@ -6,8 +6,8 @@
 // any message is returned — a foreign or unknown id → 404.
 // ============================================================
 
-import { requireApiKey } from '@/lib/auth/api-context';
-import { okList, fail, toApiErrorResponse } from '@/lib/api/v1/respond';
+import { withApiKey } from '@/lib/auth/api-context';
+import { okList, fail } from '@/lib/api/v1/respond';
 import {
   parseListParams,
   keysetFilter,
@@ -20,8 +20,7 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  try {
-    const ctx = await requireApiKey(request, 'messages:read');
+  return withApiKey(request, 'messages:read', async (ctx) => {
     const { id } = await params;
     const { limit, cursor } = parseListParams(request);
 
@@ -59,7 +58,5 @@ export async function GET(
       items.map((m) => serializeMessage(m as unknown as Message)),
       nextCursor
     );
-  } catch (err) {
-    return toApiErrorResponse(err);
-  }
+  });
 }

@@ -26,6 +26,15 @@ import { supabaseAdmin } from './admin-client'
 // on hand. Kept here (rather than refactoring the user-facing send
 // route) to avoid risk to the working manual-send path — they can
 // converge in a later refactor.
+//
+// Punto 10, F-P10-2 — this module NEVER pauses the AI auto-reply bot
+// (never touches `assigned_agent_id` / `ai_autoreply_disabled`), on
+// purpose: an Automation's `send_message` step is a deterministic,
+// non-human send, not a person taking over the thread. The only send
+// path that pauses AI is `src/lib/whatsapp/send-message.ts`'s
+// `humanAgentUserId` parameter, populated exclusively by the
+// dashboard's manual-send route where a real, currently-authenticated
+// human agent is provably behind the request.
 // ------------------------------------------------------------
 
 interface SendTextArgs {

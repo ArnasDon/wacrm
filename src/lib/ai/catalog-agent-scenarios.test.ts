@@ -45,6 +45,7 @@ function config(): AiConfig {
     model: 'gpt-test',
     apiKey: 'sk-test',
     systemPrompt: 'Tienda de electrónicos en Santo Domingo.',
+    agentBehavior: null,
     isActive: true,
     autoReplyEnabled: true,
     autoReplyMaxPerConversation: 10,

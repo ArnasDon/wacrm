@@ -9,6 +9,7 @@ import {
   listDataSources,
 } from '@/lib/ai/data-sources/service'
 import type { DataSourceUsage, FallbackPolicy } from '@/lib/ai/data-sources/types'
+import { contentLengthExceeds, fileExceeds, fileTooLargeResponse, MAX_UPLOAD_BYTES } from '@/lib/uploads/size-limit'
 
 const USAGE_VALUES: DataSourceUsage[] = ['knowledge', 'catalog', 'both']
 const FALLBACK_VALUES: FallbackPolicy[] = ['primary_only', 'fallback_on_not_found', 'search_all_active']
@@ -44,6 +45,17 @@ export async function POST(request: Request) {
     const { supabase, accountId, userId } = await requireRole('admin')
     const limit = checkRateLimit(`ai-data-source-create:${userId}`, RATE_LIMITS.adminAction)
     if (!limit.success) return rateLimitResponse(limit)
+
+    // ST-N2: reject an oversized upload BEFORE parsing the multipart
+    // body. Only relevant to the `uploaded_csv` branch below (the
+    // google_sheets/remote_csv branches never attach a file), but the
+    // request itself hasn't been parsed yet at this point, so the check
+    // has to happen here regardless of which source_type it turns out
+    // to be.
+    if (contentLengthExceeds(request, MAX_UPLOAD_BYTES)) {
+      const { body, status } = fileTooLargeResponse()
+      return NextResponse.json(body, { status })
+    }
 
     const formData = await request.formData().catch(() => null)
     if (!formData) {
@@ -114,6 +126,11 @@ export async function POST(request: Request) {
       const file = formData.get('file')
       if (!file || !(file instanceof File)) {
         return NextResponse.json({ error: 'file is required for source_type "uploaded_csv".' }, { status: 400 })
+      }
+      // ST-N2 backstop: authoritative regardless of Content-Length.
+      if (fileExceeds(file, MAX_UPLOAD_BYTES)) {
+        const { body, status } = fileTooLargeResponse()
+        return NextResponse.json(body, { status })
       }
       const buffer = await file.arrayBuffer()
       const source = await createDataSourceFromFile(supabase, {

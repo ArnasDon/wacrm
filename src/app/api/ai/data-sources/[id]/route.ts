@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
-import { deleteDataSource, updateDataSourceMeta } from '@/lib/ai/data-sources/service'
+import { DataSourceNotFoundError, deleteDataSource, updateDataSourceMeta } from '@/lib/ai/data-sources/service'
 import type { DataSourceUsage, FallbackPolicy } from '@/lib/ai/data-sources/types'
 
 const USAGE_VALUES: DataSourceUsage[] = ['knowledge', 'catalog', 'both']
@@ -46,6 +46,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     })
     return NextResponse.json({ success: true, data_source: source })
   } catch (err) {
+    // A missing/foreign id is 404, never a raw 500 — and, critically,
+    // is now thrown BEFORE updateDataSourceMeta touches any other row
+    // (see the FASE 4 audit's Bug #2/#3 fix in service.ts).
+    if (err instanceof DataSourceNotFoundError) {
+      return NextResponse.json({ error: err.message }, { status: 404 })
+    }
     return toErrorResponse(err)
   }
 }
@@ -61,6 +67,9 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
     await deleteDataSource(supabase, accountId, id)
     return NextResponse.json({ success: true })
   } catch (err) {
+    if (err instanceof DataSourceNotFoundError) {
+      return NextResponse.json({ error: err.message }, { status: 404 })
+    }
     return toErrorResponse(err)
   }
 }

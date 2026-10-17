@@ -67,6 +67,25 @@ export function encodeCursor(row: { created_at: string; id: string }): string {
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// Strict ISO-8601 timestamp shape — exactly what Postgres/PostgREST
+// emits for a `timestamptz` column (the only source `encodeCursor`
+// ever reads `created_at` from): `YYYY-MM-DDTHH:MM:SS`, optional
+// fractional seconds (up to microsecond precision), then either `Z` or
+// a `±HH:MM` offset.
+//
+// `Date.parse()` alone is NOT this strict, and used to be the only
+// check here: V8 also accepts RFC-1123 strings
+// (`"Thu, 01 Jan 1970 00:00:00 GMT"`, from `Date.prototype.toUTCString`)
+// and `Date.prototype.toString()`-style strings
+// (`"Wed Dec 31 1969 19:30:00 GMT-0430 (Some Timezone)"`) as valid
+// dates — both contain raw commas and/or parentheses, which is exactly
+// the PostgREST filter-grammar syntax this decoder exists to keep out
+// of `keysetFilter`'s raw string interpolation. The `id` field already
+// had this exact class of guard (`UUID_RE`, above) — this closes the
+// SAME guard for `createdAt`, the field it was previously missing on.
+const ISO_TIMESTAMP_RE =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?(Z|[+-]\d{2}:\d{2})$/;
+
 /** Decode a cursor string, or null if missing/malformed/untrusted. */
 export function decodeCursor(value: string | null): Cursor | null {
   if (!value) return null;
@@ -80,6 +99,7 @@ export function decodeCursor(value: string | null): Cursor | null {
     // ISO-8601 timestamp and a UUID. This is what keeps the raw
     // interpolation in `keysetFilter` safe.
     if (!UUID_RE.test(id)) return null;
+    if (!ISO_TIMESTAMP_RE.test(createdAt)) return null;
     const ts = Date.parse(createdAt);
     if (Number.isNaN(ts)) return null;
     return { createdAt, id };

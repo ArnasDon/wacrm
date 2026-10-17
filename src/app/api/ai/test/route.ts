@@ -68,6 +68,7 @@ export async function POST(request: Request) {
         model,
         apiKey: apiKeyPlain,
         systemPrompt: null,
+        agentBehavior: null,
         isActive: true,
         autoReplyEnabled: false,
         autoReplyMaxPerConversation: 3,

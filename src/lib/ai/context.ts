@@ -39,3 +39,29 @@ export async function buildConversationContext(
       content: m.content_text!.trim(),
     }))
 }
+
+/**
+ * The id of the most recent customer text message in a conversation, or
+ * null if it has none. Used exclusively by dispatchInboundToAiReply's
+ * H-6 drain loop (auto-reply.ts) as the "marker" it hands to
+ * `release_or_continue_ai_processing` — "was there a newer customer
+ * message than the one I just answered?" — never for building the
+ * model-facing context itself (buildConversationContext above is
+ * unchanged and remains the only source of that).
+ */
+export async function latestCustomerMessageId(
+  db: SupabaseClient,
+  conversationId: string,
+): Promise<string | null> {
+  const { data, error } = await db
+    .from('messages')
+    .select('id')
+    .eq('conversation_id', conversationId)
+    .eq('sender_type', 'customer')
+    .eq('content_type', 'text')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (error) throw error
+  return (data as { id: string } | null)?.id ?? null
+}

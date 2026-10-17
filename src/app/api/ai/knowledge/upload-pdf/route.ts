@@ -8,6 +8,7 @@ import { loadEmbeddingsKey } from '@/lib/ai/config'
 import { ingestDocument } from '@/lib/ai/knowledge'
 import { extractPdfText, PdfExtractError } from '@/lib/pdf-extract'
 import { supabaseAdmin } from '@/lib/ai/admin-client'
+import { contentLengthExceeds, fileExceeds, fileTooLargeResponse, MAX_UPLOAD_BYTES } from '@/lib/uploads/size-limit'
 
 /**
  * POST /api/ai/knowledge/upload-pdf  (admin+)
@@ -23,6 +24,15 @@ export async function POST(request: Request) {
     const limit = checkRateLimit(`ai-kb:${userId}`, RATE_LIMITS.adminAction)
     if (!limit.success) return rateLimitResponse(limit)
 
+    // ST-N2: reject an oversized upload BEFORE spending any work parsing
+    // the multipart body. `Content-Length` is client-declared, so this
+    // isn't authoritative on its own — `fileExceeds` below is the real
+    // backstop — but it's a real, cheap win for the honest/common case.
+    if (contentLengthExceeds(request, MAX_UPLOAD_BYTES)) {
+      const { body, status } = fileTooLargeResponse()
+      return NextResponse.json(body, { status })
+    }
+
     const formData = await request.formData().catch(() => null)
     if (!formData) {
       return NextResponse.json({ error: 'Expected multipart/form-data.' }, { status: 400 })
@@ -35,6 +45,15 @@ export async function POST(request: Request) {
 
     if (!file.name.toLowerCase().endsWith('.pdf')) {
       return NextResponse.json({ error: 'Only PDF files are accepted.' }, { status: 400 })
+    }
+
+    // ST-N2 backstop: `file.size` is available synchronously (no need to
+    // read the bytes) and is authoritative regardless of whether
+    // Content-Length was present/accurate — catches chunked-encoding or
+    // an understated header before `arrayBuffer()` below.
+    if (fileExceeds(file, MAX_UPLOAD_BYTES)) {
+      const { body, status } = fileTooLargeResponse()
+      return NextResponse.json(body, { status })
     }
 
     const titleRaw = formData.get('title')

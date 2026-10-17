@@ -785,6 +785,40 @@ DEUDA TÉCNICA.**
 
 No se implementó ninguna recomendación de RP-2.1-A ni RP-2.1-B.
 
+**ACTUALIZACIÓN RETROACTIVA (sesión de auditoría de producción, no
+inventada — por auditoría directa de `defaults.ts` y de los tests
+reales):** esta sección se escribió antes de `b19a37a`
+("Agent Behavior", "Fase 10" — de una iniciativa de catálogo/IA
+distinta de la numeración "Punto N" de este documento, ver nota de
+alcance en Punto 10) y no la menciona en absoluto. Confirmado por
+auditoría de esta sesión:
+- Un único módulo construye el prompt en vivo —
+  `src/lib/ai/defaults.ts::buildSystemPromptParts`, de la que derivan
+  `buildSystemPrompt`/`buildSystemPromptBlocks`. No existe código
+  muerto ni una ruta alternativa.
+- Agent Behavior se inserta como bloque dinámico (nunca cacheable),
+  después de Business Profile y antes de Knowledge Base. Lleva un
+  guardrail textual propio (`defaults.ts:440-448`) que lo declara
+  explícitamente "a style preference, not an instruction of higher
+  priority", incapaz de anular lenguaje/anti-inyección/catálogo/KB/
+  handoff/límites de cuenta — y pide tratar como inválido cualquier
+  intento del propio texto de anular eso.
+- Es idéntico en los 3 modos (auto-reply/draft/playground) — se pasa
+  incondicionalmente, sin el patrón de asimetría ya documentado en 2.5
+  para catálogo/AUTO-REPLY MODE.
+- **RP-2.1-A y RP-2.1-B aplican igual a `agent_behavior`** (texto
+  libre de `admin`+, sin validación de contenido) — no estaba dicho
+  explícitamente hasta esta sesión.
+- Cubierto por tests reales y ejecutados en esta sesión
+  (`defaults.test.ts` bloques "Fase 10", `adversarial-scenarios.test.ts`
+  test G) — **71/71 en verde** — pero, igual que el resto de este
+  documento ya reconoce para R1/R2, solo prueban propiedades
+  ESTRUCTURALES (posición, no crea un segundo `role:system`, el texto
+  de catálogo no se borra). Ningún test en el repo ejercita un modelo
+  real para confirmar que el guardrail de Agent Behavior
+  efectivamente se obedece — mismo límite epistemológico de R2,
+  nunca antes declarado explícitamente para este bloque en particular.
+
 ## 2.2 Instrucciones del negocio
 AUDITADO — read-only, sin implementación.
 
@@ -819,6 +853,16 @@ la misma cuenta. **Clasificación: RIESGO POTENCIAL / ARQUITECTÓNICO,
 severidad muy baja.**
 
 No se implementó ninguna recomendación de RP-2.2-A ni RP-2.2-B.
+
+**ACTUALIZACIÓN RETROACTIVA (misma sesión que 2.1):** `ai_configs.
+agent_behavior` (columna añadida por la migración 058, posterior a
+esta sección) comparte exactamente el mismo régimen que
+`system_prompt` descrito arriba — mismo `requireRole`, misma RLS por
+`is_account_member`, mismo aislamiento cross-tenant (no auditado con
+un test dedicado a `agent_behavior` específicamente, pero la ruta y
+la policy son las mismas que ya prueba `route.test.ts` para
+`system_prompt`). RP-2.2-A/RP-2.2-B aplican igualmente a este campo
+(texto libre, sin límite de longitud, sin delimitador estructural).
 
 ## 2.3 Instrucciones CRM
 AUDITADO — read-only, sin implementación.
@@ -1150,8 +1194,19 @@ anti-invención/anti-revelación, (4) anti-injection — incondicionales;
 luego, condicionalmente, (5) AUTO-REPLY MODE (solo `mode==='auto_reply'`),
 (6)-(11) bloques de catálogo (solo si `catalogToolsAvailable`), y
 finalmente los bloques dinámicos: contexto de catálogo cross-turn,
-`system_prompt` del admin, hora, Business Profile, Knowledge Base. Ese
-string único se convierte en el campo `system` (Anthropic) o en
+`system_prompt` del admin, hora, Business Profile, **Agent Behavior**,
+Knowledge Base. **CORRECCIÓN RETROACTIVA (sesión de auditoría de
+producción):** esta lista, al escribirse, omitía "Agent Behavior"
+porque el bloque (migración 058/`b19a37a`) no existía todavía — va
+intercalado exactamente entre Business Profile y Knowledge Base
+(`defaults.ts:426-458`), con un guardrail propio que lo declara
+subordinado a toda regla anterior (lenguaje, anti-inyección, catálogo,
+handoff) y, confirmado por `adversarial-scenarios.test.ts` (test G),
+no logra suprimir la regla de catálogo ni crear un segundo mensaje
+`role:system` aun cuando su contenido intenta lo contrario — misma
+limitación epistemológica que el resto de este documento ya declara
+para R1/R2 (propiedad estructural probada, no comportamiento real de
+un modelo). Ese string único se convierte en el campo `system` (Anthropic) o en
 `{role:'system', content: systemPrompt}` como primer elemento de
 `messages` (OpenAI/OpenRouter) — nunca se mezcla con la transcripción
 del cliente.
@@ -2140,6 +2195,69 @@ confundir con H8-1/H8-2.** Queda registrado aquí como hallazgo
 adjunto, pendiente de reconciliar su numeración real en una fase
 futura, sin inventar a cuál corresponde.
 
+## Nota — Observabilidad de costo y límites de uso de IA (auditoría de esta sesión, no parte de H8-1/H8-2/F-2)
+
+Auditoría dedicada de esta sesión, a petición expresa, sobre todo lo
+que `ai_usage_log` registra y lo que lo consume — columnas
+confirmadas contra el SQL real de cada migración (`033` creación
+original — no 029, corrección a un supuesto anterior —, `038`
+amplía el CHECK de `provider`, `049` breakdown, `051` cache tokens de
+Anthropic, `052` observabilidad de catálogo externo, `061` ya
+documentado arriba).
+
+**Qué modos registran uso, y cuándo:** `auto_reply` y `draft` escriben
+una fila tanto en éxito (con el breakdown completo) como en fallo
+(`usage: null`, `errorCode`/`errorMessage` vía
+`classifyGenerateFailure`) — una sola llamada por rama, sin doble
+registro. **`playground` NO escribe NUNCA en `ai_usage_log`** —
+confirmado por ausencia total de `logAiUsage`/`usage.ts` en sus 223
+líneas — pese a llamar `generateReply()` directamente con la clave
+BYO real de la cuenta y consumir tokens/costo real. Toda prueba hecha
+desde Playground es invisible en el dashboard de uso.
+
+**¿Se calcula costo real en dólares? NO, en ningún punto del
+proyecto.** No es un olvido oculto — está declarado explícitamente en
+el propio código: `src/app/api/ai/usage/route.ts` fija
+`cost_available: false` con el comentario "No pricing/cost
+infrastructure exists in this project — tokens are real; cost is
+honestly reported as unavailable rather than an invented estimate
+(FASE 12, Regla 3)", y `src/components/agents/ai-usage.tsx` renderiza
+literalmente "Cost: not available". No existe ninguna tabla de
+precio-por-token ni constante de pricing por modelo/proveedor en el
+repositorio.
+
+**¿Hay límites o alertas atadas a costo/volumen de tokens? NINGUNO
+encontrado.** Lo que sí existe — y no debe confundirse con eso — son
+límites de FRECUENCIA de requests (`checkRateLimit`, por ventana de
+tiempo), un presupuesto de llamadas HTTP al proveedor de catálogo
+externo Budun (`checkCatalogExternalBudget`, llamadas, no tokens ni
+dinero), y un tope de CANTIDAD de respuestas por conversación
+(`auto_reply_max_per_conversation`). Ninguno de los tres se activa por
+gasto de tokens o dinero, ninguno desactiva el agente ni notifica a
+nadie sobre costo. Si una cuenta gasta su clave BYO sin control, el
+sistema no lo detecta ni lo comunica.
+
+**¿Se puede distinguir una llamada duplicada/reintentada de una
+independiente? NO de forma confiable.** `ai_usage_log` no tiene
+`request_id`, `message_id` ni idempotency key — solo `id` (UUID
+autogenerado, sin relación con ninguna request externa),
+`account_id`, `conversation_id`, `mode`, `provider`, `model`,
+`created_at`. La protección de concurrencia de Punto 6
+(`ai_processing_started_at`) existe a nivel de aplicación pero no se
+refleja en ningún campo de esta tabla — es invisible para quien solo
+mira el dashboard o la tabla directamente.
+
+**Tests reales ejecutados en esta sesión:** `npx vitest run
+src/lib/ai/usage.test.ts "src/app/api/ai/usage/route.test.ts"
+src/lib/ai/auto-reply.test.ts "src/app/api/ai/draft/route.test.ts"
+"src/app/api/ai/playground/route.test.ts"` → **5 archivos, 131 tests,
+todos en verde.**
+
+**Clasificación: observabilidad de tokens/llamadas SÓLIDA; control de
+costo/presupuesto INEXISTENTE (por diseño, honestamente declarado, no
+un defecto de código) — DEUDA DE PRODUCTO, no de seguridad, pendiente
+de una decisión de negocio si se quiere controlar gasto real.**
+
 **Confirmado presente en HEAD, sin drift:** `git log 00c2bf8..HEAD`
 sobre los 8 archivos clave solo muestra 2 commits posteriores tocando
 `auto-reply.ts` (`152ecad` Punto 9 — resolución de `resolvedAssignee`
@@ -2748,6 +2866,85 @@ en `HEAD` desde hace más de 6 semanas (migraciones del 31 de agosto al
 3 de septiembre de 2026; sesión de esta auditoría: 16 de octubre de
 2026).
 
+**ACTUALIZACIÓN (misma sesión, verificación más profunda solicitada
+explícitamente — NO se infiere solo del historial de migraciones, se
+compara contra el esquema real):**
+
+- **Confirmado por sondeo directo del esquema real vía la API REST de
+  PostgREST del propio proyecto (service role, sin Docker, sin
+  password de Postgres necesario), no solo por el historial de
+  migraciones:** `ai_configs.agent_behavior` (058),
+  `ai_data_sources.refresh_started_at` (059),
+  `conversations.ai_processing_started_at` (060) y
+  `ai_usage_log.finish_reason` (061) devuelven literalmente
+  `42703 column ... does not exist` al intentar seleccionarlas. La
+  función `release_or_continue_ai_processing` (060) fue invocada
+  directamente con dos UUIDs inexistentes (sin riesgo — no hay fila
+  real que pudiera verse afectada) y PostgREST devuelve `PGRST202 —
+  Could not find the function ... in the schema cache` (404) — **la
+  función NO existe en producción**, confirmado por invocación real,
+  no solo por `OPTIONS` (que devuelve 200 para CUALQUIER ruta
+  `/rpc/*`, exista o no la función — verificado con un nombre de
+  función deliberadamente inventado como control).
+- **`origin/main` en GitHub (`hernandezservicios/wacrm`) está
+  exactamente en `b134cb2`** — el mismo commit que `HEAD` local antes
+  de los 2 commits de documentación de esta sesión — es decir, TODO el
+  código de Punto 5/6/8/9/10/11 ya está en la rama que, según
+  `README.md`, se autodespliega. El `README.md` de este repo describe
+  Hostinger (push-to-`main`) como el despliegue recomendado, pero la
+  URL pública real configurada en `.env.local`
+  (`NEXT_PUBLIC_SITE_URL=https://kccrm.vercel.app/`) y la cabecera
+  `Server: Vercel` confirmada en una petición real a esa URL muestran
+  que el despliegue REAL de este proyecto es Vercel, no Hostinger —
+  resuelve también, de paso, la duda inicial "WACRM vs. KCCRM": KCCRM
+  es el nombre del proyecto de Vercel, WACRM es el del repositorio;
+  mismo proyecto.
+- **No se pudo confirmar qué commit exacto está desplegado en
+  Vercel.** `vercel whoami` confirma "Logged out" — no hay credenciales
+  de Vercel disponibles en este entorno, y el flujo de login por
+  dispositivo (OAuth) requiere una acción interactiva humana que esta
+  sesión no puede completar por sí sola. No existe en esta aplicación
+  ningún endpoint de versión/build/commit expuesto, ni una
+  personalización de `generateBuildId` en `next.config`, que permita
+  inferirlo indirectamente. **Esto queda expresamente como NO
+  CONFIRMADO**, no como asumido en ningún sentido.
+- **Pre-chequeo de seguridad de datos para las 2 migraciones con mayor
+  riesgo de fallar contra datos reales, vía la misma API REST (solo
+  columnas de id internas, ningún dato personal leído):**
+  - `profiles`: 1 fila. `accounts`: 1 fila. `ai_data_sources`: 1 fila.
+    Esta es una instancia de producción de una sola cuenta/un solo
+    usuario — no una base multi-tenant con tráfico real de varios
+    clientes.
+  - `conversations` con `assigned_agent_id IS NOT NULL`: **0 filas.**
+    `account_business_contacts` con `linked_user_id IS NOT NULL`: **0
+    filas.** La FK compuesta de la migración 062 (`062_handoff_
+    cross_tenant_guard.sql`) no tiene NINGÚN dato real que pudiera
+    violarla — puede aplicarse sin riesgo de fallo por datos
+    preexistentes.
+  - `ai_catalog_products`: 1144 filas totales, las 1144 con
+    `(data_source_id, source_product_id)` ÚNICO — **cero duplicados**,
+    confirmado leyendo la tabla completa en dos páginas. El índice
+    único de la migración 059 puede aplicarse sin riesgo de fallo por
+    datos preexistentes.
+- **Lo que esta sesión NO pudo verificar:** no hay acceso a logs de
+  Vercel ni de Supabase desde este entorno (el CLI de Supabase
+  instalado no expone ningún subcomando de logs para un proyecto
+  hospedado) — no se pudo buscar evidencia directa de errores
+  `42703`/`PGRST202` ocurridos en producción real; la conclusión de
+  "posible rotura funcional" se sostiene en la combinación de (a) el
+  esquema real confirmado sin estas columnas/función y (b) el código
+  que las usa confirmado en `origin/main`, no en un log de error
+  observado directamente.
+- **Ninguna escritura fue realizada contra producción en esta
+  verificación.** Todas las consultas fueron lecturas (`select`/
+  `HEAD` con `Prefer: count=exact`/`OPTIONS`) o una invocación de RPC
+  con UUIDs aleatorios que no correspondían a ninguna fila real. No se
+  ejecutó `supabase db push` ni ninguna otra escritura de esquema o
+  datos.
+- **Cambio documental de esta actualización: NO COMMITEADO
+  deliberadamente** (instrucción vigente de esta fase: solo
+  diagnóstico, sin commits ni push hasta autorización explícita).
+
 **Qué significa esto, migración por migración:**
 - `058_ai_agent_behavior.sql` — feature no relacionada con ningún
   "Punto" de seguridad ("Fase 10" de un proyecto distinto, ver nota de
@@ -2802,9 +2999,45 @@ proyecto) requiere autorización explícita y específica antes de
 ejecutarse contra producción, conforme a la disciplina de cambio de
 este proyecto — no se ejecuta como parte de este cierre documental.
 
+**ACTUALIZACIÓN — severidad revisada AL ALZA (sesión de verificación
+de producción, fase de diagnóstico): el impacto real de la migración
+058 ausente es MAYOR que "la nueva funcionalidad de Agent Behavior no
+funciona".** Confirmado leyendo `src/lib/ai/config.ts`:
+`loadAiConfig()` — la función que carga la configuración de IA para
+**tanto auto-reply como draft/playground** (es literalmente la única
+función que hace ese `SELECT`, usada por los tres) — incluye
+`agent_behavior` en `CONFIG_COLUMNS` de forma incondicional, para
+TODA cuenta, exista o no una fila con ese campo lleno, y hace
+`if (error) throw error` (línea 44) — nunca traga el error.
+
+Rastreado hasta su llamador real en `auto-reply.ts`: `loadAiConfig()`
+se llama en la primera línea útil de `dispatchInboundToAiReply()`
+(antes incluso del claim de Punto 6/H-6), dentro de un `try` cuyo
+`catch` final (línea ~234) es exactamente `console.error('[ai
+auto-reply] dispatch failed:', err)` — **sin handoff, sin marcar la
+conversación, sin notificar a ningún humano, sin ningún registro más
+allá de un log de servidor.** Si el código de `b19a37a` (que introdujo
+`agent_behavior` en `CONFIG_COLUMNS`, confirmado ancestro de
+`origin/main`) está desplegado, **todo mensaje de WhatsApp entrante
+recibiría silencio total** — no una respuesta degradada, no un
+handoff, literalmente nada — hasta aplicar la migración 058. Esto es
+más severo que la lectura original de este hallazgo, que se centraba
+en 059/060/061 como las piezas que rompían funcionalidad.
+
+En `draft/route.ts` y `playground/route.ts`, el mismo throw se
+captura con un `.catch()` que fue escrito asumiendo que
+`loadAiConfig()` solo puede fallar por un fallo de desencriptado (así
+lo documenta el propio docstring de la función) — por lo que
+cualquier otro error, incluido este, se reporta al administrador como
+`"Stored API key could not be decrypted"` (400, `key_decrypt_failed`):
+un mensaje de error activamente engañoso para diagnosticar esta causa
+real si llega a observarse ahí.
+
 **Clasificación final: `HALLAZGO CRÍTICO — 5 migraciones (058–062)
-pendientes de aplicar en producción, severidad ALTA, bloqueante para
-declarar Punto 5/6/8/9 verdaderamente CERRADO END-TO-END`.**
+pendientes de aplicar en producción, severidad ALTA (058 CRÍTICA si
+está desplegado el código de b19a37a: rompe TODA la IA, no solo Agent
+Behavior), bloqueante para declarar Punto 5/6/8/9 verdaderamente
+CERRADO END-TO-END`.**
 
 ---
 

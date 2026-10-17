@@ -204,6 +204,22 @@ export function evaluateMatch(
   }
 
   // 3.2 Localização (Base 20%)
+  const propCityNorm = normalizeString(property.city || 'joao pessoa');
+  const propTitleNorm = normalizeString(property.title || '');
+  const SEASIDE_NEIGHBORHOODS = [
+    'bessa',
+    'jardim oceania',
+    'manaira',
+    'tambau',
+    'cabo branco',
+    'altiplano',
+    'camboinha',
+    'intermares',
+    'ponta de campina',
+    ' Formosa',
+    'seixas',
+  ];
+
   let locationNeverMentioned = false;
   if (profile.locations.length === 0) {
     // Cliente não citou bairros
@@ -211,13 +227,32 @@ export function evaluateMatch(
     breakdown.reasons.push(`Localização em ${property.neighborhood}, ${property.city}`);
   } else {
     const acceptedLocs = profile.locations.map(normalizeString);
-    const matchedLoc = acceptedLocs.find(
-      (l) => propNeighborhoodNorm.includes(l) || l.includes(propNeighborhoodNorm)
+    const exactNeighborhoodMatch = acceptedLocs.find(
+      (l) =>
+        l !== 'joao pessoa' &&
+        (propNeighborhoodNorm.includes(l) ||
+          l.includes(propNeighborhoodNorm) ||
+          propTitleNorm.includes(l))
     );
 
-    if (matchedLoc) {
+    const cityOrRegionMatch = acceptedLocs.find((l) => {
+      if (l.includes('joao pessoa') && propCityNorm.includes('joao pessoa')) return true;
+      if (l.includes('cabedelo') && (propCityNorm.includes('cabedelo') || propNeighborhoodNorm.includes('camboinha') || propNeighborhoodNorm.includes('intermares'))) return true;
+      if (
+        (l.includes('praia') || l.includes('orla') || l.includes('mar')) &&
+        SEASIDE_NEIGHBORHOODS.some((sn) => propNeighborhoodNorm.includes(sn))
+      ) {
+        return true;
+      }
+      return false;
+    });
+
+    if (exactNeighborhoodMatch) {
       breakdown.location = Math.round(weightLocation * 10) / 10;
       breakdown.reasons.push(`Bairro desejado pelo cliente: ${property.neighborhood}`);
+    } else if (cityOrRegionMatch) {
+      breakdown.location = Math.round(weightLocation * 0.85 * 10) / 10;
+      breakdown.reasons.push(`Região/Cidade compatível: ${property.neighborhood}, ${property.city}`);
     } else {
       locationNeverMentioned = true;
       breakdown.location = Math.round(weightLocation * 0.3 * 10) / 10;
@@ -230,12 +265,31 @@ export function evaluateMatch(
     breakdown.propertyType = Math.round(weightType * 0.8 * 10) / 10;
   } else {
     const acceptedTypes = profile.propertyTypes.map(normalizeString);
-    const matchedType = acceptedTypes.find(
-      (t) => propTypeNorm.includes(t) || t.includes(propTypeNorm)
-    );
+    const isCompactProperty =
+      (property.bedroomsMin != null && property.bedroomsMin <= 1) ||
+      propTitleNorm.includes('flat') ||
+      propTitleNorm.includes('studio') ||
+      propTitleNorm.includes('loft') ||
+      propTitleNorm.includes('compacto');
+
+    const matchedType = acceptedTypes.find((t) => {
+      if (propTypeNorm.includes(t) || t.includes(propTypeNorm) || propTitleNorm.includes(t)) {
+        return true;
+      }
+      // Equivalência de mercado: Flats/Studios cadastrados como 'apartamento' compacto
+      if (
+        ['flat', 'studio', 'loft', 'kitnet'].includes(t) &&
+        propTypeNorm.includes('apartamento') &&
+        isCompactProperty
+      ) {
+        return true;
+      }
+      return false;
+    });
+
     if (matchedType) {
       breakdown.propertyType = Math.round(weightType * 10) / 10;
-      breakdown.reasons.push(`Tipologia exata: ${property.propertyType}`);
+      breakdown.reasons.push(`Tipologia compatível: ${property.propertyType}`);
     } else {
       // Tipologia diferente, mas não estrita
       breakdown.propertyType = Math.round(weightType * 0.3 * 10) / 10;

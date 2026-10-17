@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { authenticateTunnelRequest } from '@/lib/tunnel/auth';
+import { authenticateTunnelRequest, ensurePropertyUuid } from '@/lib/tunnel/auth';
 
 export async function GET(request: Request) {
   const ctx = await authenticateTunnelRequest(request);
@@ -8,14 +8,16 @@ export async function GET(request: Request) {
   }
 
   const { searchParams } = new URL(request.url);
-  const propertyId = searchParams.get('property_id');
-  const minScore = parseInt(searchParams.get('min_score') || '70', 10);
+  const rawPropertyId = searchParams.get('property_id');
+  const minScore = parseInt(searchParams.get('min_score') || '50', 10);
+  const minMaturity = parseInt(searchParams.get('min_maturity') || '40', 10);
   const onlyActive = searchParams.get('only_active') !== 'false';
 
-  if (!propertyId) {
+  if (!rawPropertyId) {
     return NextResponse.json({ error: 'property_id é obrigatório' }, { status: 400 });
   }
 
+  const propertyId = ensurePropertyUuid(rawPropertyId);
   const { db, accountId } = ctx;
 
   // 1. Verifica se o imóvel existe em property_match_projections para esta conta
@@ -40,7 +42,8 @@ export async function GET(request: Request) {
       .eq('property_id', propertyId);
 
     return NextResponse.json({
-      property_id: propertyId,
+      property_id: rawPropertyId,
+      canonical_property_id: propertyId,
       total_compatible: 0,
       leads: [],
     });
@@ -75,7 +78,7 @@ export async function GET(request: Request) {
     query = query
       .is('contacts.paused_at', null)
       .is('contacts.archived_at', null)
-      .gte('profile_maturity', 70);
+      .gte('profile_maturity', minMaturity);
   }
 
   query = query.order('commercial_priority', { ascending: false });

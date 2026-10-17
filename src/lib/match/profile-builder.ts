@@ -91,27 +91,12 @@ export async function buildLeadSearchProfile(
     return 'conversation';
   };
 
-  // 1. Operação (compra vs aluguel)
-  let operation: PropertyOperation = 'venda';
-  let isShortStayOnly = false;
-  const rawPurpose = Array.isArray(rawSummary.purpose) ? (rawSummary.purpose as string[]) : [];
-  const notesText = (rawSummary.notes as string) || '';
+  // 1. Finalidade (resolvida antes da operação para diferenciar investidor de locatário)
+  const rawPurpose = Array.isArray(rawSummary.purpose)
+    ? (rawSummary.purpose as unknown[]).map((p) => String(p))
+    : [];
+  const notesText = typeof rawSummary.notes === 'string' ? rawSummary.notes : '';
 
-  if (
-    notesText.toLowerCase().includes('temporada') ||
-    rawPurpose.some((p) => p.toLowerCase().includes('temporada'))
-  ) {
-    isShortStayOnly = true;
-  }
-  if (
-    notesText.toLowerCase().includes('aluguel') ||
-    notesText.toLowerCase().includes('locação') ||
-    rawPurpose.some((p) => p.toLowerCase().includes('aluguel') || p.toLowerCase().includes('loca'))
-  ) {
-    operation = 'locacao';
-  }
-
-  // 2. Finalidade
   const purposeList = [...rawPurpose];
   const finalidadeTags = tagCategories['Finalidade'] || [];
   for (const ft of finalidadeTags) {
@@ -120,9 +105,50 @@ export async function buildLeadSearchProfile(
     }
   }
 
+  const hasBuyerPurpose = purposeList.some((p) => {
+    const norm = normalizeString(p);
+    return (
+      norm.includes('invest') ||
+      norm.includes('moradia') ||
+      norm.includes('compra') ||
+      norm.includes('venda')
+    );
+  });
+
+  // 2. Operação (compra vs aluguel)
+  // Se o lead tem finalidade de Investimento ou Moradia, menções a "temporada" ou "locação"
+  // nas notas referem-se à rentabilidade do imóvel comprado (ex: flat para Airbnb), e NÃO que ele quer alugar.
+  let operation: PropertyOperation = 'venda';
+  let isShortStayOnly = false;
+
+  if (!hasBuyerPurpose) {
+    const wantsShortStay =
+      rawPurpose.some((p) => normalizeString(p).includes('temporada')) ||
+      (notesText.toLowerCase().includes('temporada') &&
+        !notesText.toLowerCase().includes('planta') &&
+        !notesText.toLowerCase().includes('invest'));
+
+    if (wantsShortStay) {
+      isShortStayOnly = true;
+    }
+
+    const wantsRentOnly =
+      rawPurpose.some((p) => {
+        const norm = normalizeString(p);
+        return norm.includes('aluguel') || norm.includes('loca');
+      }) ||
+      ((notesText.toLowerCase().includes('busca locação') ||
+        notesText.toLowerCase().includes('procura aluguel')) &&
+        !notesText.toLowerCase().includes('planta'));
+
+    if (wantsRentOnly) {
+      operation = 'locacao';
+    }
+  }
+
   // 3. Tipologias
   const propertyTypes = Array.isArray(rawSummary.property_type)
-    ? [...(rawSummary.property_type as string[])]
+    ? (rawSummary.property_type as unknown[]).map((t) => String(t))
     : [];
   const tipoTags = tagCategories['Tipo de imóvel'] || [];
   for (const tt of tipoTags) {
@@ -132,7 +158,9 @@ export async function buildLeadSearchProfile(
   }
 
   // 4. Localizações / Bairros
-  const locations = Array.isArray(rawSummary.location) ? [...(rawSummary.location as string[])] : [];
+  const locations = Array.isArray(rawSummary.location)
+    ? (rawSummary.location as unknown[]).map((l) => String(l))
+    : [];
   const bairroTags = tagCategories['Bairro'] || [];
   for (const bt of bairroTags) {
     for (const name of bt.names) {
@@ -140,11 +168,24 @@ export async function buildLeadSearchProfile(
     }
   }
 
-  // 5. Preço
-  const priceMin = typeof rawSummary.price_min === 'number' ? rawSummary.price_min : null;
-  let priceMax = typeof rawSummary.price_max === 'number' ? rawSummary.price_max : null;
-  const priceFlexMax =
-    typeof rawSummary.price_flex_max === 'number' ? rawSummary.price_flex_max : null;
+  // 5. Preço (suporta number ou string numérica como "300000" / "R$ 450.000")
+  const parsePriceValue = (val: unknown): number | null => {
+    if (typeof val === 'number' && !Number.isNaN(val) && val > 0) {
+      return val < 2000 ? val * 1000 : val;
+    }
+    if (typeof val === 'string' && val.trim() !== '') {
+      const cleaned = val.replace(/[R$\s.]/g, '').replace(',', '.');
+      const num = Number(cleaned);
+      if (!Number.isNaN(num) && num > 0) {
+        return num < 2000 ? num * 1000 : num;
+      }
+    }
+    return null;
+  };
+
+  const priceMin = parsePriceValue(rawSummary.price_min);
+  let priceMax = parsePriceValue(rawSummary.price_max);
+  const priceFlexMax = parsePriceValue(rawSummary.price_flex_max);
 
   // Extrai de tag 'Faixa de valor' se não estiver no summary
   if (priceMax === null) {
@@ -154,16 +195,27 @@ export async function buildLeadSearchProfile(
         const numbers = name.replace(/\./g, '').match(/\d+/g);
         if (numbers && numbers.length > 0) {
           const parsed = parseInt(numbers[numbers.length - 1], 10);
-          if (parsed > 0) priceMax = parsed < 1000 ? parsed * 1000 : parsed;
+          if (parsed > 0) priceMax = parsed < 2000 ? parsed * 1000 : parsed;
         }
       }
     }
   }
 
-  // 6. Quartos
-  const bedrooms = Array.isArray(rawSummary.bedrooms)
-    ? [...(rawSummary.bedrooms as number[])]
-    : [];
+  // 6. Quartos (suporta number ou string como "2" / "2 quartos")
+  const bedrooms: number[] = [];
+  if (Array.isArray(rawSummary.bedrooms)) {
+    for (const item of rawSummary.bedrooms) {
+      if (typeof item === 'number' && !Number.isNaN(item)) {
+        if (!bedrooms.includes(item)) bedrooms.push(item);
+      } else if (typeof item === 'string') {
+        const m = item.match(/\d+/);
+        if (m) {
+          const v = parseInt(m[0], 10);
+          if (!bedrooms.includes(v)) bedrooms.push(v);
+        }
+      }
+    }
+  }
   const quartosTags = tagCategories['Quartos'] || [];
   for (const qt of quartosTags) {
     for (const name of qt.names) {

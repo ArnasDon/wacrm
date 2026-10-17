@@ -289,8 +289,8 @@ export async function recalculateMatchesForProperty(
     if (!profile) continue;
 
     const maturityEval = calculateProfileMaturity(profile);
-    // Para novas notificações automáticas de imóvel, avalia apenas leads qualificados (>= 70%)
-    if (!maturityEval.meetsThreshold) continue;
+    // Desconsidera leads totalmente vazios (sem nenhuma informação extraída na conversa ou tags)
+    if (maturityEval.maturity < 20) continue;
 
     // Checa supressão prévia
     const { data: existing } = await db
@@ -333,7 +333,7 @@ export async function recalculateMatchesForProperty(
       { onConflict: 'account_id,lead_id,property_id' }
     );
 
-    if (evaluation.isStrongMatch) {
+    if (evaluation.isStrongMatch && maturityEval.meetsThreshold) {
       strongMatchesCount++;
     }
   }

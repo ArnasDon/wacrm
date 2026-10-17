@@ -33,7 +33,31 @@ export async function authenticateTunnelRequest(request: Request): Promise<Tunne
 
   const db = supabaseAdmin();
 
-  // Resolve a conta padrão do CRM (single-tenant por instância)
+  // 1. Se houver conta canônica configurada via env, utiliza-a
+  if (process.env.MATCH_CANONICAL_ACCOUNT_ID) {
+    return {
+      db,
+      accountId: process.env.MATCH_CANONICAL_ACCOUNT_ID.trim(),
+    };
+  }
+
+  // 2. Resolve a conta operacional principal do Ronaldo Meira (f8d2ae51-e393-4a74-a432-ddab0610837e)
+  //    ou a conta com default_currency = 'BRL' / maior base de contatos reais
+  const { data: realProfile } = await db
+    .from('profiles')
+    .select('account_id')
+    .eq('email', 'ronaldomeiracorretor@gmail.com')
+    .not('account_id', 'is', null)
+    .limit(1)
+    .maybeSingle();
+
+  if (realProfile?.account_id) {
+    return {
+      db,
+      accountId: realProfile.account_id,
+    };
+  }
+
   const { data: account } = await db
     .from('accounts')
     .select('id')
@@ -49,4 +73,35 @@ export async function authenticateTunnelRequest(request: Request): Promise<Tunne
     db,
     accountId: account.id,
   };
+}
+
+/**
+ * Converte qualquer identificador de imóvel (ex: 'dev-c7a289bfd98a050a' ou UUID)
+ * para o mesmo UUID determinístico usado pelo adaptador do Meus Imóveis.
+ */
+export function ensurePropertyUuid(id: string): string {
+  const clean = (id || '').trim();
+  if (!clean) return '00000000-0000-4000-8000-000000000000';
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  if (uuidRegex.test(clean)) {
+    return clean.toLowerCase();
+  }
+
+  let hash = 0;
+  for (let i = 0; i < clean.length; i++) {
+    hash = ((hash << 5) - hash) + clean.charCodeAt(i);
+    hash |= 0;
+  }
+  const hex =
+    Math.abs(hash).toString(16).padStart(8, '0') +
+    (clean.length * 31).toString(16).padStart(8, '0') +
+    'a1b2c3d4e5f6';
+
+  return [
+    hex.substring(0, 8),
+    hex.substring(8, 12),
+    '4' + hex.substring(13, 16),
+    'a' + hex.substring(17, 20),
+    hex.substring(20, 32).padEnd(12, '0'),
+  ].join('-');
 }

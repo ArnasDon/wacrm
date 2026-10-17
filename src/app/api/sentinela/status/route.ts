@@ -217,7 +217,7 @@ export async function GET(): Promise<NextResponse> {
   try {
     const { data, error } = await db
       .from('envio_lotes')
-      .select('id, envio_id, numero_lote, quantidade_leads, status, envios(titulo)')
+      .select('id, envio_id, numero_lote, quantidade_leads, status, envios(nome)')
       .eq('status', 'pausado')
       .order('numero_lote', { ascending: true })
 
@@ -225,11 +225,11 @@ export async function GET(): Promise<NextResponse> {
       queryErrors.push(`envio_lotes: ${error.message}`)
     } else {
       pausedLotesDetails = (data ?? []).map((row: Record<string, unknown>) => {
-        const envioObj = row.envios as { titulo?: string } | null
+        const envioObj = row.envios as { nome?: string } | null
         return {
           id: String(row.id),
           envioId: String(row.envio_id ?? ''),
-          envioTitulo: envioObj?.titulo || 'Disparo em Lote',
+          envioTitulo: envioObj?.nome || 'Disparo em Lote',
           numeroLote: Number(row.numero_lote ?? 1),
           quantidadeLeads: Number(row.quantidade_leads ?? 0),
           status: String(row.status ?? 'pausado'),

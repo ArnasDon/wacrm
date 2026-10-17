@@ -1582,6 +1582,7 @@
       "category": "Category",
       "language": "Language",
       "langFixed": "Language is fixed once a template exists on Meta.",
+      "categoryFixed": "The category of an approved template can't be changed.",
       "langHint": "Must match the exact code on Meta — <code>en_US</code> and <code>en</code> are distinct.",
       "header": "Header",
       "headerNone": "None",
@@ -2715,6 +2716,7 @@
       "neverSubmitted": "This template was never submitted to Meta — use New Template to submit it instead.",
       "statusNotEditable": "Templates in status {status} cannot be edited. Allowed: APPROVED, REJECTED, PAUSED.",
       "authNotEditable": "AUTHENTICATION templates are not editable here — manage them in Meta WhatsApp Manager.",
+      "categoryLockedApproved": "Meta doesn't allow changing the category of an approved template. Create a new template instead.",
       "validationFailed": "Validation failed.",
       "headerUploadFailed": "Header media upload failed.",
       "metaEditFailed": "Meta edit failed.",
@@ -2728,6 +2730,7 @@
       "metaSubmitFailed": "Meta submit failed.",
       "rateLimit": "Meta rate limit hit (100 template creates per hour). Try again later.",
       "submittedSaveFailed": "Submitted to Meta but failed to save locally: {message}. Run \"Sync from Meta\" to recover.",
+      "alreadyExists": "A template named {name} ({language}) already exists in this account. Edit or resubmit that template instead of creating a new one.",
       "submitFailed": "Failed to submit template.",
       "metaApiStatus": "Meta API error: {status}",
       "syncFailed": "Failed to sync templates"

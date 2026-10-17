@@ -1582,6 +1582,7 @@
       "category": "Categoría",
       "language": "Idioma",
       "langFixed": "El idioma es fijo una vez que la plantilla existe en Meta.",
+      "categoryFixed": "La categoría de una plantilla aprobada no se puede cambiar.",
       "langHint": "Debe coincidir exactamente con el código en Meta: <code>en_US</code> y <code>en</code> son distintos.",
       "header": "Encabezado",
       "headerNone": "Ninguno",
@@ -2715,6 +2716,7 @@
       "neverSubmitted": "Esta plantilla nunca se envió a Meta: usa Nueva plantilla para enviarla.",
       "statusNotEditable": "Las plantillas con estado {status} no se pueden editar. Permitidos: APPROVED, REJECTED, PAUSED.",
       "authNotEditable": "Las plantillas de AUTENTICACIÓN no se pueden editar aquí: adminístralas en el Administrador de WhatsApp de Meta.",
+      "categoryLockedApproved": "Meta no permite cambiar la categoría de una plantilla aprobada. Crea una plantilla nueva.",
       "validationFailed": "Error de validación.",
       "headerUploadFailed": "Error al subir el archivo multimedia del encabezado.",
       "metaEditFailed": "Error al editar en Meta.",
@@ -2728,6 +2730,7 @@
       "metaSubmitFailed": "Error al enviar a Meta.",
       "rateLimit": "Se alcanzó el límite de Meta (100 creaciones de plantillas por hora). Inténtalo de nuevo más tarde.",
       "submittedSaveFailed": "Enviada a Meta, pero falló el guardado local: {message}. Usa \"Sincronizar desde Meta\" para recuperarla.",
+      "alreadyExists": "Ya existe una plantilla llamada {name} ({language}) en esta cuenta. Edita o vuelve a enviar esa plantilla en lugar de crear una nueva.",
       "submitFailed": "Error al enviar la plantilla.",
       "metaApiStatus": "Error de la API de Meta: {status}",
       "syncFailed": "Error al sincronizar las plantillas"

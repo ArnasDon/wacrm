@@ -17,7 +17,9 @@ const STORED_CONFIG = {
   verify_token: null,
 }
 
-let storedConfig: typeof STORED_CONFIG | null = null
+let storedConfig: Omit<typeof STORED_CONFIG, 'registered_at'> & {
+  registered_at: string | null
+} | null = null
 
 function makeSupabaseMock() {
   function builder(table: string) {
@@ -107,7 +109,7 @@ vi.mock('@/lib/whatsapp/meta-api', () => meta)
 import { DELETE, GET, POST } from './route'
 import { __resetRateLimitForTests } from '@/lib/rate-limit'
 
-function saveConfig() {
+function saveConfig(overrides: Record<string, unknown> = {}) {
   return POST(
     new Request('http://localhost/api/whatsapp/config', {
       method: 'POST',
@@ -117,6 +119,7 @@ function saveConfig() {
         waba_id: '444555666',
         access_token: 'caller-supplied-token',
         pin: '123456',
+        ...overrides,
       }),
     }),
   )
@@ -182,6 +185,48 @@ describe('POST /api/whatsapp/config', () => {
     expect(meta.subscribeWabaToApp).toHaveBeenCalledTimes(1)
     expect(configInserts).toHaveLength(1)
     expect(configInserts[0]).toMatchObject({ account_id: 'acct-1', user_id: 'user-1' })
+  })
+})
+
+describe('POST /api/whatsapp/config registration state', () => {
+  const REGISTERED_AT = '2026-01-01T00:00:00.000Z'
+
+  it('clears registered_at when the phone number changes and no PIN is given', async () => {
+    storedConfig = { ...STORED_CONFIG, registered_at: REGISTERED_AT }
+    meta.verifyPhoneNumber.mockResolvedValueOnce({
+      id: '999888777',
+      display_phone_number: '+1 555 0199',
+    })
+    meta.listWabaPhoneNumbers.mockResolvedValueOnce([{ id: '999888777' }])
+
+    const res = await saveConfig({ phone_number_id: '999888777', pin: undefined })
+    const body = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(body).toMatchObject({
+      success: true,
+      saved: true,
+      registered: false,
+      registration_skipped: true,
+    })
+    expect(meta.registerPhoneNumber).not.toHaveBeenCalled()
+    expect(configUpdates).toHaveLength(1)
+    expect(configUpdates[0]).toMatchObject({
+      phone_number_id: '999888777',
+      registered_at: null,
+    })
+  })
+
+  it('keeps registered_at when the same registered number is saved without a PIN', async () => {
+    storedConfig = { ...STORED_CONFIG, registered_at: REGISTERED_AT }
+
+    const res = await saveConfig({ pin: undefined })
+    const body = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(body).toMatchObject({ success: true, registered: true, registration_skipped: false })
+    expect(meta.registerPhoneNumber).not.toHaveBeenCalled()
+    expect(configUpdates[0]).toMatchObject({ registered_at: REGISTERED_AT })
   })
 })
 

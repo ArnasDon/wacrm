@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { Loader2, Plus, Tag as TagIcon, X } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
+import { fetchAccountTags } from '@/lib/settings/account-catalog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -58,25 +59,18 @@ export function TagManager() {
 
   useEffect(() => {
     if (authLoading) return;
-    if (!user) {
+    if (!user || !accountId) {
       setLoading(false);
       return;
     }
-    fetchTags(user.id);
+    fetchTags(accountId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authLoading, user?.id]);
+  }, [authLoading, user?.id, accountId]);
 
-  async function fetchTags(userId: string) {
+  async function fetchTags(acctId: string) {
     try {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('tags')
-        .select('*')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: true });
-
-      if (error) throw error;
-      setTags(data || []);
+      setTags(await fetchAccountTags(supabase, acctId));
     } catch (err) {
       console.error('Failed to fetch tags:', err);
       toast.error(t('failedToLoadTags'));
@@ -112,7 +106,7 @@ export function TagManager() {
       toast.success(t('tagCreated'));
       setNewTagName('');
       setSelectedColor(PRESET_COLORS[3].value);
-      await fetchTags(user.id);
+      await fetchTags(accountId);
     } catch (err) {
       console.error('Create error:', err);
       toast.error(t('failedToCreateTag'));

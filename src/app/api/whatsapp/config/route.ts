@@ -427,7 +427,7 @@ export async function POST(request: Request) {
     // when the same number is already registered and no PIN was
     // supplied — re-registering an already-active number with a
     // stale PIN would actually fail and undo the active subscription.
-    let registeredAt: string | null = existing?.registered_at ?? null
+    let registeredAt: string | null = sameNumber ? existing.registered_at : null
     let registrationError: string | null = null
     let registrationMeta: ReturnType<typeof metaErrorPayload> | null = null
     // True when registration was deliberately skipped because no PIN

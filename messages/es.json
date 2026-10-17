@@ -968,7 +968,9 @@
       "toastNotLinked": "Tu perfil no está vinculado a una cuenta.",
       "toastFailedDraft": "Error al guardar el borrador: {error}",
       "toastDraftSaved": "Borrador guardado",
-      "broadcastFailed": "Falló la difusión"
+      "broadcastFailed": "Falló la difusión",
+      "toastSendTakenOver": "Otro envío tomó el control de esta difusión, así que esta pestaña dejó de enviar. Abre la difusión para seguir su progreso.",
+      "toastSendInterrupted": "El envío se detuvo porque se perdió la conexión con el servidor. Abre la difusión y usa Reanudar envío para enviar a los destinatarios restantes. El botón aparece en un máximo de 5 minutos."
     },
     "wizard": {
       "next": "Siguiente",
@@ -2585,6 +2587,7 @@
       "duplicateNodeKey": "node_key duplicado: \"{key}\".",
       "unreachable": "El nodo \"{key}\" no es accesible desde el nodo de entrada.",
       "autoAdvanceCycle": "Los nodos {keys} vuelven unos a otros sin esperar al cliente, así que el flujo seguiría enviando mensajes. Añade un paso de botones, lista o pregunta al bucle, o rómpelo.",
+      "autoAdvanceChainTooLong": "El nodo \"{key}\" inicia {count} pasos seguidos que se ejecutan sin esperar al cliente. Un flujo puede ejecutar como máximo {max} pasos así antes de esperar; añade un paso de botones, lista o pregunta para dividir la cadena.",
       "keywordsRequired": "Los disparadores por palabra clave necesitan al menos una palabra clave.",
       "blankKeywords": "{count} {count, plural, =1 {palabra clave está vacía} other {palabras clave están vacías}}: no coincidirán con nada.",
       "startNeedsNext": "El nodo Inicio debe apuntar a un nodo siguiente.",
@@ -2842,6 +2845,7 @@
       "statusInvalid": "El estado debe ser 'draft', 'active' o 'archived'",
       "cannotActivate": "No se puede activar el flujo: primero corrige los problemas de abajo.",
       "cannotSaveActive": "Este flujo está activo, así que no se puede guardar con estos problemas. Corrígelos o pausa el flujo primero.",
+      "timeoutHoursInvalid": "on_timeout_hours debe ser un número mayor que 0 y como máximo {max}.",
       "nameEmpty": "El nombre no puede estar vacío",
       "unknownTemplate": "Plantilla de flujo desconocida \"{slug}\"",
       "insertFailed": "error al crear el flujo",

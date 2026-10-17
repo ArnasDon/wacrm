@@ -15,6 +15,7 @@ const h = vi.hoisted(() => ({
     autoResponders: [] as { id: string }[],
     claim: true as boolean,
     updatePayload: null as Record<string, unknown> | null,
+    updates: [] as { payload: Record<string, unknown>; isNull: string[] }[],
     rpcCalls: [] as { name: string; args: unknown }[],
     latestInbound: [] as { message_id: string }[],
   },
@@ -64,8 +65,17 @@ vi.mock('./admin-client', () => ({
           }),
         }),
         update: (payload: Record<string, unknown>) => {
-          h.state.updatePayload = payload
-          return { eq: () => Promise.resolve({ error: null }) }
+          h.state.updatePayload = { ...h.state.updatePayload, ...payload }
+          const record = { payload, isNull: [] as string[] }
+          h.state.updates.push(record)
+          const result = Promise.resolve({ error: null })
+          const filter = Object.assign(result, {
+            is: (column: string) => {
+              record.isNull.push(column)
+              return result
+            },
+          })
+          return { eq: () => filter }
         },
       }
     },
@@ -111,6 +121,7 @@ beforeEach(() => {
   h.state.autoResponders = []
   h.state.claim = true
   h.state.updatePayload = null
+  h.state.updates = []
   h.state.rpcCalls = []
   h.state.latestInbound = [{ message_id: 'wamid.inbound-1' }]
   h.loadAiConfig.mockResolvedValue(aiConfig())
@@ -323,5 +334,17 @@ describe('dispatchInboundToAiReply — handoff', () => {
       ai_autoreply_disabled: true,
       assigned_agent_id: 'agent-7',
     })
+  })
+
+  it('assigns the handoff agent only while the thread is still unassigned', async () => {
+    h.loadAiConfig.mockResolvedValue(aiConfig({ handoffAgentId: 'agent-7' }))
+    h.generateReply.mockResolvedValue({ text: '', handoff: true })
+    await dispatchInboundToAiReply(ARGS)
+    const pause = h.state.updates.find((u) => 'ai_autoreply_disabled' in u.payload)
+    const assign = h.state.updates.find((u) => 'assigned_agent_id' in u.payload)
+    expect(pause?.payload).not.toHaveProperty('assigned_agent_id')
+    expect(pause?.isNull).toEqual([])
+    expect(assign?.payload).toEqual({ assigned_agent_id: 'agent-7' })
+    expect(assign?.isNull).toEqual(['assigned_agent_id'])
   })
 })

@@ -89,8 +89,20 @@ describe('claimBroadcastDelivery', () => {
     // 30 minutes before "now" — a pass whose process died is recoverable
     // without touching the database by hand.
     expect(calls[0].or).toBe(
-      'delivery_locked_at.is.null,delivery_locked_at.lt.2026-08-11T11:30:00.000Z',
+      'and(or(delivery_locked_at.is.null,delivery_locked_at.lt.2026-08-11T11:30:00.000Z),or(delivery_lease_until.is.null,delivery_lease_until.lt.2026-08-11T12:00:00.000Z))',
     );
+  });
+
+  it('waits out a live wizard send and revokes its lease when taking over', async () => {
+    const calls: ClaimCall[] = [];
+    await claimBroadcastDelivery(
+      claimDb([{ id: 'bc-1' }], calls),
+      'acct-1',
+      'bc-1',
+      new Date('2026-08-11T12:00:00Z'),
+    );
+    expect(calls[0].or).toContain('delivery_lease_until.lt.2026-08-11T12:00:00.000Z');
+    expect(calls[0].update.delivery_lease_until).toBeNull();
   });
 
   it('is scoped to the account, so another tenant cannot claim it', async () => {

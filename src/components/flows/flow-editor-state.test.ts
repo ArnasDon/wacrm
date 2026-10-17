@@ -1,8 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
+  appendNode,
   applyNodePositions,
+  buildNewNode,
   defaultConfigFor,
   uniqueNodeKey,
+  type BuilderState,
 } from "./flow-editor-state";
 import type { BuilderNode, NodeType } from "./shared";
 
@@ -130,5 +133,44 @@ describe("defaultConfigFor", () => {
 
   it("end's default is an empty object (terminal — no config)", () => {
     expect(defaultConfigFor("end")).toEqual({});
+  });
+});
+
+describe("buildNewNode", () => {
+  it("gives back-to-back additions distinct keys when fed the running node list", () => {
+    let nodes: BuilderNode[] = [];
+    const first = buildNewNode("send_message", nodes);
+    nodes = [...nodes, first];
+    const second = buildNewNode("send_message", nodes);
+    expect(second.node_key).not.toBe(first.node_key);
+  });
+});
+
+describe("appendNode", () => {
+  const baseState: BuilderState = {
+    name: "f",
+    description: "",
+    trigger_type: "manual",
+    trigger_config: {},
+    entry_node_id: null,
+    status: "draft",
+    nodes: [],
+  };
+
+  it("makes the first start node the entry", () => {
+    const start = buildNewNode("start", []);
+    expect(appendNode(baseState, start).entry_node_id).toBe(start.node_key);
+  });
+
+  it("keeps an existing entry", () => {
+    const start = buildNewNode("start", []);
+    const next = appendNode({ ...baseState, entry_node_id: "existing" }, start);
+    expect(next.entry_node_id).toBe("existing");
+    expect(next.nodes).toEqual([start]);
+  });
+
+  it("does not pick a non-start node as entry", () => {
+    const end = buildNewNode("end", []);
+    expect(appendNode(baseState, end).entry_node_id).toBeNull();
   });
 });

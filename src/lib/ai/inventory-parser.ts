@@ -27,8 +27,25 @@ export interface ParsedInventory {
  *  a plain number (no currency symbol) — currency is applied separately. */
 export interface CatalogProductRow {
   /** Row index within the parsed data (0-based) — used as the stable
-   *  `source_product_id` when no SKU column was detected. */
+   *  `source_product_id` when neither `externalId` nor `sku` was
+   *  detected. */
   rowIndex: number
+  /**
+   * A dedicated internal/ERP product id (e.g. a column literally named
+   * `id_producto`) — distinct from `sku`. Used ONLY to build a stable
+   * `source_product_id` for sync identity (src/lib/ai/data-sources/
+   * service.ts::toCatalogProductRows) so a product keeps its identity
+   * across refreshes even if the sheet's row order changes. Deliberately
+   * NEVER surfaced as `sku`/any other agent-visible field — see
+   * `whitelist.ts`'s allow-list and `data-source-provider.ts`'s
+   * `rowToProduct`, neither of which read this field. The composite
+   * catalog id the model sees (`encodeCatalogId`) is built from
+   * `source_product_id`, same as it already is for every other
+   * identity source (a real SKU, or the row-index fallback) — this
+   * field does not change that existing exposure, it only makes the
+   * identity itself stable instead of position-fragile.
+   */
+  externalId: string | null
   sku: string | null
   name: string
   brand: string | null
@@ -68,6 +85,10 @@ export interface InventoryPreview {
 }
 
 export interface DetectedColumnMap {
+  /** A dedicated internal/ERP id column (e.g. `id_producto`) — see
+   *  `CatalogProductRow.externalId`'s own doc for why this is kept
+   *  separate from `sku`, never shown to the agent. */
+  externalId: string | null
   sku: string | null
   name: string | null
   price: string | null
@@ -86,6 +107,15 @@ export interface DetectedColumnMap {
 }
 
 const COLUMN_SYNONYMS: Record<keyof DetectedColumnMap, string[]> = {
+  // Deliberately NOT 'id'/'codigo'/'referencia' etc. — those stay on
+  // `sku` below (a customer-facing code is fine to show the agent).
+  // This role is only for a column that is unambiguously an internal/
+  // ERP record id, never meant to be read by a customer.
+  externalId: [
+    'id_producto', 'producto_id', 'idproducto', 'id del producto',
+    'id interno', 'internal_id', 'external_id', 'externalid',
+    'id_item', 'item_id', 'id_articulo', 'articulo_id_interno',
+  ],
   sku: [
     'sku', 'codigo', 'c\u00f3digo', 'code', 'id', 'ref', 'referencia',
     'product_id', 'codigo_item', 'item_code', 'articulo_id',
@@ -99,9 +129,9 @@ const COLUMN_SYNONYMS: Record<keyof DetectedColumnMap, string[]> = {
   price: [
     'precio', 'price', 'cost', 'costo', 'valor', 'value', 'pvp',
     'price_list', 'precio_venta', 'costo promedio', 'costo total',
-    'precio promedio', 'precio total', 'precio unitario',
-    'precio_compra', 'costo_unitario', 'costo_total',
-    'precio_lista', 'precio_venta_publico', 'precio_venta',
+    'precio promedio', 'precio total', 'precio unitario', 'precio_ud',
+    'precio_unidad', 'precio_u', 'precio_compra', 'costo_unitario',
+    'costo_total', 'precio_lista', 'precio_venta_publico', 'precio_venta',
     'precio_1', 'precio_2',
   ],
   stock: [
@@ -343,6 +373,14 @@ function buildProductRows(
     const i = headerLower.indexOf(col)
     return i !== -1 && selected(i) ? i : -1
   }
+  // externalId is deliberately NOT gated by `selected()` — unlike every
+  // other role here, it is never shown to the agent or the customer (see
+  // CatalogProductRow.externalId's own doc), only used to build a
+  // stable sync identity. An admin who excludes this column from the
+  // KB/catalog "visible columns" selection still wants products to keep
+  // their identity across refreshes, not fall back to the fragile
+  // row-index id just because the column isn't meant to be DISPLAYED.
+  const externalIdIdx = detected.externalId !== null ? headerLower.indexOf(detected.externalId) : -1
   const skuIdx = idx(detected.sku)
   const nameIdx = idx(detected.name)
   const priceIdx = idx(detected.price)
@@ -378,6 +416,7 @@ function buildProductRows(
 
     products.push({
       rowIndex,
+      externalId: cell(row, externalIdIdx),
       sku: cell(row, skuIdx),
       name,
       brand: cell(row, brandIdx),
@@ -429,7 +468,7 @@ function isNumeric(val: string): boolean {
 
 function detectColumns(header: string[]): DetectedColumnMap {
   const detected: DetectedColumnMap = {
-    sku: null, name: null, price: null, stock: null, category: null,
+    externalId: null, sku: null, name: null, price: null, stock: null, category: null,
     brand: null, model: null, description: null, color: null,
     capacity: null, size: null, image: null,
   }
@@ -459,6 +498,7 @@ function buildHeaderLabels(detected: DetectedColumnMap, header: string[]): (stri
     const role = columnRole[i]
     if (!role) return null
     const labels: Record<string, string> = {
+      externalId: 'ID interno',
       sku: 'SKU',
       name: 'Nombre',
       price: 'Precio',

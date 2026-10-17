@@ -147,7 +147,13 @@ async function claimDataSourceRefresh(db: SupabaseClient, id: string, accountId:
     .or(`refresh_started_at.is.null,refresh_started_at.lt.${staleThreshold}`)
     .select('id')
     .maybeSingle()
-  if (error) throw error
+  // Wrapped (not re-thrown raw) so this surfaces as a diagnosable 422
+  // via the route's existing `DataSourceError` check, instead of
+  // falling through every specific error class and landing on a bare
+  // "Internal server error" 500 that gives an admin no way to tell a
+  // real database problem (e.g. a pending migration not yet applied)
+  // apart from any other unexpected failure.
+  if (error) throw new DataSourceError(`Could not claim this refresh: ${error.message}`)
   if (!data) throw new DataSourceRefreshInProgressError()
 }
 
@@ -586,7 +592,17 @@ async function persistDataSource(
       })
       .select('id')
       .single()
-    if (docErr || !doc) throw docErr ?? new DataSourceError('Failed to save data source document.')
+    if (docErr) {
+      // Wrapped (not re-thrown raw) and logged — same discipline as
+      // claimDataSourceRefresh's own fix (Punto 5 audit follow-up):
+      // a raw PostgREST error is never `instanceof Error`, so it used
+      // to fall through doRefreshDataSource's catch straight to the
+      // generic "Refresh failed." fallback, indistinguishable from any
+      // other failure and never logged anywhere — even server-side.
+      console.error('[data-sources] failed to save new knowledge document:', docErr.message)
+      throw new DataSourceError(`Could not save data source document: ${docErr.message}`)
+    }
+    if (!doc) throw new DataSourceError('Failed to save data source document.')
 
     const { key: embeddingsApiKey } = await loadEmbeddingsKey(db, accountId)
     try {
@@ -622,38 +638,63 @@ async function persistDataSource(
 
   // ---- catalog side: structured rows, NEVER written to the KB.
   //
-  // Bug #1 fix (refresh atomicity): same root cause and same fix shape
-  // as the knowledge-document block above — the previous generation's
-  // rows are captured and only removed AFTER the new generation has
-  // been inserted successfully, so a failed insert can never leave the
-  // account with an empty catalog for this source.
+  // Bug #1 fix (refresh atomicity), still in force: the previous
+  // generation's rows are only removed AFTER the new generation is
+  // confirmed written, so a failed write can never leave the account
+  // with an empty catalog for this source.
   //
-  // Exception, unchanged from prior behavior: when `rows` is genuinely
-  // empty (the sync parsed successfully but produced zero catalog-
-  // eligible rows — e.g. every row lacked any usable name column, see
-  // inventory-parser.ts's buildProductRows), there is nothing to insert
-  // and this is NOT a failure — it is an accurate "this source
-  // currently has zero catalog rows" result. The previous generation is
-  // still removed in that case, exactly as it was before this fix,
-  // because leaving stale rows behind would misrepresent the source's
-  // real current content. Only a genuine INSERT ERROR (not "zero rows
-  // to insert") is now non-destructive.
+  // UPSERT, not INSERT (fix for the regression this introduced once
+  // migration 059's `UNIQUE(data_source_id, source_product_id)` index
+  // went live): `source_product_id` is deliberately STABLE across
+  // refreshes for any row with a real identity (externalId/sku) — that
+  // is the whole point of Punto 5/H-4's fix and of preferring
+  // `externalId` above. But that means a normal re-sync of unchanged
+  // or lightly-changed inventory produces the SAME ids as the rows
+  // already sitting in the table, and a plain `INSERT` of those same
+  // ids — while the old rows are *still present*, by design, until the
+  // step below — collides with that very index and fails the whole
+  // refresh with a raw Postgres unique-violation error. `upsert`
+  // resolves that collision by updating the existing row in place
+  // instead, which is exactly "this product's quantity/price/name
+  // changed" — the normal, expected case, not an error.
   if (usage === 'catalog' || usage === 'both') {
     const { data: previousProductRows, error: previousProductsErr } = await db
       .from('ai_catalog_products')
-      .select('id')
+      .select('id, source_product_id')
       .eq('data_source_id', source.id)
-    if (previousProductsErr) throw previousProductsErr
-    const previousProductIds = (previousProductRows ?? []).map((r) => (r as { id: string }).id)
+    if (previousProductsErr) {
+      console.error('[data-sources] failed to read existing catalog rows:', previousProductsErr.message)
+      throw new DataSourceError(`Could not read existing catalog rows: ${previousProductsErr.message}`)
+    }
+    const previous = (previousProductRows ?? []) as { id: string; source_product_id: string }[]
 
     const rows = toCatalogProductRows(parsed.products, source.id, accountId, opts.currency)
     if (rows.length > 0) {
-      const { error: insErr } = await db.from('ai_catalog_products').insert(rows)
-      if (insErr) throw insErr
+      const { error: upsertErr } = await db
+        .from('ai_catalog_products')
+        .upsert(rows, { onConflict: 'data_source_id,source_product_id' })
+      if (upsertErr) {
+        console.error('[data-sources] catalog upsert failed:', upsertErr.message)
+        throw new DataSourceError(`Could not save catalog rows: ${upsertErr.message}`)
+      }
     }
-    if (previousProductIds.length > 0) {
-      const { error: delErr } = await db.from('ai_catalog_products').delete().in('id', previousProductIds)
-      if (delErr) throw delErr
+
+    // Remove products that existed before this sync but are absent
+    // from the new generation — identified by `source_product_id`
+    // (real product identity), never by the OLD database row id: an
+    // upsert-matched row keeps its original `id`, so "every id that
+    // existed before this sync" would include rows the upsert above
+    // just correctly updated, not only genuinely removed ones.
+    const newSourceProductIds = new Set(rows.map((r) => r.source_product_id))
+    const idsToRemove = previous
+      .filter((r) => !newSourceProductIds.has(r.source_product_id))
+      .map((r) => r.id)
+    if (idsToRemove.length > 0) {
+      const { error: delErr } = await db.from('ai_catalog_products').delete().in('id', idsToRemove)
+      if (delErr) {
+        console.error('[data-sources] failed to remove obsolete catalog rows:', delErr.message)
+        throw new DataSourceError(`Could not remove obsolete catalog rows: ${delErr.message}`)
+      }
     }
   } else {
     await db.from('ai_catalog_products').delete().eq('data_source_id', source.id)
@@ -693,7 +734,14 @@ function toCatalogProductRows(
 ) {
   const seenSourceProductIds = new Set<string>()
   return products.map((p) => {
-    let sourceProductId = p.sku ?? `row-${p.rowIndex}`
+    // `externalId` (a dedicated internal/ERP id column, e.g.
+    // `id_producto`) takes priority when present — it survives the
+    // sheet's row order changing, unlike the `row-N` fallback. Falls
+    // back to `sku`, then to the row-index, exactly as before for any
+    // source with neither. `externalId` is NEVER written to the row's
+    // own `sku` field below — it only ever becomes `source_product_id`,
+    // see CatalogProductRow.externalId's own doc for why.
+    let sourceProductId = p.externalId ?? p.sku ?? `row-${p.rowIndex}`
     if (seenSourceProductIds.has(sourceProductId)) {
       sourceProductId = `row-${p.rowIndex}`
     }

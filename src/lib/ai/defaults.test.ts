@@ -63,6 +63,17 @@ describe('buildSystemPrompt — catalog accounts get the new commercial/coverage
     expect(prompt).toContain('Never state a price in a currency other than the one the tool returned')
   })
 
+  it('instructs the model to never read out a product\'s internal id/SKU/reference code — only name, price, stock, and natural attributes (id_producto hiding fix)', () => {
+    const prompt = buildSystemPrompt({ ...base, catalogToolsAvailable: true })
+    expect(prompt.toLowerCase()).toContain('never read out, mention, or confirm a product\'s internal id')
+    expect(prompt).toContain('describe products only by name, price, stock')
+
+    // Same as every other CATALOG TOOLS rule — absent entirely when no
+    // catalog tools are attached (nothing to hide an id FROM).
+    const withoutCatalog = buildSystemPrompt({ ...base, catalogToolsAvailable: false })
+    expect(withoutCatalog.toLowerCase()).not.toContain('internal id')
+  })
+
   it('omitting catalogToolsAvailable entirely still yields the pre-feature prompt (default false)', () => {
     const prompt = buildSystemPrompt(base)
     expect(prompt).not.toContain('CATALOG TOOLS')

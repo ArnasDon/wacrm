@@ -208,6 +208,7 @@
       "waitForSending": "Aguarde a mensagem terminar de ser enviada",
       "reactionFailed": "Falha na reação: {reason}",
       "assignmentUpdateFailed": "Falha ao atualizar a atribuição",
+      "assigneeNoLongerMember": "Esse colega não é mais membro desta conta",
       "networkError": "erro de rede",
       "documentFallback": "Documento",
       "you": "Você"

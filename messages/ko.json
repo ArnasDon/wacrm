@@ -208,6 +208,7 @@
       "waitForSending": "메시지 전송이 끝날 때까지 기다려 주세요",
       "reactionFailed": "반응 추가 실패: {reason}",
       "assignmentUpdateFailed": "담당자 변경에 실패했습니다",
+      "assigneeNoLongerMember": "해당 팀원은 더 이상 이 계정의 멤버가 아닙니다",
       "networkError": "네트워크 오류",
       "documentFallback": "문서",
       "you": "나"

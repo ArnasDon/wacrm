@@ -208,6 +208,7 @@
       "waitForSending": "Wait for the message to finish sending",
       "reactionFailed": "Reaction failed: {reason}",
       "assignmentUpdateFailed": "Failed to update assignment",
+      "assigneeNoLongerMember": "That teammate is no longer a member of this account",
       "networkError": "network error",
       "documentFallback": "Document",
       "you": "You"

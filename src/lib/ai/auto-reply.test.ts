@@ -5450,3 +5450,52 @@ describe('room intake before rate sheets (Ana)', () => {
     expect(h.engineSendText).toHaveBeenCalledWith(expect.objectContaining({ text: expect.stringContaining('Q300') }))
   })
 })
+
+
+describe('event quotation triage before generation', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-17T16:00:00Z'))
+    vi.mocked(checkSharedRateLimit).mockReset().mockResolvedValue({ success: true, limit: 100, remaining: 99, reset: Date.now() + 60_000 })
+    h.state.account = { default_currency: 'GTQ', industry_vertical: 'hotel', timezone: 'America/Guatemala' }
+  })
+  afterEach(() => vi.useRealTimers())
+  it('asks first without banners or forms', async () => {
+    h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'Precios para una boda' }])
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.generateReply).not.toHaveBeenCalled()
+    expect(h.engineSendText).toHaveBeenCalledWith(expect.objectContaining({ text: expect.stringContaining('en curso') }))
+    expect(h.upsertReservationRequest).not.toHaveBeenCalled()
+    expect(h.sendCatalogToConversation).not.toHaveBeenCalled()
+  })
+  it.each([['2026-10-17T16:00:00Z', '2 horas'], ['2026-10-18T03:00:00Z', 'horario h\u00e1bil']])('acknowledges existing quote at %s', async (instant, wording) => {
+    vi.setSystemTime(new Date(instant))
+    h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'Tengo una cotizacion de evento' }])
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.generateReply).not.toHaveBeenCalled()
+    expect(h.engineSendText).toHaveBeenCalledWith(expect.objectContaining({ text: expect.stringContaining(wording) }))
+    expect(h.state.messageInserts).toEqual([expect.objectContaining({ content_type: 'internal_note' })])
+    expect(h.upsertReservationRequest).not.toHaveBeenCalled()
+  })
+  it('does not repeat the acknowledgement for later pending replies', async () => {
+    h.buildConversationContext.mockResolvedValue([
+      { role: 'user', content: 'Tengo una cotizacion de boda' },
+      { role: 'assistant', content: 'Un compa\u00f1ero del hotel dar\u00e1 seguimiento a su cotizaci\u00f3n en un m\u00e1ximo de 2 horas.' },
+      { role: 'user', content: 'Gracias, espero' },
+    ])
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.generateReply).not.toHaveBeenCalled()
+    expect(h.engineSendText).not.toHaveBeenCalled()
+  })
+  it('allows explicit new event quotations through the provider', async () => {
+    h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'Quiero cotizar una boda para 50 personas' }])
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.generateReply).toHaveBeenCalledWith(expect.objectContaining({ systemPrompt: expect.stringContaining('EVENT NEW QUOTATION') }))
+  })
+  it('preserves staff priority when the new event also asks for a payment operation', async () => {
+    h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'Quiero cotizar una boda y quiero pagar el anticipo' }])
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.generateReply).not.toHaveBeenCalled()
+    expect(h.engineSendText).not.toHaveBeenCalled()
+  })
+})

@@ -19,6 +19,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { BroadcastError, type BroadcastPlan } from '@/lib/whatsapp/broadcast-core';
+import { DELIVERY_LOCK_STALE_MS } from '@/lib/whatsapp/broadcast-delivery-lease';
 import { chunk } from '@/lib/supabase/paged-query';
 import { decrypt } from '@/lib/whatsapp/encryption';
 import { resolveTemplateRow } from '@/lib/whatsapp/template-body';
@@ -44,14 +45,6 @@ export const RESUME_SCOPES: readonly ResumeScope[] = [
 export const RESUME_MAX_PER_REQUEST = 1000;
 
 export const RESUME_MAX_SCAN_PAGES = 25;
-
-/**
- * How long a `delivery_locked_at` stamp is honoured before it is read
- * as abandoned. Long enough that a legitimately slow pass is never
- * stolen from, short enough that a crashed one doesn't wedge the
- * campaign until someone touches the database.
- */
-export const DELIVERY_LOCK_STALE_MS = 30 * 60 * 1000;
 
 function scopeStatuses(scope: ResumeScope): string[] {
   if (scope === 'pending') return ['pending'];
@@ -79,10 +72,12 @@ export async function claimBroadcastDelivery(
 
   const { data, error } = await db
     .from('broadcasts')
-    .update({ delivery_locked_at: now.toISOString() })
+    .update({ delivery_locked_at: now.toISOString(), delivery_lease_until: null })
     .eq('id', broadcastId)
     .eq('account_id', accountId)
-    .or(`delivery_locked_at.is.null,delivery_locked_at.lt.${staleCutoff}`)
+    .or(
+      `and(or(delivery_locked_at.is.null,delivery_locked_at.lt.${staleCutoff}),or(delivery_lease_until.is.null,delivery_lease_until.lt.${now.toISOString()}))`
+    )
     .select('id');
 
   if (error) {

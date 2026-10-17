@@ -2394,6 +2394,7 @@
       "duplicateNodeKey": "중복된 node_key \"{key}\".",
       "unreachable": "노드 \"{key}\"은(는) 시작 노드에서 도달할 수 없습니다.",
       "autoAdvanceCycle": "노드 {keys}이(가) 고객 응답을 기다리지 않고 서로 반복되어 플로우가 메시지를 계속 보내게 됩니다. 반복 구간에 버튼, 목록 또는 질문 단계를 추가하거나 반복을 끊으세요.",
+      "autoAdvanceChainTooLong": "노드 \"{key}\"부터 고객 응답을 기다리지 않는 단계가 {count}개 연속으로 이어집니다. 플로우는 대기 전에 이런 단계를 최대 {max}개까지 실행할 수 있습니다. 버튼, 목록 또는 질문 단계를 추가해 구간을 나누세요.",
       "keywordsRequired": "키워드 트리거에는 키워드가 하나 이상 필요합니다.",
       "blankKeywords": "키워드 {count}개가 비어 있습니다 — 아무것과도 일치하지 않습니다.",
       "startNeedsNext": "시작 노드는 다음 노드를 가리켜야 합니다.",

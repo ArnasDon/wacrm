@@ -379,6 +379,10 @@ export const AUTO_ADVANCING_NODE_TYPES: ReadonlySet<string> = new Set([
   "set_tag",
 ]);
 
+export const MAX_NODES_PER_ADVANCE = 25;
+
+export const MAX_AUTO_ADVANCING_CHAIN = MAX_NODES_PER_ADVANCE - 1;
+
 export function assertNever(x: never): never {
   throw new Error(`Unhandled node type: ${JSON.stringify(x)}`);
 }

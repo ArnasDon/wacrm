@@ -2394,6 +2394,7 @@
       "duplicateNodeKey": "node_key duplicado: \"{key}\".",
       "unreachable": "El nodo \"{key}\" no es accesible desde el nodo de entrada.",
       "autoAdvanceCycle": "Los nodos {keys} vuelven unos a otros sin esperar al cliente, así que el flujo seguiría enviando mensajes. Añade un paso de botones, lista o pregunta al bucle, o rómpelo.",
+      "autoAdvanceChainTooLong": "El nodo \"{key}\" inicia {count} pasos seguidos que se ejecutan sin esperar al cliente. Un flujo puede ejecutar como máximo {max} pasos así antes de esperar; añade un paso de botones, lista o pregunta para dividir la cadena.",
       "keywordsRequired": "Los disparadores por palabra clave necesitan al menos una palabra clave.",
       "blankKeywords": "{count} {count, plural, =1 {palabra clave está vacía} other {palabras clave están vacías}}: no coincidirán con nada.",
       "startNeedsNext": "El nodo Inicio debe apuntar a un nodo siguiente.",

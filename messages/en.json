@@ -2394,6 +2394,7 @@
       "duplicateNodeKey": "Duplicate node_key \"{key}\".",
       "unreachable": "Node \"{key}\" is unreachable from the entry node.",
       "autoAdvanceCycle": "Nodes {keys} loop back to each other without waiting for the customer, so the flow would keep sending messages. Add a buttons, list or question step to the loop, or break it.",
+      "autoAdvanceChainTooLong": "Node \"{key}\" starts {count} steps in a row that run without waiting for the customer. A flow can run at most {max} such steps before it waits; add a buttons, list or question step to split the chain.",
       "keywordsRequired": "Keyword triggers need at least one keyword.",
       "blankKeywords": "{count} {count, plural, =1 {keyword is} other {keywords are}} blank — they won't match anything.",
       "startNeedsNext": "Start node must point to a next node.",

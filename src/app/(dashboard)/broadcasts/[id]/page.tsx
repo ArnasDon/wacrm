@@ -40,6 +40,7 @@ import {
   getBroadcastStatus,
   getRecipientStatus,
 } from '@/lib/broadcast-status';
+import { isBroadcastDeliveryInFlight } from '@/lib/whatsapp/broadcast-delivery-lease';
 import { useTranslations } from 'next-intl';
 
 interface StatCardProps {
@@ -326,6 +327,7 @@ export default function BroadcastDetailPage() {
   // still pending and nothing left to move them. Name that state rather
   // than leaving a permanently pulsing "sending" badge.
   const isStalled = broadcast.status === 'sending' && pendingCount > 0;
+  const deliveryInFlight = isBroadcastDeliveryInFlight(broadcast);
 
   const funnelSteps: FunnelStep[] = [
     { label: t('stats.sent'), value: broadcast.sent_count, color: 'bg-primary' },
@@ -412,7 +414,7 @@ export default function BroadcastDetailPage() {
 
       {/* Resume / retry (issue #472). Only rendered when there is
           actually something outstanding. */}
-      {(pendingCount > 0 || retryableCount > 0) && (
+      {!deliveryInFlight && (pendingCount > 0 || retryableCount > 0) && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card p-4">
           <div className="text-sm">
             <p className="font-medium text-foreground">

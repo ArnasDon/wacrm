@@ -3,6 +3,15 @@ import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
 import { checkRunTimeout, markRunTimedOut } from '@/lib/flows/timeout'
 
+const TIMEOUT_SWEEP_PAGE_SIZE = 500
+const TIMEOUT_SWEEP_MAX_PAGES = 20
+
+interface TimedOutRunRow {
+  id: string
+  last_advanced_at: string
+  fallback_policy: unknown
+}
+
 /**
  * Sweep abandoned active flow runs.
  *
@@ -48,44 +57,29 @@ export async function GET(request: Request) {
   const admin = supabaseAdmin()
   const now = new Date()
 
-  // Pull all currently-active runs along with their parent flow's
-  // fallback_policy. Joined in one query — the small set of active
-  // runs per tenant keeps this cheap.
-  const { data: runs, error } = await admin
-    .from('flow_runs')
-    .select(
-      'id, flow_id, user_id, contact_id, last_advanced_at, flows ( fallback_policy )',
-    )
-    .eq('status', 'active')
-
-  if (error) {
-    console.error('[flows-cron] active-run scan failed:', error.message)
-    return NextResponse.json({ error: error.message }, { status: 500 })
-  }
-  if (!runs?.length) return NextResponse.json({ swept: 0 })
-
-  type Row = {
-    id: string
-    flow_id: string
-    user_id: string
-    contact_id: string | null
-    last_advanced_at: string
-    flows: { fallback_policy: unknown } | { fallback_policy: unknown }[] | null
-  }
-
   let swept = 0
-  for (const r of runs as Row[]) {
-    const flowsField = Array.isArray(r.flows) ? r.flows[0] : r.flows
-    const check = checkRunTimeout(
-      r.last_advanced_at,
-      flowsField?.fallback_policy ?? null,
-      now,
-    )
-    if (!check.timedOut) continue
-
-    if (await markRunTimedOut(admin, r.id, check, 'stale_sweep', now)) {
-      swept += 1
+  for (let page = 0; page < TIMEOUT_SWEEP_MAX_PAGES; page += 1) {
+    const { data: runs, error } = await admin.rpc('list_timed_out_flow_runs', {
+      p_now: now.toISOString(),
+      p_limit: TIMEOUT_SWEEP_PAGE_SIZE,
+    })
+    if (error) {
+      console.error('[flows-cron] timed-out run scan failed:', error.message)
+      return NextResponse.json({ error: error.message, swept }, { status: 500 })
     }
+
+    const rows = (runs ?? []) as TimedOutRunRow[]
+    let sweptThisPage = 0
+    for (const r of rows) {
+      const check = checkRunTimeout(r.last_advanced_at, r.fallback_policy, now)
+      if (!check.timedOut) continue
+      if (await markRunTimedOut(admin, r.id, check, 'stale_sweep', now)) {
+        sweptThisPage += 1
+      }
+    }
+    swept += sweptThisPage
+
+    if (rows.length < TIMEOUT_SWEEP_PAGE_SIZE || sweptThisPage === 0) break
   }
 
   return NextResponse.json({ swept })

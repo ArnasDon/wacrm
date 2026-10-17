@@ -12,6 +12,10 @@ import {
   type AudienceConfig,
 } from '@/lib/broadcast-audience';
 import { normalizeKey } from '@/lib/contacts/dedupe';
+import {
+  renewWizardDeliveryLease,
+  wizardDeliveryLeaseUntil,
+} from '@/lib/whatsapp/broadcast-delivery-lease';
 import { fetchAllInChunks, fetchAllPages } from '@/lib/supabase/paged-query';
 import { BroadcastRecipient, Contact, MessageTemplate } from '@/types';
 import { getT } from '@/lib/i18n/translate';
@@ -73,6 +77,8 @@ const INSERT_BATCH_SIZE = 200;
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
+class DeliveryLeaseLost extends Error {}
 
 interface BroadcastApiResult {
   phone: string;
@@ -302,6 +308,7 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
 
       // ── Step 2: Create broadcast row ──────────────────────────────
       setProgress(10);
+      let heldLease = wizardDeliveryLeaseUntil();
       const { data: broadcast, error: broadcastError } = await supabase
         .from('broadcasts')
         .insert({
@@ -318,6 +325,7 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
             excludeTagIds: payload.audience.excludeTagIds,
           },
           status: 'sending',
+          delivery_lease_until: heldLease,
           total_recipients: contacts.length,
           sent_count: 0,
           delivered_count: 0,
@@ -382,6 +390,7 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
             .update({
               status: 'failed',
               failed_count: contacts.length,
+              delivery_lease_until: null,
             })
             .eq('id', broadcast.id);
           throw new Error(
@@ -426,6 +435,17 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
       const messageParams =
         isMediaHeader && headerMediaUrl ? { headerMediaUrl } : undefined;
 
+      const keepDeliveryLease = async () => {
+        const renewed = await renewWizardDeliveryLease(
+          supabase,
+          broadcast.id,
+          heldLease,
+        );
+        if (!renewed) throw new DeliveryLeaseLost();
+        heldLease = renewed;
+      };
+      let deliveryLeaseLost = false;
+
       for (let i = 0; i < recipients.length; i += SEND_BATCH_SIZE) {
         const batch = recipients.slice(i, i + SEND_BATCH_SIZE);
 
@@ -440,6 +460,13 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
           }));
 
         if (apiRecipients.length === 0) continue;
+
+        try {
+          await keepDeliveryLease();
+        } catch {
+          deliveryLeaseLost = true;
+          break;
+        }
 
         try {
           // Send the batch, waiting out a 429 rather than writing the
@@ -468,6 +495,7 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
               throw new Error(data.error || t('apiRequestFailed'));
             }
             await sleep(retryIn);
+            await keepDeliveryLease();
           }
 
           const resultsByPhone = new Map<string, BroadcastApiResult>();
@@ -513,6 +541,10 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
             }
           }
         } catch (err) {
+          if (err instanceof DeliveryLeaseLost) {
+            deliveryLeaseLost = true;
+            break;
+          }
           for (const recipient of batch) {
             failedCount++;
             await supabase
@@ -538,11 +570,14 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
       // Aggregate counts are maintained by the DB trigger (migration
       // 003); we only flip the final status here.
       setProgress(95);
-      const finalStatus = failedCount === totalRecipients ? 'failed' : 'sent';
-      await supabase
-        .from('broadcasts')
-        .update({ status: finalStatus })
-        .eq('id', broadcast.id);
+      if (!deliveryLeaseLost) {
+        const finalStatus = failedCount === totalRecipients ? 'failed' : 'sent';
+        await supabase
+          .from('broadcasts')
+          .update({ status: finalStatus, delivery_lease_until: null })
+          .eq('id', broadcast.id)
+          .eq('delivery_lease_until', heldLease);
+      }
 
       setProgress(100);
       return broadcast.id;

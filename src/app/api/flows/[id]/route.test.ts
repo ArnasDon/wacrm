@@ -91,10 +91,36 @@ describe('PUT /api/flows/[id]', () => {
     seed('active')
     const res = await put({ nodes: VALID_NODES })
     expect(res.status).toBe(200)
-    expect(h.rpc).toHaveBeenCalledWith('replace_flow_nodes', {
+    expect(h.rpc).toHaveBeenCalledWith('replace_flow_graph', {
       p_flow_id: 'flow-1',
       p_nodes: VALID_NODES.map((n) => ({ ...n, position_x: 0, position_y: 0 })),
+      p_flow: {},
     })
+  })
+
+  it('swaps the entry node in the same RPC as the nodes it points at', async () => {
+    seed('active')
+    const nodes = [
+      { node_key: 'hello', node_type: 'start', config: { next_node_key: 'bye' } },
+      { node_key: 'bye', node_type: 'end', config: {} },
+    ]
+    const res = await put({ name: ' Renamed ', entry_node_id: 'hello', nodes })
+    expect(res.status).toBe(200)
+    expect(h.rpc).toHaveBeenCalledTimes(1)
+    expect(h.rpc).toHaveBeenCalledWith('replace_flow_graph', {
+      p_flow_id: 'flow-1',
+      p_nodes: nodes.map((n) => ({ ...n, position_x: 0, position_y: 0 })),
+      p_flow: { name: 'Renamed', entry_node_id: 'hello' },
+    })
+    expect(h.tables.flows[0]).toMatchObject({ name: 'Welcome', entry_node_id: 'start' })
+  })
+
+  it('updates header-only saves directly without the RPC', async () => {
+    seed('draft')
+    const res = await put({ name: 'Renamed' })
+    expect(res.status).toBe(200)
+    expect(h.rpc).not.toHaveBeenCalled()
+    expect(h.tables.flows[0]).toMatchObject({ name: 'Renamed' })
   })
 
   it('lets a draft save an incomplete graph', async () => {

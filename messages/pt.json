@@ -2394,6 +2394,7 @@
       "duplicateNodeKey": "node_key duplicado: \"{key}\".",
       "unreachable": "O nó \"{key}\" não pode ser alcançado a partir do nó de entrada.",
       "autoAdvanceCycle": "Os nós {keys} voltam uns para os outros sem esperar pelo cliente, então o fluxo continuaria enviando mensagens. Adicione uma etapa de botões, lista ou pergunta ao loop, ou interrompa-o.",
+      "autoAdvanceChainTooLong": "O nó \"{key}\" inicia {count} etapas seguidas que rodam sem esperar pelo cliente. Um fluxo pode executar no máximo {max} etapas assim antes de esperar; adicione uma etapa de botões, lista ou pergunta para dividir a sequência.",
       "keywordsRequired": "Gatilhos por palavra-chave precisam de pelo menos uma palavra-chave.",
       "blankKeywords": "{count} {count, plural, =1 {palavra-chave está em branco} other {palavras-chave estão em branco}} — elas não vão corresponder a nada.",
       "startNeedsNext": "O nó Início precisa apontar para um próximo nó.",

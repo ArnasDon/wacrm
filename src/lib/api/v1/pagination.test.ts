@@ -79,6 +79,32 @@ describe('encode/decodeCursor round-trip', () => {
     ).toString('base64url');
     expect(decodeCursor(bad)).toBeNull();
   });
+
+  it('rejects timestamps Date.parse tolerates but that are not ISO 8601', () => {
+    const id = '11111111-1111-4111-8111-111111111111';
+    for (const ts of [
+      '1',
+      'Jan 1 2026',
+      '2026-01-01',
+      '2026-01-01T00:00:00Z),or(account_id.neq.0',
+      'Thu, 01 Jan 2026 00:00:00 GMT',
+    ]) {
+      const cursor = Buffer.from(`${ts}|${id}`, 'utf8').toString('base64url');
+      expect(decodeCursor(cursor)).toBeNull();
+    }
+  });
+
+  it('accepts the timestamp shapes Postgres returns', () => {
+    const id = '11111111-1111-4111-8111-111111111111';
+    for (const ts of [
+      '2026-01-01T00:00:00+00:00',
+      '2026-01-01T00:00:00.123456+00:00',
+      '2026-01-01T00:00:00.123Z',
+    ]) {
+      const cursor = Buffer.from(`${ts}|${id}`, 'utf8').toString('base64url');
+      expect(decodeCursor(cursor)).toEqual({ createdAt: ts, id });
+    }
+  });
 });
 
 describe('keysetFilter', () => {

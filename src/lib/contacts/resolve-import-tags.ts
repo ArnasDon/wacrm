@@ -2,6 +2,47 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 const DEFAULT_TAG_COLOR = '#3b82f6';
 
+const NAME_LOOKUP_CHUNK_SIZE = 50;
+
+function tagKey(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+function quotedNamePattern(name: string): string {
+  return `"${name.replace(/["\\]/g, '_')}"`;
+}
+
+async function findTagIdsByName(
+  supabase: SupabaseClient,
+  accountId: string,
+  names: string[]
+): Promise<Map<string, string>> {
+  const wantedKeys = new Set(names.map(tagKey));
+  const tagIdByKey = new Map<string, string>();
+
+  for (let i = 0; i < names.length; i += NAME_LOOKUP_CHUNK_SIZE) {
+    const chunk = names.slice(i, i + NAME_LOOKUP_CHUNK_SIZE);
+    const { data, error } = await supabase
+      .from('tags')
+      .select('id, name')
+      .eq('account_id', accountId)
+      .ilikeAnyOf('name', chunk.map(quotedNamePattern))
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true });
+
+    if (error) throw error;
+
+    for (const tag of data ?? []) {
+      const key = tagKey(tag.name);
+      if (wantedKeys.has(key) && !tagIdByKey.has(key)) {
+        tagIdByKey.set(key, tag.id);
+      }
+    }
+  }
+
+  return tagIdByKey;
+}
+
 export interface ResolveImportTagsResult {
   /** Lowercase tag name → tag id. */
   tagIdByKey: Map<string, string>;
@@ -36,7 +77,7 @@ export async function resolveImportTagIds(
   for (const raw of tagNames) {
     const name = raw.trim();
     if (!name) continue;
-    const key = name.toLowerCase();
+    const key = tagKey(name);
     if (seen.has(key)) continue;
     seen.add(key);
     uniqueNames.push(name);
@@ -46,24 +87,13 @@ export async function resolveImportTagIds(
     return { tagIdByKey: new Map(), skippedNames: [] };
   }
 
-  const { data: existing, error: fetchError } = await supabase
-    .from('tags')
-    .select('id, name')
-    .eq('account_id', accountId);
-
-  if (fetchError) throw fetchError;
-
-  const tagIdByKey = new Map<string, string>();
-  for (const tag of existing ?? []) {
-    const key = tag.name.trim().toLowerCase();
-    if (!tagIdByKey.has(key)) tagIdByKey.set(key, tag.id);
-  }
+  const tagIdByKey = await findTagIdsByName(supabase, accountId, uniqueNames);
 
   const skippedNames: string[] = [];
   const toCreate: string[] = [];
 
   for (const name of uniqueNames) {
-    const key = name.toLowerCase();
+    const key = tagKey(name);
     if (tagIdByKey.has(key)) continue;
     if (canCreateTags) toCreate.push(name);
     else skippedNames.push(name);
@@ -84,8 +114,31 @@ export async function resolveImportTagIds(
 
     if (createError) throw createError;
 
+    const canonical = await findTagIdsByName(supabase, accountId, toCreate);
+    const supersededIds: string[] = [];
     for (const tag of created ?? []) {
-      tagIdByKey.set(tag.name.trim().toLowerCase(), tag.id);
+      const key = tagKey(tag.name);
+      const winnerId = canonical.get(key);
+      if (!winnerId) {
+        tagIdByKey.set(key, tag.id);
+      } else {
+        tagIdByKey.set(key, winnerId);
+        if (winnerId !== tag.id) supersededIds.push(tag.id);
+      }
+    }
+
+    if (supersededIds.length > 0) {
+      const { error: cleanupError } = await supabase
+        .from('tags')
+        .delete()
+        .eq('account_id', accountId)
+        .in('id', supersededIds);
+      if (cleanupError) {
+        console.warn(
+          '[resolve-import-tags] duplicate tag cleanup failed:',
+          cleanupError.message
+        );
+      }
     }
   }
 

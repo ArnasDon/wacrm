@@ -1,74 +1,104 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import {
-  DELIVERY_LOCK_STALE_MS,
-  WIZARD_DELIVERY_LEASE_MS,
+  LEASE_RPC_ATTEMPTS,
+  acquireWizardDeliveryLease,
   isBroadcastDeliveryInFlight,
   renewWizardDeliveryLease,
-  wizardDeliveryLeaseUntil,
 } from './broadcast-delivery-lease';
 
-const NOW = new Date('2026-08-11T12:00:00Z');
-const at = (offsetMs: number) => new Date(NOW.getTime() + offsetMs).toISOString();
+const SERVER_LEASE = '2026-08-11T12:05:00.123456+00:00';
 
-describe('isBroadcastDeliveryInFlight', () => {
-  it('is idle with no lock and no lease', () => {
-    expect(isBroadcastDeliveryInFlight({}, NOW)).toBe(false);
-    expect(
-      isBroadcastDeliveryInFlight({ delivery_locked_at: null, delivery_lease_until: null }, NOW),
-    ).toBe(false);
+type RpcResponse = { data: unknown; error: { message: string } | null } | Error;
+
+function rpcDb(...responses: RpcResponse[]) {
+  const rpc = vi.fn(async () => {
+    const next = responses.shift();
+    if (!next) throw new Error('unexpected rpc call');
+    if (next instanceof Error) throw next;
+    return next;
   });
-
-  it('is busy while a wizard lease is live and idle once it lapses', () => {
-    expect(isBroadcastDeliveryInFlight({ delivery_lease_until: at(1000) }, NOW)).toBe(true);
-    expect(isBroadcastDeliveryInFlight({ delivery_lease_until: at(-1000) }, NOW)).toBe(false);
-  });
-
-  it('is busy while a server pass holds a fresh lock', () => {
-    expect(isBroadcastDeliveryInFlight({ delivery_locked_at: at(-60_000) }, NOW)).toBe(true);
-    expect(
-      isBroadcastDeliveryInFlight({ delivery_locked_at: at(-DELIVERY_LOCK_STALE_MS - 1) }, NOW),
-    ).toBe(false);
-  });
-});
-
-describe('wizardDeliveryLeaseUntil', () => {
-  it('leases the send for the wizard window', () => {
-    expect(wizardDeliveryLeaseUntil(NOW)).toBe(at(WIZARD_DELIVERY_LEASE_MS));
-  });
-});
-
-function leaseDb(matchedRows: unknown[]) {
-  const calls: { update?: Record<string, unknown>; filters: Record<string, unknown> } = {
-    filters: {},
-  };
-  const builder: Record<string, unknown> = {
-    update: (row: Record<string, unknown>) => {
-      calls.update = row;
-      return builder;
-    },
-    eq: (column: string, value: unknown) => {
-      calls.filters[column] = value;
-      return builder;
-    },
-    select: async () => ({ data: matchedRows, error: null }),
-  };
-  const db = { from: () => builder } as unknown as SupabaseClient;
-  return { db, calls };
+  return { db: { rpc } as unknown as SupabaseClient, rpc };
 }
 
+const noSleep = vi.fn<(ms: number) => Promise<void>>(async () => undefined);
+
+describe('acquireWizardDeliveryLease', () => {
+  it('takes the lease timestamp the database computed', async () => {
+    const { db, rpc } = rpcDb({ data: SERVER_LEASE, error: null });
+    expect(await acquireWizardDeliveryLease(db, 'bc-1', noSleep)).toEqual({
+      status: 'held',
+      lease: SERVER_LEASE,
+    });
+    expect(rpc).toHaveBeenCalledWith('acquire_broadcast_delivery_lease', {
+      p_broadcast_id: 'bc-1',
+    });
+  });
+
+  it('reports the lease as lost when a resume already holds the broadcast', async () => {
+    const { db } = rpcDb({ data: null, error: null });
+    expect(await acquireWizardDeliveryLease(db, 'bc-1', noSleep)).toEqual({ status: 'lost' });
+  });
+});
+
 describe('renewWizardDeliveryLease', () => {
-  it('extends the lease only while the wizard still holds it', async () => {
-    const { db, calls } = leaseDb([{ id: 'bc-1' }]);
-    const renewed = await renewWizardDeliveryLease(db, 'bc-1', at(-1000), NOW);
-    expect(renewed).toBe(at(WIZARD_DELIVERY_LEASE_MS));
-    expect(calls.update).toEqual({ delivery_lease_until: renewed });
-    expect(calls.filters).toEqual({ id: 'bc-1', delivery_lease_until: at(-1000) });
+  it('renews against the lease the wizard holds', async () => {
+    const { db, rpc } = rpcDb({ data: SERVER_LEASE, error: null });
+    expect(await renewWizardDeliveryLease(db, 'bc-1', 'held-lease', noSleep)).toEqual({
+      status: 'held',
+      lease: SERVER_LEASE,
+    });
+    expect(rpc).toHaveBeenCalledWith('renew_broadcast_delivery_lease', {
+      p_broadcast_id: 'bc-1',
+      p_held: 'held-lease',
+    });
   });
 
   it('reports the lease as lost once a resume has taken it over', async () => {
-    const { db } = leaseDb([]);
-    expect(await renewWizardDeliveryLease(db, 'bc-1', at(-1000), NOW)).toBeNull();
+    const { db, rpc } = rpcDb({ data: null, error: null });
+    expect(await renewWizardDeliveryLease(db, 'bc-1', 'held-lease', noSleep)).toEqual({
+      status: 'lost',
+    });
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries a transient failure with backoff instead of giving the lease up', async () => {
+    const sleep = vi.fn<(ms: number) => Promise<void>>(async () => undefined);
+    const { db, rpc } = rpcDb(new Error('Failed to fetch'), { data: SERVER_LEASE, error: null });
+    expect(await renewWizardDeliveryLease(db, 'bc-1', 'held-lease', sleep)).toEqual({
+      status: 'held',
+      lease: SERVER_LEASE,
+    });
+    expect(rpc).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports an error, not a lost lease, when every attempt fails', async () => {
+    const sleep = vi.fn<(ms: number) => Promise<void>>(async () => undefined);
+    const failures = Array.from({ length: LEASE_RPC_ATTEMPTS }, () => ({
+      data: null,
+      error: { message: 'upstream timeout' },
+    }));
+    const { db, rpc } = rpcDb(...failures);
+    expect(await renewWizardDeliveryLease(db, 'bc-1', 'held-lease', sleep)).toEqual({
+      status: 'error',
+      message: 'upstream timeout',
+    });
+    expect(rpc).toHaveBeenCalledTimes(LEASE_RPC_ATTEMPTS);
+    expect(sleep.mock.calls.map((call) => call[0])).toEqual([1000, 2000]);
+  });
+});
+
+describe('isBroadcastDeliveryInFlight', () => {
+  it('trusts the database clock', async () => {
+    const { db, rpc } = rpcDb({ data: true, error: null });
+    expect(await isBroadcastDeliveryInFlight(db, 'bc-1')).toBe(true);
+    expect(rpc).toHaveBeenCalledWith('broadcast_delivery_in_flight', { p_broadcast_id: 'bc-1' });
+  });
+
+  it('falls back to showing Resume when the check fails', async () => {
+    const { db } = rpcDb({ data: null, error: { message: 'boom' } });
+    expect(await isBroadcastDeliveryInFlight(db, 'bc-1')).toBe(false);
   });
 });

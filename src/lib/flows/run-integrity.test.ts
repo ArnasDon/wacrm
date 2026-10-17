@@ -253,7 +253,7 @@ describe("dispatchInboundToFlows run integrity", () => {
     setup("active");
     h.failingTables.add("flow_nodes");
     const result = await dispatch(tap("m-1"));
-    expect(result).toEqual({ consumed: false, outcome: "no_match" });
+    expect(result).toEqual({ consumed: true, flow_run_id: "run-1", outcome: "run_error" });
     expect(run("run-1")).toMatchObject({ status: "active", current_node_key: "menu" });
   });
 
@@ -261,8 +261,16 @@ describe("dispatchInboundToFlows run integrity", () => {
     setup("active");
     h.failingTables.add("flows");
     const result = await dispatch(tap("m-1"));
-    expect(result).toEqual({ consumed: false, outcome: "no_match" });
+    expect(result).toEqual({ consumed: true, flow_run_id: "run-1", outcome: "run_error" });
     expect(run("run-1")).toMatchObject({ status: "active", current_node_key: "menu" });
+  });
+
+  it("leaves the message to other handlers when no run exists and flows cannot be read", async () => {
+    setup("active");
+    h.tables.flow_runs = [];
+    h.failingTables.add("flows");
+    const result = await dispatch(tap("m-1"));
+    expect(result).toEqual({ consumed: false, outcome: "no_match" });
   });
 });
 

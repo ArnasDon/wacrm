@@ -57,7 +57,7 @@ AS $$
       CASE
         WHEN jsonb_typeof(f.fallback_policy->'on_timeout_hours') = 'number'
           AND (f.fallback_policy->>'on_timeout_hours')::NUMERIC > 0
-        THEN (f.fallback_policy->>'on_timeout_hours')::NUMERIC
+        THEN LEAST((f.fallback_policy->>'on_timeout_hours')::NUMERIC, 87600)
         ELSE 24
       END
     )::DOUBLE PRECISION)
@@ -67,3 +67,69 @@ $$;
 
 REVOKE ALL ON FUNCTION public.list_timed_out_flow_runs(TIMESTAMPTZ, INTEGER) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.list_timed_out_flow_runs(TIMESTAMPTZ, INTEGER) TO service_role;
+
+CREATE OR REPLACE FUNCTION public.acquire_broadcast_delivery_lease(
+  p_broadcast_id UUID
+) RETURNS TIMESTAMPTZ
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_lease TIMESTAMPTZ;
+BEGIN
+  UPDATE broadcasts b
+  SET delivery_lease_until = now() + INTERVAL '5 minutes'
+  WHERE b.id = p_broadcast_id
+    AND is_account_member(b.account_id, 'agent')
+    AND (b.delivery_lease_until IS NULL OR b.delivery_lease_until < now())
+    AND (b.delivery_locked_at IS NULL OR b.delivery_locked_at < now() - INTERVAL '30 minutes')
+  RETURNING b.delivery_lease_until INTO v_lease;
+  RETURN v_lease;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.acquire_broadcast_delivery_lease(UUID) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.acquire_broadcast_delivery_lease(UUID) TO authenticated, service_role;
+
+CREATE OR REPLACE FUNCTION public.renew_broadcast_delivery_lease(
+  p_broadcast_id UUID,
+  p_held TIMESTAMPTZ
+) RETURNS TIMESTAMPTZ
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_lease TIMESTAMPTZ;
+BEGIN
+  UPDATE broadcasts b
+  SET delivery_lease_until = now() + INTERVAL '5 minutes'
+  WHERE b.id = p_broadcast_id
+    AND is_account_member(b.account_id, 'agent')
+    AND b.delivery_lease_until = p_held
+  RETURNING b.delivery_lease_until INTO v_lease;
+  RETURN v_lease;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.renew_broadcast_delivery_lease(UUID, TIMESTAMPTZ) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.renew_broadcast_delivery_lease(UUID, TIMESTAMPTZ) TO authenticated, service_role;
+
+CREATE OR REPLACE FUNCTION public.broadcast_delivery_in_flight(
+  p_broadcast_id UUID
+) RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SET search_path = public
+AS $$
+  SELECT COALESCE((
+    SELECT b.delivery_locked_at > now() - INTERVAL '30 minutes'
+      OR b.delivery_lease_until > now()
+    FROM broadcasts b
+    WHERE b.id = p_broadcast_id
+  ), FALSE)
+$$;
+
+REVOKE ALL ON FUNCTION public.broadcast_delivery_in_flight(UUID) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.broadcast_delivery_in_flight(UUID) TO authenticated, service_role;

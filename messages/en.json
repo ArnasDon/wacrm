@@ -793,7 +793,9 @@
       "toastNotLinked": "Your profile is not linked to an account.",
       "toastFailedDraft": "Failed to save draft: {error}",
       "toastDraftSaved": "Draft saved",
-      "broadcastFailed": "Broadcast failed"
+      "broadcastFailed": "Broadcast failed",
+      "toastSendTakenOver": "Another delivery took over this broadcast, so this tab stopped sending. Open the broadcast to follow its progress.",
+      "toastSendInterrupted": "Sending stopped because the connection to the server dropped. Open the broadcast and select Resume sending to reach the remaining recipients. The button appears within 5 minutes."
     },
     "wizard": {
       "next": "Next",
@@ -2652,6 +2654,7 @@
       "statusInvalid": "status must be one of 'draft' | 'active' | 'archived'",
       "cannotActivate": "Cannot activate flow — fix the issues below first.",
       "cannotSaveActive": "This flow is live, so it can't be saved with these issues. Fix them or pause the flow first.",
+      "timeoutHoursInvalid": "on_timeout_hours must be a number greater than 0 and at most {max}.",
       "nameEmpty": "name cannot be empty",
       "unknownTemplate": "Unknown template_slug \"{slug}\"",
       "insertFailed": "flow insert failed",

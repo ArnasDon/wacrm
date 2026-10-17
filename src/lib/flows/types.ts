@@ -298,6 +298,8 @@ export interface FlowFallbackPolicy {
   on_exhaust: "handoff" | "end";
 }
 
+export const MAX_FLOW_TIMEOUT_HOURS = 87600;
+
 export const DEFAULT_FALLBACK_POLICY: FlowFallbackPolicy = {
   on_unknown_reply: "reprompt",
   max_reprompts: 2,
@@ -360,6 +362,7 @@ export interface DispatchInboundResult {
     | "handed_off"
     | "fallback_fired"
     | "duplicate_inbound_ignored"
+    | "run_error"
     | "no_match";
 }
 

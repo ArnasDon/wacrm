@@ -793,7 +793,9 @@
       "toastNotLinked": "Seu perfil não está vinculado a uma conta.",
       "toastFailedDraft": "Falha ao salvar o rascunho: {error}",
       "toastDraftSaved": "Rascunho salvo",
-      "broadcastFailed": "Falha no disparo"
+      "broadcastFailed": "Falha no disparo",
+      "toastSendTakenOver": "Outro envio assumiu esta transmissão, então esta aba parou de enviar. Abra a transmissão para acompanhar o progresso.",
+      "toastSendInterrupted": "O envio parou porque a conexão com o servidor caiu. Abra a transmissão e use Retomar envio para enviar aos destinatários restantes. O botão aparece em até 5 minutos."
     },
     "wizard": {
       "next": "Avançar",
@@ -2652,6 +2654,7 @@
       "statusInvalid": "O status deve ser 'draft', 'active' ou 'archived'",
       "cannotActivate": "Não é possível ativar o fluxo — corrija os problemas abaixo primeiro.",
       "cannotSaveActive": "Este fluxo está ativo, então não pode ser salvo com estes problemas. Corrija-os ou pause o fluxo primeiro.",
+      "timeoutHoursInvalid": "on_timeout_hours deve ser um número maior que 0 e no máximo {max}.",
       "nameEmpty": "O nome não pode ficar vazio",
       "unknownTemplate": "Modelo de fluxo desconhecido \"{slug}\"",
       "insertFailed": "falha ao criar o fluxo",

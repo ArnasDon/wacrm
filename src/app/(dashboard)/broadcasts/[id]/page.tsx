@@ -162,6 +162,7 @@ export default function BroadcastDetailPage() {
   );
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [deliveryInFlight, setDeliveryInFlight] = useState(false);
   const [resumingScope, setResumingScope] = useState<
     'pending' | 'failed' | null
   >(null);
@@ -178,6 +179,7 @@ export default function BroadcastDetailPage() {
 
       if (bcError) throw bcError;
       setBroadcast(bc);
+      setDeliveryInFlight(await isBroadcastDeliveryInFlight(supabase, broadcastId));
 
       const { data: recs, error: recsError } = await supabase
         .from('broadcast_recipients')
@@ -327,7 +329,6 @@ export default function BroadcastDetailPage() {
   // still pending and nothing left to move them. Name that state rather
   // than leaving a permanently pulsing "sending" badge.
   const isStalled = broadcast.status === 'sending' && pendingCount > 0;
-  const deliveryInFlight = isBroadcastDeliveryInFlight(broadcast);
 
   const funnelSteps: FunnelStep[] = [
     { label: t('stats.sent'), value: broadcast.sent_count, color: 'bg-primary' },

@@ -129,4 +129,19 @@ describe('PUT /api/flows/[id]', () => {
     expect(res.status).toBe(200)
     expect(h.rpc).toHaveBeenCalledTimes(1)
   })
+
+  it.each([99999999, 0, -1, '24'])('rejects on_timeout_hours %s before saving', async (hours) => {
+    seed('draft')
+    const res = await put({ fallback_policy: { on_timeout_hours: hours } })
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toMatch(/on_timeout_hours/)
+    expect(h.tables.flows[0]).not.toHaveProperty('fallback_policy')
+  })
+
+  it('saves a bounded on_timeout_hours', async () => {
+    seed('draft')
+    const res = await put({ fallback_policy: { on_timeout_hours: 48 } })
+    expect(res.status).toBe(200)
+    expect(h.tables.flows[0]).toMatchObject({ fallback_policy: { on_timeout_hours: 48 } })
+  })
 })

@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
 import { validateFlowForActivation } from '@/lib/flows/validate'
+import { MAX_FLOW_TIMEOUT_HOURS } from '@/lib/flows/types'
 import { getT } from '@/lib/i18n/translate'
 
 const t = getT('Api')
@@ -117,6 +118,13 @@ export async function PUT(
     )
   }
 
+  if (!isValidFallbackPolicy(body.fallback_policy)) {
+    return NextResponse.json(
+      { error: t('flows.timeoutHoursInvalid', { max: MAX_FLOW_TIMEOUT_HOURS }) },
+      { status: 400 },
+    )
+  }
+
   const admin = supabaseAdmin()
 
   const activeBlockers = await validateIfActive(admin, id, body)
@@ -175,6 +183,19 @@ export async function PUT(
       .order('created_at', { ascending: true }),
   ])
   return NextResponse.json({ flow, nodes: nodes ?? [] })
+}
+
+function isValidFallbackPolicy(policy: unknown): boolean {
+  if (policy === undefined) return true
+  if (!policy || typeof policy !== 'object' || Array.isArray(policy)) return false
+  const hours = (policy as { on_timeout_hours?: unknown }).on_timeout_hours
+  if (hours === undefined) return true
+  return (
+    typeof hours === 'number' &&
+    Number.isFinite(hours) &&
+    hours > 0 &&
+    hours <= MAX_FLOW_TIMEOUT_HOURS
+  )
 }
 
 async function validateIfActive(

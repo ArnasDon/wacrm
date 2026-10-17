@@ -8,42 +8,78 @@ import type { SupabaseClient } from '@supabase/supabase-js';
  */
 export const DELIVERY_LOCK_STALE_MS = 30 * 60 * 1000;
 
-export const WIZARD_DELIVERY_LEASE_MS = 5 * 60 * 1000;
+export const LEASE_RPC_ATTEMPTS = 3;
+export const LEASE_RPC_BACKOFF_MS = 1000;
 
-export function wizardDeliveryLeaseUntil(now: Date = new Date()): string {
-  return new Date(now.getTime() + WIZARD_DELIVERY_LEASE_MS).toISOString();
+export type DeliveryLeaseResult =
+  | { status: 'held'; lease: string }
+  | { status: 'lost' }
+  | { status: 'error'; message: string };
+
+type Sleep = (ms: number) => Promise<unknown>;
+
+const defaultSleep: Sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function callLeaseRpc(
+  db: SupabaseClient,
+  fn: string,
+  args: Record<string, unknown>,
+  sleep: Sleep
+): Promise<DeliveryLeaseResult> {
+  let lastError = '';
+  for (let attempt = 1; attempt <= LEASE_RPC_ATTEMPTS; attempt++) {
+    try {
+      const { data, error } = await db.rpc(fn, args);
+      if (!error) {
+        return typeof data === 'string' && data
+          ? { status: 'held', lease: data }
+          : { status: 'lost' };
+      }
+      lastError = error.message;
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
+    }
+    if (attempt < LEASE_RPC_ATTEMPTS) {
+      await sleep(LEASE_RPC_BACKOFF_MS * 2 ** (attempt - 1));
+    }
+  }
+  return { status: 'error', message: lastError };
 }
 
-export function isBroadcastDeliveryInFlight(
-  broadcast: {
-    delivery_locked_at?: string | null;
-    delivery_lease_until?: string | null;
-  },
-  now: Date = new Date()
-): boolean {
-  const lockedAt = broadcast.delivery_locked_at
-    ? new Date(broadcast.delivery_locked_at).getTime()
-    : NaN;
-  if (lockedAt > now.getTime() - DELIVERY_LOCK_STALE_MS) return true;
-  const leaseUntil = broadcast.delivery_lease_until
-    ? new Date(broadcast.delivery_lease_until).getTime()
-    : NaN;
-  return leaseUntil > now.getTime();
+export function acquireWizardDeliveryLease(
+  db: SupabaseClient,
+  broadcastId: string,
+  sleep: Sleep = defaultSleep
+): Promise<DeliveryLeaseResult> {
+  return callLeaseRpc(
+    db,
+    'acquire_broadcast_delivery_lease',
+    { p_broadcast_id: broadcastId },
+    sleep
+  );
 }
 
-export async function renewWizardDeliveryLease(
+export function renewWizardDeliveryLease(
   db: SupabaseClient,
   broadcastId: string,
   heldLease: string,
-  now: Date = new Date()
-): Promise<string | null> {
-  const nextLease = wizardDeliveryLeaseUntil(now);
-  const { data, error } = await db
-    .from('broadcasts')
-    .update({ delivery_lease_until: nextLease })
-    .eq('id', broadcastId)
-    .eq('delivery_lease_until', heldLease)
-    .select('id');
-  if (error || !Array.isArray(data) || data.length === 0) return null;
-  return nextLease;
+  sleep: Sleep = defaultSleep
+): Promise<DeliveryLeaseResult> {
+  return callLeaseRpc(
+    db,
+    'renew_broadcast_delivery_lease',
+    { p_broadcast_id: broadcastId, p_held: heldLease },
+    sleep
+  );
+}
+
+export async function isBroadcastDeliveryInFlight(
+  db: SupabaseClient,
+  broadcastId: string
+): Promise<boolean> {
+  const { data, error } = await db.rpc('broadcast_delivery_in_flight', {
+    p_broadcast_id: broadcastId,
+  });
+  if (error) return false;
+  return data === true;
 }

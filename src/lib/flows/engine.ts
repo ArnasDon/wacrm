@@ -989,6 +989,7 @@ export async function dispatchInboundToFlows(
   input: DispatchInboundInput & { isFirstInboundMessage: boolean },
 ): Promise<DispatchInboundResult> {
   const db = supabaseAdmin();
+  let ownedRunId: string | null = null;
   try {
     const activeRun = await loadActiveRunForContact(
       db,
@@ -1000,6 +1001,7 @@ export async function dispatchInboundToFlows(
     // contact. For new runs, the partial unique index catches duplicate
     // starts at INSERT time.
     if (activeRun) {
+      ownedRunId = activeRun.id;
       const dupe = await isDuplicateInbound(
         db,
         input.accountId,
@@ -1036,6 +1038,7 @@ export async function dispatchInboundToFlows(
         );
       }
       await closeActiveRun(db, activeRun, closure, now);
+      ownedRunId = null;
     }
 
     // No active run → look for a flow whose entry trigger matches.
@@ -1055,6 +1058,9 @@ export async function dispatchInboundToFlows(
       "[flows] dispatchInboundToFlows threw:",
       err instanceof Error ? err.message : err,
     );
+    if (ownedRunId) {
+      return { consumed: true, flow_run_id: ownedRunId, outcome: "run_error" };
+    }
     return { consumed: false, outcome: "no_match" };
   }
 }

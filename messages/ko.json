@@ -2730,6 +2730,7 @@
       "metaSubmitFailed": "Meta에 제출하지 못했습니다.",
       "rateLimit": "Meta 요청 한도에 도달했습니다(시간당 템플릿 생성 100개). 나중에 다시 시도하세요.",
       "submittedSaveFailed": "Meta에 제출되었지만 로컬에 저장하지 못했습니다: {message}. 복구하려면 \"Meta에서 동기화\"를 실행하세요.",
+      "alreadyExists": "이 계정에 {name} ({language}) 템플릿이 이미 있습니다. 새로 만들지 말고 기존 템플릿을 수정하거나 다시 제출하세요.",
       "submitFailed": "템플릿을 제출하지 못했습니다.",
       "metaApiStatus": "Meta API 오류: {status}",
       "syncFailed": "템플릿을 동기화하지 못했습니다"

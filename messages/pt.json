@@ -2730,6 +2730,7 @@
       "metaSubmitFailed": "Falha ao enviar à Meta.",
       "rateLimit": "Limite de requisições da Meta atingido (100 criações de modelo por hora). Tente novamente mais tarde.",
       "submittedSaveFailed": "Enviado à Meta, mas falhou ao salvar localmente: {message}. Use \"Sincronizar da Meta\" para recuperar.",
+      "alreadyExists": "Já existe um modelo chamado {name} ({language}) nesta conta. Edite ou reenvie esse modelo em vez de criar um novo.",
       "submitFailed": "Falha ao enviar o modelo.",
       "metaApiStatus": "Erro da API da Meta: {status}",
       "syncFailed": "Falha ao sincronizar os modelos"

@@ -2730,6 +2730,7 @@
       "metaSubmitFailed": "Meta submit failed.",
       "rateLimit": "Meta rate limit hit (100 template creates per hour). Try again later.",
       "submittedSaveFailed": "Submitted to Meta but failed to save locally: {message}. Run \"Sync from Meta\" to recover.",
+      "alreadyExists": "A template named {name} ({language}) already exists in this account. Edit or resubmit that template instead of creating a new one.",
       "submitFailed": "Failed to submit template.",
       "metaApiStatus": "Meta API error: {status}",
       "syncFailed": "Failed to sync templates"

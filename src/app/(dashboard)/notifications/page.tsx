@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
+import { notificationsAccountFilter } from "@/lib/notifications/unread-count";
 import type { Notification } from "@/types";
 import { Bell, CheckCheck, Loader2, UserPlus } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
@@ -52,12 +53,18 @@ export default function NotificationsPage() {
   // Realtime — new assignments appear without a refresh, and a
   // "mark all read" fired from another tab/device stays in sync here.
   useEffect(() => {
+    if (!accountId) return;
     const supabase = createClient();
     const channel = supabase
-      .channel("notifications-page")
+      .channel(`notifications-page:${accountId}`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "notifications" },
+        {
+          event: "*",
+          schema: "public",
+          table: "notifications",
+          filter: notificationsAccountFilter(accountId),
+        },
         (payload) => {
           if (payload.eventType === "INSERT") {
             const row = payload.new as Notification;
@@ -85,7 +92,7 @@ export default function NotificationsPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [accountId]);
 
   const markRead = useCallback(
     async (id: string) => {
@@ -126,7 +133,7 @@ export default function NotificationsPage() {
   const unreadIds = notifications?.filter((n) => !n.read_at).map((n) => n.id) ?? [];
 
   const markAllRead = useCallback(async () => {
-    if (unreadIds.length === 0) return;
+    if (unreadIds.length === 0 || !accountId) return;
     setMarkingAll(true);
     const now = new Date().toISOString();
     setNotifications(
@@ -136,13 +143,14 @@ export default function NotificationsPage() {
     const { error: updateErr } = await supabase
       .from("notifications")
       .update({ read_at: now })
+      .eq("account_id", accountId)
       .is("read_at", null);
     setMarkingAll(false);
     if (updateErr) {
       toast.error(t("markAllFailed"));
       load();
     }
-  }, [unreadIds.length, load, t]);
+  }, [unreadIds.length, accountId, load, t]);
 
   if (error) {
     return (

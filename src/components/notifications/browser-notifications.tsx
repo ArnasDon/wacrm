@@ -9,10 +9,9 @@ import type { Notification } from "@/types";
 /**
  * BrowserNotifications — headless, mounted once in the dashboard shell
  * (same pattern as `PresenceHeartbeat`). Shows a native Chrome/OS
- * notification whenever a conversation gets assigned to the signed-in
- * agent — including an AI handoff, since that also sets
- * `assigned_agent_id` and goes through the same `on_conversation_assigned`
- * trigger / `notifications` insert as a manual reassignment.
+ * notification for conversation assignments and pending AI handoffs
+ * to the signed-in agent. Assignment triggers and direct AI handoff
+ * inserts both publish through the notifications table.
  *
  * Relies on the same realtime channel + RLS scoping as
  * `useUnreadNotifications` — every row this tab receives already belongs
@@ -42,7 +41,7 @@ export function BrowserNotifications() {
         (payload) => {
           if (Notification.permission !== "granted") return;
           const row = payload.new as Notification;
-          if (row.type !== "conversation_assigned") return;
+          if (row.type !== "conversation_assigned" && row.type !== "ai_handoff") return;
 
           const n = new Notification(row.title, {
             body: row.body ?? undefined,

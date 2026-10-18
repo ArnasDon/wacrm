@@ -2897,15 +2897,13 @@ async function handOffToHuman(args: {
     console.error('[ai auto-reply] failed to insert handoff internal note:', noteError)
   }
 
-  // When there's no configured handoff agent AND nobody already owns
-  // this thread, `conversations.assigned_agent_id` stays NULL — the
-  // `on_conversation_assigned` trigger (migration 027) never fires, so
-  // without this the pause is invisible in-app until the idle
-  // reassignment sweep happens to run with someone online (up to
-  // `unclaimed_conversation_timeout_minutes`, default 60). Notify every
-  // agent+ teammate directly instead of waiting on that.
-  if (!willAssign && !alreadyAssigned) {
-    void notifyHandoffUnassigned(db, accountId, conversationId, fullSummary)
+  // A new hotel reception case needs its own alert even when the thread
+  // already has an owner. Assignment alone does not signal a new pending
+  // operation. The guarded case claim above prevents repeat notifications.
+  // Other verticals keep the unassigned fallback; assignment triggers notify
+  // their configured recipient as before.
+  if (hotelReceptionPending || (!willAssign && !alreadyAssigned)) {
+    await notifyHandoffTeam(db, accountId, conversationId, fullSummary)
   }
 }
 
@@ -2930,7 +2928,7 @@ async function notifyTeamRequestReady(
       status: 'sent',
     })
     if (noteError) console.error('[ai auto-reply] failed to insert request-ready note:', noteError)
-    await notifyHandoffUnassigned(db, accountId, conversationId, fullSummary)
+    await notifyHandoffTeam(db, accountId, conversationId, fullSummary)
   } catch (err) {
     console.error('[ai auto-reply] notifyTeamRequestReady failed:', err)
   }
@@ -2979,12 +2977,13 @@ async function appendActiveReservationsRecap(
 }
 
 /**
- * Best-effort in-app notification for an AI handoff that landed on
- * nobody (migration 136). Mirrors `notifyAiKeyInvalid` below, but goes
+ * Best-effort in-app notification for reception cases, ready requests and
+ * AI handoffs that landed on nobody (migration 136). Like invalid-key
+ * notifications, these are account-scoped, but go
  * to every agent+ teammate (not just owner/admin) since any of them
  * can pick up the conversation from the inbox.
  */
-async function notifyHandoffUnassigned(
+async function notifyHandoffTeam(
   db: SupabaseClient,
   accountId: string,
   conversationId: string,
@@ -3012,7 +3011,7 @@ async function notifyHandoffUnassigned(
       console.error('[ai auto-reply] failed to insert ai_handoff notifications:', error)
     }
   } catch (err) {
-    console.error('[ai auto-reply] notifyHandoffUnassigned failed:', err)
+    console.error('[ai auto-reply] notifyHandoffTeam failed:', err)
   }
 }
 

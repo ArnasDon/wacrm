@@ -5584,3 +5584,41 @@ describe('sales versus hotel stay operations (Daris and Maria)', () => {
     expect(h.engineSendText).not.toHaveBeenCalled()
   })
 })
+
+
+describe('hotel reception notifications for assigned chats', () => {
+  beforeEach(() => {
+    h.state.account = { default_currency: 'GTQ', industry_vertical: 'hotel' }
+    h.state.conv = { assigned_agent_id: 'existing-agent', ai_autoreply_disabled: false, ai_reply_count: 0 }
+    h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'Cual es mi numero de habitacion?' }])
+  })
+  it('notifies the account team once for a new pending case even with an existing assignee', async () => {
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.state.notificationInserts).toEqual([
+      expect.objectContaining({ account_id: 'acct-1', user_id: 'user-1', type: 'ai_handoff', conversation_id: 'conv-1', body: expect.stringContaining('habitaci\u00f3n asignada') }),
+      expect.objectContaining({ account_id: 'acct-1', user_id: 'user-2', type: 'ai_handoff', conversation_id: 'conv-1' }),
+    ])
+    expect(h.state.updatePayload).not.toHaveProperty('assigned_agent_id')
+    expect(h.state.updatePayload).not.toHaveProperty('ai_autoreply_disabled')
+    expect(h.engineSendText).not.toHaveBeenCalled()
+    expect(h.generateReply).not.toHaveBeenCalled()
+  })
+  it('notifies reception cases even when the same handoff also assigns an agent', async () => {
+    h.state.conv = { assigned_agent_id: null, ai_autoreply_disabled: false, ai_reply_count: 0 }
+    h.loadAiConfig.mockResolvedValue(aiConfig({ handoffAgentId: 'agent-7' }))
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.state.updatePayload).toMatchObject({ assigned_agent_id: 'agent-7' })
+    expect(h.state.notificationInserts).toHaveLength(2)
+  })
+  it('does not repeat the alert on another message about the same pending case', async () => {
+    h.state.conv!.ai_handoff_summary = '\uD83E\uDD1D Pendiente de recepci\u00f3n. Habitacion asignada.'
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.state.notificationInserts).toEqual([])
+    expect(h.state.messageInserts).toEqual([])
+  })
+  it('does not notify when a concurrent dispatch or manual takeover wins the pending-case claim', async () => {
+    h.state.recoveryUpdateRows = []
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.state.notificationInserts).toEqual([])
+  })
+})

@@ -1,3 +1,4 @@
+import { HOTEL_DIRECT_SERVICE_POLICY, hotelChangeRequest, hotelChangeConfirmationLine, explicitGuestCount, claimsExecutedHotelChange } from './hotel-service-policy'
 import { hotelEventTriage, EVENT_TRIAGE_QUESTION, eventFollowupLine } from './hotel-event-triage'
 import { roomBannerVariant } from './hotel-room-banner'
 import { withinAiAttentionHours, OutsideAiAttentionHours } from './auto-reply-schedule'
@@ -803,6 +804,22 @@ export async function dispatchInboundToAiReply(
     // an operation that belongs to staff must not produce a guest message.
     const receptionPending = neverSelfPause && isHotelReceptionPending(conv.ai_handoff_summary)
     const requestMessages = receptionPending ? hotelCurrentRequest(messages, conv.ai_handoff_at) : messages
+    if (neverSelfPause && hotelChangeRequest(requestMessages)) {
+      const alreadyAcknowledged = receptionPending || previousAssistantMessage(messages).includes('le confirmar\u00e1 si es posible realizarla')
+      if (!alreadyAcknowledged) {
+        const { data: account } = await db.from('accounts').select('timezone').eq('id', accountId).maybeSingle()
+        const timeZone = config.autoReplySchedule?.timeZone ?? account?.timezone ?? 'America/Guatemala'
+        await sendReplyWithRetry({ accountId, userId: configOwnerUserId, conversationId, contactId,
+          text: hotelChangeConfirmationLine(isAfterHours(new Date(), timeZone)) })
+      }
+      await handOffToHuman({
+        db, accountId, conversationId, handoffAgentId: config.handoffAgentId,
+        alreadyAssigned: Boolean(conv.assigned_agent_id),
+        summary: HOTEL_RECEPTION_PENDING_PREFIX + ' El hotel debe evaluar si es posible la cancelaci\u00f3n o el cambio solicitado. La IA no modific\u00f3 ninguna reserva.\n' + buildHandoffSummary({ messages, replyCount: conv.ai_reply_count ?? 0 }),
+        hotelReceptionPending: true, previousSummary: conv.ai_handoff_summary ?? null,
+      })
+      return
+    }
     const operationReason = neverSelfPause ? hotelReceptionReason(requestMessages) : null
     const eventEligible = !operationReason || operationReason.includes('preparar la cotizaci') || operationReason.includes('seguimiento a una gesti')
     const eventTriage = neverSelfPause && eventEligible ? hotelEventTriage(messages) : 'none'
@@ -1088,7 +1105,7 @@ export async function dispatchInboundToAiReply(
       : ''
     const confirmationNote = isHotel ? `HOTEL AVAILABILITY COMMITMENT: When sharing a lodging reference or computed estimate, clearly say it depends on hotel availability. Use this follow-up window: ${availabilityConfirmationLine(isAfterHours(new Date(), businessTimeZone))} Never promise availability or a confirmed booking. Do not repeat the window in consecutive messages when already stated.` : ''
     const eventNote = newEvent ? 'EVENT NEW QUOTATION: The guest explicitly requests a NEW event quotation. Continue assisting and collect only missing event type, date, guest count and service needs. Do not route merely because this is an event or group quotation. Never invent prices, capacity or confirmed availability. Existing quotes and quote numbers belong to hotel staff. Do not send lodging banners for event inquiries.' : ''
-    const systemPrompt = [baseSystemPrompt, confirmationNote, eventNote, isHotel ? recentExchangeNote(messages) : '', teammateNote, receptionNote].filter(Boolean).join('\n\n')
+    const systemPrompt = [baseSystemPrompt, confirmationNote, eventNote, isHotel ? recentExchangeNote(messages) : '', teammateNote, receptionNote, isHotel ? HOTEL_DIRECT_SERVICE_POLICY : ''].filter(Boolean).join('\n\n')
 
     let generation: GenerateResult
     try {
@@ -1234,6 +1251,19 @@ For airport transport, record the guest's request in nota on the relevant existi
           `🤖 El huésped pidió algo que la IA no pudo guardar en una reservación de este chat. Revisar y confirmarle: «${latestUserMessage(messages).slice(0, 300)}»`,
         )
       }
+    }
+
+    if (isHotel && claimsExecutedHotelChange(generation.text)) {
+      // Never execute any model actions from a reply claiming a staff-only change.
+      if (!receptionPending) await sendReplyWithRetry({ accountId, userId: configOwnerUserId, conversationId, contactId,
+        text: hotelChangeConfirmationLine(isAfterHours(new Date(), businessTimeZone)) })
+      await handOffToHuman({
+        db, accountId, conversationId, handoffAgentId: config.handoffAgentId,
+        alreadyAssigned: Boolean(conv.assigned_agent_id),
+        summary: HOTEL_RECEPTION_PENDING_PREFIX + ' La IA bloque\u00f3 una afirmaci\u00f3n de cambio o cancelaci\u00f3n no autorizada. El hotel debe revisar la solicitud; no se ejecutaron acciones.\n' + buildHandoffSummary({ messages, replyCount: conv.ai_reply_count ?? 0 }),
+        hotelReceptionPending: true, previousSummary: conv.ai_handoff_summary ?? null,
+      })
+      return
     }
 
     if (receptionPending && !newEvent) {
@@ -1723,7 +1753,7 @@ For airport transport, record the guest's request in nota on the relevant existi
       const intake = {
         check_in: normalizeReservationDate(fields.entrada) ?? priorIntake?.check_in,
         check_out: normalizeReservationDate(fields.salida) ?? priorIntake?.check_out,
-        guests: fields.personas ? Number(fields.personas) : priorIntake?.guests,
+        guests: fields.personas ? Number(fields.personas) : priorIntake?.guests ?? explicitGuestCount(recentInbound),
       }
       roomRateSheet = roomBannerVariant(intake)
       // A general first lodging inquiry starts with the missing essentials,

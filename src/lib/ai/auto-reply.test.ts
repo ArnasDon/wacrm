@@ -5042,12 +5042,12 @@ describe('dispatchInboundToAiReply — hotel: a teammate already answered (owner
 
 describe('hotel discreet assistance regression', () => {
   beforeEach(() => { h.state.account = { default_currency: 'GTQ', industry_vertical: 'hotel' } })
-  it('does not regenerate or send a cancellation after the staff window', async () => {
+  it('acknowledges a cancellation for hotel review without executing it after the staff window', async () => {
     h.teammateTookOver.mockResolvedValue(true)
     h.buildConversationContext.mockResolvedValue([{ role: 'assistant', content: 'Si hay Sr Santoyo las reservo' }, { role: 'user', content: 'Mañana cancelado' }])
     await dispatchInboundToAiReply(ARGS)
     expect(h.generateReply).not.toHaveBeenCalled()
-    expect(h.engineSendText).not.toHaveBeenCalled()
+    expect(h.engineSendText).toHaveBeenCalledWith(expect.objectContaining({ text: expect.stringContaining('si es posible') }))
     expect(h.upsertReservationRequest).not.toHaveBeenCalled()
   })
   it('does not explain staff files as its own goodbye after three hours', async () => {
@@ -5078,7 +5078,7 @@ describe('hotel discreet assistance regression', () => {
 
 describe('hotel silent reception ownership', () => {
   beforeEach(() => { h.state.account = { default_currency: 'GTQ', industry_vertical: 'hotel' } })
-  it.each(['Quiero cancelar mi reserva', 'Le envío el comprobante del pago', 'Tengo un voucher de regalo', 'Necesito tarifa especial de tour operador', 'Necesito cotización para un grupo de 51 personas', 'Quiero hablar con recepción'])('records the pending topic without a whole-thread pause or guest message: %s', async (text) => {
+  it.each(['Le envío el comprobante del pago', 'Tengo un voucher de regalo', 'Necesito tarifa especial de tour operador', 'Necesito cotización para un grupo de 51 personas', 'Quiero hablar con recepción'])('records the pending topic without a whole-thread pause or guest message: %s', async (text) => {
     h.buildConversationContext.mockResolvedValue([{ role: 'user', content: text }])
     await dispatchInboundToAiReply(ARGS)
     expect(h.generateReply).not.toHaveBeenCalled()
@@ -5251,12 +5251,12 @@ describe('hotel automatic reception topic recovery', () => {
     expect(h.generateReply).not.toHaveBeenCalled()
     expect(h.engineSendText).not.toHaveBeenCalled()
   })
-  it('stays silent on staff decisions even when the account rate limiter would send a fallback', async () => {
+  it('acknowledges staff review without a rate-limit fallback or model', async () => {
     h.state.conv!.ai_handoff_summary = null
     h.buildConversationContext.mockResolvedValue([fresh('Necesito un reembolso')])
     vi.mocked(checkSharedRateLimit).mockResolvedValueOnce({ success: false, limit: 1, remaining: 0, reset: Date.now() + 60_000 })
     await dispatchInboundToAiReply(ARGS)
-    expect(h.engineSendText).not.toHaveBeenCalled()
+    expect(h.engineSendText).toHaveBeenCalledWith(expect.objectContaining({ text: expect.stringContaining('si es posible') }))
     expect(h.sendMessageToConversation).not.toHaveBeenCalled()
     expect(h.state.messageInserts).toHaveLength(1)
   })
@@ -5348,7 +5348,8 @@ describe('hotel pending operations from the conversation audit', () => {
     h.buildConversationContext.mockResolvedValue([{ role: 'user', content }, { role: 'user', content: 'Muchas gracias' }])
     await dispatchInboundToAiReply(ARGS)
     expect(h.generateReply).not.toHaveBeenCalled()
-    expect(h.engineSendText).not.toHaveBeenCalled()
+    if (content.includes('Ya no vamos')) expect(h.engineSendText).toHaveBeenCalledWith(expect.objectContaining({ text: expect.stringContaining('si es posible') }))
+    else expect(h.engineSendText).not.toHaveBeenCalled()
     expect(h.upsertReservationRequest).not.toHaveBeenCalled()
     expect(h.state.messageInserts).toContainEqual(expect.objectContaining({ content_type: 'internal_note', content_text: expect.stringContaining('Pendiente de recepci\u00f3n') }))
   })
@@ -5497,5 +5498,47 @@ describe('event quotation triage before generation', () => {
     await dispatchInboundToAiReply(ARGS)
     expect(h.generateReply).not.toHaveBeenCalled()
     expect(h.engineSendText).not.toHaveBeenCalled()
+  })
+})
+
+
+describe('direct hotel service and staff-only changes', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-18T03:00:00Z'))
+    vi.mocked(checkSharedRateLimit).mockReset().mockResolvedValue({ success: true, limit: 100, remaining: 99, reset: Date.now() + 60_000 })
+    h.state.account = { default_currency: 'GTQ', industry_vertical: 'hotel', timezone: 'America/Guatemala' }
+  })
+  afterEach(() => vi.useRealTimers())
+  it.each(['Quiero cancelar mi reserva', 'Necesito cambiar mi reserva', 'Quiero modificar las cantidades de mi cotizacion'])('acknowledges %s without invoking model or mutating bookings', async content => {
+    h.buildConversationContext.mockResolvedValue([{ role: 'user', content }])
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendText).toHaveBeenCalledWith(expect.objectContaining({ text: expect.stringContaining('si es posible') }))
+    expect(h.engineSendText).toHaveBeenCalledWith(expect.objectContaining({ text: expect.stringContaining('horario h\u00e1bil') }))
+    expect(h.generateReply).not.toHaveBeenCalled()
+    expect(h.upsertReservationRequest).not.toHaveBeenCalled()
+    expect(h.state.reservationRequestUpdates).toEqual([])
+    expect(h.state.reservationRequestInserts).toEqual([])
+    expect(h.createQuote).not.toHaveBeenCalled()
+    expect(h.moveDeal).not.toHaveBeenCalled()
+  })
+  it('blocks unauthorized model claims and all accompanying actions', async () => {
+    h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'Me ayuda con mi solicitud?' }])
+    h.generateReply.mockResolvedValue({ text: 'Le modifico las cantidades', handoff: false, markDealWon: true, moveToStageName: 'Confirmado', sendCatalog: true, reservationProposals: [{ category: 'habitaciones', fields: { entrada: '2026-10-25' }, confirmed: true }] })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendText).toHaveBeenCalledWith(expect.objectContaining({ text: expect.stringContaining('si es posible') }))
+    expect(h.upsertReservationRequest).not.toHaveBeenCalled()
+    expect(h.moveDeal).not.toHaveBeenCalled()
+    expect(h.sendCatalogToConversation).not.toHaveBeenCalled()
+  })
+  it('does not ask Del Cid again for the explicitly stated party', async () => {
+    h.state.categories = [{ id: 'cat-1', name: 'Habitaciones', banner_url: 'https://cdn.example.com/weekday.jpg' }]
+    h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'Cual es el precio para hospedarme dos personas' }])
+    h.generateReply.mockResolvedValue({ text: 'Para cuantas personas y fechas?', handoff: false, markDealWon: false, moveToStageName: null, reservationProposals: [{ category: 'habitaciones', fields: {}, confirmed: false }] })
+    await dispatchInboundToAiReply(ARGS)
+    const text = h.engineSendText.mock.calls[0]?.[0]?.text
+    expect(text).toContain('fecha de entrada')
+    expect(text).not.toContain('personas')
+    expect(h.generateReply).toHaveBeenCalledWith(expect.objectContaining({ systemPrompt: expect.stringContaining('HOTEL SERVICE PRIORITY') }))
   })
 })

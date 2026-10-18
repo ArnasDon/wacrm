@@ -21,6 +21,7 @@ import {
   AlertCircle,
   PauseCircle,
   Archive,
+  Trash2,
   PlayCircle,
   Building2,
   ExternalLink,
@@ -156,6 +157,30 @@ export function LeadCommercialDrawer({
     }
   }
 
+  async function handleDeleteLead() {
+    if (!leadId) return;
+    if (!window.confirm(`Tem certeza que deseja excluir o lead ${data?.lead.name || 'este lead'}? Esta ação é definitiva.`)) {
+      return;
+    }
+    setActionLoading(true);
+    try {
+      const res = await fetch(`/api/match/lead/${leadId}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => null);
+        throw new Error(json?.error || 'Falha ao excluir lead');
+      }
+      toast.success('Lead excluído com sucesso!');
+      onOpenChange(false);
+      if (onLeadUpdated) onLeadUpdated();
+    } catch (err) {
+      toast.error((err as Error).message || 'Erro ao excluir lead');
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
   const initials = (data?.lead.name || 'Lead')
     .split(' ')
     .filter(Boolean)
@@ -247,6 +272,16 @@ export function LeadCommercialDrawer({
                       Arquivar Lead
                     </Button>
                   )}
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    onClick={handleDeleteLead}
+                    disabled={actionLoading}
+                    className="gap-1 text-[11px] text-rose-500 hover:text-rose-600 hover:bg-rose-500/10"
+                  >
+                    <Trash2 className="size-3" />
+                    Excluir
+                  </Button>
                 </div>
               </div>
             )}
@@ -537,6 +572,17 @@ export function LeadCommercialDrawer({
                     Arquivar
                   </Button>
                 )}
+
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  onClick={handleDeleteLead}
+                  disabled={actionLoading}
+                  className="gap-1 text-rose-500 hover:text-rose-600 hover:bg-rose-500/10"
+                >
+                  <Trash2 className="size-3" />
+                  Excluir
+                </Button>
               </div>
             </div>
           </div>

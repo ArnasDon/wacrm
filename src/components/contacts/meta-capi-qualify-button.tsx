@@ -116,22 +116,13 @@ export function MetaCapiQualifyButton({
     : null;
 
   return (
-    <div className={`space-y-1.5 ${className}`}>
+    <div className={`inline-flex items-center ${className}`}>
       {qualifiedAt ? (
-        <div className="flex items-center justify-between gap-2 rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-2.5 text-xs">
-          <div className="flex items-center gap-2 min-w-0">
-            <CheckCircle2 className="size-4 shrink-0 text-emerald-400" />
-            <div className="min-w-0">
-              <p className="font-semibold text-emerald-400 truncate text-[11px] leading-tight">
-                Qualificado na Meta
-              </p>
-              {formattedDate && (
-                <p className="text-[10px] text-muted-foreground truncate">
-                  Enviado em {formattedDate}
-                </p>
-              )}
-            </div>
-          </div>
+        <div className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1 text-xs text-emerald-400 font-medium">
+          <CheckCircle2 className="size-3.5 shrink-0" />
+          <span className="text-[11px] font-semibold leading-tight">
+            Qualificado na Meta
+          </span>
 
           <Button
             type="button"
@@ -139,45 +130,40 @@ export function MetaCapiQualifyButton({
             size="xs"
             onClick={handleQualify}
             disabled={loading}
-            title="Reenviar evento QualifiedLead à Meta Conversions API"
-            className="h-7 px-2 text-[10px] text-muted-foreground hover:text-foreground shrink-0 gap-1"
+            title={
+              formattedDate
+                ? `Enviado em ${formattedDate}. Clique para reenviar à Meta CAPI.`
+                : 'Reenviar evento à Meta Conversions API'
+            }
+            className="h-5 w-5 p-0 text-muted-foreground hover:text-foreground shrink-0 ml-1"
           >
             {loading ? (
-              <Loader2 className="size-3 animate-spin" />
+              <Loader2 className="size-2.5 animate-spin" />
             ) : (
-              <RefreshCw className="size-3" />
+              <RefreshCw className="size-2.5" />
             )}
-            <span>Reenviar</span>
           </Button>
         </div>
       ) : (
-        <div className="space-y-1">
-          <Button
-            type="button"
-            onClick={handleQualify}
-            disabled={loading}
-            size="sm"
-            className="w-full bg-[#0081FB] hover:bg-[#0074e4] text-white flex items-center justify-center gap-2 text-xs font-semibold shadow-sm transition-all rounded-xl h-9"
-          >
-            {loading ? (
-              <>
-                <Loader2 className="size-3.5 animate-spin" />
-                <span>Comunicando à Meta...</span>
-              </>
-            ) : (
-              <>
-                <MetaInfinityIcon className="size-4 shrink-0" />
-                <span>Qualificar Lead na Meta</span>
-              </>
-            )}
-          </Button>
-
-          {knownHasClid === false && (
-            <p className="text-[10px] text-muted-foreground/80 px-1 text-center">
-              Requer que o lead tenha chegado via anúncio da Meta (CTWA).
-            </p>
+        <Button
+          type="button"
+          onClick={handleQualify}
+          disabled={loading}
+          size="sm"
+          className="bg-[#0081FB] hover:bg-[#0074e4] text-white inline-flex items-center justify-center gap-1.5 text-xs font-semibold shadow-xs transition-all rounded-md px-2.5"
+        >
+          {loading ? (
+            <>
+              <Loader2 className="size-3.5 animate-spin" />
+              <span>Qualificando...</span>
+            </>
+          ) : (
+            <>
+              <MetaInfinityIcon className="size-3.5 shrink-0" />
+              <span>Qualificar Lead na Meta</span>
+            </>
           )}
-        </div>
+        </Button>
       )}
     </div>
   );

@@ -32,6 +32,7 @@ import {
   AlertTriangle,
   PauseCircle,
   Archive,
+  Trash2,
   PlayCircle,
   Building2,
   Loader2,
@@ -150,6 +151,9 @@ export default function LeadMatchProfilePage() {
     fetchLeadDetails();
   }, [fetchLeadDetails]);
 
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [deletingLead, setDeletingLead] = useState(false);
+
   async function handleCycleAction(action: 'pause' | 'resume' | 'archive' | 'unarchive') {
     if (!leadId) return;
     setActionLoading(true);
@@ -166,6 +170,28 @@ export default function LeadMatchProfilePage() {
       toast.error((err as Error).message || 'Erro ao atualizar');
     } finally {
       setActionLoading(false);
+    }
+  }
+
+  async function handleDeleteLead() {
+    if (!leadId) return;
+    setDeletingLead(true);
+    try {
+      const res = await fetch(`/api/match/lead/${leadId}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => null);
+        throw new Error(json?.error || 'Falha ao excluir lead');
+      }
+      toast.success('Lead excluído com sucesso!');
+      setConfirmDeleteOpen(false);
+      router.push('/match');
+    } catch (err) {
+      console.error(err);
+      toast.error((err as Error).message || 'Erro ao excluir lead');
+    } finally {
+      setDeletingLead(false);
     }
   }
 
@@ -446,7 +472,7 @@ export default function LeadMatchProfilePage() {
                 size="sm"
                 variant="outline"
                 onClick={() => handleCycleAction('unarchive')}
-                disabled={actionLoading}
+                disabled={actionLoading || deletingLead}
                 className="gap-1.5 text-xs"
               >
                 Desarquivar
@@ -456,7 +482,7 @@ export default function LeadMatchProfilePage() {
                 size="sm"
                 variant="ghost"
                 onClick={() => handleCycleAction('archive')}
-                disabled={actionLoading}
+                disabled={actionLoading || deletingLead}
                 className="gap-1.5 text-xs text-muted-foreground hover:text-foreground"
               >
                 <Archive className="size-3.5" />
@@ -464,10 +490,19 @@ export default function LeadMatchProfilePage() {
               </Button>
             )}
 
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setConfirmDeleteOpen(true)}
+              disabled={actionLoading || deletingLead}
+              className="gap-1.5 text-xs text-rose-500 hover:text-rose-600 hover:bg-rose-500/10"
+            >
+              <Trash2 className="size-3.5" />
+              Excluir
+            </Button>
+
             {data?.lead.id && (
-              <div className="w-48">
-                <MetaCapiQualifyButton contactId={data.lead.id} />
-              </div>
+              <MetaCapiQualifyButton contactId={data.lead.id} />
             )}
 
             <Button
@@ -1132,6 +1167,52 @@ export default function LeadMatchProfilePage() {
               className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-medium"
             >
               Continuar com {selectedIds.length} imóveis
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* DIÁLOGO DE CONFIRMAÇÃO DE EXCLUSÃO DO LEAD */}
+      <Dialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
+        <DialogContent className="sm:max-w-md bg-card border-border text-foreground">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-sm font-semibold text-rose-500">
+              <Trash2 className="size-5 text-rose-500" />
+              Excluir Lead
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground pt-2">
+              Tem certeza que deseja excluir o lead{' '}
+              <strong className="text-foreground">{data?.lead.name || 'este lead'}</strong>? Esta ação é definitiva e removerá permanentemente o contato e todas as suas recomendações de match.
+            </DialogDescription>
+          </DialogHeader>
+
+          <DialogFooter className="gap-2 pt-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setConfirmDeleteOpen(false)}
+              disabled={deletingLead}
+              className="text-xs"
+            >
+              Cancelar
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleDeleteLead}
+              disabled={deletingLead}
+              className="text-xs bg-rose-600 hover:bg-rose-700 text-white font-medium gap-1.5"
+            >
+              {deletingLead ? (
+                <>
+                  <Loader2 className="size-3.5 animate-spin" />
+                  <span>Excluindo...</span>
+                </>
+              ) : (
+                <>
+                  <Trash2 className="size-3.5" />
+                  <span>Excluir Definitivamente</span>
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

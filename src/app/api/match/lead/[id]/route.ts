@@ -272,3 +272,66 @@ export async function PATCH(
     return toErrorResponse(err);
   }
 }
+
+/**
+ * DELETE: Exclui definitivamente o lead e todos os seus vínculos de match e dados associados.
+ */
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const ctx = await requireRole('agent');
+    const { id: contactId } = await params;
+
+    // 1. Verifica se o lead existe e pertence à conta
+    const { data: contact } = await ctx.supabase
+      .from('contacts')
+      .select('id, name')
+      .eq('id', contactId)
+      .eq('account_id', ctx.accountId)
+      .maybeSingle();
+
+    if (!contact) {
+      return NextResponse.json({ error: 'Lead não encontrado' }, { status: 404 });
+    }
+
+    // 2. Limpa registros dependentes de match, inteligência e compartilhamentos
+    await ctx.supabase
+      .from('lead_property_matches')
+      .delete()
+      .eq('lead_id', contactId)
+      .eq('account_id', ctx.accountId);
+
+    await ctx.supabase
+      .from('lead_intelligence')
+      .delete()
+      .eq('contact_id', contactId)
+      .eq('account_id', ctx.accountId);
+
+    await ctx.supabase
+      .from('property_shares')
+      .delete()
+      .eq('lead_id', contactId)
+      .eq('account_id', ctx.accountId);
+
+    // 3. Exclui o contato (as FKs em cascata limpam conversas, tags, etc.)
+    const { error: delError } = await ctx.supabase
+      .from('contacts')
+      .delete()
+      .eq('id', contactId)
+      .eq('account_id', ctx.accountId);
+
+    if (delError) {
+      console.error('[DELETE /api/match/lead/:id] Erro ao excluir lead:', delError);
+      return NextResponse.json(
+        { error: 'Falha ao excluir lead: ' + delError.message },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ ok: true, deletedId: contactId });
+  } catch (err) {
+    return toErrorResponse(err);
+  }
+}

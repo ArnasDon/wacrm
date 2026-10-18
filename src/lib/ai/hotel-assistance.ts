@@ -1,3 +1,4 @@
+import { hotelStayOperationReason } from './hotel-stay-operations'
 import type { ChatMessage } from './types'
 import { isExplicitHumanRequest, isGiftVoucherAsk, isSpecialRateTalk } from './hotel-media-intent'
 
@@ -33,6 +34,8 @@ export function hotelCurrentRequest(messages: ChatMessage[], handoffAt?: string 
 
 /** A hotel operation requiring a staff decision, rather than public information. */
 export function hotelReceptionReason(messages: ChatMessage[]): string | null {
+  const stayOperation = hotelStayOperationReason(messages)
+  if (stayOperation) return stayOperation
   const trailing: string[] = []
   for (let i = messages.length - 1; i >= 0 && messages[i].role === 'user'; i--) trailing.unshift(messages[i].content)
   const text = normalize(trailing.join(' '))
@@ -64,6 +67,7 @@ export function hotelReceptionReason(messages: ChatMessage[]): string | null {
  * factual information (or an unmistakable new inquiry with no open request)
  * may resume automatically. A bare yes, guest count or confusion is not one. */
 export function shouldDeferHotelStaffFollowup(messages: ChatMessage[], hasActiveRequest: boolean): boolean {
+  if (hotelStayOperationReason(messages)) return true
   const trailing: string[] = []
   for (let i = messages.length - 1; i >= 0 && messages[i].role === 'user'; i--) trailing.unshift(messages[i].content)
   const text = normalize(trailing.join(' '))

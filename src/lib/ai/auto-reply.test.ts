@@ -5542,3 +5542,45 @@ describe('direct hotel service and staff-only changes', () => {
     expect(h.generateReply).toHaveBeenCalledWith(expect.objectContaining({ systemPrompt: expect.stringContaining('HOTEL SERVICE PRIORITY') }))
   })
 })
+
+
+describe('sales versus hotel stay operations (Daris and Maria)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-18T03:00:00Z'))
+    vi.mocked(checkSharedRateLimit).mockReset().mockResolvedValue({ success: true, limit: 100, remaining: 99, reset: Date.now() + 60_000 })
+    h.state.account = { default_currency: 'GTQ', industry_vertical: 'hotel', timezone: 'America/Guatemala' }
+  })
+  afterEach(() => vi.useRealTimers())
+  it('continues Daris new lodging sale', async () => {
+    h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'me gustaria consultarte los precios para una estadia para 4 adultos' }])
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.generateReply).toHaveBeenCalled()
+    expect(h.engineSendText).toHaveBeenCalled()
+    expect(h.state.messageInserts).toEqual([])
+  })
+  it('leaves Maria room assignment and dinner coordination to the hotel without model or guest messages', async () => {
+    h.buildConversationContext.mockResolvedValue([
+      { role: 'user', content: 'Ya dentro de un ratito llegamos al hotel', createdAt: '2026-10-18T00:23:00Z' },
+      { role: 'user', content: 'Ya no me dijeron el numero de habitacion?', createdAt: '2026-10-18T00:24:00Z' },
+      { role: 'user', content: 'Hay cena disponible', createdAt: '2026-10-18T00:29:00Z' },
+      { role: 'user', content: 'Para cenar ahi??' }, { role: 'user', content: 'Disculpe' },
+    ])
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.generateReply).not.toHaveBeenCalled()
+    expect(h.engineSendText).not.toHaveBeenCalled()
+    expect(h.sendMessageToConversation).not.toHaveBeenCalled()
+    expect(h.upsertReservationRequest).not.toHaveBeenCalled()
+    expect(h.state.messageInserts).toContainEqual(expect.objectContaining({ content_type: 'internal_note' }))
+  })
+  it('retains guest context when a pending handoff isolates the latest dinner question', async () => {
+    h.state.conv = { ai_autoreply_disabled: false, ai_reply_count: 0, ai_handoff_at: '2026-10-18T00:24:30Z', ai_handoff_summary: '\uD83E\uDD1D Pendiente de recepci\u00f3n. Asignar habitacion.' }
+    h.buildConversationContext.mockResolvedValue([
+      { role: 'user', content: 'Ya llegamos al hotel', createdAt: '2026-10-18T00:23:00Z' },
+      { role: 'user', content: 'Para cenar ahi?', createdAt: '2026-10-18T00:29:00Z' },
+    ])
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.generateReply).not.toHaveBeenCalled()
+    expect(h.engineSendText).not.toHaveBeenCalled()
+  })
+})

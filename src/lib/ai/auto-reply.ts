@@ -1,3 +1,4 @@
+import { hotelStayOperationReason } from './hotel-stay-operations'
 import { HOTEL_DIRECT_SERVICE_POLICY, hotelChangeRequest, hotelChangeConfirmationLine, explicitGuestCount, claimsExecutedHotelChange } from './hotel-service-policy'
 import { hotelEventTriage, EVENT_TRIAGE_QUESTION, eventFollowupLine } from './hotel-event-triage'
 import { roomBannerVariant } from './hotel-room-banner'
@@ -820,7 +821,7 @@ export async function dispatchInboundToAiReply(
       })
       return
     }
-    const operationReason = neverSelfPause ? hotelReceptionReason(requestMessages) : null
+    const operationReason = neverSelfPause ? hotelStayOperationReason(messages) ?? hotelReceptionReason(requestMessages) : null
     const eventEligible = !operationReason || operationReason.includes('preparar la cotizaci') || operationReason.includes('seguimiento a una gesti')
     const eventTriage = neverSelfPause && eventEligible ? hotelEventTriage(messages) : 'none'
     // Event intake is decided before provider calls or any form/catalog action.
@@ -845,7 +846,7 @@ export async function dispatchInboundToAiReply(
       return
     }
     const pendingAttachment = receptionPending && requestMessages.some((m) => m.role === 'user' && (m.images?.length || ['image', 'document'].includes(m.contentType ?? '')))
-    const rawReceptionReason = pendingAttachment ? 'Recepción debe revisar el archivo enviado por el cliente.' : neverSelfPause ? hotelReceptionReason(requestMessages) : null
+    const rawReceptionReason = pendingAttachment ? 'Recepción debe revisar el archivo enviado por el cliente.' : operationReason
     const newEvent = eventTriage === 'new'
     const receptionReason = newEvent && rawReceptionReason?.includes('preparar la cotizaci') ? null : rawReceptionReason
     if (neverSelfPause && (receptionPending || teammateNote) && !receptionReason && trailingCustomerTurns(requestMessages).every((t) => isClosingMessage(t))) return

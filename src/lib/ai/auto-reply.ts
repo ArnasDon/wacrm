@@ -1,3 +1,4 @@
+import { loadRecommendedRoomEstimate } from './hotel-recommended-estimate'
 import { hotelStayOperationReason } from './hotel-stay-operations'
 import { HOTEL_DIRECT_SERVICE_POLICY, hotelChangeRequest, hotelChangeConfirmationLine, explicitGuestCount, claimsExecutedHotelChange } from './hotel-service-policy'
 import { hotelEventTriage, EVENT_TRIAGE_QUESTION, eventFollowupLine } from './hotel-event-triage'
@@ -1976,11 +1977,34 @@ For airport transport, record the guest's request in nota on the relevant existi
       }
     }
 
+    let recommendedRoomQuestion: string | undefined
+    let recommendedRoomEstimateAdded = false
+    if (isHotel && !receptionPending && !staffQuotedPrice && mentionedAmounts(outboundText).length === 0
+      && reservationProposals.filter(p => isStayCategoryName(p.category)).length === savedStays.length
+      && !isClosingMessage(latestUserMessage(messages))
+      && !isSpecialRateTalk(messages.filter(m => m.role === 'user').map(m => m.content))) {
+      try {
+        const recommended = await loadRecommendedRoomEstimate({ db, accountId, conversationId,
+          roomNames: hotelCategoryProductNames.get('habitaciones') ?? [], modelText: outboundText,
+          todayISO: dateKeyInZone(new Date(), businessTimeZone), currency: hotelCurrency, english: isEnglishText(outboundText) })
+        if (recommended && !messages.some(m => m.role === 'assistant' && m.content.includes(recommended.text))) {
+          recommendedRoomEstimateAdded = true
+          outboundText = [outboundText, recommended.text].join('\n\n')
+          if (!/[?\u00bf]/.test(outboundText)) recommendedRoomQuestion = recommended.question
+        }
+      } catch (err) {
+        if (err instanceof OutsideAiAttentionHours) throw err
+        console.error('[ai auto-reply] recommended room estimate failed:', describeError(err))
+      }
+    }
+
     if (isHotel) outboundText = withAttentionHours(outboundText, isAfterHours(new Date(), businessTimeZone))
     if (isHotel && mentionedAmounts(outboundText).length > 0
-      && (savedStays.length > 0 || activeReservations?.includes('Habitaci'))) {
+      && (recommendedRoomEstimateAdded || savedStays.length > 0 || activeReservations?.includes('Habitaci'))) {
       outboundText = withAvailabilityConfirmationTiming(outboundText, isAfterHours(new Date(), businessTimeZone), isEnglishText(outboundText))
     }
+
+    if (recommendedRoomQuestion) outboundText += ` ${recommendedRoomQuestion}`
 
 
     try {

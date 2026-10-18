@@ -5622,3 +5622,44 @@ describe('hotel reception notifications for assigned chats', () => {
     expect(h.state.notificationInserts).toEqual([])
   })
 })
+
+
+describe('Richard room recommendation with an estimate', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-18T03:00:00Z'))
+    vi.mocked(checkSharedRateLimit).mockReset().mockResolvedValue({ success: true, limit: 100, remaining: 99, reset: Date.now() + 60_000 })
+    h.state.account = { default_currency: 'GTQ', industry_vertical: 'hotel', timezone: 'America/Guatemala' }
+    h.state.categories = [{ id: 'rooms', name: 'Habitaciones' }]
+    h.state.products = [{ id: 'master', name: 'Suite Master Deluxe', category_id: 'rooms' }, { id: 'premium', name: 'Suite Premium', category_id: 'rooms' }]
+    h.state.reservationRow = { id: 'rr-1', product_id: null, service_name: null, guests: 2, check_in: '2026-12-27', check_out: '2026-12-29', category: 'habitaciones' }
+    h.state.productRates = ['sun', 'mon'].map(day => ({ day_of_week: day, occupancy: 'couple', price: 970, date_from: null, date_to: null }))
+    h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'Ayudeme a reservar del 27 al 29 de diciembre para dos personas. Tienen agua caliente?' }])
+    h.generateReply.mockResolvedValue({ text: 'Si contamos con agua caliente. Una buena opcion es la Suite Master Deluxe, o la Suite Premium.', handoff: false, markDealWon: false, moveToStageName: null })
+  })
+  afterEach(() => vi.useRealTimers())
+  it('adds the computed reference and selection question without selecting or changing the request', async () => {
+    await dispatchInboundToAiReply(ARGS)
+    const text = h.engineSendText.mock.calls[0]?.[0]?.text
+    expect(text).toContain('1,940')
+    expect(text).toContain('2 noches')
+    expect(text).toContain('horario h\u00e1bil')
+    expect(text).toContain('Prefiere la Suite Master Deluxe')
+    expect(h.state.reservationRequestUpdates).toEqual([])
+    expect(h.state.reservationRequestInserts).toEqual([])
+    expect(h.upsertReservationRequest).not.toHaveBeenCalled()
+  })
+  it('does not repeat the same recommendation estimate on the next factual turn', async () => {
+    await dispatchInboundToAiReply(ARGS)
+    const previous = h.engineSendText.mock.calls[0][0].text
+    h.engineSendText.mockClear()
+    h.buildConversationContext.mockResolvedValue([{ role: 'assistant', content: previous }, { role: 'user', content: 'Y tiene parqueo?' }])
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendText.mock.calls[0]?.[0]?.text).not.toContain('1,940')
+  })
+  it('does not overwrite a negotiated price from staff with a recommended reference', async () => {
+    h.buildConversationContext.mockResolvedValue([{ role: 'assistant', senderType: 'agent', content: 'Para usted Q1500.' }, { role: 'user', content: 'Tiene agua caliente?' }])
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendText.mock.calls[0]?.[0]?.text).not.toContain('1,940')
+  })
+})

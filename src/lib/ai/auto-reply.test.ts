@@ -8,12 +8,15 @@ const h = vi.hoisted(() => ({
   retrieveKnowledge: vi.fn(),
   generateReply: vi.fn(),
   engineSendText: vi.fn(),
+  loadAccountMetaCredentials: vi.fn(),
+  sendTypingIndicator: vi.fn(),
   state: {
     conv: null as Record<string, unknown> | null,
     autoResponders: [] as { id: string }[],
     claim: true as boolean,
     updatePayload: null as Record<string, unknown> | null,
     rpcCalls: [] as { name: string; args: unknown }[],
+    latestInbound: [] as { message_id: string }[],
   },
 }))
 
@@ -21,7 +24,13 @@ vi.mock('./config', () => ({ loadAiConfig: h.loadAiConfig }))
 vi.mock('./context', () => ({ buildConversationContext: h.buildConversationContext }))
 vi.mock('./knowledge', () => ({ retrieveKnowledge: h.retrieveKnowledge }))
 vi.mock('./generate', () => ({ generateReply: h.generateReply }))
-vi.mock('@/lib/flows/meta-send', () => ({ engineSendText: h.engineSendText }))
+vi.mock('@/lib/flows/meta-send', () => ({
+  engineSendText: h.engineSendText,
+  loadAccountMetaCredentials: h.loadAccountMetaCredentials,
+}))
+vi.mock('@/lib/whatsapp/meta-api', () => ({
+  sendTypingIndicator: h.sendTypingIndicator,
+}))
 vi.mock('./admin-client', () => ({
   supabaseAdmin: () => ({
     from: (table: string) => {
@@ -33,6 +42,16 @@ vi.mock('./admin-client', () => ({
           in: () => chain,
           limit: () =>
             Promise.resolve({ data: h.state.autoResponders, error: null }),
+        }
+        return chain
+      }
+      if (table === 'messages') {
+        const chain = {
+          select: () => chain,
+          eq: () => chain,
+          order: () => chain,
+          limit: () =>
+            Promise.resolve({ data: h.state.latestInbound, error: null }),
         }
         return chain
       }
@@ -64,12 +83,14 @@ const ARGS = {
   conversationId: 'conv-1',
   contactId: 'contact-1',
   configOwnerUserId: 'user-1',
+  inboundMessageId: 'wamid.inbound-1',
 }
 
 function aiConfig(overrides: Partial<AiConfig> = {}): AiConfig {
   return {
     provider: 'openai',
     model: 'gpt-test',
+    baseUrl: null,
     apiKey: 'sk-test',
     systemPrompt: null,
     isActive: true,
@@ -91,11 +112,17 @@ beforeEach(() => {
   h.state.claim = true
   h.state.updatePayload = null
   h.state.rpcCalls = []
+  h.state.latestInbound = [{ message_id: 'wamid.inbound-1' }]
   h.loadAiConfig.mockResolvedValue(aiConfig())
   h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'hi' }])
   h.retrieveKnowledge.mockResolvedValue([])
   h.generateReply.mockResolvedValue({ text: 'Hello!', handoff: false })
   h.engineSendText.mockResolvedValue({ whatsapp_message_id: 'm1' })
+  h.loadAccountMetaCredentials.mockResolvedValue({
+    phoneNumberId: 'pn-1',
+    accessToken: 'tok',
+  })
+  h.sendTypingIndicator.mockResolvedValue(undefined)
 })
 
 describe('dispatchInboundToAiReply — eligibility gates', () => {
@@ -125,6 +152,7 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
     await dispatchInboundToAiReply(ARGS)
     expect(h.generateReply).not.toHaveBeenCalled()
     expect(h.engineSendText).not.toHaveBeenCalled()
+    expect(h.sendTypingIndicator).not.toHaveBeenCalled()
   })
 
   it('does not send when the atomic slot claim loses the race', async () => {
@@ -133,6 +161,27 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
     // It still attempts the claim, but the send is skipped.
     expect(h.state.rpcCalls).toHaveLength(1)
     expect(h.engineSendText).not.toHaveBeenCalled()
+  })
+
+  it('skips when the slot claim is refused after a human takeover', async () => {
+    h.state.claim = false
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.generateReply).toHaveBeenCalledTimes(1)
+    expect(h.state.rpcCalls).toHaveLength(1)
+    expect(h.engineSendText).not.toHaveBeenCalled()
+  })
+
+  it('leaves the reply to the newer run when another inbound arrived', async () => {
+    h.state.latestInbound = [{ message_id: 'wamid.inbound-2' }]
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.state.rpcCalls).toHaveLength(0)
+    expect(h.engineSendText).not.toHaveBeenCalled()
+  })
+
+  it('replies when the triggering inbound is still the latest', async () => {
+    h.state.latestInbound = [{ message_id: 'wamid.inbound-1' }]
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendText).toHaveBeenCalledTimes(1)
   })
 
   it('skips when AI is off / not configured', async () => {
@@ -156,6 +205,7 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
     }
     await dispatchInboundToAiReply(ARGS)
     expect(h.engineSendText).not.toHaveBeenCalled()
+    expect(h.sendTypingIndicator).not.toHaveBeenCalled()
   })
 
   it('skips when auto-reply was disabled on this conversation', async () => {
@@ -183,6 +233,71 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
     await dispatchInboundToAiReply(ARGS)
     expect(h.generateReply).not.toHaveBeenCalled()
     expect(h.engineSendText).not.toHaveBeenCalled()
+    expect(h.sendTypingIndicator).not.toHaveBeenCalled()
+  })
+})
+
+describe('dispatchInboundToAiReply — typing indicator (#527)', () => {
+  it('shows "typing…" on the inbound wamid before calling the LLM', async () => {
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.loadAccountMetaCredentials).toHaveBeenCalledWith(
+      expect.anything(),
+      'acct-1',
+    )
+    expect(h.sendTypingIndicator).toHaveBeenCalledTimes(1)
+    expect(h.sendTypingIndicator).toHaveBeenCalledWith({
+      phoneNumberId: 'pn-1',
+      accessToken: 'tok',
+      messageId: 'wamid.inbound-1',
+    })
+    // Ordering: the indicator goes out while the customer waits on the
+    // model, not after the reply is already generated.
+    const typingOrder = h.sendTypingIndicator.mock.invocationCallOrder[0]
+    const llmOrder = h.generateReply.mock.invocationCallOrder[0]
+    expect(typingOrder).toBeLessThan(llmOrder)
+    expect(h.engineSendText).toHaveBeenCalledTimes(1)
+  })
+
+  it('still sends the reply when the indicator request fails', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    h.sendTypingIndicator.mockRejectedValue(new Error('Meta API error: 400'))
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.generateReply).toHaveBeenCalledTimes(1)
+    expect(h.engineSendText).toHaveBeenCalledWith(
+      expect.objectContaining({ conversationId: 'conv-1', text: 'Hello!' }),
+    )
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('typing indicator failed'),
+      expect.any(Error),
+    )
+    warn.mockRestore()
+  })
+
+  it('still sends the reply when the WhatsApp credentials cannot be loaded', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    h.loadAccountMetaCredentials.mockRejectedValue(
+      new Error('WhatsApp not configured for this account'),
+    )
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.sendTypingIndicator).not.toHaveBeenCalled()
+    expect(h.engineSendText).toHaveBeenCalledTimes(1)
+    warn.mockRestore()
+  })
+
+  it('skips the indicator when no inbound wamid is supplied', async () => {
+    const { inboundMessageId: _omit, ...legacyArgs } = ARGS
+    void _omit
+    await dispatchInboundToAiReply(legacyArgs)
+    expect(h.sendTypingIndicator).not.toHaveBeenCalled()
+    expect(h.loadAccountMetaCredentials).not.toHaveBeenCalled()
+    expect(h.engineSendText).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not fire when a gate short-circuits before the LLM', async () => {
+    h.loadAiConfig.mockResolvedValue(aiConfig({ autoReplyEnabled: false }))
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.sendTypingIndicator).not.toHaveBeenCalled()
+    expect(h.loadAccountMetaCredentials).not.toHaveBeenCalled()
   })
 })
 

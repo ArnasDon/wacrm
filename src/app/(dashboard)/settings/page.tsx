@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, type ReactNode } from 'react';
+import { Suspense, useMemo, type ReactNode } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 
@@ -16,6 +16,7 @@ import { TemplateManager } from '@/components/settings/template-manager';
 import { QuickRepliesManager } from '@/components/settings/quick-replies-manager';
 import { FieldsAndTagsPanel } from '@/components/settings/fields-and-tags-panel';
 import { DealsSettings } from '@/components/settings/deals-settings';
+import { InboxSettings } from '@/components/settings/inbox-settings';
 import { MembersTab } from '@/components/settings/members-tab';
 import { ApiKeysSettings } from '@/components/settings/api-keys-settings';
 import {
@@ -23,7 +24,23 @@ import {
   type SettingsSection,
 } from '@/components/settings/settings-sections';
 
+// `useSearchParams` opts this page out of static prerendering unless it
+// sits under a Suspense boundary. Without one, the production build hits
+// the "missing Suspense with CSR bailout" error and the whole page bails
+// to client-side rendering — shipping a settings screen whose rail never
+// wires up its click handlers. You land on the section the URL carried
+// (the account-menu Settings link points at `?tab=whatsapp`) and can't
+// navigate away. Mirror the login/signup split: a thin wrapper supplies
+// the boundary; the inner component reads the query string.
 export default function SettingsPage() {
+  return (
+    <Suspense fallback={null}>
+      <SettingsPageInner />
+    </Suspense>
+  );
+}
+
+function SettingsPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { defaultCurrency } = useAuth();
@@ -62,6 +79,7 @@ export default function SettingsPage() {
     templates: <TemplateManager />,
     'quick-replies': <QuickRepliesManager />,
     fields: <FieldsAndTagsPanel />,
+    inbox: <InboxSettings />,
     deals: <DealsSettings />,
     members: <MembersTab />,
     api: <ApiKeysSettings />,

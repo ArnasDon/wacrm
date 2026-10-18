@@ -10,17 +10,33 @@ import type { InteractiveMessagePayload } from "@/lib/whatsapp/interactive";
  * sent buttons/list message shows the same way it does on the phone.
  *
  * Purely presentational — the buttons/rows are not clickable here (the
- * customer taps them on their own device). Kept namespace-free (plain
- * English) so it can be dropped into the composer, the automation
- * builder, and the quick-replies manager without namespace coupling.
+ * customer taps them on their own device). Kept namespace-free so it can
+ * be dropped into the composer, the automation builder, and the
+ * quick-replies manager without namespace coupling: the three fallback
+ * labels shown for empty fields default to plain English, and a host
+ * that has a translator can pass its own via `labels`.
  */
+export interface InteractivePreviewLabels {
+  /** Shown in place of an empty body. */
+  body?: string;
+  /** Shown in place of an untitled reply button. */
+  button?: string;
+  /** Shown in place of an empty list button label. */
+  menu?: string;
+}
+
 export function InteractivePreview({
   payload,
   className,
+  labels,
 }: {
   payload: InteractiveMessagePayload;
   className?: string;
+  labels?: InteractivePreviewLabels;
 }) {
+  const bodyLabel = labels?.body ?? "Message body…";
+  const buttonLabel = labels?.button ?? "Button";
+  const menuLabel = labels?.menu ?? "Menu";
   return (
     <div
       className={cn(
@@ -36,7 +52,7 @@ export function InteractivePreview({
         ) : null}
         <p className="whitespace-pre-wrap break-words text-sm">
           {payload.body || (
-            <span className="text-muted-foreground">Message body…</span>
+            <span className="text-muted-foreground">{bodyLabel}</span>
           )}
         </p>
         {payload.footer ? (
@@ -56,7 +72,7 @@ export function InteractivePreview({
               className="flex items-center justify-center gap-1.5 border-t border-border py-2 text-sm font-medium text-primary first:border-t-0"
             >
               <Reply className="h-3.5 w-3.5" />
-              <span className="truncate">{b.title || "Button"}</span>
+              <span className="truncate">{b.title || buttonLabel}</span>
             </button>
           ))}
         </div>
@@ -67,7 +83,7 @@ export function InteractivePreview({
           className="flex w-full items-center justify-center gap-1.5 border-t border-border py-2 text-sm font-medium text-primary"
         >
           <List className="h-3.5 w-3.5" />
-          <span className="truncate">{payload.button_label || "Menu"}</span>
+          <span className="truncate">{payload.button_label || menuLabel}</span>
         </button>
       )}
     </div>

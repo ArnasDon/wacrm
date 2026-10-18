@@ -8,13 +8,16 @@ import {
   validateStepsForActivation,
   validateTriggerForActivation,
 } from '@/lib/automations/validate'
+import { getT } from '@/lib/i18n/translate'
+
+const t = getT('Api')
 
 export async function GET() {
   const supabase = await createClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!user) return NextResponse.json({ error: t('common.unauthorized') }, { status: 401 })
 
   const { data, error } = await supabase
     .from('automations')
@@ -38,7 +41,7 @@ export async function POST(request: Request) {
   const {
     data: { user },
   } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!user) return NextResponse.json({ error: t('common.unauthorized') }, { status: 401 })
 
   // Resolve the caller's account_id — `automations.account_id` is NOT
   // NULL post-017, so an INSERT without it trips the not-null constraint
@@ -51,13 +54,13 @@ export async function POST(request: Request) {
   const accountId = profile?.account_id as string | undefined
   if (!accountId) {
     return NextResponse.json(
-      { error: 'Your profile is not linked to an account.' },
+      { error: t('common.profileNotLinked') },
       { status: 403 },
     )
   }
 
   const body = await request.json().catch(() => null)
-  if (!body) return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+  if (!body) return NextResponse.json({ error: t('common.invalidJson') }, { status: 400 })
 
   const { name, description, trigger_type, trigger_config, is_active, steps, template } = body
 
@@ -68,19 +71,19 @@ export async function POST(request: Request) {
   let effectiveTriggerConfig = trigger_config
 
   if (template && (!steps || steps.length === 0)) {
-    const t = getTemplate(template)
-    if (t) {
-      effectiveName = effectiveName ?? t.name
-      effectiveDescription = effectiveDescription ?? t.description
-      effectiveTriggerType = effectiveTriggerType ?? t.trigger_type
-      effectiveTriggerConfig = effectiveTriggerConfig ?? t.trigger_config
-      effectiveSteps = t.steps as unknown as BuilderStepInput[]
+    const tpl = getTemplate(template)
+    if (tpl) {
+      effectiveName = effectiveName ?? tpl.name
+      effectiveDescription = effectiveDescription ?? tpl.description
+      effectiveTriggerType = effectiveTriggerType ?? tpl.trigger_type
+      effectiveTriggerConfig = effectiveTriggerConfig ?? tpl.trigger_config
+      effectiveSteps = tpl.steps as unknown as BuilderStepInput[]
     }
   }
 
   if (!effectiveName || !effectiveTriggerType) {
     return NextResponse.json(
-      { error: 'name and trigger_type are required' },
+      { error: t('automations.nameTriggerRequired') },
       { status: 400 },
     )
   }
@@ -98,7 +101,7 @@ export async function POST(request: Request) {
     ]
     if (issues.length > 0) {
       return NextResponse.json(
-        { error: 'Cannot activate automation with invalid configuration', issues },
+        { error: t('automations.invalidActivateConfig'), issues },
         { status: 400 },
       )
     }
@@ -121,7 +124,7 @@ export async function POST(request: Request) {
 
   if (insertErr || !automation) {
     return NextResponse.json(
-      { error: insertErr?.message ?? 'insert failed' },
+      { error: insertErr?.message ?? t('common.insertFailed') },
       { status: 500 },
     )
   }

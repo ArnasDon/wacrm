@@ -64,8 +64,12 @@ export function encodeCursor(row: { created_at: string; id: string }): string {
 // interpolated raw). Anything that doesn't look server-issued is
 // treated as "no cursor" — the documented tolerance is to restart
 // from the first page, never to run an attacker-shaped query.
-const UUID_RE =
+export const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isUuid(value: string): boolean {
+  return UUID_RE.test(value);
+}
 
 /** Decode a cursor string, or null if missing/malformed/untrusted. */
 export function decodeCursor(value: string | null): Cursor | null {

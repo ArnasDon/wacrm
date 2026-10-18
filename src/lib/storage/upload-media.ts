@@ -1,4 +1,7 @@
 import { createClient } from "@/lib/supabase/client";
+import { getT } from "@/lib/i18n/translate";
+
+const t = getT("LibErrors");
 
 /**
  * Shared media-upload helper for Supabase Storage buckets that use the
@@ -42,11 +45,22 @@ export const MEDIA_MAX_BYTES_BY_KIND = {
  *   "file" when empty).
  * - The timestamp + the original name keep collisions between two
  *   concurrent uploads astronomically unlikely.
+ *
+ * `now = null` omits the timestamp prefix entirely. That's for callers
+ * whose name is already unique AND who need the path to be *stable*
+ * across repeated calls — the inbound mirror (`@/lib/whatsapp/
+ * mirror-inbound-media`) keys on Meta's media id so a redelivered
+ * webhook rewrites one object instead of orphaning a second copy.
+ *
+ * `subfolder` inserts one level below `account-<id>`. The bucket's RLS
+ * write policies only match the FIRST path segment (migrations 020/023),
+ * so nesting below it is free.
  */
 export function buildMediaPath(
   accountId: string,
   fileName: string,
-  now: number = Date.now(),
+  now: number | null = Date.now(),
+  subfolder?: string,
 ): string {
   // Only treat the trailing segment as an extension when there's a real
   // one — a bare name like "README" has no extension and falls back to
@@ -58,7 +72,11 @@ export function buildMediaPath(
       .replace(/\.[^.]+$/, "")
       .replace(/[^a-zA-Z0-9_-]+/g, "_")
       .slice(0, 40) || "file";
-  return `account-${accountId}/${now}-${safeBase}.${ext}`;
+  const dir = subfolder
+    ? `account-${accountId}/${subfolder}`
+    : `account-${accountId}`;
+  const stamp = now === null ? "" : `${now}-`;
+  return `${dir}/${stamp}${safeBase}.${ext}`;
 }
 
 export interface UploadAccountMediaResult {
@@ -87,7 +105,7 @@ export async function uploadAccountMedia(
     error: userErr,
   } = await supabase.auth.getUser();
   if (userErr || !user) {
-    throw new Error("Not signed in.");
+    throw new Error(t("upload.notSignedIn"));
   }
 
   // Resolve account_id so the path is account-scoped (matches the
@@ -99,7 +117,7 @@ export async function uploadAccountMedia(
     .eq("user_id", user.id)
     .maybeSingle();
   if (profileErr || !profile?.account_id) {
-    throw new Error("Could not resolve your account.");
+    throw new Error(t("upload.accountUnresolved"));
   }
 
   const path = buildMediaPath(profile.account_id as string, file.name);

@@ -31,6 +31,7 @@ describe('parseContactCsv', () => {
 +15559876543,Bob,Customer`;
 
     expect(parseContactCsv(csv)).toEqual({
+      hasPhoneColumn: true,
       hasTagsColumn: true,
       hasCompanyColumn: false,
       rows: [
@@ -52,11 +53,28 @@ describe('parseContactCsv', () => {
     });
   });
 
+  it('keeps a row with an empty phone cell instead of dropping it silently', () => {
+    const csv = `phone,name
++15551234567,Alice
+,Bob`;
+
+    const { rows } = parseContactCsv(csv);
+    expect(rows).toHaveLength(2);
+    expect(rows[1]).toEqual({
+      phone: '',
+      name: 'Bob',
+      email: undefined,
+      company: undefined,
+      tagNames: [],
+    });
+  });
+
   it('returns empty tagNames when tags column is absent', () => {
     const csv = `phone,name
 +15551234567,Alice`;
 
     expect(parseContactCsv(csv)).toEqual({
+      hasPhoneColumn: true,
       hasTagsColumn: false,
       hasCompanyColumn: false,
       rows: [

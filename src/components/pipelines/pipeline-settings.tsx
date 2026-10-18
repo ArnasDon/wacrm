@@ -298,7 +298,7 @@ export function PipelineSettings({
                             ? "var(--foreground)"
                             : "transparent",
                       }}
-                      aria-label={`Pick color ${color}`}
+                      aria-label={t("pickColor", { color })}
                     />
                   ))}
                 </div>
@@ -337,9 +337,8 @@ export function PipelineSettings({
 
             <DialogFooter className="border-border bg-popover/50">
               <Button
-                variant="destructive"
                 onClick={() => setShowDeleteConfirm(true)}
-                className="mr-auto bg-red-600 hover:bg-red-700"
+                className="mr-auto bg-red-600 text-white hover:bg-red-700"
               >
                 {t("deletePipeline")}
               </Button>

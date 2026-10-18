@@ -10,6 +10,7 @@ import {
   Clock,
   UserPlus,
   PlayCircle,
+  CircleSlash,
   PauseCircle,
   ChevronDown,
   ChevronRight,
@@ -40,6 +41,7 @@ interface RunRow {
     | "handed_off"
     | "timed_out"
     | "paused_by_agent"
+    | "cancelled"
     | "failed";
   current_node_key: string | null;
   started_at: string;
@@ -61,35 +63,33 @@ interface EventRow {
 
 const STATUS_META: Record<
   RunRow["status"],
-  { label: string; classes: string; icon: typeof Clock }
+  { classes: string; icon: typeof Clock }
 > = {
   active: {
-    label: "Active",
     classes: "border-emerald-600/40 bg-emerald-500/10 text-emerald-300",
     icon: PlayCircle,
   },
   completed: {
-    label: "Completed",
     classes: "border-border bg-muted text-muted-foreground",
     icon: CircleCheck,
   },
   handed_off: {
-    label: "Handed off",
     classes: "border-amber-600/40 bg-amber-500/10 text-amber-300",
     icon: UserPlus,
   },
   timed_out: {
-    label: "Timed out",
     classes: "border-border bg-muted/60 text-muted-foreground",
     icon: Clock,
   },
   paused_by_agent: {
-    label: "Paused by agent",
     classes: "border-border bg-muted text-muted-foreground",
     icon: PauseCircle,
   },
+  cancelled: {
+    classes: "border-border bg-muted/60 text-muted-foreground",
+    icon: CircleSlash,
+  },
   failed: {
-    label: "Failed",
     classes: "border-red-600/40 bg-red-500/10 text-red-300",
     icon: CircleAlert,
   },
@@ -263,6 +263,8 @@ function RunCard({
                   ? "statusTimedOut"
                   : run.status === "paused_by_agent"
                   ? "statusPaused"
+                  : run.status === "cancelled"
+                  ? "statusCancelled"
                   : "statusFailed"
               )}
             </Badge>

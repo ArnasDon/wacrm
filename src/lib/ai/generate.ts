@@ -7,6 +7,7 @@ import {
 } from './types'
 import { HANDOFF_SENTINEL, aiRequestTimeoutMs } from './defaults'
 import { generateOpenAi } from './providers/openai'
+import { generateOpenAiCompatible } from './providers/openai-compatible'
 import { generateAnthropic } from './providers/anthropic'
 
 export interface GenerateArgs {
@@ -31,12 +32,16 @@ export async function generateReply(args: GenerateArgs): Promise<GenerateResult>
     systemPrompt,
     messages,
     timeoutMs,
+    baseUrl: config.baseUrl,
   }
 
   let result: { text: string; usage: AiUsage | null }
   switch (config.provider) {
     case 'openai':
       result = await generateOpenAi(providerArgs)
+      break
+    case 'openai_compatible':
+      result = await generateOpenAiCompatible(providerArgs)
       break
     case 'anthropic':
       result = await generateAnthropic(providerArgs)

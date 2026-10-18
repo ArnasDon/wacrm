@@ -1,4 +1,7 @@
 import { AiError, type AiUsage, type ChatMessage } from '../types'
+import { getT } from '@/lib/i18n/translate'
+
+const t = getT('LibErrors')
 
 // ============================================================
 // Bits shared by the OpenAI + Anthropic adapters.
@@ -10,6 +13,8 @@ export interface ProviderArgs {
   systemPrompt: string
   messages: ChatMessage[]
   timeoutMs: number
+  /** Custom OpenAI-compatible base URL; omitted for native providers. */
+  baseUrl?: string | null
 }
 
 /**
@@ -39,13 +44,13 @@ export function normalizeUsage(raw: {
 /** Map a fetch rejection (timeout / DNS / offline) to a typed AiError. */
 export function toNetworkError(err: unknown): AiError {
   if (err instanceof DOMException && err.name === 'TimeoutError') {
-    return new AiError('The AI provider took too long to respond.', {
+    return new AiError(t('ai.timeout'), {
       code: 'timeout',
       status: 504,
     })
   }
   const msg = err instanceof Error ? err.message : String(err)
-  return new AiError(`Could not reach the AI provider: ${msg}`, {
+  return new AiError(t('ai.unreachable', { message: msg }), {
     code: 'network_error',
     status: 502,
   })
@@ -77,10 +82,10 @@ export async function providerHttpError(
         : 'provider_error'
   const base =
     code === 'invalid_key'
-      ? `${provider} rejected the API key`
+      ? t('ai.invalidKey', { provider })
       : code === 'rate_limited'
-        ? `${provider} rate limit reached`
-        : `${provider} API error (${status})`
+        ? t('ai.rateLimited', { provider })
+        : t('ai.apiError', { provider, status: String(status) })
 
   return new AiError(detail ? `${base}: ${detail}` : base, {
     code,

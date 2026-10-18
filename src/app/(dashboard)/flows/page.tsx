@@ -86,6 +86,7 @@ export default function FlowsPage() {
   const router = useRouter();
   const canCreate = useCan("send-messages");
   const t = useTranslations("Flows.list");
+  const tGate = useTranslations("GatedButton");
   const [flows, setFlows] = useState<FlowRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
@@ -164,7 +165,7 @@ export default function FlowsPage() {
       });
       if (!res.ok) {
         const json = await res.json().catch(() => ({}));
-        throw new Error(json.error ?? `Clone failed: ${res.status}`);
+        throw new Error(json.error ?? t("cloneFailedStatus", { status: res.status }));
       }
       const json = (await res.json()) as { flow: FlowRow };
       setCreateOpen(false);
@@ -215,7 +216,7 @@ export default function FlowsPage() {
         </div>
         <GatedButton
           canAct={canCreate}
-          gateReason="create flows"
+          gateReason={tGate("reasons.createFlows")}
           onClick={() => setCreateOpen(true)}
         >
           <Plus className="h-4 w-4" />
@@ -332,6 +333,7 @@ function EmptyState({
   canCreate: boolean;
   t: ReturnType<typeof useTranslations>;
 }) {
+  const tGate = useTranslations("GatedButton");
   return (
     <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border bg-card/50 px-6 py-16 text-center">
       <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted">
@@ -345,7 +347,7 @@ function EmptyState({
       </p>
       <GatedButton
         canAct={canCreate}
-        gateReason="create flows"
+        gateReason={tGate("reasons.createFlows")}
         onClick={onCreate}
         className="mt-5"
       >

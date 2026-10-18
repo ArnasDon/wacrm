@@ -1,36 +1,146 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
-import type { Message, MessageReaction } from "@/types";
+import type {
+  Message,
+  MessageReaction,
+  MessageTemplate,
+  TemplateButton,
+} from "@/types";
 import {
   Clock,
   Check,
   CheckCheck,
   XCircle,
-  FileText,
   MapPin,
   LayoutTemplate,
-  ImageOff,
   CornerDownLeft,
   Sparkles,
+  Reply,
+  ExternalLink,
+  Phone,
+  Copy,
+  type LucideIcon,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ReplyQuote } from "./reply-quote";
 import { MessageReactions } from "./message-reactions";
+import {
+  MediaAudioBubble,
+  MediaDocumentBubble,
+  MediaImageBubble,
+  MediaUnavailable,
+  MediaVideoBubble,
+} from "./message-media";
 import { InteractivePreview } from "@/components/interactive/interactive-preview";
+import {
+  templateMessageView,
+  type TemplateMessageHeader,
+} from "@/lib/whatsapp/template-message-view";
 import { useTranslations } from "next-intl";
 
 interface MessageBubbleProps {
   message: Message;
+  template?: MessageTemplate | null;
   /** Pre-computed quote info for messages that reply to another. */
   reply?: { authorLabel: string; preview: string } | null;
   reactions?: MessageReaction[];
-  currentUserId?: string;
   onToggleReaction?: (emoji: string) => void;
+  /**
+   * Opens the thread's media viewer on this message. Only images and videos
+   * call it; omitted when the parent renders no viewer, in which case media
+   * stays inline and non-clickable.
+   */
+  onOpenMedia?: (messageId: string) => void;
 }
 
-function StatusIcon({ status }: { status: Message["status"] }) {
+/**
+ * "[title] — [details]" for a failed message, or null when the row
+ * predates migration 042 / Meta sent no reason. Shared by the status
+ * icon's tooltip and the line under the bubble.
+ */
+/** InteractivePreview with the empty-state labels in the UI language. */
+function LocalizedInteractivePreview({
+  payload,
+}: {
+  payload: NonNullable<Message["interactive_payload"]>;
+}) {
+  const t = useTranslations("Interactive");
+  return (
+    <InteractivePreview
+      payload={payload}
+      labels={{
+        body: t("previewBody"),
+        button: t("previewButton"),
+        menu: t("previewMenu"),
+      }}
+    />
+  );
+}
+
+const TEMPLATE_BUTTON_ICONS: Record<TemplateButton["type"], LucideIcon> = {
+  QUICK_REPLY: Reply,
+  URL: ExternalLink,
+  PHONE_NUMBER: Phone,
+  COPY_CODE: Copy,
+};
+
+function TemplateHeader({
+  header,
+  message,
+  t,
+}: {
+  header: TemplateMessageHeader;
+  message: Message;
+  t: ReturnType<typeof useTranslations>;
+}) {
+  if (header.type === "text") {
+    return (
+      <p className="mt-1 break-words text-sm font-semibold">{header.text}</p>
+    );
+  }
+  if (!header.url) {
+    const label =
+      header.type === "image"
+        ? t("photo")
+        : header.type === "video"
+          ? t("video")
+          : t("document");
+    return (
+      <div className="mt-1">
+        <MediaUnavailable label={label} t={t} />
+      </div>
+    );
+  }
+  const media = { ...message, media_url: header.url };
+  return (
+    <div className="mt-1">
+      {header.type === "image" ? (
+        <MediaImageBubble message={media} t={t} />
+      ) : header.type === "video" ? (
+        <MediaVideoBubble message={media} t={t} />
+      ) : (
+        <MediaDocumentBubble message={media} t={t} />
+      )}
+    </div>
+  );
+}
+
+function failureReason(message: Message): string | null {
+  if (message.status !== "failed" || !message.error_title) return null;
+  return message.error_details
+    ? `${message.error_title} — ${message.error_details}`
+    : message.error_title;
+}
+
+function StatusIcon({
+  status,
+  title,
+}: {
+  status: Message["status"];
+  /** Tooltip for the failed state — Meta's reason, when we have one. */
+  title?: string | null;
+}) {
   switch (status) {
     case "sending":
       return <Clock className="h-3 w-3 text-muted-foreground" />;
@@ -41,85 +151,34 @@ function StatusIcon({ status }: { status: Message["status"] }) {
     case "read":
       return <CheckCheck className="h-3 w-3 text-blue-400" />;
     case "failed":
-      return <XCircle className="h-3 w-3 text-red-400" />;
+      return (
+        <span className="inline-flex" title={title ?? undefined}>
+          <XCircle className="h-3 w-3 text-red-400" />
+        </span>
+      );
     default:
       return null;
   }
 }
 
-function MediaUnavailable({ label, t }: { label: string, t: ReturnType<typeof useTranslations> }) {
-  return (
-    <div className="flex items-center gap-2 rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-      <ImageOff className="h-4 w-4 shrink-0 text-muted-foreground" />
-      <span>{t("unavailable", { label })}</span>
-    </div>
-  );
-}
+function MessageContent({
+  message,
+  template,
+  t,
+  isAgent,
+  onOpenMedia,
+}: {
+  message: Message;
+  template: MessageTemplate | null;
+  t: ReturnType<typeof useTranslations>;
+  /** Outbound bubbles sit on the primary fill — badges must invert. */
+  isAgent: boolean;
+  onOpenMedia?: (messageId: string) => void;
+}) {
+  // Passed to the media bubbles as a no-arg callback; `undefined` when the
+  // parent wired up no viewer, which is what makes them non-clickable.
+  const openMedia = onOpenMedia ? () => onOpenMedia(message.id) : undefined;
 
-function MediaImage({ url, alt }: { url: string; alt: string }) {
-  const [src, setSrc] = useState<string | null>(null);
-  const [error, setError] = useState(false);
-  const [loading, setLoading] = useState(true);
-
-  const loadImage = useCallback(async () => {
-    if (!url) return;
-
-    // Proxy URLs need auth fetch to create blob URL
-    if (url.startsWith("/api/whatsapp/media/")) {
-      try {
-        const res = await fetch(url);
-        if (!res.ok) throw new Error("Failed to load media");
-        const blob = await res.blob();
-        const blobUrl = URL.createObjectURL(blob);
-        setSrc(blobUrl);
-      } catch {
-        setError(true);
-      } finally {
-        setLoading(false);
-      }
-    } else {
-      setSrc(url);
-      setLoading(false);
-    }
-  }, [url]);
-
-  useEffect(() => {
-    loadImage();
-    return () => {
-      if (src?.startsWith("blob:")) {
-        URL.revokeObjectURL(src);
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadImage]);
-
-  if (error) {
-    return (
-      <div className="flex h-40 w-60 items-center justify-center rounded-lg bg-muted">
-        <ImageOff className="h-8 w-8 text-muted-foreground" />
-      </div>
-    );
-  }
-
-  if (loading) {
-    return (
-      <div className="flex h-40 w-60 items-center justify-center rounded-lg bg-muted">
-        <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-      </div>
-    );
-  }
-
-  return (
-    <img
-      src={src ?? ""}
-      alt={alt}
-      className="max-h-64 max-w-60 rounded-lg object-cover"
-      onError={() => setError(true)}
-    />
-  );
-}
-
-function MessageContent({ message, t }: { message: Message, t: ReturnType<typeof useTranslations> }) {
   switch (message.content_type) {
     case "text":
       return (
@@ -132,7 +191,7 @@ function MessageContent({ message, t }: { message: Message, t: ReturnType<typeof
       return (
         <div>
           {message.media_url ? (
-            <MediaImage url={message.media_url} alt="Shared image" />
+            <MediaImageBubble message={message} onOpen={openMedia} t={t} />
           ) : (
             <MediaUnavailable label={t("photo")} t={t} />
           )}
@@ -148,11 +207,7 @@ function MessageContent({ message, t }: { message: Message, t: ReturnType<typeof
       return (
         <div>
           {message.media_url ? (
-            <video
-              src={message.media_url}
-              controls
-              className="max-h-64 max-w-60 rounded-lg"
-            />
+            <MediaVideoBubble message={message} onOpen={openMedia} t={t} />
           ) : (
             <MediaUnavailable label={t("video")} t={t} />
           )}
@@ -168,7 +223,7 @@ function MessageContent({ message, t }: { message: Message, t: ReturnType<typeof
       return (
         <div>
           {message.media_url ? (
-            <audio src={message.media_url} controls className="max-w-60" />
+            <MediaAudioBubble message={message} t={t} />
           ) : (
             <MediaUnavailable label={t("audio")} t={t} />
           )}
@@ -179,34 +234,83 @@ function MessageContent({ message, t }: { message: Message, t: ReturnType<typeof
       if (!message.media_url) {
         return <MediaUnavailable label={message.content_text || t("document")} t={t} />;
       }
-      return (
-        <a
-          href={message.media_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-2 rounded-lg bg-muted/50 px-3 py-2 text-sm hover:bg-muted"
-        >
-          <FileText className="h-5 w-5 shrink-0 text-muted-foreground" />
-          <span className="truncate">
-            {message.content_text || t("document")}
-          </span>
-        </a>
-      );
+      return <MediaDocumentBubble message={message} t={t} />;
 
-    case "template":
+    case "template": {
+      // Templates are almost always outbound, where the bubble fill IS
+      // `primary` — so the old `bg-primary/20 text-primary` chip was
+      // primary-on-primary and invisible. Paired with a null
+      // content_text (issue #483) that rendered a bubble with nothing
+      // in it at all. Invert on the primary fill, and fall back to the
+      // template's name when we have no stored body (legacy rows sent
+      // before the fix).
+      const view = templateMessageView(message, template);
       return (
         <div>
-          <span className="mb-1 inline-flex items-center gap-1 rounded bg-primary/20 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+          <span
+            className={cn(
+              "mb-1 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium",
+              isAgent
+                ? "bg-primary-foreground/20 text-primary-foreground"
+                : "bg-primary/20 text-primary",
+            )}
+          >
             <LayoutTemplate className="h-3 w-3" />
             {t("template")}
           </span>
-          {message.content_text && (
+          {view.header && (
+            <TemplateHeader header={view.header} message={message} t={t} />
+          )}
+          {message.content_text ? (
             <p className="mt-1 whitespace-pre-wrap break-words text-sm">
               {message.content_text}
             </p>
+          ) : (
+            message.template_name && (
+              <p className="mt-1 break-words text-sm italic opacity-80">
+                {message.template_name}
+              </p>
+            )
+          )}
+          {view.footer && (
+            <p
+              className={cn(
+                "mt-1 break-words text-[11px]",
+                isAgent ? "text-primary-foreground/70" : "text-muted-foreground",
+              )}
+            >
+              {view.footer}
+            </p>
+          )}
+          {view.buttons.length > 0 && (
+            <div
+              className={cn(
+                "mt-2 flex flex-col border-t",
+                isAgent ? "border-primary-foreground/20" : "border-border",
+              )}
+            >
+              {view.buttons.map((button, i) => {
+                const Icon = TEMPLATE_BUTTON_ICONS[button.type];
+                return (
+                  <span
+                    key={i}
+                    className={cn(
+                      "flex items-center justify-center gap-1.5 border-t py-1.5 text-sm font-medium first:border-t-0",
+                      isAgent
+                        ? "border-primary-foreground/20 text-primary-foreground"
+                        : "border-border text-primary",
+                    )}
+                  >
+                    <Icon className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">{button.text}</span>
+                  </span>
+                );
+              })}
+            </div>
           )}
         </div>
       );
+    }
 
     case "location":
       return (
@@ -227,7 +331,7 @@ function MessageContent({ message, t }: { message: Message, t: ReturnType<typeof
       //    migration 035 backfilled the column): show the body text plainly —
       //    it is our own message, NOT a customer tap.
       if (message.interactive_payload) {
-        return <InteractivePreview payload={message.interactive_payload} />;
+        return <LocalizedInteractivePreview payload={message.interactive_payload} />;
       }
       if (message.sender_type === "customer") {
         return (
@@ -260,15 +364,17 @@ function MessageContent({ message, t }: { message: Message, t: ReturnType<typeof
 
 export function MessageBubble({
   message,
+  template = null,
   reply,
   reactions,
-  currentUserId,
   onToggleReaction,
+  onOpenMedia,
 }: MessageBubbleProps) {
   const t = useTranslations("Inbox.bubble");
 
   const isAgent = message.sender_type === "agent" || message.sender_type === "bot";
   const time = format(new Date(message.created_at), "HH:mm");
+  const failure = isAgent ? failureReason(message) : null;
 
   // Row alignment + width cap are owned by <MessageActions> so its hover
   // group matches the bubble's content area, not the full row.
@@ -294,7 +400,13 @@ export function MessageBubble({
             onPrimary={isAgent}
           />
         )}
-        <MessageContent message={message} t={t} />
+        <MessageContent
+          message={message}
+          template={template}
+          t={t}
+          isAgent={isAgent}
+          onOpenMedia={onOpenMedia}
+        />
         <div
           className={cn(
             "mt-1 flex items-center gap-1",
@@ -326,13 +438,20 @@ export function MessageBubble({
           >
             {time}
           </span>
-          {isAgent && <StatusIcon status={message.status} />}
+          {isAgent && <StatusIcon status={message.status} title={failure} />}
         </div>
       </div>
+      {failure && (
+        <p
+          className="mt-0.5 px-1 text-[10px] leading-tight text-muted-foreground"
+          title={failure}
+        >
+          {t("notDelivered")}: {failure}
+        </p>
+      )}
       {reactions && reactions.length > 0 && onToggleReaction && (
         <MessageReactions
           reactions={reactions}
-          currentUserId={currentUserId}
           onToggle={onToggleReaction}
         />
       )}

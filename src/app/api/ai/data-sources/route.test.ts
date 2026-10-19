@@ -44,8 +44,9 @@ function fakeSupabase(seed: Record<string, Record<string, unknown>[]> = {}) {
   }
 
   function builder(table: string) {
-    let op: 'select' | 'insert' | 'update' | 'delete' = 'select';
+    let op: 'select' | 'insert' | 'upsert' | 'update' | 'delete' = 'select';
     let payload: Record<string, unknown> | Record<string, unknown>[] | undefined;
+    let onConflict: string | undefined;
     const filters: [string, unknown][] = [];
     let single: 'one' | 'maybe' | null = null;
     let selectedCols: string[] | null = null;
@@ -82,6 +83,18 @@ function fakeSupabase(seed: Record<string, Record<string, unknown>[]> = {}) {
         if (single === 'maybe') return { data: returned[0] ?? null, error: null };
         return { data: returned, error: null };
       }
+      if (op === 'upsert') {
+        const conflictCols = (onConflict ?? '').split(',').map((c) => c.trim()).filter(Boolean);
+        const items = Array.isArray(payload) ? payload : [payload as Record<string, unknown>];
+        for (const item of items) {
+          const existing = conflictCols.length > 0
+            ? rows.find((r) => conflictCols.every((c) => r[c] === item[c]))
+            : undefined;
+          if (existing) Object.assign(existing, item);
+          else rows.push({ id: `${table}-${nextId++}`, ...item });
+        }
+        return { data: null, error: null };
+      }
       if (op === 'delete') {
         const remaining = rows.filter((r) => !matches(r));
         rows.length = 0;
@@ -93,7 +106,7 @@ function fakeSupabase(seed: Record<string, Record<string, unknown>[]> = {}) {
 
     const api = {
       select: (cols?: string) => {
-        if (op !== 'insert' && op !== 'update') op = 'select';
+        if (op !== 'insert' && op !== 'upsert' && op !== 'update') op = 'select';
         if (cols) selectedCols = cols.split(',').map((c) => c.trim());
         return api;
       },
@@ -105,6 +118,12 @@ function fakeSupabase(seed: Record<string, Record<string, unknown>[]> = {}) {
       insert: (p: Record<string, unknown> | Record<string, unknown>[]) => {
         op = 'insert';
         payload = p;
+        return api;
+      },
+      upsert: (p: Record<string, unknown> | Record<string, unknown>[], opts?: { onConflict?: string }) => {
+        op = 'upsert';
+        payload = p;
+        onConflict = opts?.onConflict;
         return api;
       },
       update: (p: Record<string, unknown>) => {

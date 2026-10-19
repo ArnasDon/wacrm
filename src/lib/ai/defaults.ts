@@ -243,7 +243,10 @@ function buildSystemPromptParts(args: {
         'a human. If it matches exactly one, resolve it and continue normally. ' +
         'To send a photo, call get_product_media; do not paste image URLs into your reply — the photo is sent ' +
         'separately through the normal channel. If get_product_media reports no image available, say so — never ' +
-        'invent or guess an image URL.',
+        'invent or guess an image URL. ' +
+        'Never read out, mention, or confirm a product\'s internal id, SKU, reference number, or any other raw ' +
+        'code the tools use internally — describe products only by name, price, stock, and the attributes a ' +
+        'customer would naturally ask about (color, size, capacity).',
       ),
     )
 

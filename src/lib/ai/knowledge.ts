@@ -103,10 +103,11 @@ export async function accountHasKnowledgeBase(
 }
 
 /**
- * (Re)build the chunks for one document. Deletes the document's
- * existing chunks, re-chunks the content, and — when the account has an
- * embeddings key — embeds each chunk. Runs under whatever client the
- * caller passes (service-role for ingest routes).
+ * (Re)build the chunks for one document. Re-chunks the content, and —
+ * when the account has an embeddings key — embeds each chunk, then
+ * replaces the document's existing chunks with the new generation.
+ * Runs under whatever client the caller passes (service-role for ingest
+ * routes).
  *
  * Throws on embedding failure so the ingest route can report it; the
  * chunks are only written once embedding (if attempted) succeeds, so a
@@ -126,16 +127,34 @@ export async function ingestDocument(
   // that may now be wrong (FASE 4).
   clearCachedKbState(accountId)
 
+  // Capture the PREVIOUS generation's row ids BEFORE writing anything.
+  // Same discipline as data-sources/service.ts's persistDataSource (Bug
+  // #1 fix): deleting the old chunks first and inserting the new ones
+  // second meant a failed insert (a transient Supabase error, not just
+  // an embedding failure) left the document with ZERO chunks and no
+  // rollback — silently losing its Knowledge Base content. Now the new
+  // chunks are inserted first, and only these exact prior ids are
+  // removed afterward, so a failed insert leaves the previous chunks
+  // completely untouched.
+  const { data: oldRows, error: selErr } = await db
+    .from('ai_knowledge_chunks')
+    .select('id')
+    .eq('document_id', documentId)
+  if (selErr) throw selErr
+  const oldIds = (oldRows ?? []).map((r) => (r as { id: string }).id)
+
   const chunks = chunkText(content)
 
-  // Replace, don't append — re-ingest must be idempotent.
-  const { error: delErr } = await db
-    .from('ai_knowledge_chunks')
-    .delete()
-    .eq('document_id', documentId)
-  if (delErr) throw delErr
-
-  if (chunks.length === 0) return
+  if (chunks.length === 0) {
+    // No content to index — clear any previous chunks (replace, don't
+    // append — re-ingest must be idempotent) so a document emptied by
+    // an edit doesn't keep serving stale text.
+    if (oldIds.length > 0) {
+      const { error: delErr } = await db.from('ai_knowledge_chunks').delete().in('id', oldIds)
+      if (delErr) throw delErr
+    }
+    return
+  }
 
   // Embed if a key is set, but DON'T let an embedding failure stop the
   // chunks from being stored: a failed embed must still leave the
@@ -163,6 +182,11 @@ export async function ingestDocument(
 
   const { error: insErr } = await db.from('ai_knowledge_chunks').insert(rows)
   if (insErr) throw insErr
+
+  if (oldIds.length > 0) {
+    const { error: delErr } = await db.from('ai_knowledge_chunks').delete().in('id', oldIds)
+    if (delErr) throw delErr
+  }
 
   if (embedError) throw embedError
 }

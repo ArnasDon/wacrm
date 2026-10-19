@@ -187,6 +187,17 @@ export const RATE_LIMITS = {
    *  several full turns from several concurrent customers on the same
    *  account while still bounding cost/abuse toward the ERP. */
   catalogExternalAccount: { limit: 60, windowMs: 60_000 },
+  /** Google Apps Script → WACRM data-source sync webhook
+   *  (`/api/internal/data-source-sync`), keyed by the one fixed,
+   *  env-configured data source id this endpoint ever targets — never
+   *  per-caller, since the caller has no account/user identity. The
+   *  real trigger is "Gmail got 2 inventory emails today," so a few
+   *  calls a day is normal; 10/hour comfortably covers that plus a
+   *  handful of legitimate retries on a flaky Apps Script run, while
+   *  still bounding a leaked secret from hammering this account's own
+   *  refresh claim (itself already serialized by H-5's own lock) in a
+   *  tight loop. */
+  dataSourceSync: { limit: 10, windowMs: 60 * 60_000 },
 } as const;
 
 /**

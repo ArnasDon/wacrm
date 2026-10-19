@@ -12,7 +12,8 @@ import { cn } from "@/lib/utils";
 import type { Conversation, ConversationStatus, Tag } from "@/types";
 import { Search, ChevronDown, X } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
+import { getDateLocale } from "@/i18n/date-locale";
 import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
@@ -439,6 +440,7 @@ function ConversationItem({
   onSelect,
   t,
 }: ConversationItemProps) {
+  const dateLocale = getDateLocale(useLocale());
   const contact = conversation.contact;
   const displayName = contact?.name || contact?.phone || t("unknown");
   const initials = displayName.charAt(0).toUpperCase();
@@ -449,6 +451,7 @@ function ConversationItem({
 
   const timeAgo = conversation.last_message_at
     ? formatDistanceToNow(new Date(conversation.last_message_at), {
+        locale: dateLocale,
         addSuffix: false,
       })
     : "";

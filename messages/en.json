@@ -2033,7 +2033,33 @@
       "active": "Active",
       "accentColor": "Accent color",
       "useTheme": "Use {name} theme",
-      "themeId": "Theme id: {id}"
+      "themeId": "Theme id: {id}",
+      "modes": {
+        "light": "light",
+        "dark": "dark"
+      },
+      "themes": {
+        "violet": {
+          "name": "Violet",
+          "tagline": "The default — confident, slightly playful."
+        },
+        "emerald": {
+          "name": "Emerald",
+          "tagline": "Growth-coded, nods at messaging without copying WhatsApp green."
+        },
+        "cobalt": {
+          "name": "Cobalt",
+          "tagline": "Clean B2B-SaaS blue — calm and product-y."
+        },
+        "amber": {
+          "name": "Amber",
+          "tagline": "Warm and friendly — feels good for SMB teams."
+        },
+        "rose": {
+          "name": "Rose",
+          "tagline": "Bold and modern — D2C, creator-economy, lifestyle."
+        }
+      }
     },
     "security": {
       "title": "Login & security",
@@ -2312,6 +2338,10 @@
     "haveAccount": "I already have an account"
   },
   "Notifications": {
+    "assignedTitle": "New conversation assigned",
+    "assignedBody": "{actor} assigned you a conversation with {contact}",
+    "unknownActor": "Someone",
+    "unknownContact": "a contact",
     "title": "Notifications",
     "description": "Conversations other teammates assign to you show up here.",
     "markAllRead": "Mark all as read",
@@ -2403,6 +2433,20 @@
       "createDeals": "create deals",
       "sendMessages": "send messages"
     }
+  },
+  "Presence": {
+    "online": "Online — active now",
+    "away": "Away — idle",
+    "offline": "Offline — last seen {time}",
+    "unknown": "a while ago",
+    "justNow": "just now",
+    "minutesAgo": "{count, plural, =1 {# minute ago} other {# minutes ago}}",
+    "hoursAgo": "{count, plural, =1 {# hour ago} other {# hours ago}}",
+    "daysAgo": "{count, plural, =1 {# day ago} other {# days ago}}"
+  },
+  "Handoff": {
+    "summary": "🤖 AI agent handed off {count, plural, =0 {without replying} =1 {after # reply} other {after # replies}}.",
+    "lastMessage": " Last customer message: “{message}”"
   },
   "Metadata": {
     "description": "Self-hostable CRM template for WhatsApp."

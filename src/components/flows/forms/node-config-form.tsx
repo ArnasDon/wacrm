@@ -619,6 +619,8 @@ function ConditionForm({
 }) {
   const tags = useUserTags();
 
+  const tContact = useTranslations("Contacts.detailView");
+
   const subject = cfg.subject ?? "var";
   const operator = cfg.operator ?? "equals";
   const showValue = operator === "equals" || operator === "contains";
@@ -677,10 +679,10 @@ function ConditionForm({
                 <SelectValue placeholder={t("pickField")} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="name">name</SelectItem>
-                <SelectItem value="email">email</SelectItem>
-                <SelectItem value="phone">phone</SelectItem>
-                <SelectItem value="company">company</SelectItem>
+                <SelectItem value="name">{tContact("name")}</SelectItem>
+                <SelectItem value="email">{tContact("email")}</SelectItem>
+                <SelectItem value="phone">{tContact("phone")}</SelectItem>
+                <SelectItem value="company">{tContact("company")}</SelectItem>
               </SelectContent>
             </Select>
           ) : (

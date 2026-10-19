@@ -2033,7 +2033,33 @@
       "active": "사용 중",
       "accentColor": "강조 색상",
       "useTheme": "{name} 테마 사용",
-      "themeId": "테마 ID: {id}"
+      "themeId": "테마 ID: {id}",
+      "modes": {
+        "light": "라이트",
+        "dark": "다크"
+      },
+      "themes": {
+        "violet": {
+          "name": "바이올렛",
+          "tagline": "자신감에 경쾌함을 더한 기본 테마입니다."
+        },
+        "emerald": {
+          "name": "에메랄드",
+          "tagline": "성장과 메시징을 떠올리게 하면서 WhatsApp의 녹색과는 차별화했습니다."
+        },
+        "cobalt": {
+          "name": "코발트",
+          "tagline": "기업용 앱에 어울리는 깔끔하고 차분한 파란색입니다."
+        },
+        "amber": {
+          "name": "앰버",
+          "tagline": "따뜻하고 친근한 분위기로 중소기업 팀에 잘 어울립니다."
+        },
+        "rose": {
+          "name": "로즈",
+          "tagline": "소비자 브랜드, 크리에이터, 라이프스타일에 어울리는 대담하고 현대적인 색상입니다."
+        }
+      }
     },
     "security": {
       "title": "로그인 & 보안",
@@ -2312,6 +2338,10 @@
     "haveAccount": "이미 계정이 있습니다"
   },
   "Notifications": {
+    "assignedTitle": "새 대화가 배정되었습니다",
+    "assignedBody": "{actor}님이 {contact}님과의 대화를 배정했습니다",
+    "unknownActor": "누군가",
+    "unknownContact": "고객",
     "title": "알림",
     "description": "다른 팀원이 나에게 배정한 대화가 여기에 표시됩니다.",
     "markAllRead": "모두 읽음으로 표시",
@@ -2403,6 +2433,20 @@
       "createDeals": "거래를 만들",
       "sendMessages": "메시지를 보낼"
     }
+  },
+  "Presence": {
+    "online": "온라인 — 현재 활동 중",
+    "away": "자리 비움 — 비활성 상태",
+    "offline": "오프라인 — 마지막 활동: {time}",
+    "unknown": "얼마 전",
+    "justNow": "방금",
+    "minutesAgo": "{count}분 전",
+    "hoursAgo": "{count}시간 전",
+    "daysAgo": "{count}일 전"
+  },
+  "Handoff": {
+    "summary": "🤖 AI 에이전트가 {count, plural, =0 {답변하지 않고} other {#회 답변 후}} 대화를 상담원에게 전달했습니다.",
+    "lastMessage": " 고객의 마지막 메시지: “{message}”"
   },
   "Metadata": {
     "description": "직접 호스팅할 수 있는 WhatsApp용 CRM 템플릿입니다."

@@ -689,8 +689,25 @@ async function persistDataSource(
     const idsToRemove = previous
       .filter((r) => !newSourceProductIds.has(r.source_product_id))
       .map((r) => r.id)
-    if (idsToRemove.length > 0) {
-      const { error: delErr } = await db.from('ai_catalog_products').delete().in('id', idsToRemove)
+    // Real defect found auditing the AI agent (Oct 2026): a single
+    // `.in('id', idsToRemove)` call builds a PostgREST query string with
+    // every id inline — for a catalog's first refresh after switching
+    // identity schemes (e.g. row-N → a real externalId), idsToRemove can
+    // be the ENTIRE previous catalog (~1,100+ UUIDs here), which blew
+    // past a URL-length limit and failed with a bare "Bad Request". That
+    // exception landed in doRefreshDataSource's catch, which correctly
+    // marks the source 'error' — but by then the upsert above had
+    // ALREADY written every new row, so the account was left with BOTH
+    // generations of every product live in ai_catalog_products at once
+    // (confirmed in production: 2,287 rows for a source whose own
+    // row_count said 1,143), silently doubling search_catalog's results
+    // and letting the agent hit either generation's data inconsistently
+    // from one call to the next. Chunking keeps each request's id list
+    // comfortably under any realistic proxy/URL-length limit.
+    const DELETE_CHUNK_SIZE = 200
+    for (let i = 0; i < idsToRemove.length; i += DELETE_CHUNK_SIZE) {
+      const chunk = idsToRemove.slice(i, i + DELETE_CHUNK_SIZE)
+      const { error: delErr } = await db.from('ai_catalog_products').delete().in('id', chunk)
       if (delErr) {
         console.error('[data-sources] failed to remove obsolete catalog rows:', delErr.message)
         throw new DataSourceError(`Could not remove obsolete catalog rows: ${delErr.message}`)

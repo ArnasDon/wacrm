@@ -127,11 +127,15 @@ describe('DataSourceCatalogProvider.searchCatalog — DB tier pagination', () =>
     expect(result.hasMore).toBe(false)
   })
 
-  it('an RPC error degrades to an empty, honestly-unknown-total result instead of throwing', async () => {
+  it('an RPC error degrades to an empty, honestly-unknown-total result instead of throwing, flagged as a real failure (not a confirmed no-match)', async () => {
     const { db } = fakeDb({ rpcError: { message: 'db down' } })
     const provider = new DataSourceCatalogProvider(db, 'acct-1', 'ds-1', 'PRUEBA')
     const result = await provider.searchCatalog({ query: 'tv' })
-    expect(result).toEqual({ products: [], total: null, hasMore: false })
+    // hadError: true (AI agent audit) — distinguishes this from the
+    // genuinely-empty case above, which has NO such flag. Without it,
+    // catalog-tools.ts/the model cannot tell a real query failure apart
+    // from a confirmed "no existe" and could wrongly deny the product.
+    expect(result).toEqual({ products: [], total: null, hasMore: false, hadError: true })
   })
 })
 

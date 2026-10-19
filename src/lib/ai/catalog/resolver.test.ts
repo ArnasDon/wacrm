@@ -195,6 +195,72 @@ describe('searchCatalog — fallback policy', () => {
     expect(results.total).toBe(2) // 1 product from each of the two merged sources
     expect(results.hasMore).toBe(false)
   })
+
+  // ============================================================
+  // Real defect found auditing the AI agent (Oct 2026): a provider
+  // whose own query genuinely failed (DB/RPC error) used to return the
+  // exact same shape as "confirmed zero matches" — the model had no
+  // way to tell a real failure apart from an honest not-found, which
+  // directly undermines the "never say a product doesn't exist
+  // because a query failed" rule. These prove the resolver only
+  // surfaces `hadError` when it actually explains an empty result —
+  // never when another source still found something real.
+  // ============================================================
+  it('a single source whose query genuinely fails (not just "found nothing") reports hadError:true, never a confirmed empty result', async () => {
+    const { db } = fakeDb([
+      { id: 'ds1', display_name: 'Única fuente', status: 'active', usage: 'catalog', priority: 1, is_primary: true, fallback_policy: 'fallback_on_not_found' },
+    ])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(h as any).dataSourceProviderFactory = () => ({
+      key: 'ds_ds1',
+      label: 'Única fuente',
+      async searchCatalog() {
+        return { products: [], total: null, hasMore: false, hadError: true } // same shape data-source-provider.ts now returns on a real RPC error
+      },
+      async getProduct() { return null },
+      async getAvailability() { return null },
+      async getMedia() { return null },
+    })
+
+    const results = await resolver.searchCatalog(db, 'acct-1', { query: 'abanico de pared' })
+    expect(results.products).toEqual([])
+    expect(results.hadError).toBe(true)
+  })
+
+  it('search_all_active: one source erroring while another genuinely finds the product is still a real success — no false hadError', async () => {
+    const { db } = fakeDb([
+      { id: 'ds1', display_name: 'Falla', status: 'active', usage: 'catalog', priority: 1, is_primary: true, fallback_policy: 'search_all_active' },
+      { id: 'ds2', display_name: 'OK', status: 'active', usage: 'catalog', priority: 2, is_primary: false, fallback_policy: 'search_all_active' },
+    ])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(h as any).dataSourceProviderFactory = (id: string) => {
+      if (id === 'ds1') {
+        return {
+          key: 'ds_ds1', label: 'Falla',
+          async searchCatalog() { return { products: [], total: null, hasMore: false, hadError: true } },
+          async getProduct() { return null }, async getAvailability() { return null }, async getMedia() { return null },
+        }
+      }
+      return fakeProvider('ds_ds2', [PRODUCT('ds_ds2:x', 'OK')])
+    }
+
+    const results = await resolver.searchCatalog(db, 'acct-1', { query: 'S25' })
+    expect(results.products).toHaveLength(1) // the real match from ds2 survives
+    expect(results.products[0].source).toBe('OK')
+    expect(results.hadError).toBeUndefined() // a real, successful search — never flagged as a failure
+  })
+
+  it('a genuinely empty result (every source found nothing, no errors) is never flagged hadError', async () => {
+    const { db } = fakeDb([
+      { id: 'ds1', display_name: 'Vacía', status: 'active', usage: 'catalog', priority: 1, is_primary: true, fallback_policy: 'fallback_on_not_found' },
+    ])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(h as any).dataSourceProviderFactory = (id: string) => fakeProvider(`ds_${id}`, [])
+
+    const results = await resolver.searchCatalog(db, 'acct-1', { query: 'nokia 3310' })
+    expect(results.products).toEqual([])
+    expect(results.hadError).toBeUndefined()
+  })
 })
 
 // ============================================================

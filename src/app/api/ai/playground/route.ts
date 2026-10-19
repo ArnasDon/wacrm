@@ -18,6 +18,18 @@ import { catalogContextToPromptText, updateCatalogContext, type CatalogTurnConte
 // Keep the tested transcript bounded, mirroring the live context window.
 const MAX_TURNS = 20
 
+// NOT a maxDuration fix (reverted — see AI agent audit, Oct 2026): the
+// REAL deployed lambda config for this project shows every route WITHOUT
+// an explicit `maxDuration` export already gets a 300s timeout (confirmed
+// via `vercel inspect <deployment> --json`: draft/data-sources/
+// automations-engine/heartbeat all show "timeout": 300 despite none of
+// them exporting maxDuration). webhook/route.ts's `maxDuration = 60` is
+// the one exception, deliberately LOWERING its own limit from that same
+// 300s default — not raising it from a short one. Adding `maxDuration =
+// 60` here would have been a regression (300s → 60s), not a fix. The
+// real cause of "Playground se detiene" is still open — see the final
+// audit report for what was and wasn't established with evidence.
+
 /**
  * POST /api/ai/playground  (agent+)
  *

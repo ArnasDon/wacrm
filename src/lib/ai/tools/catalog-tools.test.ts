@@ -227,6 +227,31 @@ describe('executeCatalogTool', () => {
     expect(result).toEqual({ error: 'catalog_unavailable' })
   })
 
+  // ============================================================
+  // Real defect found auditing the AI agent (Oct 2026): unlike a
+  // thrown error (caught above), a provider that catches its OWN
+  // query error internally (so one failed source can't take down a
+  // multi-source search) used to return a result shaped EXACTLY like
+  // "confirmed zero matches" (`products: [], total: null`) — the model
+  // had no way to tell a real DB/RPC failure apart from a genuine
+  // not-found, directly undermining "never say a product doesn't
+  // exist because a query failed". `resolver.searchCatalog` now sets
+  // `hadError: true` for this case (see resolver.test.ts) and this
+  // tool must react to it the same way it reacts to a thrown error.
+  // ============================================================
+  it('a search result flagged hadError:true (a swallowed provider failure, not a confirmed empty result) is also reported as catalog_unavailable, never a plain empty list', async () => {
+    h.searchCatalog.mockResolvedValue({ products: [], total: null, hasMore: false, hadError: true })
+    const result = await execute({ id: 'c10b', name: SEARCH_CATALOG, input: { query: 'abanico de pared' } })
+    expect(result).toEqual({ error: 'catalog_unavailable' })
+  })
+
+  it('a genuinely empty search result (hadError omitted) is still reported as a normal, honest zero-match list — never upgraded to an error', async () => {
+    h.searchCatalog.mockResolvedValue({ products: [], total: 0, hasMore: false })
+    const result = await execute({ id: 'c10c', name: SEARCH_CATALOG, input: { query: 'nokia 3310' } })
+    expect(result).toMatchObject({ products: [], returned: 0, total: 0, has_more: false })
+    expect(result).not.toHaveProperty('error')
+  })
+
   it('an unknown tool name returns a structured error instead of throwing', async () => {
     const result = await execute({ id: 'c11', name: 'search_budun', input: {} })
     expect(result).toEqual({ error: 'unknown tool: search_budun' })

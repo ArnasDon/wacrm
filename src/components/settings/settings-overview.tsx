@@ -139,6 +139,15 @@ export function SettingsOverview({
     return () => {
       cancelled = true;
     };
+    // `user` is deliberately NOT a dependency: it comes from
+    // onAuthStateChange (src/hooks/use-auth.tsx), which fires a fresh
+    // `User` object on every token refresh/tab focus — not just on
+    // actual login/logout — so depending on the whole object would
+    // re-run every fetch in this effect on each of those, not just
+    // when the signed-in user actually changes. `user?.id` is the
+    // correct, stable dependency; the `!user` check above only needs
+    // truthiness, already covered by `user?.id` being present/absent.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, accountId, canManageMembers]);
 
   const displayName = profile?.full_name || profile?.email || t('yourAccount');

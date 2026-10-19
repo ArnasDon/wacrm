@@ -15,7 +15,13 @@ interface FakeState {
   chunkCount: number
   rpcCalls: string[]
   inserted: Record<string, unknown>[] | null
-  deletedFor: string | null
+  deletedIds: string[] | null
+  /** Previous chunk rows ingestDocument should discover via its
+   *  pre-insert `select('id').eq('document_id', ...)` lookup. */
+  existingChunkIds: string[]
+  /** When set, the NEXT insert() call on ai_knowledge_chunks fails —
+   *  used to prove the old chunks survive a failed re-ingest. */
+  failNextInsert: boolean
 }
 
 function makeDb() {
@@ -25,7 +31,9 @@ function makeDb() {
     chunkCount: 5, // account has a non-empty KB by default
     rpcCalls: [],
     inserted: null,
-    deletedFor: null,
+    deletedIds: null,
+    existingChunkIds: [],
+    failNextInsert: false,
   }
   const db = {
     rpc: (name: string) => {
@@ -37,17 +45,30 @@ function makeDb() {
       return Promise.resolve({ data: null, error: null })
     },
     from: () => ({
-      // retrieveKnowledge's empty-KB count guard.
-      select: () => ({
-        eq: () => Promise.resolve({ count: state.chunkCount, error: null }),
+      // Two distinct callers share `select()` here: retrieveKnowledge's
+      // empty-KB count guard (`{count:'exact', head:true}`) and
+      // ingestDocument's pre-insert lookup of the previous chunk ids
+      // (plain `select('id')`).
+      select: (_cols: string, opts?: { count?: string }) => ({
+        eq: () =>
+          opts?.count
+            ? Promise.resolve({ count: state.chunkCount, error: null })
+            : Promise.resolve({
+                data: state.existingChunkIds.map((id) => ({ id })),
+                error: null,
+              }),
       }),
       delete: () => ({
-        eq: (_col: string, val: string) => {
-          state.deletedFor = val
+        in: (_col: string, ids: string[]) => {
+          state.deletedIds = ids
           return Promise.resolve({ error: null })
         },
       }),
       insert: (rows: Record<string, unknown>[]) => {
+        if (state.failNextInsert) {
+          state.failNextInsert = false
+          return Promise.resolve({ error: { message: 'insert failed' } })
+        }
         state.inserted = rows
         return Promise.resolve({ error: null })
       },
@@ -155,9 +176,10 @@ describe('retrieveKnowledge', () => {
 describe('ingestDocument', () => {
   it('embeds chunks when a key is present', async () => {
     const { db, state } = makeDb()
+    state.existingChunkIds = ['old-1']
     await ingestDocument(db, 'acct', { embeddingsApiKey: 'sk-x' }, 'doc-1', 'hello world')
     expect(h.embedTexts).toHaveBeenCalledTimes(1)
-    expect(state.deletedFor).toBe('doc-1')
+    expect(state.deletedIds).toEqual(['old-1'])
     expect(state.inserted).toHaveLength(1)
     expect(state.inserted![0].embedding).toBe('[0,0]') // literal from mocked embed
     expect(state.inserted![0].account_id).toBe('acct')
@@ -172,10 +194,33 @@ describe('ingestDocument', () => {
 
   it('deletes existing chunks and inserts nothing for empty content', async () => {
     const { db, state } = makeDb()
+    state.existingChunkIds = ['old-1', 'old-2']
     await ingestDocument(db, 'acct', { embeddingsApiKey: 'sk-x' }, 'doc-1', '   ')
-    expect(state.deletedFor).toBe('doc-1')
+    expect(state.deletedIds).toEqual(['old-1', 'old-2'])
     expect(state.inserted).toBeNull()
     expect(h.embedTexts).not.toHaveBeenCalled()
+  })
+
+  it('never deletes the previous chunks when the new insert fails — no data loss on a transient error', async () => {
+    const { db, state } = makeDb()
+    state.existingChunkIds = ['old-1', 'old-2']
+    state.failNextInsert = true
+    await expect(
+      ingestDocument(db, 'acct', { embeddingsApiKey: null }, 'doc-1', 'hello world'),
+    ).rejects.toEqual({ message: 'insert failed' })
+    // The old chunks were never touched — re-ingest can be retried
+    // without the document ever being left with zero chunks.
+    expect(state.deletedIds).toBeNull()
+  })
+
+  it('inserts the new generation before removing the old one, even when both exist at once', async () => {
+    const { db, state } = makeDb()
+    state.existingChunkIds = ['old-1']
+    await ingestDocument(db, 'acct', { embeddingsApiKey: null }, 'doc-1', 'hello world')
+    // Only the captured OLD id is removed — a freshly inserted row is
+    // never at risk of being swept up by the cleanup delete.
+    expect(state.deletedIds).toEqual(['old-1'])
+    expect(state.inserted).toHaveLength(1)
   })
 
   it('clears a cached "empty KB" mark for the account, so the next retrieveKnowledge re-checks (FASE 4)', async () => {

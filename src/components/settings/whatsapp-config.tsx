@@ -201,6 +201,15 @@ export function WhatsAppConfig() {
     if (loadedAccountIdRef.current === accountId) return;
     loadedAccountIdRef.current = accountId;
     fetchConfig(accountId);
+    // `user` is deliberately NOT a dependency — same reasoning as
+    // settings-overview.tsx: onAuthStateChange (use-auth.tsx) hands out
+    // a fresh `User` object on every token refresh/tab focus, not just
+    // on real login/logout. Depending on the whole object would
+    // re-fetch the WhatsApp config on every one of those; `user?.id`
+    // is the stable value this effect actually needs, and the
+    // `loadedAccountIdRef` guard above already prevents a redundant
+    // fetch for the same account regardless.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, profileLoading, user?.id, accountId, fetchConfig]);
 
   async function handleToggleMirrorMedia(next: boolean) {

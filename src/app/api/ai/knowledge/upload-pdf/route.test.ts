@@ -58,7 +58,8 @@ function fakeSupabase(seed: Record<string, Record<string, unknown>[]> = {}) {
     let single: 'one' | 'maybe' | null = null;
     let selectedCols: string[] | null = null;
     const rows = ensure(table);
-    const matches = (row: Record<string, unknown>) => filters.every(([c, v]) => row[c] === v);
+    const matches = (row: Record<string, unknown>) =>
+      filters.every(([c, v]) => (Array.isArray(v) ? v.includes(row[c]) : row[c] === v));
 
     function project<T extends Record<string, unknown>>(row: T): T {
       if (!selectedCols) return row;
@@ -107,6 +108,10 @@ function fakeSupabase(seed: Record<string, Record<string, unknown>[]> = {}) {
       },
       eq: (col: string, val: unknown) => {
         filters.push([col, val]);
+        return api;
+      },
+      in: (col: string, vals: unknown[]) => {
+        filters.push([col, vals]);
         return api;
       },
       order: () => api,

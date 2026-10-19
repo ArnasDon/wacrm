@@ -36,8 +36,25 @@ function fakeDb() {
   // error instead of writing anything — then clears itself so later
   // inserts (e.g. a subsequent successful refresh) behave normally.
   const failNextInsert = new Set<string>()
+  // Same idea as failNextInsert, but for UPDATE — needed to simulate a
+  // real PostgREST schema error (e.g. a column the live database
+  // doesn't have yet) on `claimDataSourceRefresh`'s own `.update()`,
+  // which is a distinct failure mode from "someone else already holds
+  // the claim" (DataSourceRefreshInProgressError) and must be
+  // distinguishable from it.
+  const failNextUpdate = new Set<string>()
+  // Same idea again, for UPSERT — needed to simulate a genuine write
+  // failure (Prueba 7: "error de escritura") on the catalog save step
+  // itself, distinct from a unique-constraint collision the upsert is
+  // specifically meant to NOT hit.
+  const failNextUpsert = new Set<string>()
 
-  function builder(tableName: string, op: 'select' | 'update' | 'insert' | 'delete', payload?: Record<string, unknown>) {
+  function builder(
+    tableName: string,
+    op: 'select' | 'update' | 'insert' | 'upsert' | 'delete',
+    payload?: Record<string, unknown> | Record<string, unknown>[],
+    onConflict?: string,
+  ) {
     const filters: [string, unknown, 'eq' | 'in'][] = []
     // PostgREST `.or('col.is.null,col.lt.<value>')` — supports exactly
     // the two operators H-5's claim query needs. ANDed with the plain
@@ -90,6 +107,10 @@ function fakeDb() {
         return singleResult ? { data: matched[0] ?? null, error: null } : { data: matched, error: null }
       }
       if (op === 'update') {
+        if (failNextUpdate.has(tableName)) {
+          failNextUpdate.delete(tableName)
+          return { data: null, error: { message: `column ${tableName}.simulated does not exist` } }
+        }
         // Real PostgREST evaluates the WHERE clause (all filters, incl.
         // `.or()`) against the CURRENT row state and applies the SET in
         // one atomic SQL statement — so the match check must run before
@@ -110,6 +131,31 @@ function fakeDb() {
         rows.push(...inserted)
         return singleResult ? { data: inserted[0] ?? null, error: null } : { data: inserted, error: null }
       }
+      if (op === 'upsert') {
+        if (failNextUpsert.has(tableName)) {
+          failNextUpsert.delete(tableName)
+          return { data: null, error: { message: `simulated upsert failure on ${tableName}` } }
+        }
+        // Faithful to real Postgres `ON CONFLICT (...) DO UPDATE`: the
+        // conflict target is the exact column list `onConflict` names
+        // (comma-separated, matching the real `.upsert(rows, {
+        // onConflict })` call shape) — an existing row matching on ALL
+        // of those columns is updated in place (same `id`, never a new
+        // one); anything else is inserted fresh.
+        const conflictCols = (onConflict ?? '').split(',').map((c) => c.trim()).filter(Boolean)
+        const items = Array.isArray(payload) ? payload : [payload as Record<string, unknown>]
+        for (const item of items) {
+          const existing = conflictCols.length > 0
+            ? rows.find((r) => conflictCols.every((c) => r[c] === item[c]))
+            : undefined
+          if (existing) {
+            Object.assign(existing, item)
+          } else {
+            rows.push({ id: `${tableName}-${nextId++}`, ...item })
+          }
+        }
+        return { data: null, error: null }
+      }
       if (op === 'delete') {
         const remaining = rows.filter((r) => !matches(r))
         table(tableName).length = 0
@@ -126,12 +172,16 @@ function fakeDb() {
       from: (name: string) => ({
         select: () => builder(name, 'select'),
         update: (payload: Record<string, unknown>) => builder(name, 'update', payload),
-        insert: (payload: Record<string, unknown> | Record<string, unknown>[]) => builder(name, 'insert', payload as never),
+        insert: (payload: Record<string, unknown> | Record<string, unknown>[]) => builder(name, 'insert', payload),
+        upsert: (payload: Record<string, unknown> | Record<string, unknown>[], opts?: { onConflict?: string }) =>
+          builder(name, 'upsert', payload, opts?.onConflict),
         delete: () => builder(name, 'delete'),
       }),
     } as unknown as SupabaseClient,
     table,
     failNextInsertOn: (name: string) => failNextInsert.add(name),
+    failNextUpdateOn: (name: string) => failNextUpdate.add(name),
+    failNextUpsertOn: (name: string) => failNextUpsert.add(name),
   }
 }
 
@@ -392,9 +442,9 @@ describe('refreshDataSource — replaces only its own rows', () => {
 // and pass against the fix.
 // ============================================================
 describe('refreshDataSource — Bug #1 fix: refresh atomicity', () => {
-  it('a failed INSERT into ai_catalog_products during a refresh preserves the PREVIOUS generation of rows', async () => {
+  it('a failed catalog write (upsert) during a refresh preserves the PREVIOUS generation of rows', async () => {
     stubCsvFetch(PRODUCTS_CSV)
-    const { db, table, failNextInsertOn } = fakeDb()
+    const { db, table, failNextUpsertOn } = fakeDb()
 
     const source = await createDataSourceFromUrl(db, {
       accountId: 'acct-1',
@@ -408,7 +458,7 @@ describe('refreshDataSource — Bug #1 fix: refresh atomicity', () => {
     expect(originalRows).toHaveLength(1) // sanity: the source really has a row to lose
 
     stubCsvFetch(csv([['Nombre', 'Precio', 'Stock'], ['Producto Nuevo', '999', '1']]))
-    failNextInsertOn('ai_catalog_products')
+    failNextUpsertOn('ai_catalog_products')
 
     await expect(
       refreshDataSource(db, { accountId: 'acct-1', userId: 'user-1', id: source.id }),
@@ -536,6 +586,189 @@ describe('refreshDataSource — Bug #1 fix: refresh atomicity', () => {
 // Supabase available to run that as a real integration test (same
 // constraint documented throughout this engagement's tests/rls/ suite).
 // ============================================================
+// ============================================================
+// Stable identity via `id_producto` (externalId) + idempotent catalog
+// writes — regression coverage for the real production incident this
+// fixes: migration 059's `UNIQUE(data_source_id, source_product_id)`
+// index made a normal re-sync of unchanged inventory (same row-index
+// or SKU ids as the still-present previous generation) fail the whole
+// refresh with a raw Postgres unique-violation error, surfaced to the
+// admin as the generic "Refresh failed." — while `ai_data_sources`'
+// metadata (row_count, last_synced_at, preview_sample) had ALREADY
+// been written successfully moments earlier, making the UI look like
+// the sync had partially worked. Fixed by (a) upserting instead of
+// inserting the new generation, and (b) preferring a dedicated
+// `id_producto`-style column over the row-index fallback, so identity
+// survives the sheet's row order changing too.
+// ============================================================
+function idRow(idProducto: string, name: string, cantidad: string, precio: string): string[] {
+  return [idProducto, name, cantidad, precio]
+}
+function idCsv(rows: string[][]): string {
+  return csv([['id_producto', 'producto', 'cantidad', 'precio_ud'], ...rows])
+}
+
+describe('persistDataSource — stable identity via id_producto + idempotent catalog writes', () => {
+  it('Prueba 2 — the SAME inventory synced twice with the SAME id_producto values succeeds (no unique-violation) and does not duplicate rows', async () => {
+    stubCsvFetch(idCsv([idRow('2761', 'Abanico de pared', '11', '1200'), idRow('2762', 'Abanico de pedestal', '14', '1200')]))
+    const { db, table } = fakeDb()
+    const source = await createDataSourceFromUrl(db, {
+      accountId: 'acct-1', userId: 'user-1', sourceType: 'google_sheets',
+      displayName: 'Consultas KC', url: 'https://docs.google.com/spreadsheets/d/x/export?format=csv', usage: 'catalog',
+    })
+    expect(table('ai_catalog_products').filter((r) => r.data_source_id === source.id)).toHaveLength(2)
+
+    // Re-sync — byte-identical inventory, same two id_producto values.
+    stubCsvFetch(idCsv([idRow('2761', 'Abanico de pared', '11', '1200'), idRow('2762', 'Abanico de pedestal', '14', '1200')]))
+    await expect(
+      refreshDataSource(db, { accountId: 'acct-1', userId: 'user-1', id: source.id }),
+    ).resolves.toBeTruthy()
+
+    const rows = table('ai_catalog_products').filter((r) => r.data_source_id === source.id)
+    expect(rows).toHaveLength(2) // never 4 — no duplicates
+    expect(new Set(rows.map((r) => r.source_product_id))).toEqual(new Set(['2761', '2762']))
+  })
+
+  it('Prueba 3 — a changed cantidad/precio for the SAME id_producto is reflected after refresh, on the SAME row (same DB id)', async () => {
+    stubCsvFetch(idCsv([idRow('2761', 'Abanico de pared', '11', '1200')]))
+    const { db, table } = fakeDb()
+    const source = await createDataSourceFromUrl(db, {
+      accountId: 'acct-1', userId: 'user-1', sourceType: 'google_sheets',
+      displayName: 'Consultas KC', url: 'https://docs.google.com/spreadsheets/d/x/export?format=csv', usage: 'catalog',
+    })
+    const before = table('ai_catalog_products').find((r) => r.source_product_id === '2761')!
+    expect(before.available_quantity).toBe(11)
+    expect(before.price).toBe(1200)
+
+    stubCsvFetch(idCsv([idRow('2761', 'Abanico de pared', '5', '1350')]))
+    await refreshDataSource(db, { accountId: 'acct-1', userId: 'user-1', id: source.id })
+
+    const after = table('ai_catalog_products').find((r) => r.source_product_id === '2761')!
+    expect(after.id).toBe(before.id) // updated in place, not replaced
+    expect(after.available_quantity).toBe(5)
+    expect(after.price).toBe(1350)
+  })
+
+  it('Prueba 4 — reordering rows in the sheet never swaps which product gets which data', async () => {
+    stubCsvFetch(idCsv([idRow('2761', 'Abanico de pared', '11', '1200'), idRow('2762', 'Abanico de pedestal', '14', '1500')]))
+    const { db, table } = fakeDb()
+    const source = await createDataSourceFromUrl(db, {
+      accountId: 'acct-1', userId: 'user-1', sourceType: 'google_sheets',
+      displayName: 'Consultas KC', url: 'https://docs.google.com/spreadsheets/d/x/export?format=csv', usage: 'catalog',
+    })
+
+    // Same two products, rows SWAPPED.
+    stubCsvFetch(idCsv([idRow('2762', 'Abanico de pedestal', '14', '1500'), idRow('2761', 'Abanico de pared', '11', '1200')]))
+    await refreshDataSource(db, { accountId: 'acct-1', userId: 'user-1', id: source.id })
+
+    const rows = table('ai_catalog_products').filter((r) => r.data_source_id === source.id)
+    expect(rows).toHaveLength(2)
+    expect(rows.find((r) => r.source_product_id === '2761')?.name).toBe('Abanico de pared')
+    expect(rows.find((r) => r.source_product_id === '2762')?.name).toBe('Abanico de pedestal')
+  })
+
+  it('Prueba 5 — a brand-new id_producto added to the sheet is incorporated without disturbing existing products', async () => {
+    stubCsvFetch(idCsv([idRow('2761', 'Abanico de pared', '11', '1200')]))
+    const { db, table } = fakeDb()
+    const source = await createDataSourceFromUrl(db, {
+      accountId: 'acct-1', userId: 'user-1', sourceType: 'google_sheets',
+      displayName: 'Consultas KC', url: 'https://docs.google.com/spreadsheets/d/x/export?format=csv', usage: 'catalog',
+    })
+
+    stubCsvFetch(idCsv([idRow('2761', 'Abanico de pared', '11', '1200'), idRow('9999', 'Producto Nuevo', '3', '500')]))
+    await refreshDataSource(db, { accountId: 'acct-1', userId: 'user-1', id: source.id })
+
+    const rows = table('ai_catalog_products').filter((r) => r.data_source_id === source.id)
+    expect(rows).toHaveLength(2)
+    expect(rows.find((r) => r.source_product_id === '9999')?.name).toBe('Producto Nuevo')
+    expect(rows.find((r) => r.source_product_id === '2761')?.name).toBe('Abanico de pared')
+  })
+
+  it('Prueba 6 — a product removed from the sheet disappears from the catalog after a successful refresh', async () => {
+    stubCsvFetch(idCsv([idRow('2761', 'Abanico de pared', '11', '1200'), idRow('2762', 'Abanico de pedestal', '14', '1500')]))
+    const { db, table } = fakeDb()
+    const source = await createDataSourceFromUrl(db, {
+      accountId: 'acct-1', userId: 'user-1', sourceType: 'google_sheets',
+      displayName: 'Consultas KC', url: 'https://docs.google.com/spreadsheets/d/x/export?format=csv', usage: 'catalog',
+    })
+
+    stubCsvFetch(idCsv([idRow('2761', 'Abanico de pared', '11', '1200')])) // 2762 removed
+    await refreshDataSource(db, { accountId: 'acct-1', userId: 'user-1', id: source.id })
+
+    const rows = table('ai_catalog_products').filter((r) => r.data_source_id === source.id)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].source_product_id).toBe('2761')
+  })
+
+  it('Prueba 7 — a genuine write failure during the catalog upsert preserves the previous rows AND marks the source with a diagnosable error, never "Refresh failed."', async () => {
+    stubCsvFetch(idCsv([idRow('2761', 'Abanico de pared', '11', '1200')]))
+    const { db, table, failNextUpsertOn } = fakeDb()
+    const source = await createDataSourceFromUrl(db, {
+      accountId: 'acct-1', userId: 'user-1', sourceType: 'google_sheets',
+      displayName: 'Consultas KC', url: 'https://docs.google.com/spreadsheets/d/x/export?format=csv', usage: 'catalog',
+    })
+
+    stubCsvFetch(idCsv([idRow('2761', 'Abanico de pared', '5', '1350')]))
+    failNextUpsertOn('ai_catalog_products')
+    const attempt = refreshDataSource(db, { accountId: 'acct-1', userId: 'user-1', id: source.id })
+    await expect(attempt).rejects.toBeInstanceOf(DataSourceError)
+    await expect(attempt).rejects.toThrow(/Could not save catalog rows/)
+
+    // The OLD row (quantity 11, price 1200) survives untouched — never
+    // cleared, never silently replaced by the failed write's bad data.
+    const rows = table('ai_catalog_products').filter((r) => r.data_source_id === source.id)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].available_quantity).toBe(11)
+    expect(rows[0].price).toBe(1200)
+    // The source is marked with a SPECIFIC, diagnosable error — the
+    // whole point of wrapping (not re-throwing raw) — never falsely
+    // left looking synced.
+    const dsRow = table('ai_data_sources').find((r) => r.id === source.id)!
+    expect(dsRow.status).toBe('error')
+    expect(dsRow.last_error).toMatch(/Could not save catalog rows/)
+    expect(dsRow.last_error).not.toBe('Refresh failed.')
+  })
+
+  it('Prueba 10 — two DIFFERENT data sources may share the same id_producto values without interfering with each other', async () => {
+    stubCsvFetch(idCsv([idRow('2761', 'Fuente A — Abanico', '11', '1200')]))
+    const { db, table } = fakeDb()
+    const sourceA = await createDataSourceFromUrl(db, {
+      accountId: 'acct-1', userId: 'user-1', sourceType: 'google_sheets',
+      displayName: 'Fuente A', url: 'https://docs.google.com/spreadsheets/d/a/export?format=csv', usage: 'catalog',
+    })
+    stubCsvFetch(idCsv([idRow('2761', 'Fuente B — Otro producto', '3', '999')]))
+    const sourceB = await createDataSourceFromUrl(db, {
+      accountId: 'acct-1', userId: 'user-1', sourceType: 'google_sheets',
+      displayName: 'Fuente B', url: 'https://docs.google.com/spreadsheets/d/b/export?format=csv', usage: 'catalog',
+    })
+
+    const rowA = table('ai_catalog_products').find((r) => r.data_source_id === sourceA.id)!
+    const rowB = table('ai_catalog_products').find((r) => r.data_source_id === sourceB.id)!
+    expect(rowA.source_product_id).toBe('2761')
+    expect(rowB.source_product_id).toBe('2761')
+    expect(rowA.name).toBe('Fuente A — Abanico')
+    expect(rowB.name).toBe('Fuente B — Otro producto')
+
+    // Refreshing A never touches B's row with the same source_product_id.
+    stubCsvFetch(idCsv([idRow('2761', 'Fuente A — Abanico renombrado', '11', '1200')]))
+    await refreshDataSource(db, { accountId: 'acct-1', userId: 'user-1', id: sourceA.id })
+    expect(table('ai_catalog_products').find((r) => r.data_source_id === sourceB.id)?.name).toBe('Fuente B — Otro producto')
+  })
+
+  it('Prueba 9 (parte de servicio) — id_producto drives source_product_id but NEVER populates the agent-visible `sku` field', async () => {
+    stubCsvFetch(idCsv([idRow('2761', 'Abanico de pared', '11', '1200')]))
+    const { db, table } = fakeDb()
+    await createDataSourceFromUrl(db, {
+      accountId: 'acct-1', userId: 'user-1', sourceType: 'google_sheets',
+      displayName: 'Consultas KC', url: 'https://docs.google.com/spreadsheets/d/x/export?format=csv', usage: 'catalog',
+    })
+
+    const row = table('ai_catalog_products').find((r) => r.source_product_id === '2761')!
+    expect(row.sku).toBeNull() // id_producto is NOT a customer-facing SKU
+    expect(row.name).toBe('Abanico de pared')
+  })
+})
+
 describe('refreshDataSource — H-5 fix: refresh mutual exclusion', () => {
   it('sequential refreshes of the same source both succeed, and the claim is clear afterward', async () => {
     stubCsvFetch(PRODUCTS_CSV)
@@ -630,14 +863,14 @@ describe('refreshDataSource — H-5 fix: refresh mutual exclusion', () => {
 
   it('a failed refresh still releases the lock — the very next attempt is not blocked', async () => {
     stubCsvFetch(PRODUCTS_CSV)
-    const { db, table, failNextInsertOn } = fakeDb()
+    const { db, table, failNextUpsertOn } = fakeDb()
     const source = await createDataSourceFromUrl(db, {
       accountId: 'acct-1', userId: 'user-1', sourceType: 'remote_csv',
       displayName: 'Source', url: 'https://example.com/products.csv', usage: 'catalog',
     })
 
     stubCsvFetch(csv([['Nombre', 'Precio', 'Stock'], ['Producto Nuevo', '999', '1']]))
-    failNextInsertOn('ai_catalog_products')
+    failNextUpsertOn('ai_catalog_products')
     await expect(
       refreshDataSource(db, { accountId: 'acct-1', userId: 'user-1', id: source.id }),
     ).rejects.toBeTruthy()
@@ -685,6 +918,21 @@ describe('refreshDataSource — H-5 fix: refresh mutual exclusion', () => {
     ).rejects.toBeInstanceOf(DataSourceRefreshInProgressError)
     // Left exactly as it was — no partial/error state written.
     expect(table('ai_catalog_products').filter((r) => r.data_source_id === source.id)).toHaveLength(1)
+  })
+
+  it('a real database error on the claim itself (e.g. a pending migration not yet applied) surfaces as a diagnosable DataSourceError, never a bare unhandled error indistinguishable from "already in progress"', async () => {
+    stubCsvFetch(PRODUCTS_CSV)
+    const { db, failNextUpdateOn } = fakeDb()
+    const source = await createDataSourceFromUrl(db, {
+      accountId: 'acct-1', userId: 'user-1', sourceType: 'remote_csv',
+      displayName: 'Source', url: 'https://example.com/products.csv', usage: 'catalog',
+    })
+
+    failNextUpdateOn('ai_data_sources')
+    const attempt = refreshDataSource(db, { accountId: 'acct-1', userId: 'user-1', id: source.id })
+    await expect(attempt).rejects.toBeInstanceOf(DataSourceError)
+    await expect(attempt).rejects.not.toBeInstanceOf(DataSourceRefreshInProgressError)
+    await expect(attempt).rejects.toThrow(/Could not claim this refresh/)
   })
 })
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import { addContactTag, deleteContactTag } from '@/lib/contacts/tag-api';
@@ -23,7 +23,6 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
 import { Loader2, AlertTriangle } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
@@ -70,17 +69,39 @@ export function ContactForm({
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const [loadingTags, setLoadingTags] = useState(false);
 
+  // `contactTags` is a prop, often rebuilt by the parent on renders
+  // unrelated to this dialog opening (e.g. a `.map()`/`.filter()` on
+  // every parent render) — a NEW array with the SAME tags. Depending
+  // on it directly in the effect below would reset the form (wiping
+  // whatever the user is mid-typing) on any such unrelated re-render
+  // while the dialog is open. A ref always holds the latest value
+  // without being a reactive dependency, so the effect still reads
+  // the current contactTags at the moment it actually runs (open/
+  // contact changing), never a stale one.
+  const contactTagsRef = useRef(contactTags);
+  contactTagsRef.current = contactTags;
+
+  const fetchTags = useCallback(async () => {
+    setLoadingTags(true);
+    const { data } = await supabase
+      .from('tags')
+      .select('*')
+      .order('name');
+    if (data) setTags(data);
+    setLoadingTags(false);
+  }, [supabase]);
+
   useEffect(() => {
     if (open) {
       setName(contact?.name ?? '');
       setPhone(contact?.phone ?? '');
       setEmail(contact?.email ?? '');
       setCompany(contact?.company ?? '');
-      setSelectedTagIds(contactTags.map((ct) => ct.tag_id));
+      setSelectedTagIds(contactTagsRef.current.map((ct) => ct.tag_id));
       setDupMatch(null);
       fetchTags();
     }
-  }, [open, contact]);
+  }, [open, contact, fetchTags]);
 
   // Look up an existing contact with this number (new contacts only).
   // Runs on blur so we don't query on every keystroke.
@@ -102,16 +123,6 @@ export function ContactForm({
     } finally {
       setCheckingDup(false);
     }
-  }
-
-  async function fetchTags() {
-    setLoadingTags(true);
-    const { data } = await supabase
-      .from('tags')
-      .select('*')
-      .order('name');
-    if (data) setTags(data);
-    setLoadingTags(false);
   }
 
   function toggleTag(tagId: string) {

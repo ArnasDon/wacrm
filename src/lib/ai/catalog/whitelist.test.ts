@@ -91,6 +91,37 @@ describe('toCatalogProduct — allow-list', () => {
     expect(result).not.toHaveProperty('source')
   })
 
+  // ============================================================
+  // Real defect found auditing the AI agent (Oct 2026): a bare JSON
+  // `"price": null` wasn't a strong enough signal — observed in a real
+  // Playground conversation where the model stated a fabricated "DOP 1"
+  // for a product with no real confirmed price. `price_confirmed` is an
+  // explicit, unambiguous boolean the prompt can point to, enforced at
+  // the same whitelist choke point as every other field.
+  // ============================================================
+  describe('price_confirmed', () => {
+    it('is false when price is null — never silently true', () => {
+      const product = toCatalogProduct({ id: 'p1', name: 'X', source: 's', price: undefined })
+      expect(product.price).toBeNull()
+      expect(toToolResultProduct(product).price_confirmed).toBe(false)
+    })
+
+    it('is true for a real, valid price, including a genuine zero (a free item is still a confirmed price)', () => {
+      const confirmed = toCatalogProduct({ id: 'p2', name: 'X', source: 's', price: 1200 })
+      expect(toToolResultProduct(confirmed).price_confirmed).toBe(true)
+
+      const free = toCatalogProduct({ id: 'p3', name: 'X', source: 's', price: 0 })
+      expect(toToolResultProduct(free).price_confirmed).toBe(true)
+    })
+
+    it('does not change the raw `price` field itself — still the honest null, for callers other than the LLM-facing tool result', () => {
+      const product = toCatalogProduct({ id: 'p1', name: 'X', source: 's' })
+      const result = toToolResultProduct(product)
+      expect(result.price).toBeNull()
+      expect(result.price_confirmed).toBe(false)
+    })
+  })
+
   it('derives `available` from available_quantity when the field is absent', () => {
     const inStock = toCatalogProduct({ id: 'p2', name: 'X', source: 's', available_quantity: 3 })
     expect(inStock.available).toBe(true)

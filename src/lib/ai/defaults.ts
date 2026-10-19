@@ -231,6 +231,12 @@ function buildSystemPromptParts(args: {
         'PRICE SEQUENCE (always follow in order): 1) resolve which exact product/variant the customer means ' +
         '(use the conversation history and the CATALOG CONTEXT section if present); 2) call get_product or ' +
         'get_availability for that exact id; 3) answer with exactly what it returned. ' +
+        'PRICE CONFIRMATION: every product carries `price_confirmed` (true/false) alongside `price`. If ' +
+        '`price_confirmed` is false, the price is NOT known — `price` may show `null` or some other value, but ' +
+        'you must still say the price could not be confirmed (e.g. "no tengo un precio confirmado para ese ' +
+        'producto en este momento"). NEVER state a number, NEVER say "DOP 0", "$0", or any other amount, when ' +
+        '`price_confirmed` is false — confirm existence/stock from the tool result if those ARE present, just ' +
+        'omit or flag the price. ' +
         'STOCK: a returned quantity of 0 means agotado/out of stock — say so plainly, do not imply it might be ' +
         'available. If availability was never confirmed via a tool, say you don\'t have confirmed stock info — ' +
         'never assume something is available by default. ' +

@@ -115,16 +115,26 @@ export async function GET(
       }
     }
 
-    // Limpa do banco de dados qualquer match órfão que não possua projeção de imóvel
-    const orphanMatchIds = (leadMatches || [])
-      .filter((m) => !matchPropertiesMap.has(m.property_id))
+    // Limpa do banco de dados qualquer match órfão que não possua projeção ou match 'novo' de imóvel indisponível
+    const orphanOrInactiveMatchIds = (leadMatches || [])
+      .filter((m) => {
+        const prop = matchPropertiesMap.get(m.property_id);
+        if (!prop) return true;
+        if (m.match_status === 'novo' && prop.status !== 'ativo') return true;
+        return false;
+      })
       .map((m) => m.id);
-    if (orphanMatchIds.length > 0) {
-      void ctx.supabase.from('lead_property_matches').delete().in('id', orphanMatchIds);
+    if (orphanOrInactiveMatchIds.length > 0) {
+      void ctx.supabase.from('lead_property_matches').delete().in('id', orphanOrInactiveMatchIds);
     }
 
     const enrichedMatches = (leadMatches || [])
-      .filter((m) => matchPropertiesMap.has(m.property_id))
+      .filter((m) => {
+        const prop = matchPropertiesMap.get(m.property_id);
+        if (!prop) return false;
+        if (m.match_status === 'novo' && prop.status !== 'ativo') return false;
+        return true;
+      })
       .map((m) => {
         const prop = matchPropertiesMap.get(m.property_id)!;
         return {

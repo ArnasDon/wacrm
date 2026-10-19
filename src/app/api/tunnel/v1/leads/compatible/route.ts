@@ -20,10 +20,10 @@ export async function GET(request: Request) {
   const propertyId = ensurePropertyUuid(rawPropertyId);
   const { db, accountId } = ctx;
 
-  // 1. Verifica se o imóvel existe em property_match_projections para esta conta
+  // 1. Verifica se o imóvel existe e está ativo em property_match_projections para esta conta
   const { data: propRow, error: propErr } = await db
     .from('property_match_projections')
-    .select('property_id')
+    .select('property_id, status')
     .eq('account_id', accountId)
     .eq('property_id', propertyId)
     .maybeSingle();
@@ -33,13 +33,15 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Erro ao verificar imóvel' }, { status: 500 });
   }
 
-  if (!propRow) {
-    // Se o imóvel não existe na conta, limpa eventuais matches órfãos residuais
+  if (!propRow || propRow.status !== 'ativo') {
+    // Se o imóvel não existe na conta ou não está ativo (vendido, arquivado ou inativo),
+    // limpa matches pendentes para que não sejam opções de envio e retorna lista vazia
     void db
       .from('lead_property_matches')
       .delete()
       .eq('account_id', accountId)
-      .eq('property_id', propertyId);
+      .eq('property_id', propertyId)
+      .eq('match_status', 'novo');
 
     return NextResponse.json({
       property_id: rawPropertyId,

@@ -1,22 +1,24 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { authenticateTunnelRequest } from './auth';
 
-vi.mock('@/lib/push/admin-client', () => ({
-  supabaseAdmin: vi.fn(() => ({
-    from: vi.fn(() => ({
-      select: vi.fn(() => ({
-        order: vi.fn(() => ({
-          limit: vi.fn(() => ({
-            maybeSingle: vi.fn().mockResolvedValue({
-              data: { id: 'test-account-uuid-1234' },
-              error: null,
-            }),
-          })),
-        })),
-      })),
+vi.mock('@/lib/push/admin-client', () => {
+  const queryBuilder: any = {};
+  queryBuilder.select = vi.fn(() => queryBuilder);
+  queryBuilder.eq = vi.fn(() => queryBuilder);
+  queryBuilder.not = vi.fn(() => queryBuilder);
+  queryBuilder.order = vi.fn(() => queryBuilder);
+  queryBuilder.limit = vi.fn(() => queryBuilder);
+  queryBuilder.maybeSingle = vi.fn().mockResolvedValue({
+    data: { id: 'test-account-uuid-1234', account_id: 'test-account-uuid-1234' },
+    error: null,
+  });
+
+  return {
+    supabaseAdmin: vi.fn(() => ({
+      from: vi.fn(() => queryBuilder),
     })),
-  })),
-}));
+  };
+});
 
 describe('Tunnel Authentication Hardening (auth.ts)', () => {
   const originalEnv = process.env;

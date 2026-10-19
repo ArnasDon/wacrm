@@ -246,6 +246,15 @@ export async function recalculateMatchesForProperty(
     .maybeSingle();
 
   if (pErr || !propRow || propRow.status !== 'ativo') {
+    // Quando o imóvel fica indisponível (vendido, arquivado, inativo ou excluído),
+    // remove os matches pendentes ('novo') para que deixem de aparecer como opções para envio.
+    await db
+      .from('lead_property_matches')
+      .delete()
+      .eq('account_id', accountId)
+      .eq('property_id', propertyId)
+      .eq('match_status', 'novo');
+
     return { totalLeadsEvaluated: 0, strongMatchesCount: 0 };
   }
 
@@ -426,6 +435,22 @@ export async function createPropertyShare(
   }
 ): Promise<{ share: PropertyShareRecord; publicUrl: string; waLink: string } | null> {
   const { accountId, leadId, propertyId, matchId, messageText } = args;
+
+  // Valida que o imóvel existe e está ATIVO antes de gerar token ou link de compartilhamento
+  const { data: propRow, error: propCheckErr } = await db
+    .from('property_match_projections')
+    .select('status')
+    .eq('account_id', accountId)
+    .eq('property_id', propertyId)
+    .maybeSingle();
+
+  if (propCheckErr || !propRow || propRow.status !== 'ativo') {
+    console.warn('[createPropertyShare] Tentativa de compartilhar imóvel indisponível ou inexistente:', {
+      propertyId,
+      status: propRow?.status || 'inexistente',
+    });
+    return null;
+  }
 
   const trackingToken = generateTrackingToken();
   const now = new Date().toISOString();

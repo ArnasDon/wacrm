@@ -33,8 +33,8 @@ export async function POST(request: Request) {
 
   if (!result) {
     return NextResponse.json(
-      { error: 'Falha ao registrar envio e gerar token' },
-      { status: 500 }
+      { error: 'Imóvel indisponível para envio (vendido, arquivado ou inativo) ou falha ao gerar token' },
+      { status: 400 }
     );
   }
 

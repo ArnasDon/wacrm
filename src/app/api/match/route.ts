@@ -17,9 +17,12 @@ export async function GET(request: Request) {
     // 1. Projeções válidas na mesma conta
     const { data: allProjections } = await ctx.supabase
       .from('property_match_projections')
-      .select('property_id')
+      .select('property_id, status')
       .eq('account_id', ctx.accountId);
     const validPropertyIds = new Set((allProjections || []).map((p) => p.property_id));
+    const activePropertyIds = new Set(
+      (allProjections || []).filter((p) => p.status === 'ativo').map((p) => p.property_id)
+    );
 
     // Contadores para cada aba de status (contando LEADS ÚNICOS de matches com projeção válida)
     const [
@@ -72,8 +75,21 @@ export async function GET(request: Request) {
         .in('property_id', [...new Set(orphanPropertyIds)]);
     }
 
+    // Limpa matches 'novo' associados a imóveis indisponíveis (inativo, arquivado ou esgotado)
+    const staleNovoPropertyIds = (distinctNovos || [])
+      .filter((r) => !activePropertyIds.has(r.property_id))
+      .map((r) => r.property_id);
+    if (staleNovoPropertyIds.length > 0) {
+      void ctx.supabase
+        .from('lead_property_matches')
+        .delete()
+        .eq('account_id', ctx.accountId)
+        .eq('match_status', 'novo')
+        .in('property_id', [...new Set(staleNovoPropertyIds)]);
+    }
+
     const countNovos = new Set(
-      distinctNovos?.filter((r) => validPropertyIds.has(r.property_id)).map((r) => r.lead_id)
+      distinctNovos?.filter((r) => activePropertyIds.has(r.property_id)).map((r) => r.lead_id)
     ).size;
     const countEnviados = new Set(
       distinctEnviados?.filter((r) => validPropertyIds.has(r.property_id)).map((r) => r.lead_id)
@@ -164,14 +180,25 @@ export async function GET(request: Request) {
     }
 
     // Limpa do banco de dados qualquer match órfão que não possua imóvel correspondente
-    const orphanMatches = (matches || []).filter((m) => !propertiesMap.has(m.property_id));
-    if (orphanMatches.length > 0) {
-      const orphanIds = orphanMatches.map((m) => m.id);
-      void ctx.supabase.from('lead_property_matches').delete().in('id', orphanIds);
+    // ou match 'novo' de imóvel não ativo
+    const staleMatches = (matches || []).filter((m) => {
+      const prop = propertiesMap.get(m.property_id);
+      if (!prop) return true;
+      if (m.match_status === 'novo' && prop.status !== 'ativo') return true;
+      return false;
+    });
+    if (staleMatches.length > 0) {
+      const staleIds = staleMatches.map((m) => m.id);
+      void ctx.supabase.from('lead_property_matches').delete().in('id', staleIds);
     }
 
-    // Filtra estritamente apenas matches cujo imóvel existe na conta
-    let filteredMatches = (matches || []).filter((m) => propertiesMap.has(m.property_id));
+    // Filtra estritamente apenas matches cujo imóvel existe na conta e, para 'novo', está ativo
+    let filteredMatches = (matches || []).filter((m) => {
+      const prop = propertiesMap.get(m.property_id);
+      if (!prop) return false;
+      if (status === 'novo' && prop.status !== 'ativo') return false;
+      return true;
+    });
 
     // Filtro por imóvel (caso fornecido)
     if (propertySearch) {

@@ -658,15 +658,36 @@ async function persistDataSource(
   // instead, which is exactly "this product's quantity/price/name
   // changed" — the normal, expected case, not an error.
   if (usage === 'catalog' || usage === 'both') {
-    const { data: previousProductRows, error: previousProductsErr } = await db
-      .from('ai_catalog_products')
-      .select('id, source_product_id')
-      .eq('data_source_id', source.id)
-    if (previousProductsErr) {
-      console.error('[data-sources] failed to read existing catalog rows:', previousProductsErr.message)
-      throw new DataSourceError(`Could not read existing catalog rows: ${previousProductsErr.message}`)
+    // Real defect found auditing the AI agent (Oct 2026): a plain
+    // `.select()` with no `.range()` is capped at PostgREST's default
+    // page size (1,000 rows on this project — confirmed directly
+    // against production) regardless of how many rows actually match.
+    // For a source whose EXISTING catalog already exceeds that (this
+    // one had 2,287 rows mid-incident), `previous` silently saw only
+    // the first page — so the obsolete-row diff below only ever
+    // computed removals for a SUBSET of the real previous generation,
+    // permanently stranding the rest as duplicates no future refresh
+    // could ever clean up (each one just silently fell outside the
+    // page again). Paginated in fixed-size pages until a page comes
+    // back shorter than requested, exactly like
+    // fallbackSearch/data-source-provider.ts's own FALLBACK_SCAN_LIMIT
+    // discipline — never assume one `.select()` sees the whole table.
+    const PREVIOUS_ROWS_PAGE_SIZE = 1000
+    const previous: { id: string; source_product_id: string }[] = []
+    for (let pageOffset = 0; ; pageOffset += PREVIOUS_ROWS_PAGE_SIZE) {
+      const { data: page, error: previousProductsErr } = await db
+        .from('ai_catalog_products')
+        .select('id, source_product_id')
+        .eq('data_source_id', source.id)
+        .range(pageOffset, pageOffset + PREVIOUS_ROWS_PAGE_SIZE - 1)
+      if (previousProductsErr) {
+        console.error('[data-sources] failed to read existing catalog rows:', previousProductsErr.message)
+        throw new DataSourceError(`Could not read existing catalog rows: ${previousProductsErr.message}`)
+      }
+      const rows = (page ?? []) as { id: string; source_product_id: string }[]
+      previous.push(...rows)
+      if (rows.length < PREVIOUS_ROWS_PAGE_SIZE) break
     }
-    const previous = (previousProductRows ?? []) as { id: string; source_product_id: string }[]
 
     const rows = toCatalogProductRows(parsed.products, source.id, accountId, opts.currency)
     if (rows.length > 0) {

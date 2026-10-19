@@ -2033,7 +2033,33 @@
       "active": "Ativo",
       "accentColor": "Cor de destaque",
       "useTheme": "Usar o tema {name}",
-      "themeId": "ID do tema: {id}"
+      "themeId": "ID do tema: {id}",
+      "modes": {
+        "light": "claro",
+        "dark": "escuro"
+      },
+      "themes": {
+        "violet": {
+          "name": "Violeta",
+          "tagline": "O padrão — transmite confiança com um toque descontraído."
+        },
+        "emerald": {
+          "name": "Esmeralda",
+          "tagline": "Evoca crescimento e aplicativos de mensagens, sem copiar o verde do WhatsApp."
+        },
+        "cobalt": {
+          "name": "Azul-cobalto",
+          "tagline": "Um azul sóbrio e tranquilo para aplicativos empresariais."
+        },
+        "amber": {
+          "name": "Âmbar",
+          "tagline": "Acolhedor e simpático — ideal para equipes de pequenas e médias empresas."
+        },
+        "rose": {
+          "name": "Rosa",
+          "tagline": "Marcante e moderno — para marcas de consumo, criadores de conteúdo e estilo de vida."
+        }
+      }
     },
     "security": {
       "title": "Login e segurança",
@@ -2312,6 +2338,10 @@
     "haveAccount": "Já tenho uma conta"
   },
   "Notifications": {
+    "assignedTitle": "Nova conversa atribuída",
+    "assignedBody": "{actor} atribuiu a você uma conversa com {contact}",
+    "unknownActor": "Alguém",
+    "unknownContact": "um contato",
     "title": "Notificações",
     "description": "As conversas que outros colegas atribuem a você aparecem aqui.",
     "markAllRead": "Marcar todas como lidas",
@@ -2403,6 +2433,20 @@
       "createDeals": "criar negócios",
       "sendMessages": "enviar mensagens"
     }
+  },
+  "Presence": {
+    "online": "Online — ativo agora",
+    "away": "Ausente — sem atividade",
+    "offline": "Offline — última atividade {time}",
+    "unknown": "há algum tempo",
+    "justNow": "agora mesmo",
+    "minutesAgo": "{count, plural, =1 {há # minuto} other {há # minutos}}",
+    "hoursAgo": "{count, plural, =1 {há # hora} other {há # horas}}",
+    "daysAgo": "{count, plural, =1 {há # dia} other {há # dias}}"
+  },
+  "Handoff": {
+    "summary": "🤖 O agente de IA transferiu a conversa {count, plural, =0 {sem responder} =1 {após # resposta} other {após # respostas}}.",
+    "lastMessage": " Última mensagem do cliente: “{message}”"
   },
   "Metadata": {
     "description": "Modelo de CRM para WhatsApp que você pode hospedar por conta própria."

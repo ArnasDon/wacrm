@@ -103,9 +103,23 @@ export function toCatalogProduct(raw: RawCatalogProductInput): CatalogProduct {
 /** What actually gets serialized into the tool result the LLM reads —
  *  drops `source` (internal routing/audit only, never business-relevant
  *  to the model) on top of the allow-list `toCatalogProduct` already
- *  applied. */
-export function toToolResultProduct(p: CatalogProduct): Omit<CatalogProduct, 'source'> {
+ *  applied.
+ *
+ * Adds `price_confirmed` (AI agent audit, Oct 2026): a bare JSON
+ * `"price": null` turned out not to be a reliable enough signal on its
+ * own — observed in a real Playground conversation where the model
+ * stated a confident, fabricated "DOP 1" for a product whose real price
+ * was unconfirmed. This is enforced in code, not only in prompt text:
+ * `price_confirmed: false` is an explicit, unambiguous boolean alongside
+ * the (still honestly null) numeric field, impossible to mistake for a
+ * price of its own the way a bare `null` can get "filled in" when the
+ * model turns the JSON into prose. `price` itself is left untouched —
+ * callers that need the raw nullable number (facets, availability,
+ * tests) are unaffected. */
+export function toToolResultProduct(
+  p: CatalogProduct,
+): Omit<CatalogProduct, 'source'> & { price_confirmed: boolean } {
   const { source, ...rest } = p
   void source
-  return rest
+  return { ...rest, price_confirmed: p.price !== null }
 }

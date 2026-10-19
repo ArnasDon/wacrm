@@ -246,6 +246,13 @@ export async function searchCatalog(
   // one blocked and one still within budget). Never a second query —
   // just observing what this same loop already does.
   let externalUsed = false
+  // AI agent audit (Oct 2026) — true the moment ANY queried provider's
+  // search genuinely failed this call (threw, or returned its own
+  // hadError: true). Reported to the caller ONLY if the final merged
+  // `collected` set ends up empty — see CatalogSearchResult's doc for
+  // why: a fan-out where one source errors but another still finds
+  // real products is a genuine success, not a failure to flag.
+  let anyProviderErrored = false
 
   for (const { provider, fallbackPolicy } of providers) {
     let result: CatalogSearchResult = { products: [], total: null, hasMore: false }
@@ -262,8 +269,10 @@ export async function searchCatalog(
       if (isBudunProviderKey(provider.key)) externalUsed = true
       try {
         result = await provider.searchCatalog({ ...args, limit: fetchCount, offset: 0 })
+        if (result.hadError) anyProviderErrored = true
       } catch (err) {
         console.error(`[catalog resolver] search failed on provider ${provider.key}:`, err instanceof Error ? err.message : err)
+        anyProviderErrored = true
       }
     }
     collected.push(...result.products)
@@ -294,6 +303,10 @@ export async function searchCatalog(
     ...(externalLimitReached ? { externalLimitReached: true } : {}),
     ...(externalUsed ? { externalUsed: true } : {}),
     ...(facets ? { facets } : {}),
+    // Only surfaced when it actually explains an empty result — a
+    // fan-out that still found real products despite one source
+    // erroring reports a normal, successful search.
+    ...(anyProviderErrored && collected.length === 0 ? { hadError: true } : {}),
   }
 }
 

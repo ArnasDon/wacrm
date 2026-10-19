@@ -178,6 +178,18 @@ export function executeCatalogTool(
             },
             cache,
           )
+          // AI agent audit (Oct 2026) — checked BEFORE building the
+          // normal success shape, same discipline as the
+          // EXTERNAL_LIMIT_REACHED check below: a genuine search
+          // failure (DB/RPC error) used to come back shaped exactly
+          // like "confirmed zero matches" (`products: [], total:
+          // null`), which the model could not distinguish from a real
+          // not-found — directly undermining the "never say it doesn't
+          // exist because a query failed" rule. Same `catalog_
+          // unavailable` error the other three catalog tools already
+          // report for their own infra failures (see the outer catch
+          // below).
+          if (result.hadError) return { error: 'catalog_unavailable' }
           return {
             products: result.products.map(toToolResultProduct),
             returned: result.products.length,

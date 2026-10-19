@@ -63,6 +63,11 @@ const PRODUCTS = [
   row('p5', 'TV TCL GOOGLE TV SMART 50 4K ULTRA HD', { brand: 'TCL', price: 25000 }),
   row('p6', 'TV KOOLHOME 43 SMART', { brand: 'KOOLHOME', price: 14000 }),
   row('p7', 'TV SAMSUNG 50 QLED', { brand: 'Samsung', price: 31000 }),
+  // price: null (not omitted — see row() default) on purpose: this is
+  // the exact real-world shape that produced the "DOP 1" bug report
+  // (AI agent audit, Oct 2026) — the product and its stock ARE known,
+  // only the price is unconfirmed.
+  row('p8', 'ABANICO DE PARED KGLG FS-B350 14"', { available_quantity: 11 }),
 ]
 
 function row(id: string, name: string, over: Partial<Record<string, unknown>>) {
@@ -142,6 +147,12 @@ function fakeDb(): SupabaseClient {
             const match = PRODUCTS.find((p) => p.source_product_id === spid)
             return Promise.resolve({ data: match ?? null, error: null })
           },
+          // data-source-provider.ts's fallback-scan tier chains
+          // .order() before .limit() — missing it here used to throw a
+          // synchronous TypeError, which (correctly, since the AI agent
+          // audit fix) now surfaces as a real provider failure instead
+          // of silently looking like "found nothing".
+          order: () => api,
           limit: () => Promise.resolve({ data: PRODUCTS, error: null }),
         }
         return api
@@ -151,6 +162,12 @@ function fakeDb(): SupabaseClient {
     rpc: (fn: string, params: Record<string, unknown>) => {
       if (fn !== 'search_ai_catalog_products') throw new Error(`unexpected rpc ${fn}`)
       const query = String(params.p_query ?? '').toLowerCase().trim()
+      // Lets a test simulate a genuine DB/RPC failure (distinct from a
+      // real "zero matches") without touching any other scenario's
+      // query — see the hadError / "errores del catálogo" scenario.
+      if (query.includes('simular-error-db')) {
+        return Promise.resolve({ data: null, error: { message: 'connection terminated unexpectedly' } })
+      }
       const words = query.split(/\s+/).filter(Boolean)
       let matches = query
         ? PRODUCTS.filter((p) => words.some((w) => p.name.toLowerCase().includes(w)))
@@ -309,5 +326,194 @@ describe('Full pipeline — no-omission: a broad "qué TVs tienen" surfaces ever
     expect(brands.has('Samsung')).toBe(true)
     expect(result.total).toBe(3) // all 3 real TVs in the fake catalog
     expect(result.has_more).toBe(false) // limit(20) covered everything — honest, not a guess
+  })
+})
+
+// ============================================================
+// Real conversation reported in the AI agent audit (Oct 2026):
+//   "HOLA TIENE ABANICO DE PARED" → agent invents "DOP 1" for a
+//   product whose real price was never confirmed → "VERIFICA EL
+//   PRECIO" → agent flips to denying the product exists at all →
+//   "SAMSUNG A16" → agent also denies ever having Samsung info.
+//
+// Root causes found and fixed elsewhere in this same change:
+//   - inventory-parser.ts's parsePrice() mis-read a Spanish-locale
+//     thousands separator as a decimal point ("1.200" → 1.2) — fixed,
+//     covered by inventory-parser.test.ts's own regression tests.
+//   - whitelist.ts's toToolResultProduct() now adds an explicit
+//     `price_confirmed` boolean so a null price can't get "filled in"
+//     by the model the way a bare JSON null can.
+//
+// This scenario proves the TOOL/DATA layer gives a correctly-prompted
+// model everything it needs to answer honestly in both halves of the
+// real conversation: existence+stock ARE confirmed when price isn't,
+// and a genuinely different, unrelated product (Samsung A16, not in
+// this catalog) is reported as not found WITHOUT that denial bleeding
+// into unrelated later questions.
+// ============================================================
+describe('Full pipeline — the real "abanico de pared" bug report: null price never becomes a number, and a real not-found never poisons later turns', () => {
+  it('turn 1: product found with confirmed stock, price explicitly flagged unconfirmed — the tool result makes a "DOP 1" hallucination avoidable', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        okResponse({
+          choices: [
+            {
+              message: {
+                content: null,
+                tool_calls: [
+                  { id: 'c1', type: 'function', function: { name: 'search_catalog', arguments: '{"query":"abanico de pared"}' } },
+                ],
+              },
+            },
+          ],
+        }),
+      )
+      // Scripted as the CORRECT behavior a well-instructed model should
+      // produce given price_confirmed: false — never a fabricated number.
+      .mockResolvedValueOnce(
+        okResponse({
+          choices: [
+            {
+              message: {
+                content:
+                  'Sí, tenemos el abanico de pared KGLG FS-B350 14" — 11 unidades disponibles. No tengo un precio confirmado para ese producto en este momento.',
+              },
+            },
+          ],
+        }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const db = fakeDb()
+    const { text, toolCalls, nextContext } = await turn({
+      userMessage: 'HOLA TIENE ABANICO DE PARED',
+      previousContext: null,
+      db,
+    })
+
+    // The prompt actually sent to the model carries the new structural
+    // rule, not just a hope that the model infers it.
+    const promptSentToModel = JSON.parse(fetchMock.mock.calls[0][1].body).messages[0].content as string
+    expect(promptSentToModel).toContain('price_confirmed')
+
+    // The real tool result: stock IS confirmed, price is explicitly NOT.
+    const toolProducts = (toolCalls[0].result as {
+      products: { id: string; price: number | null; price_confirmed: boolean; availableQuantity: number }[]
+    }).products
+    const abanico = toolProducts.find((p) => p.id.endsWith(':p8'))!
+    expect(abanico.price).toBeNull()
+    expect(abanico.price_confirmed).toBe(false)
+    expect(abanico.availableQuantity).toBe(11)
+
+    // The reply states the real stock and flags price as unconfirmed —
+    // never a fabricated "DOP 1" or any other invented amount.
+    expect(text).toContain('11 unidades')
+    expect(text.toLowerCase()).toContain('no tengo un precio confirmado')
+    expect(text).not.toMatch(/DOP\s*1\b/)
+    expect(nextContext.products.some((p) => p.id.endsWith(':p8'))).toBe(true)
+  })
+
+  it('turn 2: a genuinely different, unrelated product (not in this catalog at all) is a real not-found — searched fresh, not confused with the abanico turn before it', async () => {
+    const turn1Context = updateCatalogContext(null, [
+      {
+        name: 'search_catalog',
+        input: { query: 'abanico de pared' },
+        result: { products: [{ id: 'ds_ds-1:p8', name: 'ABANICO DE PARED KGLG FS-B350 14"', brand: null, model: null, capacity: null, size: null, price: null, currency: 'DOP' }] },
+      },
+    ])
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        okResponse({
+          choices: [
+            {
+              message: {
+                content: null,
+                // "nokia 3310" shares no word with anything in the fake
+                // catalog (unlike "samsung a16", which would still match
+                // every unrelated Samsung phone/TV on the word "samsung"
+                // alone under this fake's lenient OR-based matching) —
+                // isolates the "genuinely zero matches" case cleanly.
+                tool_calls: [{ id: 'c2', type: 'function', function: { name: 'search_catalog', arguments: '{"query":"nokia 3310"}' } }],
+              },
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(
+        okResponse({
+          choices: [{ message: { content: 'No encontré un Nokia 3310 en el catálogo. ¿Quieres que busque otro modelo?' } }],
+        }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const db = fakeDb()
+    const { text, toolCalls } = await turn({ userMessage: 'ENTONCES TIENE EL NOKIA 3310', previousContext: turn1Context, db })
+
+    // A fresh search actually ran for THIS question — the model did not
+    // just reuse/extend the abanico turn's result.
+    const searchCall = toolCalls.find((c) => c.name === 'search_catalog')!
+    expect((searchCall.input as { query: string }).query.toLowerCase()).toContain('nokia')
+    const result = searchCall.result as { products: unknown[]; total: number | null }
+    expect(result.products).toHaveLength(0) // genuinely not in this fake catalog
+    expect(result.total).toBeFalsy() // 0 or null — the provider has no row to read a count from either way
+
+    // An honest "not found" for THIS product — not a blanket denial
+    // bleeding over from the unrelated abanico/price turn before it.
+    expect(text.toLowerCase()).toContain('no encontré')
+  })
+})
+
+// ============================================================
+// AI agent audit (Oct 2026), Section 6 — "errores del catálogo" /
+// Playground stability. A genuine DB/RPC failure during search_catalog
+// must end the turn with a clean, visible, recoverable error — never
+// silently converted into "no existe", and never a hang. This proves
+// the whole real pipeline (generateReply → executeCatalogTool →
+// resolver.searchCatalog → DataSourceCatalogProvider, the exact chain
+// a real Playground POST runs) completes normally end to end even when
+// the catalog query itself fails, which is what lets the ROUTE always
+// return a clean HTTP response for the frontend's try/catch to handle
+// — see ai-playground.tsx's send(), which already clears `sending` in
+// a `finally` for exactly this reason.
+// ============================================================
+describe('Full pipeline — a genuine catalog query failure ends the turn cleanly, never a false "no existe" and never a hang', () => {
+  it('search_catalog hitting a real DB/RPC error surfaces catalog_unavailable to the model, which answers honestly instead of denying the product', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        okResponse({
+          choices: [
+            {
+              message: {
+                content: null,
+                tool_calls: [{ id: 'c1', type: 'function', function: { name: 'search_catalog', arguments: '{"query":"simular-error-db abanico"}' } }],
+              },
+            },
+          ],
+        }),
+      )
+      // Scripted as the correct behavior given {error: 'catalog_unavailable'}
+      // — never "no lo tenemos", which would be indistinguishable from a
+      // real not-found to the customer.
+      .mockResolvedValueOnce(
+        okResponse({
+          choices: [{ message: { content: 'No pude verificar el catálogo en este momento. ¿Puedo intentarlo de nuevo en un momento o prefieres hablar con un agente?' } }],
+        }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const db = fakeDb()
+    // The real call completes and returns normally — no throw, no hang
+    // — even though the underlying catalog query failed.
+    const { text, toolCalls } = await turn({ userMessage: 'tiene abanico de pared', previousContext: null, db })
+
+    const searchCall = toolCalls.find((c) => c.name === 'search_catalog')!
+    expect(searchCall.result).toEqual({ error: 'catalog_unavailable' })
+    expect(text.toLowerCase()).toContain('no pude verificar')
+    expect(text.toLowerCase()).not.toContain('no tenemos')
+    expect(text.toLowerCase()).not.toContain('no existe')
   })
 })

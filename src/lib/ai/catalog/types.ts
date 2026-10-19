@@ -116,6 +116,21 @@ export interface CatalogSearchResult {
    *  catalog/resolver.ts, computed once over the merged results from
    *  every provider this call queried. */
   facets?: CatalogFacets
+  /** True when this result is empty/degraded BECAUSE a provider's
+   *  search genuinely failed (DB/RPC error, network error), never
+   *  because nothing actually matched — AI agent audit (Oct 2026). A
+   *  provider that catches its own query error internally (so a single
+   *  failed source can't take down a multi-source `search_all_active`
+   *  fan-out) used to return the exact same shape as "confirmed zero
+   *  matches" (`products: [], total: null`), which `catalog-tools.ts`
+   *  then reported to the model indistinguishably from a real
+   *  not-found — directly causing the prompted "no inventes que no
+   *  existe" rule to be unfollowable, since the model was never told a
+   *  failure happened at all. Only meaningful when `products` ends up
+   *  empty; a provider/fan-out that still finds real matches despite
+   *  one source erroring sets this false (or omits it) — the search
+   *  genuinely succeeded from the customer's perspective. */
+  hadError?: boolean
 }
 
 export interface CatalogAvailability {

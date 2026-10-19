@@ -114,7 +114,9 @@ export class DataSourceCatalogProvider implements CatalogProvider {
     })
     if (error) {
       console.error('[catalog] data-source search failed:', error.message)
-      return { products: [], total: null, hasMore: false }
+      // hadError: true — this is a genuine query failure, never a
+      // confirmed "nothing matches" (see CatalogSearchResult's doc).
+      return { products: [], total: null, hasMore: false, hadError: true }
     }
     const rows = (data ?? []) as CatalogProductRowWithTotal[]
     if (rows.length > 0) {
@@ -166,7 +168,10 @@ export class DataSourceCatalogProvider implements CatalogProvider {
       .order('id', { ascending: true })
       .limit(FALLBACK_SCAN_LIMIT)
     if (error || !data) {
-      if (error) console.error('[catalog] fallback scan failed:', error.message)
+      if (error) {
+        console.error('[catalog] fallback scan failed:', error.message)
+        return { products: [], total: null, hasMore: false, hadError: true }
+      }
       return { products: [], total: null, hasMore: false }
     }
 

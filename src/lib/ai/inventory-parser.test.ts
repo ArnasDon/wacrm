@@ -136,9 +136,13 @@ describe('parseSheetCsv — structured product rows', () => {
       expect(parseSheetCsv(text, 'https://x/sheet.csv').products[0].price).toBe(1499.95)
     })
 
-    it('a price with more than two decimals is still preserved exactly, not rounded to 2 (no such rule exists in this project)', () => {
-      const text = csv([['Nombre', 'Precio'], ['Producto', '24999.999']])
-      expect(parseSheetCsv(text, 'https://x/sheet.csv').products[0].price).toBe(24999.999)
+    it('a price with two decimals and MORE than 3 integer digits still keeps them exactly — 12345.67 → 12345.67', () => {
+      // A lone separator followed by exactly 3 digits is read as a
+      // thousands group (see the locale-ambiguity test below) — but 2
+      // decimal digits is unambiguous regardless of how many digits
+      // come before the separator.
+      const text = csv([['Nombre', 'Precio'], ['Producto', '12345.67']])
+      expect(parseSheetCsv(text, 'https://x/sheet.csv').products[0].price).toBe(12345.67)
     })
 
     it('an invalid/empty price still becomes null — unchanged behavior', () => {
@@ -155,6 +159,65 @@ describe('parseSheetCsv — structured product rows', () => {
       // (untouched by H-4) — this is the display layer, not the stored
       // catalog value asserted above.
       expect(parsed.content).not.toContain('19.99')
+    })
+  })
+
+  // ============================================================
+  // Real defect found auditing the AI agent (Oct 2026): this business's
+  // real source report uses the Spanish/Latin-American thousands/decimal
+  // convention (`.` groups thousands, `,` is the decimal point) for at
+  // least some rows, while parsePrice() used to assume US/UK convention
+  // unconditionally (strip `,`, leave `.` as the decimal point). A raw
+  // value of "1.200" (meaning 1,200 DOP) was silently parsed as 1.2 —
+  // confirmed against live production data (ai_catalog_products.price)
+  // — which the agent then restated in prose as "DOP 1". Same bug
+  // affected available_quantity via the identical thousands/decimal
+  // ambiguity. These prove both price and quantity now disambiguate the
+  // separator per-value instead of assuming one fixed locale.
+  // ============================================================
+  describe('locale-ambiguous thousands/decimal separators (AI agent audit)', () => {
+    it('a lone dot followed by exactly 3 digits is read as thousands, not decimal — "1.200" → 1200, not 1.2', () => {
+      const text = csv([['Nombre', 'Precio'], ['Producto', '1.200']])
+      expect(parseSheetCsv(text, 'https://x/sheet.csv').products[0].price).toBe(1200)
+    })
+
+    it('a lone dot with a trailing thousands group that happens to be "000" is still read as thousands — "5.000" → 5000, not 5', () => {
+      const text = csv([['Nombre', 'Precio'], ['Producto', '5.000']])
+      expect(parseSheetCsv(text, 'https://x/sheet.csv').products[0].price).toBe(5000)
+    })
+
+    it('repeated dots are always thousands grouping, regardless of digit count — "1.234.567" → 1234567', () => {
+      const text = csv([['Nombre', 'Precio'], ['Producto', '1.234.567']])
+      expect(parseSheetCsv(text, 'https://x/sheet.csv').products[0].price).toBe(1234567)
+    })
+
+    it('a lone dot followed by 2 digits is still read as a decimal point — "5.75" → 5.75', () => {
+      const text = csv([['Nombre', 'Precio'], ['Producto', '5.75']])
+      expect(parseSheetCsv(text, 'https://x/sheet.csv').products[0].price).toBe(5.75)
+    })
+
+    it('Spanish convention with both separators — "1.200,50" (1,200.50) → 1200.5', () => {
+      // Quoted — an unquoted comma would be read as a CSV field
+      // separator by the parser itself, splitting the cell in two
+      // before parsePrice ever sees it (same as the pre-existing
+      // "RD$1,499.95" case above).
+      const text = csv([['Nombre', 'Precio'], ['Producto', '"1.200,50"']])
+      expect(parseSheetCsv(text, 'https://x/sheet.csv').products[0].price).toBe(1200.5)
+    })
+
+    it('a lone comma followed by exactly 3 digits is also read as thousands — "1,200" → 1200 (unchanged from before)', () => {
+      const text = csv([['Nombre', 'Precio'], ['Producto', '"1,200"']])
+      expect(parseSheetCsv(text, 'https://x/sheet.csv').products[0].price).toBe(1200)
+    })
+
+    it('a lone comma followed by 2 digits is read as a decimal point — "19,99" → 19.99 (previously mis-parsed as 1999)', () => {
+      const text = csv([['Nombre', 'Precio'], ['Producto', '"19,99"']])
+      expect(parseSheetCsv(text, 'https://x/sheet.csv').products[0].price).toBe(19.99)
+    })
+
+    it('the same ambiguity is resolved identically for stock quantity — "1.500" units → 1500, not 1.5 rounded to 2', () => {
+      const text = csv([['Nombre', 'Precio', 'Stock'], ['Producto', '10', '1.500']])
+      expect(parseSheetCsv(text, 'https://x/sheet.csv').products[0].availableQuantity).toBe(1500)
     })
   })
 

@@ -427,8 +427,7 @@ function buildProductRows(
       size,
       variantLabel: capacity ?? size,
       price: priceRaw !== null ? parsePrice(priceRaw) : null,
-      availableQuantity:
-        stockRaw !== null && isNumeric(stockRaw) ? Math.round(Number(stockRaw.replace(/,/g, ''))) : null,
+      availableQuantity: stockRaw !== null ? parseQuantity(stockRaw) : null,
       imageUrl: cell(row, imageIdx),
     })
   })
@@ -452,18 +451,93 @@ function buildProductRows(
  * fix. The catalog tools (search_catalog/get_product), which read
  * `ai_catalog_products.price` directly, are what actually need the real
  * value, and now receive it.
+ *
+ * Real defect found auditing the AI agent (Oct 2026): this used to only
+ * ever strip commas before calling `Number()`, i.e. it assumed US/UK
+ * grouping (`,` = thousands, `.` = decimal) no matter what. Confirmed
+ * against live production data that this business's real source report
+ * uses the Spanish/Latin-American convention instead (`.` = thousands,
+ * `,` = decimal) for at least some rows — `"1.200"` (meaning 1,200 DOP)
+ * was being parsed as `1.2`, which an agent restating it in prose
+ * rounds down to "DOP 1". Delegates to `parseLocaleNumber`, which
+ * disambiguates per-value instead of assuming one fixed convention.
  */
 function parsePrice(raw: string): number | null {
   const cleaned = raw.replace(/[^0-9.,\-]/g, '').trim()
   if (!cleaned) return null
-  const num = Number(cleaned.replace(/,/g, ''))
-  return isFinite(num) ? num : null
+  return parseLocaleNumber(cleaned)
+}
+
+/** Same ambiguous-separator problem as price, but rounded to a whole
+ *  unit — fractional stock counts don't mean anything. */
+function parseQuantity(raw: string): number | null {
+  const cleaned = raw.replace(/[^0-9.,\-]/g, '').trim()
+  if (!cleaned) return null
+  const n = parseLocaleNumber(cleaned)
+  return n !== null ? Math.round(n) : null
+}
+
+/**
+ * Locale-ambiguous numeric string → number, used for both price and
+ * stock quantity. Handles a value already restricted to digits, `.`,
+ * `,`, and a leading `-` (callers strip everything else first).
+ *
+ * Disambiguation rules, in order:
+ *   1. Both `,` and `.` present → whichever occurs LAST is the real
+ *      decimal point; the other is a thousands separator and is
+ *      dropped entirely (`"1.234,56"` → 1234.56; `"1,234.56"` → also
+ *      1234.56).
+ *   2. Only one kind of separator, appearing more than once (grouping,
+ *      e.g. `"1.234.567"` or `"1,234,567"`), or appearing once followed
+ *      by EXACTLY 3 digits (`"1.200"`, `"1,200"`) → thousands grouping,
+ *      no decimal part; every occurrence is dropped.
+ *   3. Only one kind of separator, appearing once, followed by 1 or 2
+ *      digits (`"19.99"`, `"19,99"`) → that's the decimal point.
+ *   4. No separator at all → parsed as-is.
+ *
+ * Rule 2's "exactly 3 digits after a lone separator ⇒ thousands, not
+ * decimal" is a deliberate, business-specific call: this catalog's
+ * prices are whole DOP amounts (no fractional-peso retail pricing), so
+ * a genuine 3-decimal-place value (e.g. a per-liter fuel price) never
+ * occurs here — the common case (a clean thousands amount) is what this
+ * optimizes for. A future source that legitimately needs 3 decimal
+ * places would need a different rule.
+ */
+function parseLocaleNumber(raw: string): number | null {
+  const lastComma = raw.lastIndexOf(',')
+  const lastDot = raw.lastIndexOf('.')
+
+  if (lastComma !== -1 && lastDot !== -1) {
+    const decimalIsComma = lastComma > lastDot
+    const thousandsChar = decimalIsComma ? '.' : ','
+    const decimalChar = decimalIsComma ? ',' : '.'
+    const n = Number(raw.split(thousandsChar).join('').replace(decimalChar, '.'))
+    return isFinite(n) ? n : null
+  }
+
+  const sep = lastComma !== -1 ? ',' : lastDot !== -1 ? '.' : null
+  if (!sep) {
+    const n = Number(raw)
+    return isFinite(n) ? n : null
+  }
+
+  const lastIdx = sep === ',' ? lastComma : lastDot
+  const digitsAfter = raw.length - lastIdx - 1
+  const repeatedSeparator = raw.indexOf(sep) !== lastIdx
+
+  if (repeatedSeparator || digitsAfter === 3) {
+    const n = Number(raw.split(sep).join(''))
+    return isFinite(n) ? n : null
+  }
+
+  const n = Number(raw.replace(sep, '.'))
+  return isFinite(n) ? n : null
 }
 
 function isNumeric(val: string): boolean {
   const cleaned = val.replace(/[^0-9.,\-]/g, '').trim()
   if (!cleaned) return false
-  return isFinite(Number(cleaned.replace(/,/g, '')))
+  return parseLocaleNumber(cleaned) !== null
 }
 
 function detectColumns(header: string[]): DetectedColumnMap {

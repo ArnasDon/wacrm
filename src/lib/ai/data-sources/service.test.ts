@@ -48,6 +48,16 @@ function fakeDb() {
   // itself, distinct from a unique-constraint collision the upsert is
   // specifically meant to NOT hit.
   const failNextUpsert = new Set<string>()
+  // Same idea, for DELETE — needed to prove a failure on the obsolete-
+  // row cleanup (e.g. a real "Bad Request" from an oversized `.in()`
+  // list) is surfaced as a DataSourceError, not silently swallowed.
+  const failNextDelete = new Set<string>()
+  // Records every `.in('id', [...])` list a DELETE call on
+  // ai_catalog_products actually used — lets a test assert the
+  // obsolete-row cleanup is chunked (no single call exceeds the real
+  // PostgREST URL-length limit that caused the production incident)
+  // instead of one unbounded `.in()` over the whole previous catalog.
+  const deleteInBatchSizes: number[] = []
 
   function builder(
     tableName: string,
@@ -157,6 +167,14 @@ function fakeDb() {
         return { data: null, error: null }
       }
       if (op === 'delete') {
+        const inFilter = filters.find(([, , mode]) => mode === 'in')
+        if (tableName === 'ai_catalog_products' && inFilter) {
+          deleteInBatchSizes.push((inFilter[1] as unknown[]).length)
+        }
+        if (failNextDelete.has(tableName)) {
+          failNextDelete.delete(tableName)
+          return { data: null, error: { message: `simulated delete failure on ${tableName}` } }
+        }
         const remaining = rows.filter((r) => !matches(r))
         table(tableName).length = 0
         table(tableName).push(...remaining)
@@ -182,6 +200,8 @@ function fakeDb() {
     failNextInsertOn: (name: string) => failNextInsert.add(name),
     failNextUpdateOn: (name: string) => failNextUpdate.add(name),
     failNextUpsertOn: (name: string) => failNextUpsert.add(name),
+    failNextDeleteOn: (name: string) => failNextDelete.add(name),
+    deleteInBatchSizes,
   }
 }
 
@@ -698,6 +718,68 @@ describe('persistDataSource — stable identity via id_producto + idempotent cat
     const rows = table('ai_catalog_products').filter((r) => r.data_source_id === source.id)
     expect(rows).toHaveLength(1)
     expect(rows[0].source_product_id).toBe('2761')
+  })
+
+  // ============================================================
+  // Real defect found auditing the AI agent (Oct 2026): the obsolete-
+  // row cleanup below used to issue ONE `.in('id', idsToRemove)` call
+  // with every id to remove. A refresh that transitions a large catalog
+  // from one identity scheme to another (e.g. row-N → id_producto) can
+  // need to remove the ENTIRE previous generation at once — confirmed in
+  // production at ~1,100+ ids, which failed with a bare "Bad Request"
+  // (a URL-length limit, not a logic error). That exception still threw
+  // DataSourceError and marked the source 'error' correctly, but by then
+  // the upsert had ALREADY written every new row, so the account was
+  // left with BOTH generations live at once (2,287 rows for a source
+  // whose own row_count said 1,143) — search_catalog silently returning
+  // duplicates/stale data for every product, inconsistently from one
+  // call to the next.
+  // ============================================================
+  it('a refresh that must remove MANY obsolete rows at once (identity-scheme transition) chunks the delete instead of one unbounded .in() call', async () => {
+    const OLD_COUNT = 450 // 3 chunks of ≤200 at the current chunk size
+    const oldRows = Array.from({ length: OLD_COUNT }, (_, i) => idRow(`old-${i}`, `Producto ${i}`, '1', '100'))
+    stubCsvFetch(idCsv(oldRows))
+    const { db, table, deleteInBatchSizes } = fakeDb()
+    const source = await createDataSourceFromUrl(db, {
+      accountId: 'acct-1', userId: 'user-1', sourceType: 'google_sheets',
+      displayName: 'Consultas KC', url: 'https://docs.google.com/spreadsheets/d/x/export?format=csv', usage: 'catalog',
+    })
+    expect(table('ai_catalog_products').filter((r) => r.data_source_id === source.id)).toHaveLength(OLD_COUNT)
+
+    // Identity scheme changes entirely — every old id_producto is gone,
+    // replaced by a brand-new set. ALL 450 old rows must be removed.
+    const newRows = Array.from({ length: OLD_COUNT }, (_, i) => idRow(`new-${i}`, `Producto ${i}`, '1', '100'))
+    stubCsvFetch(idCsv(newRows))
+    await refreshDataSource(db, { accountId: 'acct-1', userId: 'user-1', id: source.id })
+
+    const rows = table('ai_catalog_products').filter((r) => r.data_source_id === source.id)
+    expect(rows).toHaveLength(OLD_COUNT) // old generation fully removed, never doubled
+    expect(rows.every((r) => (r.source_product_id as string).startsWith('new-'))).toBe(true)
+
+    // The cleanup issued MULTIPLE delete calls, none exceeding the chunk
+    // size — never one call with all 450 ids inline.
+    expect(deleteInBatchSizes.length).toBeGreaterThan(1)
+    for (const size of deleteInBatchSizes) expect(size).toBeLessThanOrEqual(200)
+    expect(deleteInBatchSizes.reduce((a, b) => a + b, 0)).toBe(OLD_COUNT)
+  })
+
+  it('a genuine failure removing obsolete rows (e.g. the real "Bad Request" this project hit) is wrapped in DataSourceError, never silently left as a doubled catalog', async () => {
+    stubCsvFetch(idCsv([idRow('2761', 'Abanico de pared', '11', '1200'), idRow('2762', 'Abanico de pedestal', '14', '1500')]))
+    const { db, table, failNextDeleteOn } = fakeDb()
+    const source = await createDataSourceFromUrl(db, {
+      accountId: 'acct-1', userId: 'user-1', sourceType: 'google_sheets',
+      displayName: 'Consultas KC', url: 'https://docs.google.com/spreadsheets/d/x/export?format=csv', usage: 'catalog',
+    })
+
+    stubCsvFetch(idCsv([idRow('2761', 'Abanico de pared', '11', '1200')])) // 2762 removed
+    failNextDeleteOn('ai_catalog_products')
+    const attempt = refreshDataSource(db, { accountId: 'acct-1', userId: 'user-1', id: source.id })
+    await expect(attempt).rejects.toBeInstanceOf(DataSourceError)
+    await expect(attempt).rejects.toThrow(/Could not remove obsolete catalog rows/)
+
+    const dsRow = table('ai_data_sources').find((r) => r.id === source.id)!
+    expect(dsRow.status).toBe('error')
+    expect(dsRow.last_error).toMatch(/Could not remove obsolete catalog rows/)
   })
 
   it('Prueba 7 — a genuine write failure during the catalog upsert preserves the previous rows AND marks the source with a diagnosable error, never "Refresh failed."', async () => {

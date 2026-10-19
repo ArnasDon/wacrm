@@ -51,7 +51,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",
-    "lucide-react": "^1.55.0",
+    "lucide-react": "^1.58.0",
     "next": "16.3.8",
     "next-intl": "^4.14.9",
     "opus-recorder": "^8.0.5",

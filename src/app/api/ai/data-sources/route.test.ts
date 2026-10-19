@@ -50,6 +50,11 @@ function fakeSupabase(seed: Record<string, Record<string, unknown>[]> = {}) {
     const filters: [string, unknown][] = [];
     let single: 'one' | 'maybe' | null = null;
     let selectedCols: string[] | null = null;
+    // Models PostgREST's real default page cap (see the AI agent audit
+    // fix in data-sources/service.ts): an unranged `.select()` only
+    // returns the first DEFAULT_PAGE_SIZE rows.
+    const DEFAULT_PAGE_SIZE = 1000;
+    let range: [number, number] | null = null;
     const rows = ensure(table);
     const matches = (row: Record<string, unknown>) => filters.every(([c, v]) => row[c] === v);
 
@@ -65,7 +70,8 @@ function fakeSupabase(seed: Record<string, Record<string, unknown>[]> = {}) {
         const matched = rows.filter(matches).map(project);
         if (single === 'one') return matched[0] ? { data: matched[0], error: null } : { data: null, error: { message: 'no rows' } };
         if (single === 'maybe') return { data: matched[0] ?? null, error: null };
-        return { data: matched, error: null };
+        const [from, to] = range ?? [0, DEFAULT_PAGE_SIZE - 1];
+        return { data: matched.slice(from, to + 1), error: null };
       }
       if (op === 'insert') {
         const items = Array.isArray(payload) ? payload : [payload as Record<string, unknown>];
@@ -112,6 +118,10 @@ function fakeSupabase(seed: Record<string, Record<string, unknown>[]> = {}) {
       },
       eq: (col: string, val: unknown) => {
         filters.push([col, val]);
+        return api;
+      },
+      range: (from: number, to: number) => {
+        range = [from, to];
         return api;
       },
       order: () => api,

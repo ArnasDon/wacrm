@@ -205,6 +205,31 @@ describe("validateStepsForActivation", () => {
       "steps[0].subject",
     ]);
   });
+
+  const condition = (step_config: Record<string, unknown>) =>
+    validateStepsForActivation([{ step_type: "condition", step_config }]).map((i) => i.path);
+
+  it("requires a value, not an operand, for message_content", () => {
+    expect(condition({ subject: "message_content", operand: "contains", value: "" })).toEqual([
+      "steps[0].value",
+    ]);
+    expect(condition({ subject: "message_content", value: "pricing" })).toEqual([]);
+  });
+
+  it("requires both field and value for contact_field", () => {
+    expect(condition({ subject: "contact_field", operand: "email", value: " " })).toEqual([
+      "steps[0].value",
+    ]);
+    expect(condition({ subject: "contact_field", operand: "email", value: "a@b.co" })).toEqual([]);
+  });
+
+  it("rejects an unknown time zone on time_of_day but accepts legacy rows without one", () => {
+    expect(condition({ subject: "time_of_day", operand: "18:00-09:00", timezone: "Mars/Base" }))
+      .toEqual(["steps[0].timezone"]);
+    expect(condition({ subject: "time_of_day", operand: "18:00-09:00", timezone: "Europe/Vilnius" }))
+      .toEqual([]);
+    expect(condition({ subject: "time_of_day", operand: "18:00-09:00" })).toEqual([]);
+  });
 });
 
 describe("validateTriggerForActivation", () => {
@@ -246,6 +271,18 @@ describe("validateTriggerForActivation", () => {
   it("accepts keyword_match with a missing match_type (defaults to contains)", () => {
     expect(
       validateTriggerForActivation("keyword_match", { keywords: ["hi"] }),
+    ).toEqual([]);
+  });
+
+  it("accepts the word match_type (issue #409)", () => {
+    // Activation validation has to stay in step with the engine and the
+    // builder's dropdown — an automation the UI can save must not be
+    // rejected on activation.
+    expect(
+      validateTriggerForActivation("keyword_match", {
+        keywords: ["hi"],
+        match_type: "word",
+      }),
     ).toEqual([]);
   });
 

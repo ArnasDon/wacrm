@@ -6,7 +6,7 @@
 // whether the account is on OpenAI or Anthropic.
 // ============================================================
 
-export type AiProvider = 'openai' | 'anthropic'
+export type AiProvider = 'openai' | 'anthropic' | 'openai_compatible'
 
 /**
  * Account AI setup, decrypted and ready to use. Produced by
@@ -16,6 +16,8 @@ export type AiProvider = 'openai' | 'anthropic'
 export interface AiConfig {
   provider: AiProvider
   model: string
+  /** Base URL for OpenAI-compatible providers; null for native providers. */
+  baseUrl: string | null
   apiKey: string
   systemPrompt: string | null
   isActive: boolean

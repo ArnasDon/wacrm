@@ -1,7 +1,7 @@
 import { timingSafeEqual } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
-import { resolveFallbackPolicy } from '@/lib/flows/fallback'
+import { checkRunTimeout, markRunTimedOut } from '@/lib/flows/timeout'
 
 /**
  * Sweep abandoned active flow runs.
@@ -76,34 +76,14 @@ export async function GET(request: Request) {
   let swept = 0
   for (const r of runs as Row[]) {
     const flowsField = Array.isArray(r.flows) ? r.flows[0] : r.flows
-    const policy = resolveFallbackPolicy(flowsField?.fallback_policy ?? null)
-    const lastAdvanced = new Date(r.last_advanced_at)
-    const ageHours = (now.getTime() - lastAdvanced.getTime()) / (1000 * 60 * 60)
-    if (ageHours < policy.on_timeout_hours) continue
+    const check = checkRunTimeout(
+      r.last_advanced_at,
+      flowsField?.fallback_policy ?? null,
+      now,
+    )
+    if (!check.timedOut) continue
 
-    // Mark timed_out — guarded by the precondition `status='active'`
-    // so concurrent advance from a late inbound doesn't overwrite a
-    // legitimate update.
-    const { data: updated } = await admin
-      .from('flow_runs')
-      .update({
-        status: 'timed_out',
-        ended_at: now.toISOString(),
-        end_reason: 'stale_sweep',
-      })
-      .eq('id', r.id)
-      .eq('status', 'active')
-      .select('id')
-
-    if (Array.isArray(updated) && updated.length > 0) {
-      await admin.from('flow_run_events').insert({
-        flow_run_id: r.id,
-        event_type: 'timeout',
-        payload: {
-          age_hours: Math.round(ageHours * 10) / 10,
-          policy_hours: policy.on_timeout_hours,
-        },
-      })
+    if (await markRunTimedOut(admin, r.id, check, 'stale_sweep', now)) {
       swept += 1
     }
   }

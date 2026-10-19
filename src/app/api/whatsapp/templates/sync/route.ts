@@ -1,8 +1,17 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import {
+  ForbiddenError,
+  UnauthorizedError,
+  requireRole,
+  toErrorResponse,
+} from '@/lib/auth/account'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { normalizeStatus } from '@/lib/whatsapp/template-status-normalize'
 import type { TemplateButton, TemplateSampleValues } from '@/types'
+import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
+import { getT } from '@/lib/i18n/translate'
+
+const t = getT('Api')
 
 /**
  * Sync message templates from Meta → local message_templates table.
@@ -124,31 +133,14 @@ function extractSampleValues(
 
 export async function POST() {
   try {
-    const supabase = await createClient()
+    // Syncing rewrites the account-wide template catalog, which is
+    // settings-class data: `canEditSettings` and the message_templates
+    // insert/update RLS policies (migration 017) both require 'admin'.
+    // Resolving account_id off the profile only proved membership.
+    const { supabase, accountId, userId } = await requireRole('admin')
 
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    // Resolve the caller's account_id — both whatsapp_config and
-    // the message_templates we sync into are account-scoped.
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('account_id')
-      .eq('user_id', user.id)
-      .maybeSingle()
-    const accountId = profile?.account_id as string | undefined
-    if (!accountId) {
-      return NextResponse.json(
-        { error: 'Your profile is not linked to an account.' },
-        { status: 403 },
-      )
-    }
+    const limit = checkRateLimit(`whatsapp-admin:${userId}`, RATE_LIMITS.whatsappAdmin)
+    if (!limit.success) return rateLimitResponse(limit)
 
     const { data: config, error: configError } = await supabase
       .from('whatsapp_config')
@@ -160,7 +152,7 @@ export async function POST() {
       return NextResponse.json(
         {
           error:
-            'WhatsApp not configured. Connect your WhatsApp Business account in Settings first.',
+            t('common.whatsappNotConfiguredConnect'),
         },
         { status: 400 },
       )
@@ -170,7 +162,7 @@ export async function POST() {
       return NextResponse.json(
         {
           error:
-            'WABA (WhatsApp Business Account) ID missing. Re-connect your account in Settings.',
+            t('common.wabaIdMissing'),
         },
         { status: 400 },
       )
@@ -192,7 +184,7 @@ export async function POST() {
       })
 
       if (!metaRes.ok) {
-        let metaErr = `Meta API error: ${metaRes.status}`
+        let metaErr = t('templates.metaApiStatus', { status: metaRes.status })
         try {
           const body = await metaRes.json()
           if (body?.error?.message) metaErr = body.error.message
@@ -237,7 +229,7 @@ export async function POST() {
         // route. account_id is NOT NULL on message_templates
         // post-017, so an INSERT without it errors.
         account_id: accountId,
-        user_id: user.id,
+        user_id: userId,
         name: t.name,
         category: normalizeCategory(t.category),
         language: t.language,
@@ -310,11 +302,19 @@ export async function POST() {
       truncated: pageCount >= PAGE_CAP && nextUrl !== null,
     })
   } catch (error) {
+    // Auth failures map to 401/403 rather than being folded into the
+    // generic 500 below, which surfaces `error.message` as a sync failure.
+    if (
+      error instanceof UnauthorizedError ||
+      error instanceof ForbiddenError
+    ) {
+      return toErrorResponse(error)
+    }
     console.error('Error syncing WhatsApp templates:', error)
     return NextResponse.json(
       {
         error:
-          error instanceof Error ? error.message : 'Failed to sync templates',
+          error instanceof Error ? error.message : t('templates.syncFailed'),
       },
       { status: 500 },
     )

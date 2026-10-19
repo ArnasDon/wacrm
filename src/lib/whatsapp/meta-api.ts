@@ -9,6 +9,11 @@
  * instead of a runtime rejection from Meta.
  */
 
+import { isBusinessScopedUserId } from './wa-identity'
+import { getT } from '@/lib/i18n/translate'
+
+const ti = getT('Validation.interactive')
+
 const META_API_VERSION = 'v21.0'
 const META_API_BASE = `https://graph.facebook.com/${META_API_VERSION}`
 
@@ -23,19 +28,92 @@ export interface MetaPhoneInfo {
   quality_rating?: string
 }
 
-interface MetaErrorResponse {
-  error?: { message?: string; code?: number; type?: string }
+export interface MetaPhoneHealth {
+  id: string
+  display_phone_number?: string
+  quality_rating?: string
+  whatsapp_business_manager_messaging_limit?: string
 }
 
-async function throwMetaError(response: Response, fallback: string): Promise<never> {
+interface MetaErrorResponse {
+  error?: {
+    message?: string
+    code?: number
+    error_subcode?: number
+    type?: string
+    fbtrace_id?: string
+    /** WhatsApp-specific envelope — `details` is the human-readable part. */
+    error_data?: { messaging_product?: string; details?: string }
+  }
+}
+
+/**
+ * A Graph API failure with Meta's structured envelope preserved.
+ *
+ * `message` stays what it always was (Meta's `error.message`, or the
+ * caller's fallback when the body wasn't JSON) so every existing
+ * `err.message` consumer keeps working. The extra fields are what
+ * `meta-error-explain.ts` needs to say *why* a call failed and which
+ * setting to check — and what a user has to quote to Meta support
+ * (`fbtrace_id`). Issue #505.
+ */
+export class MetaApiError extends Error {
+  readonly code: number | null
+  readonly subcode: number | null
+  readonly type: string | null
+  readonly fbtraceId: string | null
+  readonly httpStatus: number
+  /** `error.error_data.details` — WhatsApp endpoints put the useful text here. */
+  readonly details: string | null
+
+  constructor(
+    message: string,
+    fields: {
+      code?: number | null
+      subcode?: number | null
+      type?: string | null
+      fbtraceId?: string | null
+      httpStatus: number
+      details?: string | null
+    },
+  ) {
+    super(message)
+    this.name = 'MetaApiError'
+    this.code = fields.code ?? null
+    this.subcode = fields.subcode ?? null
+    this.type = fields.type ?? null
+    this.fbtraceId = fields.fbtraceId ?? null
+    this.httpStatus = fields.httpStatus
+    this.details = fields.details ?? null
+  }
+}
+
+/**
+ * Read a failed Graph response into a MetaApiError without throwing.
+ * Consumes the body — call at most once per response.
+ */
+async function readMetaError(response: Response, fallback: string): Promise<MetaApiError> {
   let message = fallback
+  let envelope: MetaErrorResponse['error'] | undefined
   try {
     const data = (await response.json()) as MetaErrorResponse
-    if (data.error?.message) message = data.error.message
+    envelope = data.error
+    if (envelope?.message) message = envelope.message
   } catch {
     // response body wasn't JSON — keep the fallback
   }
-  throw new Error(message)
+  return new MetaApiError(message, {
+    code: typeof envelope?.code === 'number' ? envelope.code : null,
+    subcode: typeof envelope?.error_subcode === 'number' ? envelope.error_subcode : null,
+    type: envelope?.type ?? null,
+    fbtraceId: envelope?.fbtrace_id ?? null,
+    httpStatus: response.status,
+    details: envelope?.error_data?.details ?? null,
+  })
+}
+
+async function throwMetaError(response: Response, fallback: string): Promise<never> {
+  throw await readMetaError(response, fallback)
 }
 
 // ============================================================
@@ -63,6 +141,33 @@ export async function verifyPhoneNumber(
     await throwMetaError(response, `Meta API error: ${response.status}`)
   }
   return response.json()
+}
+
+export async function getPhoneNumberHealth(
+  args: VerifyPhoneNumberArgs
+): Promise<MetaPhoneHealth> {
+  const { phoneNumberId, accessToken } = args
+  const headers = { Authorization: `Bearer ${accessToken}` }
+  const [response, limitResponse] = await Promise.all([
+    fetch(`${META_API_BASE}/${phoneNumberId}?fields=id,display_phone_number,quality_rating`, { headers }),
+    fetch(`${META_API_BASE}/${phoneNumberId}?fields=whatsapp_business_manager_messaging_limit`, { headers }).catch(
+      () => null
+    ),
+  ])
+  if (!response.ok) {
+    await throwMetaError(response, `Meta API error: ${response.status}`)
+  }
+  const health: MetaPhoneHealth = await response.json()
+  if (limitResponse?.ok) {
+    const limit = (await limitResponse.json().catch(() => null)) as Pick<
+      MetaPhoneHealth,
+      'whatsapp_business_manager_messaging_limit'
+    > | null
+    if (limit?.whatsapp_business_manager_messaging_limit) {
+      health.whatsapp_business_manager_messaging_limit = limit.whatsapp_business_manager_messaging_limit
+    }
+  }
+  return health
 }
 
 // ============================================================
@@ -142,17 +247,11 @@ export async function registerPhoneNumber(
   // text "already registered" appears when the number is already
   // subscribed to this app — that's success from the caller's
   // perspective, surface it as such.
-  let data: { error?: { message?: string; code?: number; error_subcode?: number } } = {}
-  try {
-    data = await response.json()
-  } catch {
-    /* keep empty */
-  }
-  const message = data.error?.message ?? `Meta API error: ${response.status}`
-  if (/already.*registered/i.test(message)) {
+  const error = await readMetaError(response, `Meta API error: ${response.status}`)
+  if (/already.*registered/i.test(error.message)) {
     return { success: true, alreadyRegistered: true }
   }
-  throw new Error(message)
+  throw error
 }
 
 export interface SubscribeWabaToAppArgs {
@@ -176,6 +275,51 @@ export async function subscribeWabaToApp(
   if (!response.ok) {
     await throwMetaError(response, `Meta API error: ${response.status}`)
   }
+}
+
+export interface ListWabaPhoneNumbersArgs {
+  wabaId: string
+  accessToken: string
+}
+
+export interface WabaPhoneNumber {
+  id: string
+  display_phone_number?: string
+  verified_name?: string
+}
+
+/**
+ * List the phone numbers that live under a WABA.
+ *
+ * Used by POST /api/whatsapp/config to prove the Phone Number ID the
+ * user typed actually belongs to the WABA ID they typed. A mismatch
+ * used to save fine and surface days later as "the webhook never
+ * fires" — the WABA that got subscribed wasn't the one owning the
+ * number (issue #505). Follows `paging.next` a few pages in case a
+ * WABA holds more numbers than one page returns.
+ */
+export async function listWabaPhoneNumbers(
+  args: ListWabaPhoneNumbersArgs
+): Promise<WabaPhoneNumber[]> {
+  const { wabaId, accessToken } = args
+  const out: WabaPhoneNumber[] = []
+  let url: string | undefined =
+    `${META_API_BASE}/${wabaId}/phone_numbers?fields=id,display_phone_number,verified_name&limit=100`
+  for (let page = 0; url && page < 5; page++) {
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+    if (!response.ok) {
+      await throwMetaError(response, `Meta API error: ${response.status}`)
+    }
+    const data = (await response.json()) as {
+      data?: WabaPhoneNumber[]
+      paging?: { next?: string }
+    }
+    out.push(...(data.data ?? []))
+    url = data.paging?.next
+  }
+  return out
 }
 
 export interface GetSubscribedAppsArgs {
@@ -215,6 +359,24 @@ export async function getSubscribedApps(
 // Sending
 // ============================================================
 
+/**
+ * Address a send at either a phone number or a business-scoped user ID.
+ *
+ * Meta uses two mutually-exclusive fields: `to` (+ `recipient_type`)
+ * for a phone number, and `recipient` for a BSUID or parent BSUID
+ * (issue #519). Every send helper below routes its `to` argument
+ * through this, so callers hand over whichever identifier they hold and
+ * don't have to know which field Meta wants.
+ *
+ * The two are never ambiguous: a sanitized phone number is digits only,
+ * and a BSUID always carries a two-letter prefix and a dot.
+ */
+function recipientFields(to: string): Record<string, unknown> {
+  return isBusinessScopedUserId(to)
+    ? { recipient: to.trim() }
+    : { recipient_type: 'individual', to }
+}
+
 export interface SendTextMessageArgs {
   phoneNumberId: string
   accessToken: string
@@ -236,8 +398,7 @@ export async function sendTextMessage(
   const url = `${META_API_BASE}/${phoneNumberId}/messages`
   const body: Record<string, unknown> = {
     messaging_product: 'whatsapp',
-    recipient_type: 'individual',
-    to,
+    ...recipientFields(to),
     type: 'text',
     text: { body: text },
   }
@@ -303,8 +464,7 @@ export async function sendMediaMessage(
 
   const body: Record<string, unknown> = {
     messaging_product: 'whatsapp',
-    recipient_type: 'individual',
-    to,
+    ...recipientFields(to),
     type: kind,
     [kind]: media,
   }
@@ -419,8 +579,7 @@ export async function sendTemplateMessage(
 
   const body: Record<string, unknown> = {
     messaging_product: 'whatsapp',
-    recipient_type: 'individual',
-    to,
+    ...recipientFields(to),
     type: 'template',
     template: templatePayload,
   }
@@ -690,8 +849,7 @@ export async function sendReactionMessage(
     },
     body: JSON.stringify({
       messaging_product: 'whatsapp',
-      recipient_type: 'individual',
-      to,
+      ...recipientFields(to),
       type: 'reaction',
       reaction: { message_id: targetMessageId, emoji },
     }),
@@ -701,6 +859,55 @@ export async function sendReactionMessage(
   }
   const data = await response.json()
   return { messageId: data.messages[0].id }
+}
+
+// ============================================================
+// Typing indicator (rides on the read receipt)
+// ============================================================
+
+export interface SendTypingIndicatorArgs {
+  phoneNumberId: string
+  accessToken: string
+  /** Meta's wamid of the INBOUND message we're about to answer — must
+   *  come from a received-message webhook, not one of our own sends. */
+  messageId: string
+}
+
+/**
+ * Mark an inbound message as read AND show "typing…" to the customer.
+ *
+ * One request does both: Meta's typing indicator is a field on the
+ * read-status update. The indicator clears after 25 seconds or as soon
+ * as the business sends a message, whichever comes first, so there is
+ * nothing to cancel. Meta asks that it only be shown when a reply is
+ * actually coming.
+ *   https://developers.facebook.com/docs/whatsapp/cloud-api/typing-indicators
+ *
+ * Returns nothing — the endpoint answers `{ success: true }` and mints
+ * no message id. Callers should treat it as best-effort: a failure here
+ * must never block the reply that follows.
+ */
+export async function sendTypingIndicator(
+  args: SendTypingIndicatorArgs
+): Promise<void> {
+  const { phoneNumberId, accessToken, messageId } = args
+  const url = `${META_API_BASE}/${phoneNumberId}/messages`
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      status: 'read',
+      message_id: messageId,
+      typing_indicator: { type: 'text' },
+    }),
+  })
+  if (!response.ok) {
+    await throwMetaError(response, `Meta API error: ${response.status}`)
+  }
 }
 
 // ============================================================
@@ -774,23 +981,23 @@ export async function sendInteractiveButtons(
   validateInteractiveHeaderFooter(headerText, footerText)
   if (buttons.length < 1 || buttons.length > INTERACTIVE_LIMITS.maxButtons) {
     throw new Error(
-      `Interactive button message requires 1-${INTERACTIVE_LIMITS.maxButtons} buttons (got ${buttons.length}).`
+      ti('buttonCount', { max: INTERACTIVE_LIMITS.maxButtons, got: buttons.length })
     )
   }
   const seenButtonIds = new Set<string>()
   for (const btn of buttons) {
-    if (!btn.id) throw new Error('Interactive button missing id.')
+    if (!btn.id) throw new Error(ti('buttonMissingId'))
     // Duplicate button ids make the tapped-button webhook ambiguous —
     // Meta rejects them, and the pre-flight validator (interactive.ts)
     // rejects them too, so guard here to keep the two paths in step.
     if (seenButtonIds.has(btn.id)) {
-      throw new Error(`Interactive message has duplicate button id "${btn.id}".`)
+      throw new Error(ti('duplicateButtonId', { id: btn.id }))
     }
     seenButtonIds.add(btn.id)
-    if (!btn.title) throw new Error(`Interactive button "${btn.id}" missing title.`)
+    if (!btn.title) throw new Error(ti('buttonMissingTitle', { id: btn.id }))
     if (btn.title.length > INTERACTIVE_LIMITS.buttonTitleMaxLength) {
       throw new Error(
-        `Interactive button title "${btn.title}" exceeds ${INTERACTIVE_LIMITS.buttonTitleMaxLength} chars.`
+        ti('buttonTitleTooLong', { title: btn.title, max: INTERACTIVE_LIMITS.buttonTitleMaxLength })
       )
     }
   }
@@ -810,8 +1017,7 @@ export async function sendInteractiveButtons(
 
   const body: Record<string, unknown> = {
     messaging_product: 'whatsapp',
-    recipient_type: 'individual',
-    to,
+    ...recipientFields(to),
     type: 'interactive',
     interactive,
   }
@@ -880,35 +1086,35 @@ export async function sendInteractiveList(
   } = args
   validateInteractiveBody(bodyText)
   validateInteractiveHeaderFooter(headerText, footerText)
-  if (!buttonLabel) throw new Error('Interactive list requires a buttonLabel.')
+  if (!buttonLabel) throw new Error(ti('listRequiresButtonLabel'))
   if (buttonLabel.length > INTERACTIVE_LIMITS.buttonTitleMaxLength) {
     throw new Error(
-      `Interactive list buttonLabel "${buttonLabel}" exceeds ${INTERACTIVE_LIMITS.buttonTitleMaxLength} chars.`
+      ti('listButtonLabelTooLong', { label: buttonLabel, max: INTERACTIVE_LIMITS.buttonTitleMaxLength })
     )
   }
   if (sections.length < 1 || sections.length > INTERACTIVE_LIMITS.maxListSections) {
     throw new Error(
-      `Interactive list requires 1-${INTERACTIVE_LIMITS.maxListSections} sections (got ${sections.length}).`
+      ti('listSectionCount', { max: INTERACTIVE_LIMITS.maxListSections, got: sections.length })
     )
   }
   const totalRows = sections.reduce((sum, s) => sum + s.rows.length, 0)
   if (totalRows < 1 || totalRows > INTERACTIVE_LIMITS.maxListRowsTotal) {
     throw new Error(
-      `Interactive list requires 1-${INTERACTIVE_LIMITS.maxListRowsTotal} rows total across all sections (got ${totalRows}).`
+      ti('listRowCount', { max: INTERACTIVE_LIMITS.maxListRowsTotal, got: totalRows })
     )
   }
   const seenIds = new Set<string>()
   for (const section of sections) {
     for (const row of section.rows) {
-      if (!row.id) throw new Error('Interactive list row missing id.')
+      if (!row.id) throw new Error(ti('listRowMissingId'))
       if (seenIds.has(row.id)) {
-        throw new Error(`Interactive list has duplicate row id "${row.id}".`)
+        throw new Error(ti('duplicateRowId', { id: row.id }))
       }
       seenIds.add(row.id)
-      if (!row.title) throw new Error(`Interactive list row "${row.id}" missing title.`)
+      if (!row.title) throw new Error(ti('listRowMissingTitle', { id: row.id }))
       if (row.title.length > INTERACTIVE_LIMITS.listRowTitleMaxLength) {
         throw new Error(
-          `Interactive list row title "${row.title}" exceeds ${INTERACTIVE_LIMITS.listRowTitleMaxLength} chars.`
+          ti('listRowTitleTooLong', { title: row.title, max: INTERACTIVE_LIMITS.listRowTitleMaxLength })
         )
       }
       if (
@@ -916,7 +1122,7 @@ export async function sendInteractiveList(
         row.description.length > INTERACTIVE_LIMITS.listRowDescriptionMaxLength
       ) {
         throw new Error(
-          `Interactive list row description for "${row.id}" exceeds ${INTERACTIVE_LIMITS.listRowDescriptionMaxLength} chars.`
+          ti('listRowDescriptionTooLong', { id: row.id, max: INTERACTIVE_LIMITS.listRowDescriptionMaxLength })
         )
       }
     }
@@ -942,8 +1148,7 @@ export async function sendInteractiveList(
 
   const body: Record<string, unknown> = {
     messaging_product: 'whatsapp',
-    recipient_type: 'individual',
-    to,
+    ...recipientFields(to),
     type: 'interactive',
     interactive,
   }
@@ -966,10 +1171,10 @@ export async function sendInteractiveList(
 }
 
 function validateInteractiveBody(bodyText: string): void {
-  if (!bodyText) throw new Error('Interactive message requires bodyText.')
+  if (!bodyText) throw new Error(ti('bodyRequired'))
   if (bodyText.length > INTERACTIVE_LIMITS.bodyMaxLength) {
     throw new Error(
-      `Interactive bodyText exceeds ${INTERACTIVE_LIMITS.bodyMaxLength} chars.`
+      ti('bodyTooLong', { max: INTERACTIVE_LIMITS.bodyMaxLength })
     )
   }
 }
@@ -980,12 +1185,12 @@ function validateInteractiveHeaderFooter(
 ): void {
   if (headerText && headerText.length > INTERACTIVE_LIMITS.headerTextMaxLength) {
     throw new Error(
-      `Interactive headerText exceeds ${INTERACTIVE_LIMITS.headerTextMaxLength} chars.`
+      ti('headerTooLong', { max: INTERACTIVE_LIMITS.headerTextMaxLength })
     )
   }
   if (footerText && footerText.length > INTERACTIVE_LIMITS.footerMaxLength) {
     throw new Error(
-      `Interactive footerText exceeds ${INTERACTIVE_LIMITS.footerMaxLength} chars.`
+      ti('footerTooLong', { max: INTERACTIVE_LIMITS.footerMaxLength })
     )
   }
 }
@@ -1002,10 +1207,16 @@ export interface GetMediaUrlArgs {
 /**
  * Resolve a media ID to Meta's (short-lived, authenticated) CDN URL
  * plus the MIME type. Step one of the media-proxy flow.
+ *
+ * `fileSize` is Meta's `file_size` (bytes) and is what lets the
+ * inbound mirror (issue #466) reject a file the `chat-media` bucket
+ * would refuse WITHOUT downloading it first — a 90 MB document costs
+ * nothing to skip here and a full transfer to skip after the fact.
+ * Null when Meta omits the field or sends something non-numeric.
  */
 export async function getMediaUrl(
   args: GetMediaUrlArgs
-): Promise<{ url: string; mimeType: string }> {
+): Promise<{ url: string; mimeType: string; fileSize: number | null }> {
   const { mediaId, accessToken } = args
   const response = await fetch(`${META_API_BASE}/${mediaId}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
@@ -1015,7 +1226,14 @@ export async function getMediaUrl(
   }
   const data = await response.json()
   if (!data.url) throw new Error('Media URL not found in Meta response')
-  return { url: data.url, mimeType: data.mime_type || 'application/octet-stream' }
+  // Meta documents file_size as a number but has been observed sending
+  // it as a numeric string; Number() handles both and NaN-guards junk.
+  const size = Number(data.file_size)
+  return {
+    url: data.url,
+    mimeType: data.mime_type || 'application/octet-stream',
+    fileSize: Number.isFinite(size) && size >= 0 ? size : null,
+  }
 }
 
 export interface DownloadMediaArgs {

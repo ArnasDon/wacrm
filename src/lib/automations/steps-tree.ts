@@ -33,17 +33,46 @@ const uid = () =>
     ? crypto.randomUUID()
     : Math.random().toString(36).slice(2) + Date.now().toString(36)
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 export async function replaceSteps(
   automationId: string,
   input: BuilderStepInput[],
 ): Promise<string | null> {
   const admin = supabaseAdmin()
-  const { error: delErr } = await admin
+  const { data: existing, error: loadErr } = await admin
     .from('automation_steps')
-    .delete()
+    .select('id')
     .eq('automation_id', automationId)
-  if (delErr) return delErr.message
-  return insertSteps(automationId, input)
+  if (loadErr) return loadErr.message
+  const existingIds = new Set(((existing ?? []) as { id: string }[]).map((r) => r.id))
+
+  const rows = flattenSteps(automationId, input ?? [])
+  const kept = rows.filter((r) => existingIds.has(r.id))
+  const added = rows.filter((r) => !existingIds.has(r.id))
+
+  if (added.length > 0) {
+    const { error } = await admin.from('automation_steps').insert(added)
+    if (error) return error.message
+  }
+  if (kept.length > 0) {
+    const { error } = await admin
+      .from('automation_steps')
+      .upsert(kept, { onConflict: 'id' })
+    if (error) return error.message
+  }
+
+  const keptIds = new Set(rows.map((r) => r.id))
+  const removedIds = [...existingIds].filter((id) => !keptIds.has(id))
+  if (removedIds.length > 0) {
+    const { error } = await admin
+      .from('automation_steps')
+      .delete()
+      .eq('automation_id', automationId)
+      .in('id', removedIds)
+    if (error) return error.message
+  }
+  return null
 }
 
 export async function insertSteps(
@@ -51,20 +80,29 @@ export async function insertSteps(
   input: BuilderStepInput[],
 ): Promise<string | null> {
   if (!input || input.length === 0) return null
+  const rows = flattenSteps(automationId, input)
+  if (rows.length === 0) return null
+  const { error } = await supabaseAdmin().from('automation_steps').insert(rows)
+  return error?.message ?? null
+}
 
+export function flattenSteps(automationId: string, input: BuilderStepInput[]): InsertRow[] {
   const looksFlat = input.some(
     (s) => s.branch !== undefined || s.parent_index !== undefined,
   )
   const tree = looksFlat ? seedsToTree(input) : input
 
   const rows: InsertRow[] = []
+  const usedIds = new Set<string>()
   function walk(
     steps: BuilderStepInput[],
     parentId: string | null,
     branch: 'yes' | 'no' | null,
   ) {
     steps.forEach((s, idx) => {
-      const id = s.id ?? uid()
+      const id =
+        s.id && UUID_PATTERN.test(s.id) && !usedIds.has(s.id) ? s.id : uid()
+      usedIds.add(id)
       rows.push({
         id,
         automation_id: automationId,
@@ -81,10 +119,7 @@ export async function insertSteps(
     })
   }
   walk(tree, null, null)
-
-  if (rows.length === 0) return null
-  const { error } = await supabaseAdmin().from('automation_steps').insert(rows)
-  return error?.message ?? null
+  return rows
 }
 
 function seedsToTree(seeds: BuilderStepInput[]): BuilderStepInput[] {

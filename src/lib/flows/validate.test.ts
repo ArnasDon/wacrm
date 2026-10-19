@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { validateFlowForActivation, reachableFromEntry } from "./validate";
+import {
+  validateFlowForActivation,
+  reachableFromEntry,
+  findAutoAdvancingCycles,
+} from "./validate";
 
 const validFlow = {
   name: "Welcome",
@@ -545,5 +549,80 @@ describe("reachableFromEntry", () => {
     ];
     const set = reachableFromEntry("a", nodes);
     expect(set).toEqual(new Set(["a", "b"]));
+  });
+});
+
+describe("auto-advancing cycles", () => {
+  const loopNodes = [
+    { node_key: "start", node_type: "start", config: { next_node_key: "hello" } },
+    {
+      node_key: "hello",
+      node_type: "send_message",
+      config: { text: "Hi", next_node_key: "check" },
+    },
+    {
+      node_key: "check",
+      node_type: "condition",
+      config: {
+        subject: "var",
+        subject_key: "x",
+        operator: "present",
+        true_next: "hello",
+        false_next: "done",
+      },
+    },
+    { node_key: "done", node_type: "end", config: {} },
+  ];
+
+  it("rejects a loop made only of auto-advancing nodes", () => {
+    const issues = validateFlowForActivation(validFlow, loopNodes);
+    const cycle = issues.filter((i) => i.message.includes("hello, check"));
+    expect(cycle).toHaveLength(1);
+    expect(cycle[0]).toMatchObject({
+      severity: "error",
+      scope: "node",
+      node_key: "hello",
+    });
+  });
+
+  it("rejects a self-looping node", () => {
+    expect(
+      findAutoAdvancingCycles([
+        {
+          node_key: "spam",
+          node_type: "send_message",
+          config: { text: "x", next_node_key: "spam" },
+        },
+      ]),
+    ).toEqual([["spam"]]);
+  });
+
+  it("accepts a loop that passes through a node waiting for input", () => {
+    const nodes = [
+      { node_key: "start", node_type: "start", config: { next_node_key: "menu" } },
+      {
+        node_key: "menu",
+        node_type: "send_buttons",
+        config: {
+          text: "Pick",
+          buttons: [
+            { reply_id: "again", title: "Again", next_node_key: "info" },
+            { reply_id: "stop", title: "Stop", next_node_key: "done" },
+          ],
+        },
+      },
+      {
+        node_key: "info",
+        node_type: "send_message",
+        config: { text: "Info", next_node_key: "menu" },
+      },
+      { node_key: "done", node_type: "end", config: {} },
+    ];
+    expect(findAutoAdvancingCycles(nodes)).toEqual([]);
+    expect(validateFlowForActivation(validFlow, nodes)).toEqual([]);
+  });
+
+  it("finds no cycle in the well-formed flow", () => {
+    expect(findAutoAdvancingCycles(validNodes)).toEqual([]);
   });
 });

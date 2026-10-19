@@ -48,6 +48,10 @@
   --color-primary-hover: var(--primary-hover);
   --color-primary-soft: var(--primary-soft);
   --color-primary-soft-2: var(--primary-soft-2);
+  --color-status-good: var(--status-good);
+  --color-status-warning: var(--status-warning);
+  --color-status-serious: var(--status-serious);
+  --color-status-critical: var(--status-critical);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -114,6 +118,10 @@ html[data-mode="dark"] {
   --sidebar-accent: oklch(0.22 0.01 260);
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(0.28 0.01 260);
+  --status-good: #0ca30c;
+  --status-warning: #fab219;
+  --status-serious: #ec835a;
+  --status-critical: #e05252;
 }
 
 html[data-mode="light"] {
@@ -143,6 +151,10 @@ html[data-mode="light"] {
   --sidebar-accent: oklch(0.96 0.004 260);
   --sidebar-accent-foreground: oklch(0.25 0.01 260);
   --sidebar-border: oklch(0.922 0.004 260);
+  --status-good: #0b7f0b;
+  --status-warning: #946100;
+  --status-serious: #c2532a;
+  --status-critical: #c43232;
 }
 
 /* ---- ACCENT: primary color ---- */
@@ -223,6 +235,9 @@ html[data-theme="rose"] {
   }
   body {
     @apply bg-background text-foreground;
+  }
+  .recharts-cartesian-axis-tick-value {
+    fill: var(--muted-foreground);
   }
   html {
     @apply font-sans;

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import {
   checkRateLimit,
   rateLimitResponse,
@@ -10,6 +11,9 @@ import {
   validateSendMessageParams,
   SendMessageError,
 } from '@/lib/whatsapp/send-message'
+import { getT } from '@/lib/i18n/translate'
+
+const t = getT('Api')
 
 // The dashboard's outbound-send endpoint. It owns auth, per-user rate
 // limiting, and the two ways the UI targets a thread — an existing
@@ -22,42 +26,22 @@ import {
 // dashboard's internal `{ error }` shape.
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient()
-
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-
-    if (authError || !user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      )
-    }
+    // Requires the 'agent' role, matching both `canSendMessages` and the
+    // `messages_modify` RLS policy (migration 017).
+    //
+    // Resolving `account_id` off the profile — which any 'viewer' has —
+    // was previously the only gate. RLS did block the message INSERT, but
+    // the send core calls Meta BEFORE it persists, so a viewer's request
+    // still delivered a real WhatsApp message to the customer and merely
+    // failed to record it (surfacing as "sent to Meta but failed to save
+    // to DB"). RLS can't un-send that, so the role check belongs here.
+    const { supabase, accountId, userId } = await requireRole('agent')
 
     // Per-user rate limit. Bucket key is scoped to this route so
     // `/broadcast` has an independent budget.
-    const limit = checkRateLimit(`send:${user.id}`, RATE_LIMITS.send)
+    const limit = checkRateLimit(`send:${userId}`, RATE_LIMITS.send)
     if (!limit.success) {
       return rateLimitResponse(limit)
-    }
-
-    // Resolve the caller's account_id. Every downstream lookup
-    // (conversation, whatsapp_config, message_templates) is account-
-    // scoped post-multi-user, so the previous `user_id` filters
-    // returned nothing for teammates who didn't author the row.
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('account_id')
-      .eq('user_id', user.id)
-      .maybeSingle()
-    const accountId = profile?.account_id as string | undefined
-    if (!accountId) {
-      return NextResponse.json(
-        { error: 'Your profile is not linked to an account.' },
-        { status: 403 },
-      )
     }
 
     const body = await request.json()
@@ -83,7 +67,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error:
-            'Either conversation_id or contact_id, plus message_type, are required',
+            t('send.idsRequired'),
         },
         { status: 400 }
       )
@@ -123,7 +107,7 @@ export async function POST(request: Request) {
 
       if (convError || !data) {
         return NextResponse.json(
-          { error: 'Conversation not found' },
+          { error: t('common.conversationNotFound') },
           { status: 404 }
         )
       }
@@ -140,7 +124,7 @@ export async function POST(request: Request) {
 
       if (contactErr || !contactRow) {
         return NextResponse.json(
-          { error: 'Contact not found' },
+          { error: t('send.contactNotFound') },
           { status: 404 }
         )
       }
@@ -148,12 +132,12 @@ export async function POST(request: Request) {
       const resolved = await findOrCreateConversation(
         supabase,
         accountId,
-        user.id,
+        userId,
         contact_id
       )
       if (!resolved) {
         return NextResponse.json(
-          { error: 'Failed to open a conversation for this contact' },
+          { error: t('send.openConversationFailed') },
           { status: 500 }
         )
       }
@@ -162,7 +146,7 @@ export async function POST(request: Request) {
 
     if (!conversationId) {
       return NextResponse.json(
-        { error: 'Conversation not found' },
+        { error: t('common.conversationNotFound') },
         { status: 404 }
       )
     }
@@ -184,6 +168,7 @@ export async function POST(request: Request) {
         templateMessageParams: template_message_params,
         interactivePayload: interactive_payload,
         replyToMessageId: reply_to_message_id,
+        senderId: userId,
       })
 
       return NextResponse.json({
@@ -201,11 +186,10 @@ export async function POST(request: Request) {
       throw err
     }
   } catch (error) {
+    // requireRole throws Unauthorized/Forbidden; toErrorResponse maps
+    // those to 401/403 and collapses anything else to a generic 500.
     console.error('Error in WhatsApp send POST:', error)
-    return NextResponse.json(
-      { error: 'Failed to send message' },
-      { status: 500 }
-    )
+    return toErrorResponse(error)
   }
 }
 

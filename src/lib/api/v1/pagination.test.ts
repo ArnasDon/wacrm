@@ -5,6 +5,7 @@ import {
   decodeCursor,
   keysetFilter,
   buildPage,
+  isUuid,
   DEFAULT_LIMIT,
   MAX_LIMIT,
 } from './pagination';
@@ -108,5 +109,18 @@ describe('buildPage', () => {
     const page = buildPage(rows, 5);
     expect(page.items).toHaveLength(5);
     expect(page.nextCursor).toBe(encodeCursor(rows[4]));
+  });
+});
+
+describe('isUuid', () => {
+  it('accepts a UUID in either case', () => {
+    expect(isUuid('3f2b8c1e-9a4d-4e2f-b6a1-0c9d8e7f6a5b')).toBe(true);
+    expect(isUuid('3F2B8C1E-9A4D-4E2F-B6A1-0C9D8E7F6A5B')).toBe(true);
+  });
+
+  it('rejects anything else, including PostgREST filter syntax', () => {
+    expect(isUuid('')).toBe(false);
+    expect(isUuid('tag-1')).toBe(false);
+    expect(isUuid('3f2b8c1e-9a4d-4e2f-b6a1-0c9d8e7f6a5b,id.eq.x')).toBe(false);
   });
 });

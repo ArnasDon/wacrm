@@ -11,7 +11,8 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe';
 import { resolveImportTagIds } from '@/lib/contacts/resolve-import-tags';
-import { sanitizePhoneForMeta, isValidE164 } from '@/lib/whatsapp/phone-utils';
+import { addContactTagAndDispatch } from '@/lib/contacts/tag-events';
+import { parseInternationalPhone } from '@/lib/whatsapp/phone-utils';
 
 /** Row select that embeds the contact's tags for serialization. */
 export const CONTACT_SELECT = '*, contact_tags(tags(*))';
@@ -112,10 +113,14 @@ export async function findOrCreateContact(
   auditUserId: string,
   input: ContactInput
 ): Promise<{ id: string; created: boolean }> {
-  const sanitized = sanitizePhoneForMeta(input.phone);
-  if (!isValidE164(sanitized)) {
+  // Raw integrator input: the leading `+` is required so the country
+  // code is explicit. A national-format number ("4155551212") would
+  // otherwise be persisted and then misdelivered on every later send
+  // (issue #586).
+  const sanitized = parseInternationalPhone(input.phone);
+  if (!sanitized) {
     throw new ContactError(
-      "'phone' must be a valid phone number in E.164 format (e.g. +14155550123)",
+      "'phone' must be an international phone number with a leading + and country code (e.g. +14155550123)",
       400
     );
   }
@@ -152,9 +157,12 @@ export async function findOrCreateContact(
 
 /**
  * Replace a contact's tags to exactly match `tagNames` (case-
- * insensitive; missing tags are created). A no-op when `tagNames` is
- * undefined — pass `[]` to clear all tags. Reuses `resolveImportTagIds`
- * so API and CSV-import tag handling stay consistent.
+ * insensitive; missing tags are created). Pass `[]` to clear all tags.
+ * Reuses `resolveImportTagIds` so API and CSV-import tag handling stay
+ * consistent — but note its `tagIdByKey` map holds EVERY tag in the
+ * account (it loads them all for case-insensitive matching), so the
+ * desired set must be derived from the *requested* names only, never
+ * from the map's values (#560).
  */
 export async function setContactTags(
   db: SupabaseClient,
@@ -169,7 +177,15 @@ export async function setContactTags(
     tagNames,
     canCreateTags: true,
   });
-  const desired = new Set(tagIdByKey.values());
+  // Same normalization `resolveImportTagIds` applies to `tagNames`
+  // (trim, lowercase, skip empty) so every requested name resolves.
+  const desired = new Set<string>();
+  for (const raw of tagNames) {
+    const key = raw.trim().toLowerCase();
+    if (!key) continue;
+    const tagId = tagIdByKey.get(key);
+    if (tagId) desired.add(tagId);
+  }
 
   // Diff against the current joins rather than delete-all-then-insert:
   // a diff only touches tags that actually change, so a mid-operation
@@ -199,10 +215,19 @@ export async function setContactTags(
     if (error) throw new ContactError('Failed to update contact tags', 500);
   }
   if (toAdd.length > 0) {
-    const { error } = await db
-      .from('contact_tags')
-      .insert(toAdd.map((tag_id) => ({ contact_id: contactId, tag_id })));
-    if (error) throw new ContactError('Failed to update contact tags', 500);
+    for (const tagId of toAdd) {
+      try {
+        await addContactTagAndDispatch({
+          db,
+          accountId,
+          contactId,
+          tagId,
+        });
+      } catch (error) {
+        console.error('[api/v1/contacts] tag add failed:', error);
+        throw new ContactError('Failed to update contact tags', 500);
+      }
+    }
   }
 }
 
@@ -220,4 +245,21 @@ export async function getContactById(
     .maybeSingle();
   if (error || !data) return null;
   return serializeContact(data as Record<string, unknown>);
+}
+
+// PostgREST filter values are comma/paren-delimited; strip anything
+// that could break the `.or()` grammar before interpolating a search
+// term. Leaves the characters a phone or name legitimately contains.
+function sanitizeSearch(raw: string): string {
+  return raw.replace(/[^\p{L}\p{N} +@.\-_]/gu, '').trim();
+}
+
+export function contactSearchFilter(rawSearch: string): string | null {
+  const search = sanitizeSearch(rawSearch);
+  if (!search) return null;
+  const namePattern = search.replace(/_/g, '\\_');
+  const conditions = [`name.ilike.*${namePattern}*`];
+  const phoneDigits = search.replace(/\D/g, '');
+  if (phoneDigits) conditions.push(`phone.ilike.*${phoneDigits}*`);
+  return conditions.join(',');
 }

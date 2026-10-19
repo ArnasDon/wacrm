@@ -74,8 +74,18 @@ function fakeDb() {
     // concurrency tests below for exactly what this fake can and cannot
     // prove).
     let orClauses: [string, 'is' | 'lt', string][] | null = null
+    // Models PostgREST's real default page cap (1,000 rows on the real
+    // project — see the AI agent audit fix in service.ts): a plain
+    // `.select()` with no `.range()` only returns the first
+    // DEFAULT_PAGE_SIZE rows, however many actually match.
+    const DEFAULT_PAGE_SIZE = 1000
+    let range: [number, number] | null = null
     const api = {
       select: () => api,
+      range: (from: number, to: number) => {
+        range = [from, to]
+        return api
+      },
       eq: (col: string, val: unknown) => {
         filters.push([col, val, 'eq'])
         return api
@@ -114,7 +124,9 @@ function fakeDb() {
     async function run(singleResult: boolean) {
       if (op === 'select') {
         const matched = rows.filter(matches)
-        return singleResult ? { data: matched[0] ?? null, error: null } : { data: matched, error: null }
+        if (singleResult) return { data: matched[0] ?? null, error: null }
+        const [from, to] = range ?? [0, DEFAULT_PAGE_SIZE - 1]
+        return { data: matched.slice(from, to + 1), error: null }
       }
       if (op === 'update') {
         if (failNextUpdate.has(tableName)) {
@@ -761,6 +773,46 @@ describe('persistDataSource — stable identity via id_producto + idempotent cat
     expect(deleteInBatchSizes.length).toBeGreaterThan(1)
     for (const size of deleteInBatchSizes) expect(size).toBeLessThanOrEqual(200)
     expect(deleteInBatchSizes.reduce((a, b) => a + b, 0)).toBe(OLD_COUNT)
+  })
+
+  // ============================================================
+  // Real defect found auditing the AI agent (Oct 2026), discovered
+  // immediately after the chunked-delete fix above went to production:
+  // the chunking fixed the DELETE side, but the SELECT that reads the
+  // previous generation (to compute which ids are even obsolete) had
+  // no `.range()` at all — PostgREST caps an unranged `.select()` at
+  // its default page size (1,000 rows on the real project) regardless
+  // of how many rows actually match. For a source whose existing
+  // catalog already exceeds 1,000 (exactly what the identity-scheme
+  // transition incident left behind: 2,287 rows), `previous` only ever
+  // saw the first page, so the obsolete-row diff permanently missed
+  // whatever fell on later pages — those rows could never be cleaned
+  // up by ANY future refresh, each one silently falling outside the
+  // page again. Confirmed live: after deploying the chunked-delete fix
+  // alone and running one real sync, 145 of 1,144 stale rows survived.
+  // ============================================================
+  it('a source with MORE than 1,000 pre-existing rows still has ALL of them correctly identified as obsolete — not just the first page', async () => {
+    const OLD_COUNT = 1200 // exceeds the real project's 1,000-row default page size
+    const oldRows = Array.from({ length: OLD_COUNT }, (_, i) => idRow(`old-${i}`, `Producto ${i}`, '1', '100'))
+    stubCsvFetch(idCsv(oldRows))
+    const { db, table } = fakeDb()
+    const source = await createDataSourceFromUrl(db, {
+      accountId: 'acct-1', userId: 'user-1', sourceType: 'google_sheets',
+      displayName: 'Consultas KC', url: 'https://docs.google.com/spreadsheets/d/x/export?format=csv', usage: 'catalog',
+    })
+    expect(table('ai_catalog_products').filter((r) => r.data_source_id === source.id)).toHaveLength(OLD_COUNT)
+
+    // Identity scheme changes entirely, same as the chunking test above
+    // — every one of the 1,200 old rows must be removed, including the
+    // 200 that fall past the first 1,000-row page.
+    const newRows = Array.from({ length: OLD_COUNT }, (_, i) => idRow(`new-${i}`, `Producto ${i}`, '1', '100'))
+    stubCsvFetch(idCsv(newRows))
+    await refreshDataSource(db, { accountId: 'acct-1', userId: 'user-1', id: source.id })
+
+    const rows = table('ai_catalog_products').filter((r) => r.data_source_id === source.id)
+    expect(rows).toHaveLength(OLD_COUNT) // exactly the new generation — zero stragglers from any page
+    expect(rows.every((r) => (r.source_product_id as string).startsWith('new-'))).toBe(true)
+    expect(rows.some((r) => (r.source_product_id as string).startsWith('old-'))).toBe(false)
   })
 
   it('a genuine failure removing obsolete rows (e.g. the real "Bad Request" this project hit) is wrapped in DataSourceError, never silently left as a doubled catalog', async () => {

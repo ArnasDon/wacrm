@@ -14,15 +14,33 @@ export async function GET(request: Request) {
     const leadSearch = (searchParams.get('lead_search') || '').trim();
     const propertySearch = (searchParams.get('property_search') || '').trim();
 
-    // 1. Projeções válidas na mesma conta
+    // 1. Projeções completas na mesma conta (traz todos os atributos e elimina necessidade de queries secundárias com centenas de IDs na URL)
     const { data: allProjections } = await ctx.supabase
       .from('property_match_projections')
-      .select('property_id, status')
+      .select('*')
       .eq('account_id', ctx.accountId);
     const validPropertyIds = new Set((allProjections || []).map((p) => p.property_id));
     const activePropertyIds = new Set(
       (allProjections || []).filter((p) => p.status === 'ativo').map((p) => p.property_id)
     );
+    const propertiesMap = new Map<string, Record<string, unknown>>();
+    for (const p of allProjections || []) {
+      propertiesMap.set(p.property_id, p);
+    }
+
+    // Helper para deletar em lotes seguros e evitar URLs excessivas no PostgREST
+    const safeDeleteInChunks = (column: string, ids: string[]) => {
+      const unique = [...new Set(ids)];
+      const chunkSize = 50;
+      for (let i = 0; i < unique.length; i += chunkSize) {
+        const slice = unique.slice(i, i + chunkSize);
+        void ctx.supabase
+          .from('lead_property_matches')
+          .delete()
+          .eq('account_id', ctx.accountId)
+          .in(column, slice);
+      }
+    };
 
     // Contadores para cada aba de status (contando LEADS ÚNICOS de matches com projeção válida)
     const [
@@ -67,25 +85,16 @@ export async function GET(request: Request) {
     const orphanPropertyIds = allMatchesRaw
       .filter((r) => !validPropertyIds.has(r.property_id))
       .map((r) => r.property_id);
-    if (orphanPropertyIds.length > 0) {
-      void ctx.supabase
-        .from('lead_property_matches')
-        .delete()
-        .eq('account_id', ctx.accountId)
-        .in('property_id', [...new Set(orphanPropertyIds)]);
+    if (orphanPropertyIds.length > 0 && validPropertyIds.size > 0) {
+      safeDeleteInChunks('property_id', orphanPropertyIds);
     }
 
     // Limpa matches 'novo' associados a imóveis indisponíveis (inativo, arquivado ou esgotado)
     const staleNovoPropertyIds = (distinctNovos || [])
       .filter((r) => !activePropertyIds.has(r.property_id))
       .map((r) => r.property_id);
-    if (staleNovoPropertyIds.length > 0) {
-      void ctx.supabase
-        .from('lead_property_matches')
-        .delete()
-        .eq('account_id', ctx.accountId)
-        .eq('match_status', 'novo')
-        .in('property_id', [...new Set(staleNovoPropertyIds)]);
+    if (staleNovoPropertyIds.length > 0 && activePropertyIds.size > 0) {
+      safeDeleteInChunks('property_id', staleNovoPropertyIds);
     }
 
     const countNovos = new Set(
@@ -163,33 +172,19 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Falha ao buscar matches' }, { status: 500 });
     }
 
-    // Busca os imóveis correspondentes em property_match_projections
-    const propertyIds = [...new Set((matches || []).map((m) => m.property_id))];
-    const propertiesMap = new Map<string, Record<string, unknown>>();
-
-    if (propertyIds.length > 0) {
-      const { data: props } = await ctx.supabase
-        .from('property_match_projections')
-        .select('*')
-        .eq('account_id', ctx.accountId)
-        .in('property_id', propertyIds);
-
-      for (const p of props || []) {
-        propertiesMap.set(p.property_id, p);
-      }
-    }
-
     // Limpa do banco de dados qualquer match órfão que não possua imóvel correspondente
-    // ou match 'novo' de imóvel não ativo
-    const staleMatches = (matches || []).filter((m) => {
-      const prop = propertiesMap.get(m.property_id);
-      if (!prop) return true;
-      if (m.match_status === 'novo' && prop.status !== 'ativo') return true;
-      return false;
-    });
-    if (staleMatches.length > 0) {
-      const staleIds = staleMatches.map((m) => m.id);
-      void ctx.supabase.from('lead_property_matches').delete().in('id', staleIds);
+    // ou match 'novo' de imóvel não ativo (apenas se propertiesMap foi carregado com sucesso)
+    if (propertiesMap.size > 0) {
+      const staleMatches = (matches || []).filter((m) => {
+        const prop = propertiesMap.get(m.property_id);
+        if (!prop) return true;
+        if (m.match_status === 'novo' && prop.status !== 'ativo') return true;
+        return false;
+      });
+      if (staleMatches.length > 0) {
+        const staleIds = staleMatches.map((m) => m.id);
+        safeDeleteInChunks('id', staleIds);
+      }
     }
 
     // Filtra estritamente apenas matches cujo imóvel existe na conta e, para 'novo', está ativo

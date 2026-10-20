@@ -102,30 +102,40 @@ export async function GET(
 
     // Busca os dados completos de projeção dos imóveis compatíveis
     const matchPropIds = [...new Set((leadMatches || []).map((m) => m.property_id))];
-  const matchPropertiesMap = new Map<string, Record<string, unknown>>();
+    const matchPropertiesMap = new Map<string, Record<string, unknown>>();
     if (matchPropIds.length > 0) {
-      const { data: mProps } = await ctx.supabase
+      let mPropsQuery = ctx.supabase
         .from('property_match_projections')
         .select('*')
-        .eq('account_id', ctx.accountId)
-        .in('property_id', matchPropIds);
+        .eq('account_id', ctx.accountId);
 
-      for (const p of mProps || []) {
-        matchPropertiesMap.set(p.property_id, p);
+      if (matchPropIds.length <= 50) {
+        mPropsQuery = mPropsQuery.in('property_id', matchPropIds);
+      }
+
+      const { data: mProps, error: mPropsErr } = await mPropsQuery;
+
+      if (!mPropsErr && mProps) {
+        for (const p of mProps) {
+          matchPropertiesMap.set(p.property_id, p);
+        }
       }
     }
 
     // Limpa do banco de dados qualquer match órfão que não possua projeção ou match 'novo' de imóvel indisponível
-    const orphanOrInactiveMatchIds = (leadMatches || [])
-      .filter((m) => {
-        const prop = matchPropertiesMap.get(m.property_id);
-        if (!prop) return true;
-        if (m.match_status === 'novo' && prop.status !== 'ativo') return true;
-        return false;
-      })
-      .map((m) => m.id);
-    if (orphanOrInactiveMatchIds.length > 0) {
-      void ctx.supabase.from('lead_property_matches').delete().in('id', orphanOrInactiveMatchIds);
+    // APENAS se matchPropertiesMap foi carregado com sucesso para não expurgar por falha transitória
+    if (matchPropertiesMap.size > 0) {
+      const orphanOrInactiveMatchIds = (leadMatches || [])
+        .filter((m) => {
+          const prop = matchPropertiesMap.get(m.property_id);
+          if (!prop) return true;
+          if (m.match_status === 'novo' && prop.status !== 'ativo') return true;
+          return false;
+        })
+        .map((m) => m.id);
+      if (orphanOrInactiveMatchIds.length > 0) {
+        void ctx.supabase.from('lead_property_matches').delete().in('id', orphanOrInactiveMatchIds);
+      }
     }
 
     const enrichedMatches = (leadMatches || [])

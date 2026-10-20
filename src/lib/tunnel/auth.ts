@@ -33,7 +33,16 @@ export async function authenticateTunnelRequest(request: Request): Promise<Tunne
 
   const db = supabaseAdmin();
 
-  // 1. Se houver conta canônica configurada via env, utiliza-a
+  // 1. Se o cliente túnel autenticado especificar x-account-id válido, respeita-o
+  const requestedAccountId = request?.headers?.get('x-account-id')?.trim();
+  if (requestedAccountId && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestedAccountId)) {
+    return {
+      db,
+      accountId: requestedAccountId.toLowerCase(),
+    };
+  }
+
+  // 2. Se houver conta canônica configurada via env, utiliza-a
   if (process.env.MATCH_CANONICAL_ACCOUNT_ID) {
     return {
       db,

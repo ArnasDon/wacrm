@@ -524,10 +524,16 @@ async function persistDataSource(
     fallback_policy: opts.fallbackPolicy,
     currency: opts.currency,
     column_mapping: parsed.metadata.detected,
-    row_count: parsed.metadata.rows,
     status: 'active' as const,
     last_error: null as string | null,
-    last_synced_at: new Date().toISOString(),
+    // Real defect found auditing the AI agent (Oct 2026): `row_count`
+    // and `last_synced_at` used to be written HERE, before the catalog
+    // rows below were even upserted — so a request could see
+    // `last_synced_at`/`row_count` reflecting a sync that hadn't
+    // actually finished (or verified) its own persistence yet. Both are
+    // now written ONLY in the final update at the end of this
+    // function, after the catalog write is verified and obsolete rows
+    // are cleaned up — see that block for why.
     // See migration 046 — the uniform source getDataSourcePreview()
     // reads back for "Ver datos", for every usage. previewColumns (not
     // the always-complete `columns`) so this stays in lockstep with
@@ -691,12 +697,86 @@ async function persistDataSource(
 
     const rows = toCatalogProductRows(parsed.products, source.id, accountId, opts.currency)
     if (rows.length > 0) {
-      const { error: upsertErr } = await db
-        .from('ai_catalog_products')
-        .upsert(rows, { onConflict: 'data_source_id,source_product_id' })
-      if (upsertErr) {
-        console.error('[data-sources] catalog upsert failed:', upsertErr.message)
-        throw new DataSourceError(`Could not save catalog rows: ${upsertErr.message}`)
+      // Real defect found auditing the AI agent (Oct 2026): a sync for
+      // "Consultas KC" reported full success (HTTP 200, no error, 1,143
+      // rows) while 2 of those 1,143 products silently kept their OLD
+      // quantity in ai_catalog_products — confirmed, by direct
+      // comparison against the real published CSV and papaparse itself,
+      // that the parsed value WACRM intended to write was correct in
+      // every single case. The absence of a PostgREST error was being
+      // treated as proof the write succeeded — it isn't: `.upsert()`
+      // without `.select()` gives the caller no way to know what was
+      // actually persisted. Chunked (not one call for all `rows`) so a
+      // catalog over PostgREST's default page size (1,000 rows,
+      // confirmed against this project) can never have its own
+      // `.select()` response silently truncated into a false "missing
+      // row" verification failure.
+      const UPSERT_CHUNK_SIZE = 500
+      type PersistedCatalogRow = {
+        data_source_id: string
+        source_product_id: string
+        available_quantity: number | string | null
+        price: number | string | null
+      }
+      const persisted: PersistedCatalogRow[] = []
+      for (let i = 0; i < rows.length; i += UPSERT_CHUNK_SIZE) {
+        const chunk = rows.slice(i, i + UPSERT_CHUNK_SIZE)
+        const { data: upserted, error: upsertErr } = await db
+          .from('ai_catalog_products')
+          .upsert(chunk, { onConflict: 'data_source_id,source_product_id' })
+          .select('data_source_id, source_product_id, available_quantity, price')
+        if (upsertErr) {
+          console.error('[data-sources] catalog upsert failed:', upsertErr.message)
+          throw new DataSourceError(`Could not save catalog rows: ${upsertErr.message}`)
+        }
+        const got = (upserted ?? []) as PersistedCatalogRow[]
+        // Inconclusive (fewer rows than sent back) is itself a failure
+        // to verify — never assumed to mean "the rest were fine too".
+        if (got.length !== chunk.length) {
+          const message = `Upsert returned ${got.length} row(s), expected ${chunk.length} — persistence could not be verified.`
+          console.error('[data-sources] catalog verification inconclusive:', message)
+          throw new DataSourceError(message)
+        }
+        persisted.push(...got)
+      }
+
+      // Compare what was actually persisted against what WACRM intended
+      // to write — `.select()` alone is not a consistency guarantee by
+      // itself (Postgres could still, in principle, return a row that
+      // doesn't match what a concurrent write landed), only a way to
+      // catch the exact class of silent mismatch that happened here.
+      // `numeric` columns (price) come back from PostgREST as a STRING
+      // (never a bare JS number, to avoid float precision loss) — both
+      // sides are coerced through `Number()` before comparing so that
+      // never produces a false-positive "1" !== 1 mismatch.
+      const toNum = (v: number | string | null): number | null => (v === null ? null : Number(v))
+      const bothNullOrEqual = (a: number | null, b: number | null) =>
+        (a === null && b === null) || (a !== null && b !== null && a === b)
+      const persistedByProductId = new Map(persisted.map((r) => [r.source_product_id, r]))
+
+      const discrepancies: string[] = []
+      for (const row of rows) {
+        const got = persistedByProductId.get(row.source_product_id)
+        if (!got || got.data_source_id !== row.data_source_id) {
+          discrepancies.push(`${row.source_product_id}: no matching row returned by the upsert`)
+          continue
+        }
+        const gotQty = toNum(got.available_quantity)
+        const gotPrice = toNum(got.price)
+        if (!bothNullOrEqual(row.available_quantity, gotQty) || !bothNullOrEqual(row.price, gotPrice)) {
+          discrepancies.push(
+            `${row.source_product_id}: expected qty=${row.available_quantity ?? 'null'} price=${row.price ?? 'null'}, ` +
+              `persisted qty=${gotQty ?? 'null'} price=${gotPrice ?? 'null'}`,
+          )
+        }
+      }
+      if (discrepancies.length > 0) {
+        const sample = discrepancies.slice(0, 5).join('; ')
+        const suffix = discrepancies.length > 5 ? ` (+${discrepancies.length - 5} more)` : ''
+        console.error(`[data-sources] persistence verification failed for ${discrepancies.length} product(s):`, sample + suffix)
+        throw new DataSourceError(
+          `Persistence verification found ${discrepancies.length} discrepanc${discrepancies.length === 1 ? 'y' : 'ies'}: ${sample}${suffix}`,
+        )
       }
     }
 
@@ -738,7 +818,34 @@ async function persistDataSource(
     await db.from('ai_catalog_products').delete().eq('data_source_id', source.id)
   }
 
-  return source
+  // Real defect found auditing the AI agent (Oct 2026): `last_synced_at`
+  // and `row_count` used to be written as part of `baseRow`, BEFORE any
+  // of the catalog work above — so a caller reading them mid-request
+  // (or a request that later throws) could see "synced" timestamps/
+  // counts for a sync that hadn't actually finished verifying its own
+  // persistence yet. Written here instead, as the LAST thing this
+  // function does — reached only once the catalog upsert has been
+  // verified (or usage doesn't use the catalog at all) and obsolete
+  // rows have been cleaned up. If this final update itself fails, that
+  // throws like any other step, and the existing catch in
+  // doRefreshDataSource marks the source 'error' — a genuinely
+  // unverifiable `last_synced_at` is never silently reported as success.
+  const { data: finalized, error: finalizeErr } = await db
+    .from('ai_data_sources')
+    .update({
+      last_synced_at: new Date().toISOString(),
+      row_count: parsed.metadata.rows,
+      status: 'active' as const,
+      last_error: null as string | null,
+    })
+    .eq('id', source.id)
+    .select(SELECT_COLUMNS)
+    .single()
+  if (finalizeErr) {
+    console.error('[data-sources] failed to finalize sync status:', finalizeErr.message)
+    throw new DataSourceError(`Could not finalize sync status: ${finalizeErr.message}`)
+  }
+  return finalized as DataSourceRow
 }
 
 /**

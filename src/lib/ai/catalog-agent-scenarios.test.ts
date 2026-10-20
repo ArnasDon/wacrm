@@ -330,6 +330,49 @@ describe('Full pipeline — no-omission: a broad "qué TVs tienen" surfaces ever
 })
 
 // ============================================================
+// Playground/WhatsApp reliability audit (Oct 2026), Phase 6 — a search
+// for several Samsung models that genuinely has MORE results than one
+// page: the tool result itself must report `has_more: true` and the
+// real `total`, never silently truncate and look complete. (The model's
+// own compliance with SEARCH COVERAGE's wording is a prompt concern,
+// already covered by defaults.test.ts; this proves the DATA the model
+// would be reasoning from is honest.)
+// ============================================================
+describe('Full pipeline — several Samsung models, partial page: has_more/total stay honest, never silently truncated', () => {
+  it('a 2-result page out of 5 real Samsung products reports has_more: true and the real total of 5', async () => {
+    const db = fakeDb()
+    const executeTool = executeCatalogTool(db, 'acct-1')
+    const result = (await executeTool({ id: 'c1', name: 'search_catalog', input: { query: 'samsung', limit: 2 } })) as {
+      products: { name: string }[]
+      total: number
+      has_more: boolean
+      returned: number
+    }
+    expect(result.products).toHaveLength(2)
+    expect(result.total).toBe(5) // p1, p2, p3, p4, p7 — all 5 real Samsung products
+    expect(result.has_more).toBe(true) // a 2-of-5 page is NEVER "las únicas opciones"
+    expect(result.returned).toBe(2)
+  })
+
+  it('paginating with offset:2 after that first page reaches the remaining Samsung products instead of repeating or losing any', async () => {
+    const db = fakeDb()
+    const executeTool = executeCatalogTool(db, 'acct-1')
+    const firstPage = (await executeTool({ id: 'c1', name: 'search_catalog', input: { query: 'samsung', limit: 2 } })) as {
+      products: { name: string }[]
+    }
+    const secondPage = (await executeTool({ id: 'c2', name: 'search_catalog', input: { query: 'samsung', limit: 2, offset: 2 } })) as {
+      products: { name: string }[]
+      has_more: boolean
+    }
+    const firstNames = new Set(firstPage.products.map((p) => p.name))
+    const secondNames = new Set(secondPage.products.map((p) => p.name))
+    // No overlap between pages — pagination advances, it doesn't repeat.
+    for (const name of secondNames) expect(firstNames.has(name)).toBe(false)
+    expect(secondPage.has_more).toBe(true) // still 1 more after this second page of 2 (5 total)
+  })
+})
+
+// ============================================================
 // Real conversation reported in the AI agent audit (Oct 2026):
 //   "HOLA TIENE ABANICO DE PARED" → agent invents "DOP 1" for a
 //   product whose real price was never confirmed → "VERIFICA EL

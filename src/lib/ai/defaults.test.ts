@@ -82,6 +82,44 @@ describe('buildSystemPrompt — catalog accounts get the new commercial/coverage
 })
 
 // ============================================================
+// Playground/WhatsApp reliability audit (Oct 2026), Phase 5 — the
+// confirmed commercial-behavior rules: strict Spanish regardless of the
+// customer's language, the exact "unidades disponibles" terminology,
+// and phones-vs-accessories judged only from real catalog data.
+// ============================================================
+describe('buildSystemPrompt — Phase 5: strict Spanish, "unidades disponibles", phones vs accessories', () => {
+  const base = { userPrompt: null, mode: 'auto_reply' as const }
+
+  it('the language rule now mandates Spanish always, regardless of the customer\'s language — not "mirror the customer"', () => {
+    const prompt = buildSystemPrompt(base)
+    expect(prompt).toContain('LANGUAGE RULE')
+    expect(prompt).toMatch(/MUST reply in Spanish, ALWAYS/)
+    // The old rule this replaces — must not still be present alongside
+    // the new one (would be a contradictory instruction).
+    expect(prompt).not.toContain('reply in the EXACT same language the customer is writing in')
+  })
+
+  it('requires the exact term "unidades disponibles" when stating available quantity', () => {
+    const prompt = buildSystemPrompt(base)
+    expect(prompt).toContain('unidades disponibles')
+  })
+
+  it('instructs phones vs accessories to be judged ONLY from real returned catalog data, never an invented category, only when catalog tools are attached', () => {
+    const withCatalog = buildSystemPrompt({ ...base, catalogToolsAvailable: true })
+    expect(withCatalog).toContain('PHONES VS ACCESSORIES')
+    expect(withCatalog).toMatch(/never invent or assume a category/)
+
+    const withoutCatalog = buildSystemPrompt({ ...base, catalogToolsAvailable: false })
+    expect(withoutCatalog).not.toContain('PHONES VS ACCESSORIES')
+  })
+
+  it('still asks for a warm, professional tone with moderate emoji use', () => {
+    const prompt = buildSystemPrompt(base)
+    expect(prompt.toLowerCase()).toContain('moderate emoji')
+  })
+})
+
+// ============================================================
 // Fase 10 audit fixes — hallazgo crítico 1 (Catalog > Knowledge Base
 // priority was contradictory) and hallazgo crítico 2 (Agent Behavior
 // mixed into system_prompt with no structural separation). See

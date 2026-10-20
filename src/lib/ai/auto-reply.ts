@@ -477,7 +477,23 @@ async function processOneTurn(ctx: {
     if (resolvedAssignee && !convState.assigned_agent_id) {
       update.assigned_agent_id = resolvedAssignee
     }
-    await db.from('conversations').update(update).eq('id', conversationId)
+    // Playground/WhatsApp reliability audit (Oct 2026) — this write was
+    // previously fire-and-forget: its `error` was never checked, so a
+    // failed UPDATE (e.g. a transient DB error) left `ai_autoreply_disabled`
+    // still false while every caller below proceeded as if the handoff
+    // had succeeded — the bot would silently resume auto-replying on the
+    // very next inbound message, with no human ever notified. Every call
+    // site of handOffToHuman() now wraps it in try/catch (matching the
+    // pre-existing pattern at the generateReply-failure and send-failure
+    // call sites below), so throwing here is surfaced and logged instead
+    // of assumed to have succeeded.
+    const { error: handoffUpdateError } = await db
+      .from('conversations')
+      .update(update)
+      .eq('id', conversationId)
+    if (handoffUpdateError) {
+      throw new Error(`Failed to persist human handoff: ${handoffUpdateError.message}`)
+    }
   }
 
   const generateStartedAt = Date.now()
@@ -619,7 +635,25 @@ async function processOneTurn(ctx: {
     // H-6: handoff always stops the drain loop — the bot must not keep
     // answering after deciding a human should take over, even if a
     // newer message technically exists.
-    await handOffToHuman()
+    //
+    // Playground/WhatsApp reliability audit (Oct 2026) — toolTurnsExhausted
+    // means the model was cut off mid tool-investigation (never a model-
+    // chosen [[HANDOFF]]), so it gets its own diagnosable summary instead
+    // of the generic one, distinguishing "the bot gave up" from "the
+    // search ran out of budget" for whoever picks this up. Wrapped in
+    // try/catch like every other handOffToHuman() call site in this file
+    // — if the persistence write itself fails, we must not pretend the
+    // handoff succeeded, but we still stop sending automated replies
+    // THIS turn regardless (see continueDraining below).
+    try {
+      await handOffToHuman(
+        toolTurnsExhausted
+          ? '🤖 The AI agent could not finish checking the catalog in time (tool budget exhausted) — a human needs to take over this conversation.'
+          : undefined,
+      )
+    } catch (handoffErr) {
+      console.error('[ai auto-reply] handoff persistence failed — conversation may remain unassigned:', handoffErr)
+    }
     return { continueDraining: false }
   }
 

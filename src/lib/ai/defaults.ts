@@ -42,6 +42,16 @@ export const MAX_OUTPUT_TOKENS = 1024
  *  get_product → get_availability chain needs at most 2-3. */
 export const MAX_TOOL_TURNS = 4
 
+/** Hard cap on individual tool CALLS per `generateReply` call — distinct
+ *  from MAX_TOOL_TURNS above, which only bounds model↔tool ROUND TRIPS.
+ *  A single turn can request several tools at once (e.g. get_product on
+ *  three different ids), so turns alone don't bound total tool work;
+ *  this counts every call individually, even several requested in the
+ *  same response (Playground/WhatsApp reliability audit, Oct 2026).
+ *  Hitting either cap is treated identically — see the provider
+ *  adapters' shared `toolTurnsExhausted` computation. */
+export const MAX_TOOL_CALLS_PER_GENERATE = 6
+
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000
 const DEFAULT_CONTEXT_MESSAGE_LIMIT = 20
 
@@ -180,11 +190,23 @@ function buildSystemPromptParts(args: {
         'Write the next reply the business should send to the customer.',
     ),
     stable(
-      'LANGUAGE RULE — This is a HARD requirement: you MUST reply in the EXACT same language the customer is writing in. ' +
-        'If the customer writes in English, reply in English. If in Spanish, reply in Spanish. Do NOT default to any language — match the customer\'s language every time, regardless of the business context below.',
+      // Playground/WhatsApp reliability audit (Oct 2026), Phase 5 —
+      // product decision confirmed: this business communicates
+      // commercially in Spanish only, regardless of what language the
+      // customer writes in. Replaces the previous "mirror the
+      // customer's language" rule, which was the OPPOSITE of this
+      // requirement.
+      'LANGUAGE RULE — This is a HARD requirement: you MUST reply in Spanish, ALWAYS, regardless of what language ' +
+        'the customer writes in. Do not switch to English or any other language even if the customer does — ' +
+        'this business communicates commercially in Spanish only.',
     ),
     stable(
-      'Guidelines: keep it concise and friendly, suitable for WhatsApp; ' +
+      'Guidelines: keep it concise, warm and professional ("cercano" — a real person helping, not a script), ' +
+        'suitable for WhatsApp, with moderate emoji use (a friendly touch here and there, never one on every ' +
+        'sentence and never for a serious/negative message like agotado or a handoff). ' +
+        'When stating how many units of a product are available, always use the exact Spanish term ' +
+        '"unidades disponibles" (e.g. "quedan 3 unidades disponibles") — never other wording like "en stock" or a ' +
+        'bare number alone. ' +
         'ABSOLUTELY NEVER invent prices, stock, product names, availability, or any factual data. ' +
         (catalogToolsAvailable
           ? 'For product price/stock/variants/photos, the catalog TOOLS below are the ONLY source of truth (see the CATALOG TOOLS section) — the KNOWLEDGE BASE is for non-catalog information (policies, hours, FAQ). ' +
@@ -252,7 +274,12 @@ function buildSystemPromptParts(args: {
         'invent or guess an image URL. ' +
         'Never read out, mention, or confirm a product\'s internal id, SKU, reference number, or any other raw ' +
         'code the tools use internally — describe products only by name, price, stock, and the attributes a ' +
-        'customer would naturally ask about (color, size, capacity).',
+        'customer would naturally ask about (color, size, capacity). ' +
+        'PHONES VS ACCESSORIES — the catalog has no separate category field, so judge this ONLY from the real ' +
+        'product name/attributes a tool actually returned (e.g. "Funda para iPhone 13" or "Cargador USB-C" is ' +
+        'clearly an accessory from its own name; "iPhone 13" is clearly a phone) — never invent or assume a ' +
+        'category that is not evident from the real returned data, and never group an accessory together with ' +
+        'phones (or vice versa) as if they were the same kind of product.',
       ),
     )
 

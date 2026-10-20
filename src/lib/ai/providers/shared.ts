@@ -31,6 +31,11 @@ export interface ProviderArgs {
    *  cost against a model that keeps calling tools instead of
    *  answering. */
   maxToolTurns?: number
+  /** Hard cap on individual tool CALLS within one `generateReply` call
+   *  (defaults to `MAX_TOOL_CALLS_PER_GENERATE` in ../defaults) — mainly
+   *  for tests. Distinct from `maxToolTurns`: one turn can request
+   *  several tools at once. */
+  maxToolCalls?: number
 }
 
 /**

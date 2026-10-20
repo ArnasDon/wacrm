@@ -92,14 +92,24 @@ function fakeSupabase(seed: Record<string, Record<string, unknown>[]> = {}) {
       if (op === 'upsert') {
         const conflictCols = (onConflict ?? '').split(',').map((c) => c.trim()).filter(Boolean);
         const items = Array.isArray(payload) ? payload : [payload as Record<string, unknown>];
+        // `.upsert(...).select(...)` on the real client returns the
+        // affected rows — the AI agent audit's persistence-verification
+        // fix depends on this, so the fake must return them too.
+        const affected: Record<string, unknown>[] = [];
         for (const item of items) {
           const existing = conflictCols.length > 0
             ? rows.find((r) => conflictCols.every((c) => r[c] === item[c]))
             : undefined;
-          if (existing) Object.assign(existing, item);
-          else rows.push({ id: `${table}-${nextId++}`, ...item });
+          if (existing) {
+            Object.assign(existing, item);
+            affected.push(existing);
+          } else {
+            const inserted = { id: `${table}-${nextId++}`, ...item };
+            rows.push(inserted);
+            affected.push(inserted);
+          }
         }
-        return { data: null, error: null };
+        return { data: affected.map(project), error: null };
       }
       if (op === 'delete') {
         const remaining = rows.filter((r) => !matches(r));

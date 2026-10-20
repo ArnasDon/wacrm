@@ -58,6 +58,9 @@ function fakeDb() {
   // PostgREST URL-length limit that caused the production incident)
   // instead of one unbounded `.in()` over the whole previous catalog.
   const deleteInBatchSizes: number[] = []
+  // Case C test hook — see the `ai_catalog_products` upsert branch
+  // below. Consumed (and cleared) by the NEXT catalog upsert call.
+  let corruptNextUpsertReturn: ((rows: Record<string, unknown>[]) => Record<string, unknown>[]) | null = null
 
   function builder(
     tableName: string,
@@ -166,17 +169,36 @@ function fakeDb() {
         // one); anything else is inserted fresh.
         const conflictCols = (onConflict ?? '').split(',').map((c) => c.trim()).filter(Boolean)
         const items = Array.isArray(payload) ? payload : [payload as Record<string, unknown>]
+        // `.upsert(...).select(...)` on the real client returns the
+        // affected rows — the AI agent audit's persistence-verification
+        // fix depends on this, so the fake must return them too, not
+        // just `{ data: null }`.
+        const affected: Record<string, unknown>[] = []
         for (const item of items) {
           const existing = conflictCols.length > 0
             ? rows.find((r) => conflictCols.every((c) => r[c] === item[c]))
             : undefined
           if (existing) {
             Object.assign(existing, item)
+            affected.push(existing)
           } else {
-            rows.push({ id: `${tableName}-${nextId++}`, ...item })
+            const inserted = { id: `${tableName}-${nextId++}`, ...item }
+            rows.push(inserted)
+            affected.push(inserted)
           }
         }
-        return { data: null, error: null }
+        // Test hook (Case C — a simulated persistence discrepancy): lets
+        // a test make the UPSERT RESPONSE disagree with what was sent
+        // (or omit a row entirely) without actually corrupting the
+        // underlying fake table — models exactly the class of mismatch
+        // the verification layer exists to catch, regardless of its
+        // real-world root cause.
+        if (tableName === 'ai_catalog_products' && corruptNextUpsertReturn) {
+          const corrupted = corruptNextUpsertReturn(affected.map((r) => ({ ...r })))
+          corruptNextUpsertReturn = null
+          return { data: corrupted, error: null }
+        }
+        return { data: affected, error: null }
       }
       if (op === 'delete') {
         const inFilter = filters.find(([, , mode]) => mode === 'in')
@@ -214,6 +236,9 @@ function fakeDb() {
     failNextUpsertOn: (name: string) => failNextUpsert.add(name),
     failNextDeleteOn: (name: string) => failNextDelete.add(name),
     deleteInBatchSizes,
+    corruptNextCatalogUpsertReturnWith: (fn: (rows: Record<string, unknown>[]) => Record<string, unknown>[]) => {
+      corruptNextUpsertReturn = fn
+    },
   }
 }
 
@@ -900,6 +925,175 @@ describe('persistDataSource — stable identity via id_producto + idempotent cat
     const row = table('ai_catalog_products').find((r) => r.source_product_id === '2761')!
     expect(row.sku).toBeNull() // id_producto is NOT a customer-facing SKU
     expect(row.name).toBe('Abanico de pared')
+  })
+})
+
+// ============================================================
+// Real incident, AI agent audit (Oct 2026): a real sync of "Consultas
+// KC" reported full success (HTTP 200, no error, 1,143 rows) while 2
+// of those 1,143 products — "2718" (TV SAMSUNG 65 UHD, qty 2→1) and
+// "2859" (HONOR PLAY 10, qty 8→7) — silently kept their OLD quantity.
+// An exhaustive investigation (comparing the real published CSV,
+// papaparse's own output, and every step of this file's code) found
+// every stage correct for both products — the absence of a PostgREST
+// error was being trusted as proof the write succeeded, which it
+// isn't: `.upsert()` without `.select()` gives no visibility into what
+// was actually persisted. These tests cover the fix: `.select()` on
+// the upsert plus a real comparison against what was intended, and
+// `last_synced_at`/`row_count` deferred to a final update reached only
+// once that comparison (and the obsolete-row cleanup) succeeds.
+// ============================================================
+describe('persistDataSource — persistence verification (AI agent audit, real incident)', () => {
+  it('Caso A — a quantity reduction (2 → 1) is correctly persisted', async () => {
+    stubCsvFetch(idCsv([idRow('2718', 'TV SAMSUNG 65 UHD U7900FD', '2', '38500')]))
+    const { db, table } = fakeDb()
+    const source = await createDataSourceFromUrl(db, {
+      accountId: 'acct-1', userId: 'user-1', sourceType: 'google_sheets',
+      displayName: 'Consultas KC', url: 'https://docs.google.com/spreadsheets/d/x/export?format=csv', usage: 'catalog',
+    })
+    expect(table('ai_catalog_products').find((r) => r.source_product_id === '2718')!.available_quantity).toBe(2)
+
+    stubCsvFetch(idCsv([idRow('2718', 'TV SAMSUNG 65 UHD U7900FD', '1', '38500')]))
+    await refreshDataSource(db, { accountId: 'acct-1', userId: 'user-1', id: source.id })
+    expect(table('ai_catalog_products').find((r) => r.source_product_id === '2718')!.available_quantity).toBe(1)
+  })
+
+  it('Caso B — a second, independent quantity reduction (8 → 7) in the SAME sync as Caso A is also correctly persisted', async () => {
+    stubCsvFetch(idCsv([
+      idRow('2718', 'TV SAMSUNG 65 UHD U7900FD', '2', '38500'),
+      idRow('2859', 'HONOR PLAY 10 64GB + 3GB ELA-LX3 AZUL', '8', '6000'),
+    ]))
+    const { db, table } = fakeDb()
+    const source = await createDataSourceFromUrl(db, {
+      accountId: 'acct-1', userId: 'user-1', sourceType: 'google_sheets',
+      displayName: 'Consultas KC', url: 'https://docs.google.com/spreadsheets/d/x/export?format=csv', usage: 'catalog',
+    })
+
+    stubCsvFetch(idCsv([
+      idRow('2718', 'TV SAMSUNG 65 UHD U7900FD', '1', '38500'),
+      idRow('2859', 'HONOR PLAY 10 64GB + 3GB ELA-LX3 AZUL', '7', '6000'),
+    ]))
+    await refreshDataSource(db, { accountId: 'acct-1', userId: 'user-1', id: source.id })
+
+    expect(table('ai_catalog_products').find((r) => r.source_product_id === '2718')!.available_quantity).toBe(1)
+    expect(table('ai_catalog_products').find((r) => r.source_product_id === '2859')!.available_quantity).toBe(7)
+  })
+
+  it('Caso C — a simulated persistence discrepancy (upsert response disagrees with what was sent) is detected, never reported as success', async () => {
+    stubCsvFetch(idCsv([idRow('2718', 'TV SAMSUNG 65 UHD U7900FD', '2', '38500')]))
+    const { db, table, corruptNextCatalogUpsertReturnWith } = fakeDb()
+    const source = await createDataSourceFromUrl(db, {
+      accountId: 'acct-1', userId: 'user-1', sourceType: 'google_sheets',
+      displayName: 'Consultas KC', url: 'https://docs.google.com/spreadsheets/d/x/export?format=csv', usage: 'catalog',
+    })
+
+    stubCsvFetch(idCsv([idRow('2718', 'TV SAMSUNG 65 UHD U7900FD', '1', '38500')]))
+    // The upsert "succeeds" (no PostgREST error) but its own response
+    // disagrees with what was sent — exactly the class of mismatch a
+    // bare `error === null` check cannot catch.
+    corruptNextCatalogUpsertReturnWith((rows) =>
+      rows.map((r) => (r.source_product_id === '2718' ? { ...r, available_quantity: 2 } : r)),
+    )
+
+    const attempt = refreshDataSource(db, { accountId: 'acct-1', userId: 'user-1', id: source.id })
+    await expect(attempt).rejects.toBeInstanceOf(DataSourceError)
+    await expect(attempt).rejects.toThrow(/Persistence verification found/)
+
+    // Never declared a success: the source is marked 'error', with a
+    // diagnosable message — never silently left looking synced.
+    const dsRow = table('ai_data_sources').find((r) => r.id === source.id)!
+    expect(dsRow.status).toBe('error')
+    expect(dsRow.last_error).toMatch(/Persistence verification found/)
+  })
+
+  it('Caso C2 — a row the upsert never returns at all is also detected as a discrepancy, never silently assumed fine', async () => {
+    stubCsvFetch(idCsv([
+      idRow('2718', 'TV SAMSUNG 65 UHD U7900FD', '2', '38500'),
+      idRow('2859', 'HONOR PLAY 10 64GB + 3GB ELA-LX3 AZUL', '8', '6000'),
+    ]))
+    const { db, corruptNextCatalogUpsertReturnWith } = fakeDb()
+    const source = await createDataSourceFromUrl(db, {
+      accountId: 'acct-1', userId: 'user-1', sourceType: 'google_sheets',
+      displayName: 'Consultas KC', url: 'https://docs.google.com/spreadsheets/d/x/export?format=csv', usage: 'catalog',
+    })
+
+    stubCsvFetch(idCsv([
+      idRow('2718', 'TV SAMSUNG 65 UHD U7900FD', '1', '38500'),
+      idRow('2859', 'HONOR PLAY 10 64GB + 3GB ELA-LX3 AZUL', '7', '6000'),
+    ]))
+    // Simulates an inconclusive/incomplete upsert response — fewer rows
+    // than were sent — which must be treated as a failure, never as
+    // "the rest were presumably fine".
+    corruptNextCatalogUpsertReturnWith((rows) => rows.filter((r) => r.source_product_id !== '2859'))
+
+    const attempt = refreshDataSource(db, { accountId: 'acct-1', userId: 'user-1', id: source.id })
+    await expect(attempt).rejects.toBeInstanceOf(DataSourceError)
+    await expect(attempt).rejects.toThrow(/expected 2/)
+  })
+
+  it('Caso D — the exact real price format ("38.500,00") round-trips through parsing AND the new persistence verification without a false-positive mismatch', async () => {
+    stubCsvFetch(csv([['id_producto', 'producto', 'cantidad', 'precio_ud'], ['2718', 'TV SAMSUNG 65 UHD U7900FD', '1', '"38.500,00"']]))
+    const { db, table } = fakeDb()
+    // A successful create (no thrown DataSourceError) already proves the
+    // verification layer accepted this — it would reject a real
+    // mismatch, so reaching this line at all is part of the assertion.
+    await createDataSourceFromUrl(db, {
+      accountId: 'acct-1', userId: 'user-1', sourceType: 'google_sheets',
+      displayName: 'Consultas KC', url: 'https://docs.google.com/spreadsheets/d/x/export?format=csv', usage: 'catalog',
+    })
+    expect(table('ai_catalog_products').find((r) => r.source_product_id === '2718')!.price).toBe(38500)
+  })
+
+  it('Caso E — verification is not accidentally limited to the first upsert batch: a catalog larger than one chunk is fully verified', async () => {
+    const COUNT = 1200 // exceeds the 500-row upsert chunk size used for verification
+    const oldRows = Array.from({ length: COUNT }, (_, i) => idRow(`id-${i}`, `Producto ${i}`, '2', '100'))
+    stubCsvFetch(idCsv(oldRows))
+    const { db, table } = fakeDb()
+    const source = await createDataSourceFromUrl(db, {
+      accountId: 'acct-1', userId: 'user-1', sourceType: 'google_sheets',
+      displayName: 'Consultas KC', url: 'https://docs.google.com/spreadsheets/d/x/export?format=csv', usage: 'catalog',
+    })
+
+    // Reduce EVERY product's quantity by 1 — including ones that only
+    // exist in later upsert chunks (well past the first 500).
+    const newRows = Array.from({ length: COUNT }, (_, i) => idRow(`id-${i}`, `Producto ${i}`, '1', '100'))
+    stubCsvFetch(idCsv(newRows))
+    await refreshDataSource(db, { accountId: 'acct-1', userId: 'user-1', id: source.id })
+
+    const rows = table('ai_catalog_products').filter((r) => r.data_source_id === source.id)
+    expect(rows).toHaveLength(COUNT)
+    expect(rows.every((r) => r.available_quantity === 1)).toBe(true) // including the last chunk, not just the first
+  })
+
+  it('Caso G — last_synced_at/row_count are never updated when persistence verification fails — a failed sync cannot look complete', async () => {
+    stubCsvFetch(idCsv([idRow('2718', 'TV SAMSUNG 65 UHD U7900FD', '2', '38500')]))
+    const { db, table, corruptNextCatalogUpsertReturnWith } = fakeDb()
+    const source = await createDataSourceFromUrl(db, {
+      accountId: 'acct-1', userId: 'user-1', sourceType: 'google_sheets',
+      displayName: 'Consultas KC', url: 'https://docs.google.com/spreadsheets/d/x/export?format=csv', usage: 'catalog',
+    })
+    const before = table('ai_data_sources').find((r) => r.id === source.id)!
+    const lastSyncedBefore = before.last_synced_at
+    const rowCountBefore = before.row_count
+
+    stubCsvFetch(idCsv([idRow('2718', 'TV SAMSUNG 65 UHD U7900FD', '1', '38500')]))
+    // Same discrepancy-injection as Caso C: the upsert itself reports no
+    // error, but its response disagrees with what was sent.
+    corruptNextCatalogUpsertReturnWith((rows) =>
+      rows.map((r) => (r.source_product_id === '2718' ? { ...r, available_quantity: 2 } : r)),
+    )
+
+    await expect(
+      refreshDataSource(db, { accountId: 'acct-1', userId: 'user-1', id: source.id }),
+    ).rejects.toBeInstanceOf(DataSourceError)
+
+    const after = table('ai_data_sources').find((r) => r.id === source.id)!
+    // Still marked 'error' (existing, correct behavior) AND neither
+    // last_synced_at nor row_count was advanced to look like a
+    // completed sync.
+    expect(after.status).toBe('error')
+    expect(after.last_synced_at).toBe(lastSyncedBefore)
+    expect(after.row_count).toBe(rowCountBefore)
   })
 })
 

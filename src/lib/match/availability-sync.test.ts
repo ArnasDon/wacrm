@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { recalculateMatchesForProperty, createPropertyShare } from './service';
+
+interface DeleteCall {
+  col: string;
+  val: unknown;
+}
 
 describe('Disponibilidade e Sincronização de Imóveis no WACRM', () => {
   const accountId = 'acc-test-123';
@@ -11,8 +17,8 @@ describe('Disponibilidade e Sincronização de Imóveis no WACRM', () => {
   });
 
   it('1. recalculateMatchesForProperty expurga matches "novo" se imóvel estiver inativo ou arquivado', async () => {
-    const deleteCalls: any[] = [];
-    const mockDb: any = {
+    const deleteCalls: DeleteCall[] = [];
+    const mockDb = {
       from: vi.fn((table: string) => {
         if (table === 'property_match_projections') {
           return {
@@ -28,8 +34,8 @@ describe('Disponibilidade e Sincronização de Imóveis no WACRM', () => {
           };
         }
         if (table === 'lead_property_matches') {
-          const deleteBuilder: any = {};
-          deleteBuilder.eq = vi.fn((col: string, val: any) => {
+          const deleteBuilder: Record<string, unknown> = {};
+          deleteBuilder.eq = vi.fn((col: string, val: unknown) => {
             deleteCalls.push({ col, val });
             return deleteBuilder;
           });
@@ -39,7 +45,7 @@ describe('Disponibilidade e Sincronização de Imóveis no WACRM', () => {
         }
         return {};
       }),
-    };
+    } as unknown as SupabaseClient;
 
     const res = await recalculateMatchesForProperty(mockDb, accountId, propertyId);
     expect(res.totalLeadsEvaluated).toBe(0);
@@ -56,8 +62,8 @@ describe('Disponibilidade e Sincronização de Imóveis no WACRM', () => {
   });
 
   it('2. recalculateMatchesForProperty expurga matches "novo" se imóvel não existir na projeção', async () => {
-    const deleteCalls: any[] = [];
-    const mockDb: any = {
+    const deleteCalls: DeleteCall[] = [];
+    const mockDb = {
       from: vi.fn((table: string) => {
         if (table === 'property_match_projections') {
           return {
@@ -70,8 +76,8 @@ describe('Disponibilidade e Sincronização de Imóveis no WACRM', () => {
           };
         }
         if (table === 'lead_property_matches') {
-          const deleteBuilder: any = {};
-          deleteBuilder.eq = vi.fn((col: string, val: any) => {
+          const deleteBuilder: Record<string, unknown> = {};
+          deleteBuilder.eq = vi.fn((col: string, val: unknown) => {
             deleteCalls.push({ col, val });
             return deleteBuilder;
           });
@@ -81,7 +87,7 @@ describe('Disponibilidade e Sincronização de Imóveis no WACRM', () => {
         }
         return {};
       }),
-    };
+    } as unknown as SupabaseClient;
 
     const res = await recalculateMatchesForProperty(mockDb, accountId, propertyId);
     expect(res.totalLeadsEvaluated).toBe(0);
@@ -95,7 +101,7 @@ describe('Disponibilidade e Sincronização de Imóveis no WACRM', () => {
   });
 
   it('3. createPropertyShare recusa e retorna null se imóvel for inativo ou arquivado', async () => {
-    const mockDb: any = {
+    const mockDb = {
       from: vi.fn((table: string) => {
         if (table === 'property_match_projections') {
           return {
@@ -112,7 +118,7 @@ describe('Disponibilidade e Sincronização de Imóveis no WACRM', () => {
         }
         return {};
       }),
-    };
+    } as unknown as SupabaseClient;
 
     const result = await createPropertyShare(mockDb, {
       accountId,
@@ -124,7 +130,7 @@ describe('Disponibilidade e Sincronização de Imóveis no WACRM', () => {
   });
 
   it('4. createPropertyShare recusa e retorna null se imóvel não existir', async () => {
-    const mockDb: any = {
+    const mockDb = {
       from: vi.fn((table: string) => {
         if (table === 'property_match_projections') {
           return {
@@ -138,7 +144,7 @@ describe('Disponibilidade e Sincronização de Imóveis no WACRM', () => {
         }
         return {};
       }),
-    };
+    } as unknown as SupabaseClient;
 
     const result = await createPropertyShare(mockDb, {
       accountId,
@@ -150,7 +156,7 @@ describe('Disponibilidade e Sincronização de Imóveis no WACRM', () => {
   });
 
   it('5. createPropertyShare gera token e registro com sucesso se imóvel estiver ativo', async () => {
-    const mockDb: any = {
+    const mockDb = {
       from: vi.fn((table: string) => {
         if (table === 'property_match_projections') {
           return {
@@ -199,7 +205,7 @@ describe('Disponibilidade e Sincronização de Imóveis no WACRM', () => {
         }
         return {};
       }),
-    };
+    } as unknown as SupabaseClient;
 
     const result = await createPropertyShare(mockDb, {
       accountId,

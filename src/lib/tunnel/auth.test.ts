@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { authenticateTunnelRequest } from './auth';
 
 vi.mock('@/lib/push/admin-client', () => {
-  const queryBuilder: any = {};
+  const queryBuilder: Record<string, unknown> = {};
   queryBuilder.select = vi.fn(() => queryBuilder);
   queryBuilder.eq = vi.fn(() => queryBuilder);
   queryBuilder.not = vi.fn(() => queryBuilder);

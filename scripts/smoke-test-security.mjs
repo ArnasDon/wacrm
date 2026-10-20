@@ -1,5 +1,4 @@
 import fs from 'fs';
-import path from 'path';
 
 // Lê chaves do .env.local
 const envContent = fs.readFileSync('C:\\Projetos\\WACRM\\.env.local', 'utf-8');

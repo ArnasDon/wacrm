@@ -13,7 +13,6 @@ import { SearchProfileTag } from '@/components/contacts/search-profile-tag';
 import { MetaCapiQualifyButton } from '@/components/contacts/meta-capi-qualify-button';
 import { toast } from 'sonner';
 import {
-  User,
   Phone,
   Gauge,
   Flame,
@@ -24,10 +23,7 @@ import {
   Trash2,
   PlayCircle,
   Building2,
-  ExternalLink,
   Loader2,
-  Calendar,
-  Sparkles,
   ShoppingBag,
 } from 'lucide-react';
 import { format } from 'date-fns';

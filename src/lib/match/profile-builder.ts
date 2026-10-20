@@ -1,6 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { LeadSearchProfile, InfoProvenance, DeliveryStatus, PropertyOperation } from './types';
-import type { LeadSummary } from '@/lib/ai/lead-analysis-types';
 
 interface ContactRow {
   id: string;

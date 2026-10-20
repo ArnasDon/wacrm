@@ -1,13 +1,12 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { buildLeadSearchProfile } from './profile-builder';
-import { calculateProfileMaturity, MATURITY_AUTOMATIC_THRESHOLD } from './maturity';
+import { calculateProfileMaturity } from './maturity';
 import { evaluateMatch } from './engine';
 import { calculateCommercialPriority } from './priority';
 import { generateTrackingToken, buildSharePublicUrl } from './tokens';
 import { sendPushToAccount } from '@/lib/push/send';
 import type {
   PropertyProjection,
-  MatchRecord,
   PropertyShareRecord,
   MatchStatus,
   MatchOrigin,

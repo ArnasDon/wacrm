@@ -19,14 +19,9 @@ import { toast } from 'sonner';
 import {
   Sparkles,
   Search,
-  Filter,
   RefreshCw,
   Loader2,
   Building2,
-  SlidersHorizontal,
-  Flame,
-  Gauge,
-  Users,
 } from 'lucide-react';
 import type { MatchStatus, LeadMatchGroup } from '@/lib/match/types';
 

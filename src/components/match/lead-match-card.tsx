@@ -10,7 +10,6 @@ import {
   Building2,
   ChevronRight,
   ExternalLink,
-  User,
   Phone,
 } from 'lucide-react';
 import type { LeadMatchGroup } from '@/lib/match/types';

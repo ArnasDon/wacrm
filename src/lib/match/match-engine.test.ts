@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { calculateProfileMaturity, MATURITY_AUTOMATIC_THRESHOLD } from './maturity';
 import { evaluateMatch } from './engine';
 import { calculateCommercialPriority } from './priority';

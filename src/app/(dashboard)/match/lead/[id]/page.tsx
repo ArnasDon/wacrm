@@ -332,10 +332,7 @@ export default function LeadMatchProfilePage() {
     .toUpperCase();
 
   const totalSent = data?.sentProperties.length || 0;
-  const lastSent = data?.sentProperties[0]?.sentAt
-    ? format(new Date(data.sentProperties[0].sentAt), "dd/MM 'às' HH:mm", { locale: ptBR })
-    : null;
-  const openedSentCount = data?.sentProperties.filter((sp) => sp.openCount > 0).length || 0;
+  void totalSent;
 
   const qualifiedDimensionsCount = Object.values(data?.maturity.dimensions || {}).filter(
     (d) => d.hasValue

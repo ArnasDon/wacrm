@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
@@ -22,7 +21,6 @@ import {
   Archive,
   CheckCircle,
   Eye,
-  ExternalLink,
 } from 'lucide-react';
 import type { MatchStatus } from '@/lib/match/types';
 
@@ -121,7 +119,6 @@ export function MatchCard({
   }
 
   const reasons = match.score_breakdown?.reasons || [];
-  const penalties = match.score_breakdown?.penalties || [];
 
   return (
     <Card className="flex flex-col justify-between overflow-hidden border border-border bg-card p-4 transition-all hover:border-primary/40 hover:shadow-md">

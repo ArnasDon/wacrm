@@ -27,7 +27,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
-  Sparkles,
   Flame,
   Gauge,
   Building2,
@@ -42,8 +41,6 @@ import {
   Loader2,
   Phone,
   Bed,
-  Maximize2,
-  Check,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { LeadMatchGroup, MatchStatus } from '@/lib/match/types';

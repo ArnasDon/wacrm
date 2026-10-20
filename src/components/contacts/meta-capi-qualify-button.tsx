@@ -44,9 +44,10 @@ export function MetaCapiQualifyButton({
     initialQualifiedAt ?? null
   );
   const [loading, setLoading] = useState(false);
-  const [knownHasClid, setKnownHasClid] = useState<boolean | undefined>(
+  const [_knownHasClid, setKnownHasClid] = useState<boolean | undefined>(
     hasCtwaClid
   );
+  void _knownHasClid;
 
   // Sincroniza se a prop mudar
   useEffect(() => {

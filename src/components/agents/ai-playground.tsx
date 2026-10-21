@@ -65,6 +65,20 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
   // message) actually cancel a stuck/slow request instead of just
   // abandoning it while it keeps running server-side.
   const abortRef = useRef<AbortController | null>(null);
+  // Playground reliability audit (Oct 2026), follow-up fix — identifies
+  // the CURRENT "generation" of conversation state. Aborting the fetch
+  // does nothing once it has already resolved (e.g. Reset lands while
+  // `res.json()` is still pending, or while a THEN-superseded request's
+  // own promise chain is simply running) — `signal.aborted`/comparing
+  // against `abortRef.current` can't catch that, since there is no
+  // network-level signal to check once the response already arrived.
+  // Every state-mutating point below instead re-checks this generation
+  // id immediately before writing, and bails silently if a newer
+  // generation (a later send(), or Reset) has superseded it — so a
+  // stale request can never resurrect a cleared transcript, overwrite a
+  // NEWER request's result, or flip `sending` back closed/open for
+  // generation it doesn't belong to.
+  const generationRef = useRef(0);
 
   const lastUserContent = turns.reduceRight<string>((_, t) => t.role === 'user' ? t.content : _, '');
 
@@ -83,6 +97,9 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
     setInput('');
     setSending(true);
 
+    const myGeneration = ++generationRef.current;
+    const isCurrent = () => generationRef.current === myGeneration;
+
     const controller = new AbortController();
     abortRef.current = controller;
     const timeoutId = setTimeout(() => controller.abort(), PLAYGROUND_FETCH_TIMEOUT_MS);
@@ -100,6 +117,11 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
         signal: controller.signal,
       });
       const data = await res.json().catch(() => ({}));
+      // Superseded (Reset, or — after Reset — a brand-new send()) while
+      // the response was in flight. Never apply it, in EITHER branch
+      // below: it could otherwise resurrect a cleared transcript or
+      // stomp a newer, still-in-progress generation's own turns.
+      if (!isCurrent()) return;
       if (!res.ok) {
         if (data.code === 'ai_not_configured') {
           toast.error('No agent configured yet — finish Setup first.');
@@ -130,10 +152,13 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
         },
       ]);
     } catch (err) {
-      // A user-initiated Reset also aborts the in-flight request (see
-      // below) — that is not a failure worth a toast, `turns`/`input`
-      // were already cleared by Reset itself, so there is nothing to
-      // roll back here.
+      if (!isCurrent()) return
+      // A user-initiated Reset also aborts the in-flight request — that
+      // is not a failure worth a toast, `turns`/`input` were already
+      // cleared by Reset itself, so there is nothing to roll back here.
+      // (The generation check above already covers this too — kept for
+      // the narrower case where the SAME generation's own abort fires,
+      // e.g. a future caller aborting without bumping the generation.)
       if (isAbortError(err) && abortRef.current !== controller) {
         return;
       }
@@ -147,14 +172,19 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
     } finally {
       clearTimeout(timeoutId);
       if (abortRef.current === controller) abortRef.current = null;
-      setSending(false);
+      // Never close (or re-open) `sending` on behalf of a generation
+      // that isn't the current one — a superseded request's finally
+      // must not flip the flag for whatever NEWER request (or Reset) is
+      // now active.
+      if (isCurrent()) setSending(false);
     }
   };
 
   const reset = () => {
-    // Cancel whatever's in flight FIRST — otherwise it would still
-    // land (now stale) in the catch/finally above after the transcript
-    // has already been cleared below.
+    // Bump the generation FIRST — this alone is what invalidates any
+    // in-flight request's result, independent of whether aborting the
+    // network request itself has any effect by this point.
+    generationRef.current++;
     abortRef.current?.abort();
     abortRef.current = null;
     setTurns([]);

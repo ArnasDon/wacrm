@@ -41,15 +41,33 @@ const MAX_TURNS = 20
  * going live. Stateless: the client sends the running transcript each turn.
  */
 export async function POST(request: Request) {
+  // Playground reliability audit (Oct 2026) — lightweight, in-process
+  // timing only (no new table/queue): total duration, duration up to
+  // the point generateReply is called (config/routing/knowledge), tool
+  // call count, and the final outcome, logged once per request. Never
+  // logs message content, keys, or any other secret — only counts and
+  // a one-word outcome.
+  const requestStartedAt = Date.now()
+  let outcome: 'success' | 'handoff' | 'ai_not_configured' | 'bad_request' | 'rate_limited' | 'error' = 'error'
+  let toolCallCountForLog = 0
+  let usedCatalogForLog: boolean | undefined
+  let usedKnowledgeForLog: boolean | undefined
+  let preGenerateMsForLog: number | undefined
+  let accountIdForLog: string | undefined
   try {
     const { supabase, accountId, userId } = await requireRole('agent')
+    accountIdForLog = accountId
 
     const limit = checkRateLimit(`ai-playground:${userId}`, RATE_LIMITS.aiDraft)
-    if (!limit.success) return rateLimitResponse(limit)
+    if (!limit.success) {
+      outcome = 'rate_limited'
+      return rateLimitResponse(limit)
+    }
 
     const body = await request.json().catch(() => null)
     const rawMessages = Array.isArray(body?.messages) ? body.messages : null
     if (!rawMessages) {
+      outcome = 'bad_request'
       return NextResponse.json({ error: 'messages is required' }, { status: 400 })
     }
 
@@ -66,6 +84,7 @@ export async function POST(request: Request) {
       .slice(-MAX_TURNS)
 
     if (messages.length === 0) {
+      outcome = 'bad_request'
       return NextResponse.json(
         { error: 'Send a message to test the agent.' },
         { status: 400 },
@@ -91,6 +110,7 @@ export async function POST(request: Request) {
       })
     })
     if (!config) {
+      outcome = 'ai_not_configured'
       return NextResponse.json(
         {
           error: 'No agent configured yet. Add your provider key in Setup.',
@@ -161,6 +181,13 @@ export async function POST(request: Request) {
     // identical comment; OpenAI/OpenRouter never read this field.
     const systemPromptBlocks = buildSystemPromptBlocks(systemPromptArgs)
 
+    // Observability (Phase 3) — duration up to this point covers every
+    // stage BEFORE the model/tool loop: auth, config load, routing,
+    // knowledge retrieval, Business Profile load, prompt build. Useful
+    // for telling "the setup was slow" apart from "the model/tool loop
+    // was slow" without a new table — just two numbers in one log line.
+    const preGenerateMs = Date.now() - requestStartedAt
+
     const { text, handoff, toolCalls } = await generateReply({
       config,
       systemPrompt,
@@ -169,6 +196,11 @@ export async function POST(request: Request) {
       tools,
       executeTool,
     })
+    toolCallCountForLog = toolCalls.length
+    outcome = handoff ? 'handoff' : 'success'
+    usedCatalogForLog = routing.useCatalog
+    usedKnowledgeForLog = routing.useKnowledge
+    preGenerateMsForLog = preGenerateMs
 
     // Same deterministic, server-side resolution auto-reply.ts uses —
     // runs only on the (rare) handoff path, and only against THIS
@@ -223,6 +255,7 @@ export async function POST(request: Request) {
       catalog_context: nextCatalogContext,
     })
   } catch (err) {
+    outcome = err instanceof AiError && err.code === 'ai_not_configured' ? 'ai_not_configured' : 'error'
     if (err instanceof AiError) {
       return NextResponse.json(
         { error: err.message, code: err.code },
@@ -230,5 +263,20 @@ export async function POST(request: Request) {
       )
     }
     return toErrorResponse(err)
+  } finally {
+    // One structured line per request, every exit path (success,
+    // handoff, validation error, or thrown exception) — never message
+    // content, keys, or any other secret, only counts/flags/an
+    // outcome word. Deliberately no new table/queue (Phase 3's own
+    // "no introducir... sin demostrar que son necesarias"): this is
+    // exactly the kind of diagnosis a `grep`/log search already
+    // answers — did a request hang in setup vs. in the model/tool
+    // loop, how many tools did it call, did it end in a handoff.
+    console.log(
+      `[ai/playground] accountId=${accountIdForLog ?? 'unknown'} outcome=${outcome} ` +
+        `totalMs=${Date.now() - requestStartedAt} preGenerateMs=${preGenerateMsForLog ?? 'n/a'} ` +
+        `toolCalls=${toolCallCountForLog} usedCatalog=${usedCatalogForLog ?? 'n/a'} ` +
+        `usedKnowledge=${usedKnowledgeForLog ?? 'n/a'}`,
+    )
   }
 }

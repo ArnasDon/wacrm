@@ -994,3 +994,121 @@ describe('generateReply — Punto 8, F-2: OpenAI/OpenRouter automatic prompt-cac
     })
   })
 })
+
+// ============================================================
+// Playground/WhatsApp reliability audit (Oct 2026), Phase 2/6 —
+// MAX_TOOL_CALLS_PER_GENERATE (6) and the fix making exhaustion (by
+// turns OR by call budget) force `handoff: true` on the final
+// GenerateResult, instead of the old canned "Un momento, permíteme
+// confirmar esa información." text being reported as an ordinary
+// successful reply.
+// ============================================================
+describe('generateReply — Phase 2/6: tool-call budget (MAX_TOOL_CALLS_PER_GENERATE)', () => {
+  function toolCallsResponse(n: number) {
+    return okResponse({
+      choices: [
+        {
+          message: {
+            content: null,
+            tool_calls: Array.from({ length: n }, (_, i) => ({
+              id: `call_${i}`,
+              type: 'function',
+              function: { name: 'search_catalog', arguments: '{}' },
+            })),
+          },
+          finish_reason: 'tool_calls',
+        },
+      ],
+    })
+  }
+  function anthropicToolCallsResponse(n: number) {
+    return okResponse({
+      content: Array.from({ length: n }, (_, i) => ({ type: 'tool_use', id: `toolu_${i}`, name: 'search_catalog', input: {} })),
+      stop_reason: 'tool_use',
+    })
+  }
+
+  it('OpenAI: the call budget cuts the loop off BEFORE MAX_TOOL_TURNS when the model requests 2 tools per turn — counts calls, not turns', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(toolCallsResponse(2))
+    vi.stubGlobal('fetch', fetchMock)
+    const executeTool = vi.fn().mockResolvedValue({ products: [] })
+    const res = await generateReply({
+      config: config({ provider: 'openai' }),
+      systemPrompt: 'sys',
+      messages: [{ role: 'user', content: 'busca samsung' }],
+      tools: TOOL_SPECS,
+      executeTool,
+      maxToolTurns: 10, // deliberately high — only the call budget should stop this
+      maxToolCalls: 6,
+    })
+    // 3 turns executed (2+2+2=6, exactly at budget), 4th turn is where
+    // the NEXT 2 would push to 8 > 6 — cut off there, never a 5th fetch.
+    expect(fetchMock).toHaveBeenCalledTimes(4)
+    expect(executeTool).toHaveBeenCalledTimes(6)
+    expect(res.toolTurnsExhausted).toBe(true)
+    expect(res.handoff).toBe(true) // the fix: exhaustion now forces handoff
+    expect(res.text).toBe('No pude completar esa consulta con la información disponible en este momento.')
+  })
+
+  it('Anthropic: the call budget cuts the loop off BEFORE MAX_TOOL_TURNS when the model requests 2 tools per turn', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(anthropicToolCallsResponse(2))
+    vi.stubGlobal('fetch', fetchMock)
+    const executeTool = vi.fn().mockResolvedValue({ products: [] })
+    const res = await generateReply({
+      config: config({ provider: 'anthropic' }),
+      systemPrompt: 'sys',
+      messages: [{ role: 'user', content: 'busca samsung' }],
+      tools: TOOL_SPECS,
+      executeTool,
+      maxToolTurns: 10,
+      maxToolCalls: 6,
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(4)
+    expect(executeTool).toHaveBeenCalledTimes(6)
+    expect(res.toolTurnsExhausted).toBe(true)
+    expect(res.handoff).toBe(true)
+    expect(res.text).toBe('No pude completar esa consulta con la información disponible en este momento.')
+  })
+
+  it('OpenAI: several tools requested in ONE turn count individually — none of them execute once the batch alone would exceed the budget', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(toolCallsResponse(5)) // turn 0: 5 calls, under the 6 budget — executes
+      .mockResolvedValueOnce(toolCallsResponse(3)) // turn 1: 5+3=8 > 6 — must NOT execute any of these 3
+    vi.stubGlobal('fetch', fetchMock)
+    const executeTool = vi.fn().mockResolvedValue({ products: [] })
+    const res = await generateReply({
+      config: config({ provider: 'openai' }),
+      systemPrompt: 'sys',
+      messages: [{ role: 'user', content: 'busca varios modelos' }],
+      tools: TOOL_SPECS,
+      executeTool,
+      maxToolTurns: 10,
+      maxToolCalls: 6,
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    // Exactly the 5 from turn 0 — the 3 from turn 1 were never executed.
+    expect(executeTool).toHaveBeenCalledTimes(5)
+    expect(res.toolCalls).toHaveLength(5)
+    expect(res.toolTurnsExhausted).toBe(true)
+    expect(res.handoff).toBe(true)
+  })
+
+  it('OpenAI: the PRE-EXISTING MAX_TOOL_TURNS cutoff now ALSO forces handoff: true end-to-end (previously it did not — the confirmed stuck-reply bug)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(toolCallsResponse(1))
+    vi.stubGlobal('fetch', fetchMock)
+    const res = await generateReply({
+      config: config({ provider: 'openai' }),
+      systemPrompt: 'sys',
+      messages: [{ role: 'user', content: 'x' }],
+      tools: TOOL_SPECS,
+      executeTool: vi.fn().mockResolvedValue({ products: [] }),
+      maxToolTurns: 2,
+    })
+    expect(res.toolTurnsExhausted).toBe(true)
+    // This is the actual bug fix: before, `handoff` stayed false here
+    // (the sentinel never appears in the fallback text) and the canned
+    // "Un momento..." string was reported as a plain successful reply.
+    expect(res.handoff).toBe(true)
+    expect(res.text).not.toBe('Un momento, permíteme confirmar esa información.')
+  })
+})

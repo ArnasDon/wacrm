@@ -1,5 +1,5 @@
 import { AiError, type ChatMessage, type ProviderResult, type ToolCallLogEntry } from '../types'
-import { MAX_OUTPUT_TOKENS, MAX_TOOL_TURNS } from '../defaults'
+import { MAX_OUTPUT_TOKENS, MAX_TOOL_CALLS_PER_GENERATE, MAX_TOOL_TURNS } from '../defaults'
 import {
   mergeConsecutive,
   normalizeUsage,
@@ -114,8 +114,14 @@ function toAnthropicTools(tools: NonNullable<ProviderArgs['tools']>) {
 export async function generateAnthropic(args: ProviderArgs): Promise<ProviderResult> {
   const { apiKey, model, systemPrompt, systemPromptBlocks, messages, timeoutMs, tools, executeTool } = args
   const maxTurns = args.maxToolTurns ?? MAX_TOOL_TURNS
+  const maxCalls = args.maxToolCalls ?? MAX_TOOL_CALLS_PER_GENERATE
 
   const wireMessages = normalizeForAnthropic(messages)
+  // Playground/WhatsApp reliability audit (Oct 2026) — counts every
+  // individual tool call toward MAX_TOOL_CALLS_PER_GENERATE, even
+  // several requested in the same response (incremented by
+  // `toolUseBlocks.length`, never by 1 per turn — see the loop below).
+  let toolCallsMade = 0
   const aggregatedUsage = { prompt: 0, completion: 0, cacheCreation: 0, cacheRead: 0 }
   // Punto 8, H8-1 — the raw stop_reason of the LAST turn actually
   // executed (overwritten every iteration, so the final value reflects
@@ -180,14 +186,22 @@ export async function generateAnthropic(args: ProviderArgs): Promise<ProviderRes
     }
 
     const toolUseBlocks = blocks.filter((b): b is Extract<AnthropicContentBlock, { type: 'tool_use' }> => b.type === 'tool_use')
+    // Playground/WhatsApp reliability audit (Oct 2026) — a turn can
+    // request several tools at once, so the call budget must be checked
+    // against what THIS turn would add, not just whether we've already
+    // hit it — otherwise a single turn requesting e.g. 4 tools at call
+    // 4/6 would silently blow past 6.
+    const wouldExceedCallBudget = toolCallsMade + toolUseBlocks.length > maxCalls
     // Punto 8, H8-1 — true only on the exact turn where the model still
-    // wants a tool but MAX_TOOL_TURNS forbids honoring it. Never true
-    // when `!executeTool` (no tools were ever attached this call) or
-    // when the model itself stopped requesting tools — this is
-    // specifically "we cut it off", not "it finished naturally".
-    const toolTurnsExhausted = toolUseBlocks.length > 0 && Boolean(executeTool) && turn >= maxTurns
+    // wants a tool but MAX_TOOL_TURNS or MAX_TOOL_CALLS_PER_GENERATE
+    // forbids honoring it. Never true when `!executeTool` (no tools were
+    // ever attached this call) or when the model itself stopped
+    // requesting tools — this is specifically "we cut it off", not "it
+    // finished naturally".
+    const toolTurnsExhausted =
+      toolUseBlocks.length > 0 && Boolean(executeTool) && (turn >= maxTurns || wouldExceedCallBudget)
 
-    if (toolUseBlocks.length > 0 && executeTool && turn < maxTurns) {
+    if (toolUseBlocks.length > 0 && executeTool && turn < maxTurns && !wouldExceedCallBudget) {
       wireMessages.push({ role: 'assistant', content: blocks })
       const resultBlocks: AnthropicContentBlock[] = []
       for (const block of toolUseBlocks) {
@@ -195,6 +209,7 @@ export async function generateAnthropic(args: ProviderArgs): Promise<ProviderRes
         toolCallLog.push({ name: block.name, input: block.input, result })
         resultBlocks.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(result) })
       }
+      toolCallsMade += toolUseBlocks.length
       wireMessages.push({ role: 'user', content: resultBlocks })
       continue // ask the model again with the tool results in context
     }
@@ -218,8 +233,23 @@ export async function generateAnthropic(args: ProviderArgs): Promise<ProviderRes
 
     if (!text) {
       if (toolCallLog.length > 0) {
+        if (toolTurnsExhausted) {
+          // Diagnosable termination cause (Playground/WhatsApp
+          // reliability audit, Oct 2026) — never silent. This text is
+          // never sent to a real WhatsApp customer: `generateReply`
+          // forces `handoff: true` whenever `toolTurnsExhausted` is
+          // true, and auto-reply.ts's existing `if (handoff || !text)`
+          // branch hands off instead of sending anything. It's only
+          // user-visible in the Playground/draft tools, where it must
+          // not claim the search finished.
+          console.warn(
+            `[ai/anthropic] tool budget exhausted (turn=${turn}, maxTurns=${maxTurns}, toolCallsMade=${toolCallsMade}, maxCalls=${maxCalls}) — handing off instead of reporting success`,
+          )
+        }
         return {
-          text: 'Un momento, permíteme confirmar esa información.',
+          text: toolTurnsExhausted
+            ? 'No pude completar esa consulta con la información disponible en este momento.'
+            : 'Un momento, permíteme confirmar esa información.',
           usage,
           toolCalls: toolCallLog,
           finishReason: lastStopReason,

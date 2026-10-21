@@ -31,6 +31,23 @@ function loadingLabel(input: string): string {
   return 'Thinking…'
 }
 
+// Playground reliability audit (Oct 2026) — the server has no hard
+// ceiling tighter than Vercel's own function timeout (300s, confirmed
+// against the live deployment — see route.ts's own comment), and the
+// browser's fetch() has NO built-in timeout at all: left unbounded, a
+// slow provider/tool chain left `sending` stuck true indefinitely, with
+// no way for the admin to escape it (Reset was disabled while sending,
+// and a second message could never be submitted either). This bounds
+// the wait to something far shorter than the server's own ceiling, so
+// the UI always recovers with a clear error instead of spinning
+// forever. Generous on purpose — even with the new 6-tool-call budget,
+// a real multi-turn catalog investigation can legitimately take 30-60s.
+const PLAYGROUND_FETCH_TIMEOUT_MS = 120_000
+
+function isAbortError(err: unknown): boolean {
+  return err instanceof DOMException && err.name === 'AbortError'
+}
+
 export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState('');
@@ -44,6 +61,24 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
   const catalogContextRef = useRef<unknown>(null);
 
   const loadingTextRef = useRef('Thinking…');
+  // The in-flight request's own controller — lets Reset (or a future
+  // message) actually cancel a stuck/slow request instead of just
+  // abandoning it while it keeps running server-side.
+  const abortRef = useRef<AbortController | null>(null);
+  // Playground reliability audit (Oct 2026), follow-up fix — identifies
+  // the CURRENT "generation" of conversation state. Aborting the fetch
+  // does nothing once it has already resolved (e.g. Reset lands while
+  // `res.json()` is still pending, or while a THEN-superseded request's
+  // own promise chain is simply running) — `signal.aborted`/comparing
+  // against `abortRef.current` can't catch that, since there is no
+  // network-level signal to check once the response already arrived.
+  // Every state-mutating point below instead re-checks this generation
+  // id immediately before writing, and bails silently if a newer
+  // generation (a later send(), or Reset) has superseded it — so a
+  // stale request can never resurrect a cleared transcript, overwrite a
+  // NEWER request's result, or flip `sending` back closed/open for
+  // generation it doesn't belong to.
+  const generationRef = useRef(0);
 
   const lastUserContent = turns.reduceRight<string>((_, t) => t.role === 'user' ? t.content : _, '');
 
@@ -61,6 +96,14 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
     setTurns(next);
     setInput('');
     setSending(true);
+
+    const myGeneration = ++generationRef.current;
+    const isCurrent = () => generationRef.current === myGeneration;
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const timeoutId = setTimeout(() => controller.abort(), PLAYGROUND_FETCH_TIMEOUT_MS);
+
     try {
       const res = await fetch('/api/ai/playground', {
         method: 'POST',
@@ -71,8 +114,14 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
           messages: next.map((t) => ({ role: t.role, content: t.content })),
           catalog_context: catalogContextRef.current,
         }),
+        signal: controller.signal,
       });
       const data = await res.json().catch(() => ({}));
+      // Superseded (Reset, or — after Reset — a brand-new send()) while
+      // the response was in flight. Never apply it, in EITHER branch
+      // below: it could otherwise resurrect a cleared transcript or
+      // stomp a newer, still-in-progress generation's own turns.
+      if (!isCurrent()) return;
       if (!res.ok) {
         if (data.code === 'ai_not_configured') {
           toast.error('No agent configured yet — finish Setup first.');
@@ -102,13 +151,45 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
           media: Array.isArray(data.media) ? data.media : undefined,
         },
       ]);
-    } catch {
-      toast.error("Couldn't reach the agent.");
+    } catch (err) {
+      if (!isCurrent()) return
+      // A user-initiated Reset also aborts the in-flight request — that
+      // is not a failure worth a toast, `turns`/`input` were already
+      // cleared by Reset itself, so there is nothing to roll back here.
+      // (The generation check above already covers this too — kept for
+      // the narrower case where the SAME generation's own abort fires,
+      // e.g. a future caller aborting without bumping the generation.)
+      if (isAbortError(err) && abortRef.current !== controller) {
+        return;
+      }
+      toast.error(
+        isAbortError(err)
+          ? "The agent took too long to respond. You can try again."
+          : "Couldn't reach the agent.",
+      );
       setTurns(turns);
       setInput(text);
     } finally {
-      setSending(false);
+      clearTimeout(timeoutId);
+      if (abortRef.current === controller) abortRef.current = null;
+      // Never close (or re-open) `sending` on behalf of a generation
+      // that isn't the current one — a superseded request's finally
+      // must not flip the flag for whatever NEWER request (or Reset) is
+      // now active.
+      if (isCurrent()) setSending(false);
     }
+  };
+
+  const reset = () => {
+    // Bump the generation FIRST — this alone is what invalidates any
+    // in-flight request's result, independent of whether aborting the
+    // network request itself has any effect by this point.
+    generationRef.current++;
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setTurns([]);
+    catalogContextRef.current = null;
+    setSending(false);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -132,8 +213,8 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => { setTurns([]); catalogContextRef.current = null; }}
-          disabled={turns.length === 0 || sending}
+          onClick={reset}
+          disabled={turns.length === 0 && !sending}
           className="text-muted-foreground"
         >
           <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> Reset
@@ -183,6 +264,16 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
               )}
             >
               {t.content && <p className="whitespace-pre-wrap">{t.content}</p>}
+              {/* Playground reliability audit (Oct 2026) — an empty,
+                  non-handoff reply used to render as a silently blank
+                  bubble, indistinguishable from the message never having
+                  arrived at all. Always show SOMETHING for a completed
+                  turn. */}
+              {t.role === 'assistant' && !t.content && !t.handoff && (
+                <p className="italic text-muted-foreground">
+                  {isSpanish(lastUserContent) ? '(sin texto de respuesta)' : '(no reply text)'}
+                </p>
+              )}
               {t.role === 'assistant' && t.handoff && (
                 <p
                   className={cn(

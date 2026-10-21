@@ -701,6 +701,79 @@ describe('dispatchInboundToAiReply — handoff (26-30)', () => {
 })
 
 // ============================================================
+// Playground/WhatsApp reliability audit (Oct 2026), Phase 2/4/6 —
+// (a) a tool-budget/turn-cap exhaustion now reaches this SAME handoff
+// path (generate.ts forces `handoff: true`) and gets its own
+// diagnosable summary, distinguishing "the bot gave up mid-search" from
+// a model-chosen [[HANDOFF]]; (b) a failure persisting the handoff
+// itself (the `conversations.update()` error that used to be silently
+// discarded) is now caught at the model-handoff call site too — not
+// just the pre-existing provider-failure call site — and never crashes
+// or leaves the module's "never throws" contract broken.
+// ============================================================
+describe('dispatchInboundToAiReply — Phase 2/4 fix: tool-exhaustion handoff + handoff persistence failure', () => {
+  it('a tool-budget-exhausted turn (toolTurnsExhausted: true) hands off with a diagnosable summary, never sends the fallback text to the customer', async () => {
+    h.generateReply.mockResolvedValue({
+      text: 'No pude completar esa consulta con la información disponible en este momento.',
+      handoff: true,
+      usage: null,
+      toolCalls: [{ name: 'search_catalog', input: {}, result: { products: [] } }],
+      toolTurnsExhausted: true,
+    })
+    h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'quiero ver todos los samsung' }])
+
+    await dispatchInboundToAiReply(ARGS)
+
+    expect(h.engineSendText).not.toHaveBeenCalled() // the fallback text is NEVER sent as a real reply
+    expect(h.state.updatePayload).toMatchObject({ ai_autoreply_disabled: true, status: 'pending' })
+    expect(h.state.updatePayload?.ai_handoff_summary).toContain('tool budget exhausted')
+  })
+
+  it('a NORMAL model-requested handoff still gets the generic summary (toolTurnsExhausted absent/false) — regression guard for the new branch above', async () => {
+    h.generateReply.mockResolvedValue({ text: '', handoff: true, usage: null, toolCalls: [] })
+    h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'quiero hablar con una persona' }])
+
+    await dispatchInboundToAiReply(ARGS)
+
+    expect(h.state.updatePayload?.ai_handoff_summary).not.toContain('tool budget exhausted')
+    expect(h.state.updatePayload?.ai_handoff_summary).toContain('AI agent handed off')
+  })
+
+  it('a failure persisting a MODEL-requested handoff (not a provider failure) is caught, logged, and never crashes or sends anything — the previously-silent conversations.update() error', async () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    h.state.failHandoffUpdate = true
+    h.generateReply.mockResolvedValue({ text: '', handoff: true, usage: null, toolCalls: [] })
+
+    await expect(dispatchInboundToAiReply(ARGS)).resolves.toBeUndefined()
+
+    expect(h.engineSendText).not.toHaveBeenCalled()
+    expect(
+      consoleErrorSpy.mock.calls.some((call) =>
+        String(call[0]).includes('handoff persistence failed'),
+      ),
+    ).toBe(true)
+    consoleErrorSpy.mockRestore()
+  })
+
+  it('a failure persisting a tool-exhaustion handoff is ALSO caught the same way', async () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    h.state.failHandoffUpdate = true
+    h.generateReply.mockResolvedValue({
+      text: 'No pude completar esa consulta con la información disponible en este momento.',
+      handoff: true,
+      usage: null,
+      toolCalls: [],
+      toolTurnsExhausted: true,
+    })
+
+    await expect(dispatchInboundToAiReply(ARGS)).resolves.toBeUndefined()
+
+    expect(h.engineSendText).not.toHaveBeenCalled()
+    consoleErrorSpy.mockRestore()
+  })
+})
+
+// ============================================================
 // Punto 9, H9-1 — cross-tenant handoff-assignment guard. handOffToHuman()
 // now re-verifies (via the real, unmocked isAccountMember() against the
 // fake `profiles` table above) that a contact's linked_user_id / the

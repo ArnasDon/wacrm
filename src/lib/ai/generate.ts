@@ -32,6 +32,9 @@ export interface GenerateArgs {
   executeTool?: ToolExecutor
   /** Override for MAX_TOOL_TURNS (defaults.ts) — mainly for tests. */
   maxToolTurns?: number
+  /** Override for MAX_TOOL_CALLS_PER_GENERATE (defaults.ts) — mainly for
+   *  tests. */
+  maxToolCalls?: number
 }
 
 /**
@@ -40,7 +43,7 @@ export interface GenerateArgs {
  * of the raw text. Throws `AiError` on any provider/network failure.
  */
 export async function generateReply(args: GenerateArgs): Promise<GenerateResult> {
-  const { config, systemPrompt, systemPromptBlocks, messages, tools, executeTool, maxToolTurns } = args
+  const { config, systemPrompt, systemPromptBlocks, messages, tools, executeTool, maxToolTurns, maxToolCalls } = args
   const timeoutMs = aiRequestTimeoutMs()
   const providerArgs = {
     apiKey: config.apiKey,
@@ -52,6 +55,7 @@ export async function generateReply(args: GenerateArgs): Promise<GenerateResult>
     tools,
     executeTool,
     maxToolTurns,
+    maxToolCalls,
   }
 
   let result: {
@@ -87,6 +91,19 @@ export async function generateReply(args: GenerateArgs): Promise<GenerateResult>
  * we treat the turn as a handoff and strip the marker from any
  * remaining text. `usage` is passed straight through (null when the
  * provider didn't report it).
+ *
+ * Playground/WhatsApp reliability audit (Oct 2026) — `toolTurnsExhausted`
+ * ALSO forces `handoff: true`, regardless of mode. Previously this flag
+ * was purely diagnostic (logged, never acted on): a model cut off mid
+ * tool-investigation fell through to a canned "Un momento, permíteme
+ * confirmar esa información." string reported as an ordinary successful
+ * reply — auto-reply.ts's `if (handoff || !text)` never fired because
+ * `text` was non-empty, so the customer got a promise of a follow-up
+ * that nothing ever sent, and no human was ever notified. Exhausting the
+ * tool budget/turn cap means the investigation is, by definition,
+ * incomplete — that is never a resolved query, so it is routed through
+ * the SAME existing handoff path a model-requested [[HANDOFF]] already
+ * uses, rather than inventing a second mechanism.
  */
 export function parseGeneration(
   raw: string,
@@ -95,7 +112,7 @@ export function parseGeneration(
   finishReason?: string,
   toolTurnsExhausted?: boolean,
 ): GenerateResult {
-  const handoff = raw.includes(HANDOFF_SENTINEL)
+  const handoff = raw.includes(HANDOFF_SENTINEL) || toolTurnsExhausted === true
   const text = raw.split(HANDOFF_SENTINEL).join('').trim()
   return { text, handoff, usage, toolCalls, finishReason, toolTurnsExhausted }
 }

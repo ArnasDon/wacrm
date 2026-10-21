@@ -1,5 +1,5 @@
 import { AiError, type ProviderResult, type ToolCallLogEntry } from '../types'
-import { MAX_OUTPUT_TOKENS, MAX_TOOL_TURNS } from '../defaults'
+import { MAX_OUTPUT_TOKENS, MAX_TOOL_CALLS_PER_GENERATE, MAX_TOOL_TURNS } from '../defaults'
 import {
   mergeConsecutive,
   normalizeUsage,
@@ -91,6 +91,10 @@ export async function generateChatCompletion(
 ): Promise<ProviderResult> {
   const { apiKey, model, systemPrompt, messages, timeoutMs, tools, executeTool } = args
   const maxTurns = args.maxToolTurns ?? MAX_TOOL_TURNS
+  const maxCalls = args.maxToolCalls ?? MAX_TOOL_CALLS_PER_GENERATE
+  // Playground/WhatsApp reliability audit (Oct 2026) — see anthropic.ts's
+  // identical counter for why this counts individual calls, not turns.
+  let toolCallsMade = 0
 
   const wireMessages: OpenAiMessage[] = [
     { role: 'system', content: systemPrompt },
@@ -177,12 +181,17 @@ export async function generateChatCompletion(
     lastFinishReason = choice?.finish_reason
     const message = choice?.message
     const requestedCalls = message?.tool_calls ?? []
-    // H8-1 — see anthropic.ts's identical reasoning: true only on the
-    // exact turn the model still wants a tool but our own cap forbids
-    // continuing.
-    const toolTurnsExhausted = requestedCalls.length > 0 && Boolean(executeTool) && turn >= maxTurns
+    // Playground/WhatsApp reliability audit (Oct 2026) — see
+    // anthropic.ts's identical reasoning: a turn can request several
+    // tools at once, so the budget check is against what THIS turn
+    // would add, not just whether we've already hit it.
+    const wouldExceedCallBudget = toolCallsMade + requestedCalls.length > maxCalls
+    // H8-1 — true only on the exact turn the model still wants a tool
+    // but our own turn cap or call budget forbids continuing.
+    const toolTurnsExhausted =
+      requestedCalls.length > 0 && Boolean(executeTool) && (turn >= maxTurns || wouldExceedCallBudget)
 
-    if (requestedCalls.length > 0 && executeTool && turn < maxTurns) {
+    if (requestedCalls.length > 0 && executeTool && turn < maxTurns && !wouldExceedCallBudget) {
       wireMessages.push({ role: 'assistant', content: message?.content ?? null, tool_calls: requestedCalls })
       for (const call of requestedCalls) {
         let input: unknown = {}
@@ -195,6 +204,7 @@ export async function generateChatCompletion(
         toolCallLog.push({ name: call.function.name, input, result })
         wireMessages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(result) })
       }
+      toolCallsMade += requestedCalls.length
       continue // ask the model again with the tool results in context
     }
 
@@ -206,8 +216,19 @@ export async function generateChatCompletion(
       // generic line so auto-reply still sends something instead of
       // throwing past the customer.
       if (toolCallLog.length > 0) {
+        if (toolTurnsExhausted) {
+          // Diagnosable termination cause — see anthropic.ts's identical
+          // log for why. Never sent to a real WhatsApp customer:
+          // `generateReply` forces `handoff: true` whenever
+          // `toolTurnsExhausted` is true.
+          console.warn(
+            `[ai/${endpoint.label}] tool budget exhausted (turn=${turn}, maxTurns=${maxTurns}, toolCallsMade=${toolCallsMade}, maxCalls=${maxCalls}) — handing off instead of reporting success`,
+          )
+        }
         return {
-          text: 'Un momento, permíteme confirmar esa información.',
+          text: toolTurnsExhausted
+            ? 'No pude completar esa consulta con la información disponible en este momento.'
+            : 'Un momento, permíteme confirmar esa información.',
           usage: normalizeUsage({
             ...aggregatedUsage,
             cacheReadInputTokens: sawCachedTokens ? aggregatedCachedTokens : undefined,

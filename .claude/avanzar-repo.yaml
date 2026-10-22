@@ -1,0 +1,6 @@
+verificacion:
+  completa: ["npm ci", "npm run lint", "npm run typecheck", "npm test", "npm run build"]
+  dirigida: ["npx vitest run <archivos>"]
+archivos_calientes: [package.json, package-lock.json]
+check_ci: "Lint, typecheck, test, build"
+workflow_ci: ci.yml

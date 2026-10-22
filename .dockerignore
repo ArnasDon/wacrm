@@ -3,6 +3,8 @@
 .next
 node_modules
 docs
+docker
+scripts
 mcp-server
 supabase
 *.md

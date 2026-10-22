@@ -1,40 +1,299 @@
+# Image tags taken from the official Supabase self-hosting compose,
+# commit 4b16059 (supabase/supabase, docker/docker-compose.yml).
+# Verified with `docker manifest inspect` before pinning.
 name: wacrm
 
 services:
+  # ---------------------------------------------------------------------------
+  # Database — Postgres with Supabase extensions
+  # ---------------------------------------------------------------------------
+  supabase-db:
+    image: supabase/postgres:15.8.1.060
+    restart: unless-stopped
+    # No ports: R1 — Postgres (5432) must not be published on the host.
+    volumes:
+      - supabase-db-data:/var/lib/postgresql/data
+      - ./docker/supabase/db/init/01-roles.sh:/docker-entrypoint-initdb.d/z-01-roles.sh:ro
+      - ./docker/supabase/db/init/02-realtime.sql:/docker-entrypoint-initdb.d/z-02-realtime.sql:ro
+      # Bind-mount for manual migration runs after the first `up`; see docs/docker.md.
+      - ./supabase/migrations:/migrations:ro
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+    healthcheck:
+      test: ['CMD', 'pg_isready', '-U', 'postgres', '-h', 'localhost']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # ---------------------------------------------------------------------------
+  # API gateway — Kong
+  # ---------------------------------------------------------------------------
+  supabase-kong:
+    image: kong:2.8.1
+    restart: unless-stopped
+    ports:
+      # R1: published on loopback only. BASE.2 adds the outbound tunnel.
+      - '127.0.0.1:${KONG_HTTP_PORT:-8000}:8000'
+    volumes:
+      - ./docker/supabase/kong/kong.yml:/home/kong/kong.yml:ro
+    environment:
+      KONG_DATABASE: 'off'
+      KONG_DECLARATIVE_CONFIG: /home/kong/kong.yml
+      KONG_DNS_ORDER: LAST,A,CNAME
+      KONG_PLUGINS: request-transformer,cors,key-auth,acl
+      ANON_KEY: ${ANON_KEY}
+      SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY}
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+    healthcheck:
+      # kong health checks the admin API and the proxy listener
+      test: ['CMD', 'kong', 'health']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # ---------------------------------------------------------------------------
+  # Auth — gotrue
+  # ---------------------------------------------------------------------------
+  supabase-auth:
+    image: supabase/gotrue:v2.164.0
+    restart: unless-stopped
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: 9999
+      API_EXTERNAL_URL: ${API_EXTERNAL_URL:-http://localhost:8000}
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${POSTGRES_PASSWORD}@supabase-db:5432/${POSTGRES_DB:-postgres}?search_path=auth
+      GOTRUE_SITE_URL: ${SITE_URL:-http://localhost:3000}
+      GOTRUE_URI_ALLOW_LIST: ''
+      GOTRUE_DISABLE_SIGNUP: ${GOTRUE_DISABLE_SIGNUP:-false}
+      GOTRUE_JWT_ADMIN_ROLES: service_role
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      GOTRUE_JWT_EXP: ${JWT_EXPIRY:-3600}
+      GOTRUE_JWT_SECRET: ${JWT_SECRET}
+      GOTRUE_MAILER_AUTOCONFIRM: ${GOTRUE_MAILER_AUTOCONFIRM:-true}
+      GOTRUE_SMTP_HOST: ${GOTRUE_SMTP_HOST:-}
+      GOTRUE_SMTP_PORT: ${GOTRUE_SMTP_PORT:-587}
+      GOTRUE_SMTP_USER: ${GOTRUE_SMTP_USER:-}
+      GOTRUE_SMTP_PASS: ${GOTRUE_SMTP_PASS:-}
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: 'true'
+      GOTRUE_MAILER_SECURE_EMAIL_CHANGE_ENABLED: 'true'
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'wget',
+          '--no-verbose',
+          '--tries=1',
+          '--spider',
+          'http://localhost:9999/health',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # ---------------------------------------------------------------------------
+  # REST API — PostgREST
+  # ---------------------------------------------------------------------------
+  supabase-rest:
+    # linux/amd64 of postgrest/postgrest:v12.2.3 has no shell and no HTTP
+    # client (nix rootfs, Cmd ["/bin/postgrest"]). docker/supabase/rest
+    # copies that pinned binary onto a base that already has wget.
+    # `image` stays pinned so the topology still sees an exact tag.
+    build:
+      context: ./docker/supabase/rest
+    image: wacrm-postgrest:v12.2.3
+    restart: unless-stopped
+    environment:
+      PGRST_DB_URI: postgres://authenticator:${POSTGRES_PASSWORD}@supabase-db:5432/${POSTGRES_DB:-postgres}
+      PGRST_DB_SCHEMAS: public,storage,graphql_public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+      PGRST_DB_USE_LEGACY_GUCS: 'false'
+      PGRST_APP_SETTINGS_JWT_SECRET: ${JWT_SECRET}
+      PGRST_APP_SETTINGS_JWT_EXP: ${JWT_EXPIRY:-3600}
+      # Admin port for the healthcheck
+      PGRST_ADMIN_SERVER_PORT: '3001'
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+    healthcheck:
+      # GET /ready is 200 only after the schema cache has loaded. Exec form
+      # (no shell): wget lives at /usr/bin/wget in the derived image.
+      test:
+        [
+          'CMD',
+          '/usr/bin/wget',
+          '-q',
+          '-O',
+          '/dev/null',
+          'http://127.0.0.1:3001/ready',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # ---------------------------------------------------------------------------
+  # Realtime — websocket server
+  # ---------------------------------------------------------------------------
+  supabase-realtime:
+    image: supabase/realtime:v2.34.47
+    restart: unless-stopped
+    environment:
+      PORT: '4000'
+      DB_HOST: supabase-db
+      DB_PORT: '5432'
+      DB_USER: supabase_admin
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_NAME: ${POSTGRES_DB:-postgres}
+      DB_AFTER_CONNECT_QUERY: 'SET search_path TO _realtime'
+      DB_ENC_KEY: ${REALTIME_ENC_KEY}
+      API_JWT_SECRET: ${JWT_SECRET}
+      FLY_ALLOC_ID: fly123
+      FLY_APP_NAME: realtime
+      SECRET_KEY_BASE: ${JWT_SECRET}
+      ERL_AFLAGS: -proto_dist inet_tcp
+      DNS_NODES: "''"
+      RLIMIT_NOFILE: ''
+      APP_NAME: realtime
+      SEED_SELF_HOST: 'true'
+      SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY}
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'curl -sSfL --head -o /dev/null -H "Authorization: Bearer $${SERVICE_ROLE_KEY}" http://localhost:4000/api/tenants/realtime-dev/health || exit 1',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # Storage — file storage API
+  # ---------------------------------------------------------------------------
+  supabase-storage:
+    image: supabase/storage-api:v1.11.13
+    restart: unless-stopped
+    volumes:
+      - supabase-storage-data:/var/lib/storage
+    environment:
+      ANON_KEY: ${ANON_KEY}
+      SERVICE_KEY: ${SERVICE_ROLE_KEY}
+      POSTGREST_URL: http://supabase-rest:3000
+      PGRST_JWT_SECRET: ${JWT_SECRET}
+      DATABASE_URL: postgres://supabase_storage_admin:${POSTGRES_PASSWORD}@supabase-db:5432/${POSTGRES_DB:-postgres}
+      FILE_SIZE_LIMIT: ${FILE_SIZE_LIMIT:-52428800}
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-file}
+      FILE_STORAGE_BACKEND_PATH: /var/lib/storage
+      TENANT_ID: stub
+      REGION: stub
+      GLOBAL_S3_BUCKET: stub
+      ENABLE_IMAGE_TRANSFORMATION: 'false'
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'wget',
+          '--no-verbose',
+          '--tries=1',
+          '--spider',
+          'http://127.0.0.1:5000/status',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # ---------------------------------------------------------------------------
+  # Meta — Postgres metadata API
+  # ---------------------------------------------------------------------------
+  supabase-meta:
+    image: supabase/postgres-meta:v0.84.2
+    restart: unless-stopped
+    environment:
+      PG_META_PORT: '8080'
+      PG_META_DB_HOST: supabase-db
+      PG_META_DB_PORT: '5432'
+      PG_META_DB_NAME: ${POSTGRES_DB:-postgres}
+      PG_META_DB_USER: supabase_admin
+      PG_META_DB_PASSWORD: ${POSTGRES_PASSWORD}
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+    healthcheck:
+      # postgres-meta ships Node.js; use it rather than installing a tool.
+      test:
+        [
+          'CMD-SHELL',
+          "node -e \"fetch('http://localhost:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\"",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # ---------------------------------------------------------------------------
+  # App — wacrm Next.js fork
+  # ---------------------------------------------------------------------------
   app:
     build:
       context: .
       # NEXT_PUBLIC_* vars are inlined at build time — forward them
-      # from .env.local as build args. Changing any of them requires
-      # a rebuild (docker compose up --build).
+      # from .env as build args. Changing any of them requires a rebuild
+      # (docker compose up --build).
       args:
         NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
         NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
         NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-}
         NEXT_PUBLIC_APP_LOCALE: ${NEXT_PUBLIC_APP_LOCALE:-en}
-    # Runtime (server-only) secrets come from .env.local; they are
-    # never baked into the image.
+    # Runtime (server-only) secrets come from .env; never baked into the image.
     env_file:
-      - .env.local
-    # The server always listens on 3000 inside the container. Pinned
-    # here because `environment` wins over `env_file`, so a stray PORT
-    # in .env.local can't desync the app from the mapping and the
-    # healthcheck below.
+      - .env
+    # The server always listens on 3000 inside the container. Pinned here
+    # because `environment` wins over `env_file`, so a stray PORT in .env
+    # can't desync the app from the mapping and the healthcheck below.
     environment:
       PORT: 3000
-    # Host side only — HOST_PORT=8080 publishes the app on :8080.
     ports:
-      - '${HOST_PORT:-3000}:3000'
+      # R1: published on loopback only. BASE.2 adds the outbound tunnel.
+      - '127.0.0.1:${HOST_PORT:-3000}:3000'
     restart: unless-stopped
+    depends_on:
+      supabase-kong:
+        condition: service_healthy
     healthcheck:
+      # Check /favicon.ico — the middleware excludes it from auth checks
+      # (src/middleware.ts:93-96), so this works even before Supabase is
+      # reachable from inside the container (phase 1: no tunnel yet).
       test:
         [
           'CMD',
           'node',
           '-e',
-          "fetch('http://localhost:3000').then((r)=>process.exit(r.ok||r.status<500?0:1)).catch(()=>process.exit(1))",
+          "fetch('http://localhost:3000/favicon.ico').then((r)=>process.exit(r.ok||r.status<500?0:1)).catch(()=>process.exit(1))",
         ]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 15s
+      start_period: 60s
+
+volumes:
+  supabase-db-data: {}
+  supabase-storage-data: {}

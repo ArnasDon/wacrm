@@ -68,6 +68,12 @@ const APP_LOCALE = ["en", "pt", "es", "ko"].includes(process.env.NEXT_PUBLIC_APP
   : "en";
 
 const nextConfig: NextConfig = {
+  typescript: {
+    // Use a build-specific tsconfig that excludes *.test.ts files so that
+    // `next build` (and the Docker stage) does not try to type-check test
+    // files that import from paths excluded in .dockerignore (e.g. scripts/).
+    tsconfigPath: "./tsconfig.build.json",
+  },
   turbopack: {
     resolveAlias: {
       "@app-messages": `./messages/${APP_LOCALE}.json`,

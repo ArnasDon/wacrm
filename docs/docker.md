@@ -1,76 +1,119 @@
 # Running with Docker
 
-The repo ships a multi-stage `Dockerfile` (Next.js standalone output,
-runs as a non-root user) and a `docker-compose.yml` with a single
-`app` service. Supabase is external — point the app at your hosted
-(or self-hosted) Supabase project via env vars; no database container
-is included.
+The repo ships a multi-stage `Dockerfile` (Next.js standalone output, runs as a
+non-root user) and a `docker-compose.yml` that brings up **Supabase autoalojado**
+plus the wacrm fork — nine services in total (eight in Part 1; the `cron` service
+arrives in BASE.1 Part 2).
 
-## Quick start
+`.env.local.example` is still the template for **`npm run dev`** without Docker —
+it stays as it is. The Docker stack uses `.env` (generated from `.env.example`).
 
-1. Copy the env template and fill it in:
+## Servicios y puertos
+
+| Service | Internal port | Published on host |
+|---|---|---|
+| `supabase-db` | 5432 | — (R1: not published) |
+| `supabase-kong` | 8000 | `127.0.0.1:8000` |
+| `supabase-auth` | 9999 | — |
+| `supabase-rest` | 3000 / 3001 (admin) | — |
+| `supabase-realtime` | 4000 | — |
+| `supabase-storage` | 5000 | — |
+| `supabase-meta` | 8080 | — |
+| `app` | 3000 | `127.0.0.1:3000` |
+
+**R1 (BASE.1):** Postgres (ports 5432 and 6543) is never published on the host;
+everything published binds to `127.0.0.1`. The public entry point arrives in
+BASE.2 with an outbound tunnel.  
+**R3 (BASE.1):** Every image is pinned to an exact version — no `:latest`.  
+`npm test` (specifically `contracts/base/compose-services.publisher.test.ts`)
+verifies both rules automatically against the live `docker-compose.yml`.
+
+## Quick start (máquina limpia)
+
+1. Generate the `.env` file with fresh secrets:
 
    ```bash
-   cp .env.local.example .env.local
+   cp .env.example .env
+   npm run keys >> .env
    ```
 
-2. Build and start (the `--env-file` flag is required — Compose only
-   reads `.env` by default for `${VAR}` substitution, and this project
-   keeps its config in `.env.local`):
+   The last definition of each key wins, so the generated values (appended by
+   `npm run keys`) override the placeholder markers from `.env.example`.
+
+2. Start all services and wait until every healthcheck passes:
 
    ```bash
-   docker compose --env-file .env.local up --build -d
+   docker compose up -d --wait
    ```
 
-3. The app is served on [http://localhost:3000](http://localhost:3000)
-   (publish it elsewhere with `HOST_PORT=8080` in `.env.local`).
+   On a clean machine this takes roughly 2–3 minutes for all services to reach
+   *healthy*. Use `docker compose ps` to track progress.
 
-> Use `HOST_PORT`, not `PORT`, to move the published port. `PORT` is
-> what the server listens on _inside_ the container, and `env_file`
-> would inject it there — leaving the app on a port the mapping and
-> the healthcheck don't target. Compose pins it to 3000 for that
-> reason.
+3. Open [http://localhost:3000](http://localhost:3000).  
+   Use `HOST_PORT=8080` in `.env` to publish the app on a different port.
+
+> **Note on `--env-file`:** the old compose setup required `--env-file .env.local`.
+> The new stack reads `.env` by default — no flag needed.
+
+## Migraciones (primer arranque)
+
+The `supabase/migrations/` files reference `auth.users`, which gotrue creates on
+startup — *after* the Postgres init scripts run. They cannot go in
+`/docker-entrypoint-initdb.d`. After the first `docker compose up --wait`, apply
+them manually:
+
+```bash
+docker compose exec -T supabase-db sh -c \
+  'for f in /migrations/*.sql; do psql -v ON_ERROR_STOP=1 -U postgres -d postgres -f "$f"; done'
+```
+
+The `/migrations` bind-mount is already declared in `docker-compose.yml`.
+CFG.1 can automate this step when it defines the per-tenant startup sequence.
+
+## What does not publish and why
+
+- **Postgres ports (5432, 6543):** never exposed on the host (R1). Access the
+  database from other containers using the service name `supabase-db`.
+- **Other Supabase internal services:** auth, REST, realtime, storage, and meta are
+  reachable only from inside the Docker network. All external access goes through
+  kong (`127.0.0.1:8000`).
+- **Loopback binding:** the two published ports bind to `127.0.0.1`. BASE.2
+  introduces the outbound tunnel that makes the stack reachable over the internet.
+
+To run the integration test that verifies all of this on a clean machine:
+
+```bash
+COMPOSE_IT=1 npx vitest run scripts/compose/compose-up.it.test.ts
+```
 
 ## Build-time vs runtime variables
 
-- `NEXT_PUBLIC_*` variables are **inlined into the client bundle at
-  build time**. They are passed as Docker build args by
-  `docker-compose.yml`. If you change any of them, rebuild:
-  `docker compose --env-file .env.local up --build -d`. This includes
-  `NEXT_PUBLIC_APP_LOCALE` (`en | ko | pt | es`), so the UI language is
-  fixed per image.
+- `NEXT_PUBLIC_*` variables are **inlined into the client bundle at build time**.
+  They are forwarded as Docker build args by `docker-compose.yml`. If you change
+  any of them, rebuild: `docker compose up --build -d`. This includes
+  `NEXT_PUBLIC_APP_LOCALE` (`en | ko | pt | es`), so the UI language is fixed per
+  image.
 - Everything else (`SUPABASE_SERVICE_ROLE_KEY`, `ENCRYPTION_KEY`,
-  `META_APP_SECRET`, …) is read at **runtime** from `.env.local` via
-  `env_file` and is never baked into the image — safe to change with
-  just a container restart.
+  `META_APP_SECRET`, …) is read at **runtime** from `.env` via `env_file` and is
+  never baked into the image — safe to change with just a container restart.
+
+## Scheduled tasks (cron)
+
+The `cron` service (arriving in BASE.1 Part 2) calls two endpoints every 5 minutes:
+- `GET /api/automations/cron` — runs pending automation Wait steps
+- `GET /api/flows/cron` — advances flow instances
+
+Both require the `x-cron-secret` header (`AUTOMATION_CRON_SECRET`); they return 503
+until that variable is set. The cron container sends it automatically using its
+`CRON_SECRET` env var (same value).
 
 ## Plain Docker (no Compose)
 
 ```bash
 docker build \
-  --build-arg NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co \
+  --build-arg NEXT_PUBLIC_SUPABASE_URL=http://localhost:8000 \
   --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key \
   -t wacrm .
 
-docker run -d --env-file .env.local -e PORT=3000 -p 3000:3000 wacrm
+docker run -d --env-file .env -e PORT=3000 -p 127.0.0.1:3000:3000 wacrm
 ```
-
-## Notes
-
-- Database migrations under `supabase/` are **not** run by the
-  container — apply them with the Supabase CLI as described in the
-  README.
-- Received attachments are copied into the `chat-media` Supabase
-  Storage bucket, because Meta deletes media roughly 30 days after it
-  arrives and the copy is the only thing that outlives that. It grows
-  with inbound volume, so it's worth watching your project's storage
-  quota. Turn it off per account under Settings → WhatsApp →
-  Attachment Storage; attachments received while it's off become
-  unviewable once Meta drops them. Files over 16 MB (the bucket's
-  limit) are never copied.
-- Nothing inside the container is scheduled. If you use automation
-  Wait steps or flows, point an external scheduler at
-  `GET /api/automations/cron` and `GET /api/flows/cron` on this
-  deployment, sending the shared secret in the `x-cron-secret` header
-  (`AUTOMATION_CRON_SECRET`, see `.env.local.example`). Both return
-  503 until that variable is set.

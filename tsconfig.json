@@ -20,7 +20,8 @@
     ],
     "paths": {
       "@/*": ["./src/*"],
-      "@app-messages": ["./messages/en.json"]
+      "@app-messages": ["./messages/en.json"],
+      "@contracts/*": ["./contracts/*"]
     }
   },
   "include": [

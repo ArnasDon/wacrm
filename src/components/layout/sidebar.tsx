@@ -219,7 +219,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
 
             
             <span className="text-sm font-semibold text-foreground">
-              Digital Magnet WACRM
+              Magnet AI
             </span>
           </Link>
           <button

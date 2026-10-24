@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { createClient } from "@/lib/supabase/client";
 import type { Message } from "@/types";
+import { useVisibilidad } from "@/modulos/visibilidad/contexto";
+import { debeAvisar } from "@/modulos/visibilidad/notificaciones";
 import {
   DEFAULT_NOTIFICATION_LABELS,
   buildNotificationContent,
@@ -69,6 +71,13 @@ export function useBrowserNotifications(): void {
     };
   });
 
+  // Visibilidad leída desde el callback realtime (VIS.2, R26/R27).
+  const vis = useVisibilidad();
+  const visRef = useRef(vis);
+  useEffect(() => {
+    visRef.current = vis;
+  });
+
   // Message ids already handled, for replay dedupe. Survives re-renders,
   // pruned by shouldNotifyForMessage.
   const seenRef = useRef<Map<string, number>>(new Map());
@@ -85,10 +94,28 @@ export function useBrowserNotifications(): void {
       // failure here just means the generic fallback title.
       const { data } = await supabase
         .from("conversations")
-        .select("contact:contacts(name, wa_username, phone)")
+        .select("assigned_agent_id, contact:contacts(name, wa_username, phone)")
         .eq("id", msg.conversation_id)
         .maybeSingle();
       if (cancelled) return;
+
+      // Con visibilidad restringida: sin conversación visible no hay aviso.
+      // Con todas (módulo apagado, owner o admin) se avisa como en wacrm.
+      if (visRef.current.alcance.tipo !== "todas") {
+        const fila = data as { assigned_agent_id?: string | null } | null;
+        if (
+          !debeAvisar(
+            fila
+              ? {
+                  id: msg.conversation_id,
+                  assigned_agent_id: fila.assigned_agent_id,
+                }
+              : null,
+            visRef.current,
+          )
+        )
+          return;
+      }
 
       const contact = (data as {
         contact?: { name?: string | null; wa_username?: string | null; phone?: string | null } | null;

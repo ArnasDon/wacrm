@@ -27,7 +27,7 @@ La config va vacía: los roles que ven todo los fija la regla R26, no la empresa
 ## Qué no cubre
 
 - Es solo interfaz (R27): no hay reglas RLS y la API pública `v1` no filtra.
-- Embudo y notificaciones llegan con la Parte 2 de VIS.2 (ver abajo).
+- Embudo y notificaciones: ver VIS.2 (Parte 2) abajo.
 
 ## VIS.2 (Parte 1): dashboard y feed
 
@@ -38,7 +38,14 @@ Con el módulo encendido, el asesor (agent, viewer) ve en el dashboard:
 
 Lo que **no** se oculta: los agregados sin conversaciones identificables (KPIs, volumen, equipo, embudo, campañas, configuración) siguen siendo de toda la cuenta, igual que wacrm; recalcularlos exigiría tocar la RPC (servidor), contra R27. La RPC sigue devolviendo la atención de toda la cuenta al cliente (solo interfaz, sin RLS).
 
-Owner y admin ven todo; apagado, todo es idéntico a wacrm (R16). Embudo (conversación vinculada del negocio) y notificaciones llegan con la Parte 2.
+Owner y admin ven todo; apagado, todo es idéntico a wacrm (R16).
+
+## VIS.2 (Parte 2): embudo, notificaciones y ficha
+
+- **Embudo:** los negocios se ven como en wacrm; la conversación vinculada del formulario del negocio se acota al asesor y solo aparece el enlace "Vincular a una conversación" si es visible.
+- **Notificaciones:** una notificación con conversación se muestra (página y contador) solo si esa conversación es visible hoy; las sin conversación se muestran siempre. "Marcar todas como leídas" sigue marcando también las ocultas.
+- **Avisos del navegador:** sin conversación visible no hay aviso.
+- **Ficha de contacto:** no consulta conversaciones; la prueba de cobertura falla si alguien se las agrega sin visibilidad.
 
 ## Prueba de cobertura
 

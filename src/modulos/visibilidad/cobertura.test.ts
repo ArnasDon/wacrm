@@ -20,11 +20,6 @@ const EXCEPCIONES: Record<string, string> = {
   'src/components/inbox/conversation-list.tsx':
     'solo entrega la carga a la página, que la pasa por vis.filtrar y le devuelve `visibles` (VIS.1)',
 };
-// Archivos que hoy consultan conversations y se cubren en la Parte 2 de VIS.2.
-const PENDIENTES_VIS2_PARTE2 = [
-  'src/hooks/use-browser-notifications.ts',
-  'src/components/pipelines/deal-form.tsx',
-];
 
 const REGEX_CONSULTA =
   /\.from\(\s*['"]conversations['"]\s*\)|conversations(!inner)?\s*\(/g;
@@ -100,7 +95,7 @@ describe('cobertura de visibilidad', () => {
   });
   it('todo el código de interfaz que consulta conversations pasa por visibleConversations', () => {
     const faltan = archivosSinVisibilidad(leerRaices()).filter(
-      (r) => !(r in EXCEPCIONES) && !PENDIENTES_VIS2_PARTE2.includes(r)
+      (r) => !(r in EXCEPCIONES)
     );
     expect(faltan).toEqual([]);
   });
@@ -109,11 +104,8 @@ describe('cobertura de visibilidad', () => {
       'import { acotarConsulta } from "@/modulos/visibilidad/consultas";\nacotarConsulta(db.from("conversations"), vis);\ndb.from("conversations").select("id")';
     expect(archivosSinVisibilidad([{ ruta: 'v.ts', texto }])).toEqual(['v.ts']);
   });
-  it('las excepciones y pendientes existen y consultan conversations hoy (no quedan viejas)', () => {
-    for (const ruta of [
-      ...Object.keys(EXCEPCIONES),
-      ...PENDIENTES_VIS2_PARTE2,
-    ]) {
+  it('las excepciones existen y consultan conversations hoy (no quedan viejas)', () => {
+    for (const ruta of Object.keys(EXCEPCIONES)) {
       const abs = join(RAIZ_REPO, ruta);
       expect(existsSync(abs), ruta).toBe(true);
       expect(consultaConversaciones(readFileSync(abs, 'utf8')), ruta).toBe(true);

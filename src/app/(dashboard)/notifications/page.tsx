@@ -11,6 +11,8 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useTranslations } from "next-intl";
+import { useVisibilidad } from "@/modulos/visibilidad/contexto";
+import { filtrarNotificaciones } from "@/modulos/visibilidad/notificaciones";
 
 // Icon per notification type. Only one type exists today
 // (conversation_assigned) but this keeps future types a one-line add.
@@ -22,6 +24,7 @@ export default function NotificationsPage() {
   const t = useTranslations("Notifications");
   const router = useRouter();
   const { accountId } = useAuth();
+  const vis = useVisibilidad();
   const [notifications, setNotifications] = useState<Notification[] | null>(
     null,
   );
@@ -41,8 +44,36 @@ export default function NotificationsPage() {
       setError(fetchErr.message);
       return;
     }
-    setNotifications((data ?? []) as Notification[]);
-  }, [accountId]);
+    const lista = (data ?? []) as Notification[];
+    if (vis.alcance.tipo === "todas") {
+      setNotifications(lista);
+      return;
+    }
+    // Sin rol resuelto: lista vacía. Con alcance de asesor: solo las de
+    // conversaciones visibles hoy (una conversación ausente = no visible).
+    if (!vis.listo) {
+      setNotifications([]);
+      return;
+    }
+    const ids = [
+      ...new Set(
+        lista.map((n) => n.conversation_id).filter((c): c is string => !!c),
+      ),
+    ];
+    let conversaciones: { id: string; assigned_agent_id: string | null }[] = [];
+    if (ids.length > 0) {
+      const { data: convs, error: convErr } = await supabase
+        .from("conversations")
+        .select("id, assigned_agent_id")
+        .in("id", ids);
+      if (convErr) {
+        setError(convErr.message);
+        return;
+      }
+      conversaciones = vis.filtrar(convs ?? []);
+    }
+    setNotifications(filtrarNotificaciones(lista, conversaciones, vis));
+  }, [accountId, vis]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -61,6 +92,11 @@ export default function NotificationsPage() {
         (payload) => {
           if (payload.eventType === "INSERT") {
             const row = payload.new as Notification;
+            if (vis.alcance.tipo !== "todas") {
+              // Restringido: recargar para decidir con la visibilidad de hoy.
+              void load();
+              return;
+            }
             setNotifications((prev) => {
               if (!prev) return [row];
               if (prev.some((n) => n.id === row.id)) return prev;
@@ -85,7 +121,7 @@ export default function NotificationsPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [vis, load]);
 
   const markRead = useCallback(
     async (id: string) => {

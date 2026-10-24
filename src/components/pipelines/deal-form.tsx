@@ -33,6 +33,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslations } from "next-intl";
+import { useVisibilidad } from "@/modulos/visibilidad/contexto";
+import { acotarConsulta } from "@/modulos/visibilidad/consultas";
 
 interface DealFormProps {
   open: boolean;
@@ -56,6 +58,7 @@ export function DealForm({
   const t = useTranslations("Pipelines.form");
   const supabase = createClient();
   const { accountId, defaultCurrency } = useAuth();
+  const vis = useVisibilidad();
 
   const [title, setTitle] = useState("");
   const [value, setValue] = useState("");
@@ -136,20 +139,30 @@ export function DealForm({
     }
     let cancelled = false;
     (async () => {
-      const { data } = await supabase
+      // VIS.2: acotar al asesor para que el limit(1) no oculte la suya, y
+      // decidir con vis.puedeVer sobre lo que llega (doble llave).
+      const base = supabase
         .from("conversations")
-        .select("*")
-        .eq("contact_id", contactId)
+        .select(vis.alcance.tipo === "todas" ? "*" : "*, assigned_agent_id")
+        .eq("contact_id", contactId);
+      const q = acotarConsulta(base, vis);
+      if (!q) {
+        setLinkedConversation(null);
+        return;
+      }
+      const { data } = await q
         .order("last_message_at", { ascending: false })
         .limit(1)
         .maybeSingle();
       if (cancelled) return;
-      setLinkedConversation((data as Conversation | null) ?? null);
+      const conv = (data as Conversation | null) ?? null;
+      setLinkedConversation(conv && vis.puedeVer(conv) ? conv : null);
     })();
     return () => {
       cancelled = true;
     };
-  }, [open, contactId, supabase]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, contactId, supabase, vis.alcance]);
 
   async function handleSave() {
     if (!title.trim() || !contactId || !stageId) {

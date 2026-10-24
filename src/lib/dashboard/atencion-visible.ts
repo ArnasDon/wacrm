@@ -139,6 +139,13 @@ export async function cargarAtencionVisible(
     fallidosQ ?? Promise.resolve({ data: [] as Fila[] }),
   ])
 
+  // Un error de consulta no debe verse como "cero pendientes": se propaga y el
+  // dashboard muestra su estado de fallo.
+  const errorConsulta =
+    (convRes as { error?: { message: string } | null }).error ??
+    (fallidosRes as { error?: { message: string } | null }).error
+  if (errorConsulta) throw new Error(errorConsulta.message)
+
   type FilaConv = Fila & { id: string; assigned_agent_id: string | null }
   const convs = vis.filtrar((convRes.data ?? []) as FilaConv[])
 
@@ -174,7 +181,7 @@ export async function cargarAtencionVisible(
 
   let entrantes: EntradaAtencion['entrantes'] = []
   if (conversaciones.length > 0) {
-    const { data } = await db
+    const { data, error } = await db
       .from('messages')
       .select('conversation_id, created_at')
       .eq('sender_type', 'customer')
@@ -182,6 +189,7 @@ export async function cargarAtencionVisible(
         'conversation_id',
         conversaciones.map((c) => c.id),
       )
+    if (error) throw new Error(error.message)
     entrantes = ((data ?? []) as Fila[]).map((m) => ({
       conversationId: m.conversation_id as string,
       createdAt: m.created_at as string,

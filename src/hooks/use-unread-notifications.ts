@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Notification } from "@/types";
+import { useVisibilidad } from "@/modulos/visibilidad/contexto";
+import { filtrarNotificaciones } from "@/modulos/visibilidad/notificaciones";
 
 /**
  * Count of unread notifications for the current user. Used by the
@@ -14,12 +16,49 @@ import type { Notification } from "@/types";
  */
 export function useUnreadNotifications(): number {
   const [count, setCount] = useState(0);
+  const vis = useVisibilidad();
 
   useEffect(() => {
     const supabase = createClient();
     let cancelled = false;
+    const restringido = vis.alcance.tipo !== "todas";
 
-    (async () => {
+    // Restringido (VIS.2): solo cuentan las de conversaciones visibles; se
+    // vuelve a contar entera en cada evento (no se suma ±1).
+    const contarRestringido = async () => {
+      if (!vis.listo) {
+        setCount(0);
+        return;
+      }
+      const { data, error } = await supabase
+        .from("notifications")
+        .select(
+          "id, conversation_id, conversation:conversations(id, assigned_agent_id)",
+        )
+        .is("read_at", null);
+      if (cancelled || error) return;
+      type Fila = {
+        id: string;
+        conversation_id: string | null;
+        conversation:
+          | { id: string; assigned_agent_id: string | null }
+          | { id: string; assigned_agent_id: string | null }[]
+          | null;
+      };
+      const filas = (data ?? []) as unknown as Fila[];
+      const conversaciones = filas.flatMap((f) =>
+        Array.isArray(f.conversation)
+          ? f.conversation
+          : f.conversation
+            ? [f.conversation]
+            : [],
+      );
+      setCount(filtrarNotificaciones(filas, conversaciones, vis).length);
+    };
+
+    if (restringido) {
+      void contarRestringido();
+    } else (async () => {
       // head:true skips fetching rows — we only need the `count`
       // supabase-js returns alongside the (empty) response body.
       const { count: unreadCount, error } = await supabase
@@ -36,6 +75,10 @@ export function useUnreadNotifications(): number {
         "postgres_changes",
         { event: "*", schema: "public", table: "notifications" },
         (payload) => {
+          if (restringido) {
+            void contarRestringido();
+            return;
+          }
           if (payload.eventType === "INSERT") {
             const row = payload.new as Notification;
             if (!row.read_at) setCount((n) => n + 1);
@@ -57,7 +100,7 @@ export function useUnreadNotifications(): number {
       cancelled = true;
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [vis]);
 
   return count;
 }

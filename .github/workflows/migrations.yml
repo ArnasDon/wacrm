@@ -84,7 +84,7 @@ jobs:
         run: |
           for f in $(ls supabase/migrations/*.sql | LC_ALL=C sort); do
             case "$(basename "$f")" in
-              mod_*) supabase db query --local --file "$f" ;;
+              mod_*) psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -v ON_ERROR_STOP=1 -f "$f" ;;
             esac
           done
 

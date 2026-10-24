@@ -3,6 +3,7 @@ import {
   ErrorDefinicionModulo,
   type DefinicionModulo,
 } from '@contracts/mod/module';
+import { moduloAsignacion } from './asignacion/modulo';
 import { moduloVisibilidad } from './visibilidad/modulo';
 
 /** Pasa cada módulo por definirModulo y rechaza nombres repetidos. */
@@ -21,7 +22,7 @@ export function registrarModulos(
   return Object.freeze(lista);
 }
 
-// ASG.1 agrega aquí su definirModulo(...).
 export const MODULOS: readonly DefinicionModulo<unknown>[] = registrarModulos([
+  moduloAsignacion as DefinicionModulo<unknown>,
   moduloVisibilidad as DefinicionModulo<unknown>,
 ]);

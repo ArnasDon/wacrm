@@ -11,6 +11,8 @@ on:
       - config.ejemplo/**
       - Dockerfile
       - .dockerignore
+      - supabase/migrations/mod_asignacion_*
+      - src/modulos/asignacion/**
       - .github/workflows/compose-it.yml
   push:
     branches: [main]
@@ -61,3 +63,30 @@ jobs:
           docker compose --project-name wacrm-empresa-it logs --tail 200
           docker compose --project-name wacrm-policies-it ps
           docker compose --project-name wacrm-policies-it logs --tail 200
+
+  asignacion-it:
+    name: motor de asignación contra Postgres
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run asignacion integration test
+        run: COMPOSE_IT=1 npx vitest run src/modulos/asignacion/asignacion.it.test.ts
+        env:
+          COMPOSE_IT: '1'
+
+      - name: Dump logs on failure
+        if: failure()
+        run: |
+          docker compose --project-name wacrm-asignacion-it ps
+          docker compose --project-name wacrm-asignacion-it logs --tail 200

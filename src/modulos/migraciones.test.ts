@@ -38,7 +38,7 @@ describe('migraciones de módulos (IT estática)', () => {
 
   it('con un módulo agregado, las suyas quedan después de todas las de wacrm', () => {
     const todas = ordenMigraciones([
-      ...reales,
+      ...reales.filter((f) => MIGRACION_WACRM.test(f)),
       'mod_demo_001.sql',
       'mod_demo_002_x.sql',
     ]);

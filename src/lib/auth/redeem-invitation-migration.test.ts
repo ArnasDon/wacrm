@@ -14,6 +14,11 @@ const tablesWithoutDomainData = new Set([
   "account_invitations",
   "member_presence",
   "pending_message_statuses",
+  // Módulo asignacion (ASG.1): solo se llenan por mensajes entrantes; la cuenta
+  // recién creada de un invitado nunca los tiene.
+  "mod_asignacion_asesores",
+  "mod_asignacion_registro",
+  "mod_asignacion_cursor",
 ]);
 
 function accountScopedTables(): Set<string> {

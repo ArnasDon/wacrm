@@ -19,6 +19,8 @@ import {
   type OverviewRange,
 } from '@/lib/dashboard/overview'
 import { derivePresence } from '@/lib/presence'
+import { cargarAtencionVisible } from '@/lib/dashboard/atencion-visible'
+import { useVisibilidad } from '@/modulos/visibilidad/contexto'
 
 import { ActivityFeed } from '@/components/dashboard/activity-feed'
 import { AttentionRow } from '@/components/dashboard/attention-row'
@@ -48,6 +50,7 @@ function DashboardPageInner() {
   const searchParams = useSearchParams()
   const range = parseOverviewRange(searchParams.get('range'))
   const { defaultCurrency, profile } = useAuth()
+  const vis = useVisibilidad()
 
   const [overview, setOverview] = useState<DashboardOverview | null>(null)
   const [failed, setFailed] = useState(false)
@@ -58,8 +61,20 @@ function DashboardPageInner() {
   const debounceRef = useRef<number | null>(null)
 
   const refresh = useCallback((days: OverviewRange) => {
+    // Con el módulo visibilidad y rol sin resolver no se carga nada (falla cerrado).
+    if (!vis.listo) return
     const request = ++requestRef.current
-    loadOverview(createClient(), days, browserTimeZone())
+    const db = createClient()
+    loadOverview(db, days, browserTimeZone())
+      .then(async (overview) => {
+        // El asesor restringido ve la atención recalculada con sus conversaciones.
+        if (vis.alcance.tipo !== 'asesor') return overview
+        const attention = await cargarAtencionVisible(db, vis, {
+          ahora: Date.now(),
+          objetivoMin: overview.replyTargetMinutes,
+        })
+        return { ...overview, attention }
+      })
       .then((data) => {
         if (request !== requestRef.current) return
         setOverview(data)
@@ -71,18 +86,19 @@ function DashboardPageInner() {
         console.error('[dashboard] overview failed:', err)
         setFailed(true)
       })
-  }, [])
+  }, [vis])
 
   useEffect(() => {
     refresh(range)
   }, [range, refresh])
 
   useEffect(() => {
-    loadActivity(createClient(), 50)
+    if (!vis.listo) return
+    loadActivity(createClient(), 50, vis)
       .then(setActivity)
       .catch((err) => console.error('[dashboard] activity failed:', err))
       .finally(() => setActivityLoading(false))
-  }, [])
+  }, [vis])
 
   useEffect(() => {
     const tick = window.setInterval(() => {

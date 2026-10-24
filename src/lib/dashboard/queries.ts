@@ -2,19 +2,39 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { groupInboundMessages } from './activity-grouping'
 import type { ActivityItem } from './types'
 import { getT } from '@/lib/i18n/translate'
+import { acotarConsulta } from '@/modulos/visibilidad/consultas'
+import type { Visibilidad } from '@/modulos/visibilidad/visibilidad'
 
 const BROADCAST_STATUS_KEYS = new Set(['draft', 'scheduled', 'sending', 'sent', 'failed'])
 
 type DB = SupabaseClient
 
-export async function loadActivity(db: DB, limit = 20): Promise<ActivityItem[]> {
-  const [msgs, contacts, deals, broadcasts, autoLogs] = await Promise.all([
-    db
+export async function loadActivity(
+  db: DB,
+  limit = 20,
+  vis?: Visibilidad,
+): Promise<ActivityItem[]> {
+  // Sin vis o con alcance 'todas' la consulta de mensajes es la de wacrm.
+  const restringido = vis !== undefined && vis.alcance.tipo !== 'todas'
+  const mensajes = async () => {
+    if (!restringido) {
+      return db
+        .from('messages')
+        .select('id, content_text, sender_type, created_at, conversation_id, conversations(contact_id, contacts(name, phone))')
+        .eq('sender_type', 'customer')
+        .order('created_at', { ascending: false })
+        .limit(40)
+    }
+    const base = db
       .from('messages')
-      .select('id, content_text, sender_type, created_at, conversation_id, conversations(contact_id, contacts(name, phone))')
+      .select('id, content_text, sender_type, created_at, conversation_id, conversations!inner(assigned_agent_id, contact_id, contacts(name, phone))')
       .eq('sender_type', 'customer')
-      .order('created_at', { ascending: false })
-      .limit(40),
+    const acotada = acotarConsulta(base, vis, 'conversations.assigned_agent_id')
+    if (!acotada) return { data: [] }
+    return acotada.order('created_at', { ascending: false }).limit(40)
+  }
+  const [msgs, contacts, deals, broadcasts, autoLogs] = await Promise.all([
+    mensajes(),
     db
       .from('contacts')
       .select('id, name, phone, created_at')
@@ -45,13 +65,20 @@ export async function loadActivity(db: DB, limit = 20): Promise<ActivityItem[]> 
     created_at: string
     conversation_id: string
     conversations:
-      | { contact_id: string | null; contacts: { name: string | null; phone: string }[] | { name: string | null; phone: string } | null }[]
-      | { contact_id: string | null; contacts: { name: string | null; phone: string }[] | { name: string | null; phone: string } | null }
+      | { assigned_agent_id?: string | null; contact_id: string | null; contacts: { name: string | null; phone: string }[] | { name: string | null; phone: string } | null }[]
+      | { assigned_agent_id?: string | null; contact_id: string | null; contacts: { name: string | null; phone: string }[] | { name: string | null; phone: string } | null }
       | null
   }>
 
+  const visibles = vis
+    ? inbound.filter((m) => {
+        const conv = Array.isArray(m.conversations) ? m.conversations[0] : m.conversations
+        return vis.puedeVer({ id: m.conversation_id, assigned_agent_id: conv?.assigned_agent_id })
+      })
+    : inbound
+
   const grouped = groupInboundMessages(
-    inbound.map((m) => {
+    visibles.map((m) => {
       const conv = Array.isArray(m.conversations) ? m.conversations[0] : m.conversations
       const contact = Array.isArray(conv?.contacts) ? conv?.contacts[0] : conv?.contacts
       return {

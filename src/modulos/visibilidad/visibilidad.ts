@@ -10,7 +10,14 @@ export interface UsuarioVisibilidad {
 
 type ConAsesor = { id: string; assigned_agent_id?: string | null };
 
+export type Alcance =
+  | { tipo: 'todas' }
+  | { tipo: 'asesor'; asesorId: string }
+  | { tipo: 'ninguna' };
+
 export interface Visibilidad {
+  /** Qué conversaciones alcanza a ver el usuario (sirve para acotar consultas). */
+  readonly alcance: Alcance;
   /** false solo con módulo activo y rol o userId sin resolver. */
   listo: boolean;
   /** Módulo apagado, owner o admin. */
@@ -24,12 +31,23 @@ export function visibleConversations(usuario: UsuarioVisibilidad): Visibilidad {
   const listo = !moduloActivo || (rol !== null && userId !== null);
   const veTodas =
     listo && (!moduloActivo || rol === 'owner' || rol === 'admin');
+  const alcance: Alcance = !listo
+    ? { tipo: 'ninguna' }
+    : veTodas || userId === null
+      ? { tipo: 'todas' }
+      : { tipo: 'asesor', asesorId: userId };
   const puedeVer = (c: ConAsesor): boolean => {
-    if (!listo) return false;
-    if (veTodas) return true;
-    return userId !== null && c.assigned_agent_id === userId;
+    switch (alcance.tipo) {
+      case 'ninguna':
+        return false;
+      case 'todas':
+        return true;
+      case 'asesor':
+        return c.assigned_agent_id === alcance.asesorId;
+    }
   };
   return {
+    alcance,
     listo,
     veTodas,
     puedeVer,

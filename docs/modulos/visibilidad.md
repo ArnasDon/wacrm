@@ -27,4 +27,21 @@ La config va vacía: los roles que ven todo los fija la regla R26, no la empresa
 ## Qué no cubre
 
 - Es solo interfaz (R27): no hay reglas RLS y la API pública `v1` no filtra.
-- Ficha, embudo, dashboard, feed y notificaciones quedan para VIS.2.
+- Embudo y notificaciones llegan con la Parte 2 de VIS.2 (ver abajo).
+
+## VIS.2 (Parte 1): dashboard y feed
+
+Con el módulo encendido, el asesor (agent, viewer) ve en el dashboard:
+
+- **Cola de respuesta, atención y mensajes fallidos:** se recalculan en el cliente solo con sus conversaciones (`src/lib/dashboard/atencion-visible.ts`, mismas reglas que la RPC `dashboard_overview`). "Sin asignar" es 0 (R29).
+- **Feed de actividad:** los mensajes entrantes se acotan en la consulta (antes del `limit`) y se filtran con la visibilidad.
+
+Lo que **no** se oculta: los agregados sin conversaciones identificables (KPIs, volumen, equipo, embudo, campañas, configuración) siguen siendo de toda la cuenta, igual que wacrm; recalcularlos exigiría tocar la RPC (servidor), contra R27. La RPC sigue devolviendo la atención de toda la cuenta al cliente (solo interfaz, sin RLS).
+
+Owner y admin ven todo; apagado, todo es idéntico a wacrm (R16). Embudo (conversación vinculada del negocio) y notificaciones llegan con la Parte 2.
+
+## Prueba de cobertura
+
+`src/modulos/visibilidad/cobertura.test.ts` recorre el código de interfaz (`src/app/(dashboard)`, `src/components`, `src/hooks`, `src/lib/{dashboard,notifications,inbox,contacts}`) y falla, con la ruta, si un archivo consulta `conversations` sin importar de `@/modulos/visibilidad/` y llamarla al menos tantas veces como consultas hace.
+
+Límite conocido: es una prueba estática por texto. No prueba que cada consulta concreta use el resultado de la visibilidad, solo que el archivo la importa y la llama. La garantía fuerte sigue siendo R27 (servidor) y las pruebas de cada función.

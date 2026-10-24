@@ -148,3 +148,41 @@ describe('resolverEnlaceDirecto', () => {
     });
   });
 });
+
+describe('alcance', () => {
+  it('apagado: todas', () => {
+    expect(
+      visibleConversations({ userId: 'A1', rol: 'agent', moduloActivo: false })
+        .alcance
+    ).toEqual({ tipo: 'todas' });
+  });
+  it.each(['owner', 'admin'] as const)('%s: todas', (rol) => {
+    expect(
+      visibleConversations({ userId: 'OW', rol, moduloActivo: true }).alcance
+    ).toEqual({ tipo: 'todas' });
+  });
+  it.each(['agent', 'viewer'] as const)('%s: solo el suyo', (rol) => {
+    expect(
+      visibleConversations({ userId: 'A1', rol, moduloActivo: true }).alcance
+    ).toEqual({ tipo: 'asesor', asesorId: 'A1' });
+  });
+  it('sin rol o sin userId con módulo encendido: ninguna', () => {
+    expect(
+      visibleConversations({ userId: 'A1', rol: null, moduloActivo: true })
+        .alcance
+    ).toEqual({ tipo: 'ninguna' });
+    expect(
+      visibleConversations({ userId: null, rol: 'agent', moduloActivo: true })
+        .alcance
+    ).toEqual({ tipo: 'ninguna' });
+  });
+  it('alcance y puedeVer coinciden', () => {
+    const v = visibleConversations({
+      userId: 'A1',
+      rol: 'agent',
+      moduloActivo: true,
+    });
+    expect(v.puedeVer({ id: 'c1', assigned_agent_id: 'A1' })).toBe(true);
+    expect(v.puedeVer({ id: 'c2', assigned_agent_id: 'A2' })).toBe(false);
+  });
+});

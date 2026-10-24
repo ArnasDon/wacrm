@@ -34,7 +34,8 @@ services:
     image: kong:2.8.1
     restart: unless-stopped
     ports:
-      # R1: published on loopback only. BASE.2 adds the outbound tunnel.
+      # R1: published on loopback only; external access goes through the
+      # outbound-only `tunnel` service.
       - '127.0.0.1:${KONG_HTTP_PORT:-8000}:8000'
     volumes:
       # Template: Kong does not expand ${VARS}, the entrypoint renders it.
@@ -284,7 +285,8 @@ services:
       # compose network; NEXT_PUBLIC_SUPABASE_URL stays the browser URL.
       SUPABASE_INTERNAL_URL: http://supabase-kong:8000
     ports:
-      # R1: published on loopback only. BASE.2 adds the outbound tunnel.
+      # R1: published on loopback only; external access goes through the
+      # outbound-only `tunnel` service.
       - '127.0.0.1:${HOST_PORT:-3000}:3000'
     restart: unless-stopped
     depends_on:
@@ -292,8 +294,8 @@ services:
         condition: service_healthy
     healthcheck:
       # Check /favicon.ico — the middleware excludes it from auth checks
-      # (src/middleware.ts:93-96), so this works even before Supabase is
-      # reachable from inside the container (phase 1: no tunnel yet).
+      # (src/middleware.ts), so this works even before Supabase is
+      # reachable from inside the container.
       test:
         [
           'CMD',
@@ -326,6 +328,35 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # Tunnel — Cloudflare Tunnel, outbound-only (R1: no host ports)
+  # ---------------------------------------------------------------------------
+  # Public hostnames (configured in the Cloudflare dashboard, see
+  # docs/tunnel-webhook-meta.md):
+  #   crm.<DOMAIN> -> http://app:3000
+  #   api.<DOMAIN> -> http://supabase-kong:8000
+  # Set CLOUDFLARE_TUNNEL_TOKEN in .env (never commit it). Start with:
+  #   docker compose --profile tunnel up -d --wait
+  tunnel:
+    image: cloudflare/cloudflared:2025.11.1
+    profiles: ['tunnel']
+    command: tunnel --no-autoupdate --metrics 127.0.0.1:2000 run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+      supabase-kong:
+        condition: service_healthy
+    healthcheck:
+      # `ready` succeeds only while connected to the Cloudflare edge.
+      test: ['CMD', 'cloudflared', '--metrics', '127.0.0.1:2000', 'tunnel', 'ready']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
 
 volumes:
   supabase-db-data: {}

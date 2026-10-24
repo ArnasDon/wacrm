@@ -1,3 +1,4 @@
+import { toPublicSupabaseUrl } from "@/lib/supabase/internal-url";
 import { downloadMedia } from "./meta-api";
 import { extensionForMime } from "@/lib/media/filename";
 import { buildMediaPath, MEDIA_MAX_BYTES } from "@/lib/storage/upload-media";
@@ -229,7 +230,7 @@ export async function mirrorInboundMedia(
     const {
       data: { publicUrl },
     } = storage.from(MIRROR_BUCKET).getPublicUrl(path);
-    return publicUrl || null;
+    return publicUrl ? toPublicSupabaseUrl(publicUrl) : null;
   } catch (error) {
     console.warn(
       `[mirror-media] could not mirror ${mediaId}:`,

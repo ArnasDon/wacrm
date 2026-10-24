@@ -39,6 +39,7 @@ describe('publisher verification · docker-compose.yml satisfies CT.2 [BASE.1]',
       'supabase-meta',
       'app',
       'cron',
+      'tunnel',
     ]);
     expect(input.volumes.map((v) => ComposeVolumeSchema.parse(v).name)).toEqual(
       VOLUME_NAMES
@@ -109,5 +110,36 @@ describe('publisher verification · docker-compose.yml satisfies CT.2 [BASE.1]',
       const ok = entry.startsWith('127.0.0.1:') || entry.startsWith('${');
       expect(ok, `Port entry "${entry}" does not bind to 127.0.0.1`).toBe(true);
     }
+  });
+});
+
+describe('BASE.2 · servicio tunnel: túnel saliente sin puertos en el host', () => {
+  const input = toTopologyInput(
+    readComposeDocument(resolve(process.cwd(), 'docker-compose.yml')),
+    {}
+  );
+  const topology = parseTopology(input);
+  const tunnel = topology.services.find((s) => s.name === 'tunnel');
+
+  it('el servicio tunnel está en la topología con rol tunnel y healthcheck', () => {
+    expect(tunnel).toBeDefined();
+    expect(tunnel!.role).toBe('tunnel');
+    expect(tunnel!.healthcheck).toBe(true);
+  });
+
+  it('el servicio tunnel no publica puertos en el host (R1)', () => {
+    expect(tunnel!.publishedPorts).toHaveLength(0);
+  });
+
+  it('la imagen del tunnel está pineada, sin :latest (R3)', () => {
+    expect(tunnel!.image).toMatch(/^cloudflare\/cloudflared:\d+\.\d+\.\d+$/);
+  });
+
+  it('el único servicio con puertos en el host publica solo en loopback', () => {
+    const raw = readFileSync(resolve(process.cwd(), 'docker-compose.yml'), 'utf8');
+    const entries = [...raw.matchAll(/^\s+- ['"]?([^'"\n]*\d+:\d+)['"]?$/gm)].map(
+      (m) => m[1]!
+    );
+    for (const e of entries) expect(e).toMatch(/^127\.0\.0\.1:/);
   });
 });

@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { supabaseServerUrl } from '@/lib/supabase/internal-url'
 
 // Lazy, shared service-role client for the Flows engine.
 // Mirrors src/lib/automations/admin-client.ts — same shape so anyone
@@ -10,7 +11,7 @@ export function supabaseAdmin(): SupabaseClient {
     _adminClient = createClient(
       // Containerised deploys reach kong by its compose DNS name; the public
       // URL is localhost, unreachable from inside the app container.
-      process.env.SUPABASE_INTERNAL_URL || process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      supabaseServerUrl(),
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
     )
   }

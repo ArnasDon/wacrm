@@ -274,3 +274,37 @@ describe("mirrorInboundMedia", () => {
     expect(uploads[0].options.contentType).toBe("image/png");
   });
 });
+
+describe("mirrorInboundMedia public URL", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("returns the public origin, not the internal kong host", async () => {
+    vi.stubEnv("SUPABASE_INTERNAL_URL", "http://supabase-kong:8000");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://api.example.com");
+    const storage = {
+      from: (bucket: string) => ({
+        upload: async () => ({ error: null }),
+        getPublicUrl: (path: string) => ({
+          data: {
+            publicUrl: `http://supabase-kong:8000/storage/v1/object/public/${bucket}/${path}`,
+          },
+        }),
+      }),
+    };
+
+    const url = await mirrorInboundMedia({
+      ...BASE,
+      storage,
+      mimeType: "image/jpeg",
+      fileSize: 1024,
+      messageTimestamp: "1754899200",
+      download: fakeDownload(1024),
+    });
+
+    expect(url).toBe(
+      `https://api.example.com/storage/v1/object/public/${MIRROR_BUCKET}/account-${ACCOUNT}/inbound/${MEDIA_ID}-image-1754899200.jpg`,
+    );
+  });
+});

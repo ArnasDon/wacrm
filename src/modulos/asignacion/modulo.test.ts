@@ -23,6 +23,7 @@ describe('moduloAsignacion · enganche', () => {
     expect(m.migraciones).toEqual([
       'mod_asignacion_001_motor.sql',
       'mod_asignacion_002_reglas.sql',
+      'mod_asignacion_003_reasignacion.sql',
     ]);
   });
   it('sin asesor: llama asignar con conversación, mensaje y reglas en orden', async () => {

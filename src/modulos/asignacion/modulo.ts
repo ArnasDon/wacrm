@@ -47,6 +47,7 @@ export function crearModuloAsignacion(
     migraciones: [
       'mod_asignacion_001_motor.sql',
       'mod_asignacion_002_reglas.sql',
+      'mod_asignacion_003_reasignacion.sql',
     ],
     async alEntrarMensaje(evento, config) {
       if (evento.asesorAsignadoId !== null) return;

@@ -99,3 +99,21 @@ El registro guarda el tipo en `regla` y la fila en `regla_id` (queda en `null` s
 ```sql
 select asignado_en, regla, regla_id, asesor_id from mod_asignacion_registro order by asignado_en desc;
 ```
+
+## Reasignación manual
+
+Con el módulo encendido, solo admin y owner reasignan una conversación a otro miembro (`agent`, `admin` u
+`owner`) con la función `mod_asignacion_reasignar` (`mod_asignacion_003_reasignacion.sql`). El permiso se
+comprueba en la base: un asesor, un `viewer` o quien no tiene perfil recibe `sin permiso`. La función bloquea
+la conversación igual que el motor.
+
+- Registra una fila en `mod_asignacion_registro` con `regla = 'manual'` y `asignado_por` (quién reasignó).
+  Reasignar al mismo asesor no registra nada.
+- El siguiente mensaje no cambia el asesor: el motor no toca conversaciones con asesor (R24).
+- Quitar la asignación la devuelve a las reglas; `asesor-previo` vuelve al asesor elegido a mano (si sigue siendo un asesor activo).
+- No bloquea las escrituras directas de wacrm (políticas RLS, automatizaciones, flows, "Tomar control" de la
+  IA): solo restringe la acción del módulo.
+
+```sql
+select asignado_en, regla, asesor_id, asignado_por from mod_asignacion_registro where regla = 'manual';
+```

@@ -510,5 +510,150 @@ describe.skipIf(process.env['COMPOSE_IT'] !== '1')(
         expect(() => ins(OWNER)).not.toThrow();
       });
     });
+    describe('ASG.3 · reasignación manual', () => {
+      const comoUsuario = (uid: string, q: string, rol = 'authenticated') =>
+        sql(
+          `begin; set local role ${rol};
+           select set_config('request.jwt.claims','{"sub":"${uid}","role":"${rol}"}',true);
+           ${q}; commit`
+        );
+      const reasignar = (uid: string, conv: string, asesor: string) => {
+        const out = comoUsuario(
+          uid,
+          `select mod_asignacion_reasignar('${conv}','${asesor}')::text`
+        );
+        const linea =
+          out.split('\n').find((l) => l.includes('"regla"')) ?? 'null';
+        return JSON.parse(linea) as {
+          asesorId: string;
+          anteriorId: string | null;
+          regla: string;
+          cambio: boolean;
+        };
+      };
+      const ultimoRegistro = (conv: string) =>
+        sql(
+          `select regla||'|'||asesor_id||'|'||coalesce(asignado_por::text,'')||'|'||coalesce(mensaje_id::text,'') from mod_asignacion_registro
+           where conversacion_id='${conv}' order by asignado_en desc, id desc limit 1`
+        );
+      const crearAjeno = () => {
+        const dueno = uuid();
+        sql(
+          `insert into auth.users (id, email) values ('${dueno}','ajeno-${dueno}@asg.test')`
+        );
+        return dueno;
+      };
+
+      it('un admin reasigna y queda registrado como manual', () => {
+        const { conv } = nuevaConversacion();
+        expect(asignar(conv)?.asesorId).toBe(A1);
+        expect(reasignar(OWNER, conv, A2)).toEqual({
+          asesorId: A2,
+          anteriorId: A1,
+          regla: 'manual',
+          cambio: true,
+        });
+        expect(asesorDe(conv)).toBe(A2);
+        expect(ultimoRegistro(conv)).toBe(`manual|${A2}|${OWNER}|`);
+        sql(`update profiles set account_role='admin' where user_id='${A3}'`);
+        expect(reasignar(A3, conv, A1).cambio).toBe(true);
+        expect(ultimoRegistro(conv)).toBe(`manual|${A1}|${A3}|`);
+      });
+
+      it('un mensaje nuevo en una conversación reasignada a mano no cambia su asesor', () => {
+        const { conv } = nuevaConversacion();
+        asignar(conv);
+        reasignar(OWNER, conv, A2);
+        const antes = registros(conv);
+        expect(asignar(conv, REGLAS)).toBeNull();
+        expect(asignar(conv, TODAS)).toBeNull();
+        expect(asesorDe(conv)).toBe(A2);
+        expect(registros(conv)).toBe(antes);
+      });
+
+      it('un asesor no puede reasignar', () => {
+        const { conv } = nuevaConversacion();
+        asignar(conv);
+        expect(() => reasignar(A1, conv, A2)).toThrow(/sin permiso/);
+        sql(`update profiles set account_role='viewer' where user_id='${A2}'`);
+        expect(() => reasignar(A2, conv, A3)).toThrow(/sin permiso/);
+        const sinPerfil = uuid();
+        expect(() => reasignar(sinPerfil, conv, A3)).toThrow(
+          /no encontrada|sin permiso/
+        );
+        expect(() =>
+          comoUsuario(
+            A1,
+            `select mod_asignacion_reasignar('${conv}','${A2}')`,
+            'anon'
+          )
+        ).toThrow(/permission denied/);
+        expect(asesorDe(conv)).toBe(A1);
+        expect(registros(conv)).toBe(1);
+      });
+
+      it('reasignar al mismo asesor no registra', () => {
+        const { conv } = nuevaConversacion();
+        asignar(conv);
+        expect(reasignar(OWNER, conv, A1).cambio).toBe(false);
+        expect(registros(conv)).toBe(1);
+        expect(asesorDe(conv)).toBe(A1);
+      });
+
+      it('asesor destino inválido', () => {
+        const { conv } = nuevaConversacion();
+        asignar(conv);
+        sql(`update profiles set account_role='viewer' where user_id='${A2}'`);
+        const ajeno = crearAjeno();
+        for (const destino of [A2, ajeno, uuid()]) {
+          expect(() => reasignar(OWNER, conv, destino)).toThrow(
+            /asesor inválido/
+          );
+        }
+        expect(asesorDe(conv)).toBe(A1);
+        expect(registros(conv)).toBe(1);
+      });
+
+      it('admin de otra cuenta', () => {
+        const { conv } = nuevaConversacion();
+        asignar(conv);
+        const ajeno = crearAjeno();
+        expect(() => reasignar(ajeno, conv, A2)).toThrow(
+          /conversación no encontrada/
+        );
+        expect(asesorDe(conv)).toBe(A1);
+        expect(registros(conv)).toBe(1);
+      });
+
+      it('tras desasignar vuelve al asesor manual', () => {
+        const { conv } = nuevaConversacion();
+        reasignar(OWNER, conv, A3);
+        desasignar(conv);
+        expect(asignar(conv, REGLAS)).toEqual({
+          asesorId: A3,
+          regla: 'asesor-previo',
+        });
+      });
+
+      it('reasignar y luego asignar en la misma transacción no duplica', () => {
+        const { conv } = nuevaConversacion();
+        const out = sql(
+          `begin; set local role authenticated;
+           select set_config('request.jwt.claims','{"sub":"${OWNER}","role":"authenticated"}',true);
+           select mod_asignacion_reasignar('${conv}','${A2}');
+           reset role;
+           select coalesce(mod_asignacion_asignar('${conv}', gen_random_uuid(), ${REGLAS})::text,'null');
+           commit`
+        );
+        expect(
+          out
+            .split('\n')
+            .filter((l) => l !== '' && l !== 'COMMIT')
+            .pop()
+        ).toBe('null');
+        expect(registros(conv)).toBe(1);
+        expect(asesorDe(conv)).toBe(A2);
+      });
+    });
   }
 );

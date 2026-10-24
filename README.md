@@ -166,6 +166,8 @@ Key pages:
 - [Auth emails](./docs/auth-emails.md) — what Supabase must allow so
   confirmation and password-reset links come back to *your* domain
   instead of `localhost:3000`, and how `/auth/callback` handles them
+- [Repo hijo por empresa](./docs/repo-hijo.md) — cómo crear el repo de una
+  empresa desde esta plantilla y qué archivos y variables son suyos
 
 ## Stack
 

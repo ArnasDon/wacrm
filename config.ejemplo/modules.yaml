@@ -1,0 +1,6 @@
+# Interruptores de módulos de la empresa. La `config` de cada módulo la define CT.3.
+modulos:
+  asignacion:
+    activo: false
+  visibilidad:
+    activo: false

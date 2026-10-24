@@ -1,0 +1,5 @@
+# Identidad de la empresa. `scripts/empresa/nueva-empresa.mjs` reescribe este archivo
+# al crear el repo hijo (config/empresa.yaml).
+empresa:
+  id: empresa-ejemplo
+  nombre: 'Empresa de ejemplo'

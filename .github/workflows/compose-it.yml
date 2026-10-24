@@ -7,6 +7,8 @@ on:
       - .env.example
       - docker/**
       - scripts/compose/**
+      - scripts/empresa/**
+      - config.ejemplo/**
       - Dockerfile
       - .dockerignore
       - .github/workflows/compose-it.yml
@@ -22,7 +24,7 @@ jobs:
   compose-it:
     name: docker compose up --wait (clean machine)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@v7
@@ -40,8 +42,15 @@ jobs:
         env:
           COMPOSE_IT: '1'
 
+      - name: Run repo-hijo integration test
+        run: COMPOSE_IT=1 npx vitest run scripts/empresa/repo-hijo.it.test.ts
+        env:
+          COMPOSE_IT: '1'
+
       - name: Dump logs on failure
         if: failure()
         run: |
           docker compose ps
           docker compose logs --tail 200
+          docker compose --project-name wacrm-empresa-it ps
+          docker compose --project-name wacrm-empresa-it logs --tail 200

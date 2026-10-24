@@ -8,7 +8,7 @@
  *   JWT_SECRET         — 64 random hex bytes (HMAC key for all JWTs)
  *   ANON_KEY           — HS256 JWT signed with JWT_SECRET, role: anon
  *   SERVICE_ROLE_KEY   — HS256 JWT signed with JWT_SECRET, role: service_role
- *   ENCRYPTION_KEY     — 64 random hex bytes (AES-256-GCM key for token encryption)
+ *   ENCRYPTION_KEY     — 32 random bytes as 64 hex chars (AES-256-GCM key for token encryption)
  *   REALTIME_ENC_KEY   — 16 hex chars (16 raw bytes → AES-128-ECB key for Realtime seeds)
  *
  * No dependencies — pure Node.js crypto.
@@ -45,7 +45,7 @@ const postgresPassword = hex(32);
 const jwtSecret = hex(64);
 const anonKey = mintJwt('anon', jwtSecret);
 const serviceRoleKey = mintJwt('service_role', jwtSecret);
-const encryptionKey = hex(64);
+const encryptionKey = hex(32); // 32 bytes = 64 hex chars (AES-256)
 const cronSecret = hex(32);
 const realtimeEncKey = randomBytes(8).toString('hex'); // 16 chars = 16 bytes raw → AES-128-ECB
 

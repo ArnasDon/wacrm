@@ -288,6 +288,10 @@ services:
       # R1: published on loopback only; external access goes through the
       # outbound-only `tunnel` service.
       - '127.0.0.1:${HOST_PORT:-3000}:3000'
+    # Config de la empresa (I1): config/modules.yaml se lee al arrancar (MOD.1).
+    # Bind-mount de solo lectura; sin carpeta, todos los módulos quedan apagados.
+    volumes:
+      - ./config:/app/config:ro
     restart: unless-stopped
     depends_on:
       supabase-kong:

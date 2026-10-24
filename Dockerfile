@@ -44,6 +44,10 @@ ENV NODE_ENV=production \
     PORT=3000 \
     HOSTNAME=0.0.0.0
 
+# Binaries of the daily backup (src/lib/backup): without them
+# GET /api/backup/cron fails and raises the failure notice.
+RUN apk add --no-cache postgresql17-client rclone
+
 RUN addgroup -S nextjs && adduser -S nextjs -G nextjs
 
 COPY --from=builder --chown=nextjs:nextjs /app/.next/standalone ./

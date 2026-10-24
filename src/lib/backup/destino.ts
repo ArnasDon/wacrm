@@ -55,7 +55,9 @@ export function createUploader(
     const dir = await mkdtemp(join(tmpdir(), 'bak-rclone-'));
     const configPath = join(dir, 'rclone.conf');
     try {
-      await writeFile(configPath, `[destino]\n${config.credencial}\n`, {
+      // env_file leaves a literal backslash-n unquoted; turn it into a newline.
+      const body = config.credencial.replace(/\\n/g, '\n');
+      await writeFile(configPath, `[destino]\n${body}\n`, {
         mode: 0o600,
       });
       const result = await deps.run('rclone', [

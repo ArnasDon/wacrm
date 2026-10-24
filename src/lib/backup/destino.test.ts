@@ -76,6 +76,26 @@ describe('rclone uploader', () => {
     expect(seen.body).toBe(`[destino]\n${base.credencial}\n`);
   });
 
+  it('turns literal backslash-n (env_file format) into real newlines', async () => {
+    const { path } = await localFile();
+    let body = '';
+    const run: CommandRunner = async (_c, args) => {
+      body = await readFile(args[args.indexOf('--config') + 1], 'utf8');
+      return { code: 0, stdout: '', stderr: '' };
+    };
+    const uploader = createUploader(
+      {
+        ...base,
+        destinoUri: 's3://b/p',
+        credencial: 'type = s3\\nprovider = AWS\\naccess_key_id = ak',
+      },
+      'f',
+      { run, sleep: nap }
+    );
+    await uploader.upload(path, 'x.gz');
+    expect(body).toBe('[destino]\ntype = s3\nprovider = AWS\naccess_key_id = ak\n');
+  });
+
   it('deletes the credential file even when the command fails', async () => {
     const { path } = await localFile();
     let configPath = '';

@@ -1,1 +1,37 @@
-# Políticas de la empresa (R14). El esquema y el script que las aplica son de CFG.2.
+# Políticas de la empresa (R14). Se aplican a la base con:
+#   node scripts/empresa/aplicar-policies.mjs [--plan]
+# Esquema, qué hace y qué no: ver docs/policies.md.
+version: 1
+
+# Exactamente un owner. Roles: owner | admin | asesor.
+usuarios:
+  - { correo: dueno@ejemplo.co, nombre: 'Dueño de la empresa', rol: owner }
+
+etiquetas:
+  - { nombre: VIP, color: '#f59e0b' }
+  - { nombre: Mayorista, color: '#10b981' }
+  - { nombre: Reclamo, color: '#ef4444' }
+
+embudo:
+  nombre: Ventas
+  etapas:
+    - { nombre: Nuevo, color: '#3b82f6' }
+    - { nombre: Cotizado, color: '#8b5cf6' }
+    - { nombre: Negociación, color: '#f59e0b' }
+    - { nombre: Ganado, color: '#10b981' }
+
+automatizaciones:
+  bienvenida:
+    activa: true
+    texto: '¡Hola! Gracias por escribirnos. En un momento te atendemos.'
+  fuera_de_horario:
+    activa: true
+    texto: 'Ahora estamos fuera de horario. Te respondemos apenas abramos.'
+    horario: '18:00-08:00' # franja en la que se envía el mensaje
+    zona: America/Bogota
+
+# Proveedor, modelo y llave de IA se cargan en Ajustes > IA (no van aquí).
+bot:
+  activo: false
+  respuesta_automatica: false
+  tope_por_conversacion: 3

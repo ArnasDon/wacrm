@@ -24,7 +24,7 @@ jobs:
   compose-it:
     name: docker compose up --wait (clean machine)
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     steps:
       - uses: actions/checkout@v7
@@ -47,6 +47,11 @@ jobs:
         env:
           COMPOSE_IT: '1'
 
+      - name: Run policies integration test
+        run: COMPOSE_IT=1 npx vitest run scripts/empresa/policies.it.test.ts
+        env:
+          COMPOSE_IT: '1'
+
       - name: Dump logs on failure
         if: failure()
         run: |
@@ -54,3 +59,5 @@ jobs:
           docker compose logs --tail 200
           docker compose --project-name wacrm-empresa-it ps
           docker compose --project-name wacrm-empresa-it logs --tail 200
+          docker compose --project-name wacrm-policies-it ps
+          docker compose --project-name wacrm-policies-it logs --tail 200

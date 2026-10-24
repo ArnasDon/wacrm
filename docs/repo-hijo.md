@@ -25,7 +25,9 @@ Fuente de verdad de lo que es de la empresa: `contracts/cfg/tenant-config.ts`.
    El `--id` usa minúsculas, dígitos y guiones, y empieza por letra.
 
 4. `docker compose up -d --wait`
-5. `git add config/ && git commit -m "config de la empresa"`
+5. Editar `config/policies.yaml` y aplicarlo a la base (con la base arriba y las migraciones
+   aplicadas): ver [docs/policies.md](policies.md).
+6. `git add config/ && git commit -m "config de la empresa"`
 
 ## El `.env` no se commitea
 
@@ -38,7 +40,7 @@ sola vez por empresa y no se cambia (R7): `nueva-empresa` se niega a correr si y
 | De la empresa                   | Qué es                                                                                               |
 | ------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | `config/modules.yaml`           | Interruptores de módulos (ruta obligatoria)                                                          |
-| `config/policies.yaml`          | Políticas de la empresa (ruta obligatoria; contenido de CFG.2)                                       |
+| `config/policies.yaml`          | Políticas de la empresa (ruta obligatoria; esquema y script en [policies.md](policies.md))                                       |
 | `config/`                       | Todo lo que esté bajo este prefijo                                                                   |
 | `config/empresa.yaml`           | Identidad de la empresa (`id`, `nombre`)                                                             |
 | `.env*`                         | Todos los archivos de entorno, salvo los ejemplos del template                                       |

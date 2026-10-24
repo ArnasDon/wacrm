@@ -391,6 +391,8 @@
       "waitForSending": "Espera a que el mensaje termine de enviarse",
       "reactionFailed": "Error en la reacción: {reason}",
       "assignmentUpdateFailed": "Error al actualizar la asignación",
+      "reassigned": "Conversación reasignada",
+      "reassignForbidden": "Solo un admin puede reasignar",
       "networkError": "error de red",
       "documentFallback": "Documento",
       "you": "Tú"

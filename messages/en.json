@@ -391,6 +391,8 @@
       "waitForSending": "Wait for the message to finish sending",
       "reactionFailed": "Reaction failed: {reason}",
       "assignmentUpdateFailed": "Failed to update assignment",
+      "reassigned": "Conversation reassigned",
+      "reassignForbidden": "Only an admin can reassign",
       "networkError": "network error",
       "documentFallback": "Document",
       "you": "You"

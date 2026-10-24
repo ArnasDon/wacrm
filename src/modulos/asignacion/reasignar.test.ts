@@ -77,3 +77,14 @@ describe('modoSelectorAsesor', () => {
     ).toBe('solo-lectura');
   });
 });
+
+describe('reasignarConversacion: respuesta inválida', () => {
+  it('una respuesta sin forma esperada es error', async () => {
+    const r = await reasignarConversacion(
+      { rpc: async () => ({ data: { foo: 1 }, error: null }) } as never,
+      'c',
+      'a'
+    );
+    expect(r).toMatchObject({ ok: false, motivo: 'error' });
+  });
+});

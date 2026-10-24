@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { connection } from "next/server";
 import { estadoVisibilidad } from "@/modulos/visibilidad/servidor";
+import { estadoAsignacion } from "@/modulos/asignacion/servidor";
 import { DashboardShell } from "./dashboard-shell";
 
 // Server layout whose only job is to declare "do not index" metadata
@@ -29,5 +30,13 @@ export default async function DashboardLayout({
   // Lee la config de módulos en cada request (el build no tiene config/).
   await connection();
   const { activo } = estadoVisibilidad();
-  return <DashboardShell visibilidadActiva={activo}>{children}</DashboardShell>;
+  const asignacion = estadoAsignacion();
+  return (
+    <DashboardShell
+      visibilidadActiva={activo}
+      asignacionActiva={asignacion.activo}
+    >
+      {children}
+    </DashboardShell>
+  );
 }

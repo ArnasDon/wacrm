@@ -391,6 +391,8 @@
       "waitForSending": "메시지 전송이 끝날 때까지 기다려 주세요",
       "reactionFailed": "반응 추가 실패: {reason}",
       "assignmentUpdateFailed": "담당자 변경에 실패했습니다",
+      "reassigned": "대화가 재배정되었습니다",
+      "reassignForbidden": "관리자만 재배정할 수 있습니다",
       "networkError": "네트워크 오류",
       "documentFallback": "문서",
       "you": "나"

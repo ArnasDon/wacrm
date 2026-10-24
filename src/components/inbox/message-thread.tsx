@@ -3,6 +3,12 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
+import { useAsignacion } from "@/modulos/asignacion/contexto";
+import { AsesorSoloLectura } from "./asesor-solo-lectura";
+import {
+  modoSelectorAsesor,
+  reasignarConversacion,
+} from "@/modulos/asignacion/reasignar";
 import { usePresence } from "@/hooks/use-presence";
 import { PresenceDot } from "@/components/presence/presence-dot";
 import { presenceLabel } from "@/lib/presence";
@@ -190,7 +196,12 @@ export function MessageThread({
   const tTimer = useTranslations("Inbox.sessionTimer");
   const tQuote = useTranslations("Inbox.replyQuote");
 
-  const { user } = useAuth();
+  const { user, accountRole, canManageMembers } = useAuth();
+  const { activo: asignacionActiva } = useAsignacion();
+  const modoAsesor = modoSelectorAsesor({
+    moduloActivo: asignacionActiva,
+    puedeGestionar: accountRole === null ? null : canManageMembers,
+  });
   const { getPresence, getRow, now } = usePresence();
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -941,6 +952,20 @@ export function MessageThread({
       if (!conversation) return;
 
       const supabase = createClient();
+      if (modoAsesor === "solo-lectura") return;
+      if (modoAsesor === "reasignar" && agentId !== null) {
+        const r = await reasignarConversacion(supabase, conversation.id, agentId);
+        if (!r.ok) {
+          console.error("Failed to reassign:", r.mensaje);
+          toast.error(
+            t(r.motivo === "sin-permiso" ? "reassignForbidden" : "assignmentUpdateFailed"),
+          );
+          return;
+        }
+        onAssignChange(conversation.id, r.asesorId);
+        if (r.cambio) toast.success(t("reassigned"));
+        return;
+      }
       const { error } = await supabase
         .from("conversations")
         .update({ assigned_agent_id: agentId })
@@ -954,7 +979,7 @@ export function MessageThread({
 
       onAssignChange(conversation.id, agentId);
     },
-    [conversation, onAssignChange, t],
+    [conversation, onAssignChange, t, modoAsesor],
   );
 
   // Empty state — same WhatsApp-style doodle background as the active
@@ -1112,6 +1137,9 @@ export function MessageThread({
           </DropdownMenu>
 
           {/* Assign dropdown */}
+          {modoAsesor === "solo-lectura" ? (
+            <AsesorSoloLectura etiqueta={assignLabel} />
+          ) : (
           <DropdownMenu>
             <DropdownMenuTrigger
               className={cn(
@@ -1175,6 +1203,7 @@ export function MessageThread({
               )}
             </DropdownMenuContent>
           </DropdownMenu>
+          )}
         </div>
       </div>
 

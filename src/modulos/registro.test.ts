@@ -10,8 +10,8 @@ const def = (nombre: string) => ({
 });
 
 describe('registro de módulos', () => {
-  it('en este slice no hay módulos registrados', () => {
-    expect(MODULOS).toEqual([]);
+  it('contiene los módulos registrados por los slices', () => {
+    expect(MODULOS.map((m) => m.nombre)).toContain('visibilidad');
   });
 
   it('pasa cada módulo por definirModulo', () => {

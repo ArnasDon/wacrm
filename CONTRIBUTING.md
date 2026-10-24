@@ -42,6 +42,8 @@ git merge upstream/main     # or: git rebase upstream/main
 git push origin main
 ```
 
+Si este repo es un hijo de `wacrm-tenant-template`, no uses `git merge upstream/main`: sigue `docs/actualizar-desde-template.md`.
+
 If you've made heavy local customisations, rebasing can surface
 conflicts every time you pull. Pinning to a specific upstream tag and
 updating on your schedule is a valid alternative.

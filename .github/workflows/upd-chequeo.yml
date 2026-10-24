@@ -1,0 +1,22 @@
+name: UPD · chequeo de actualización
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  chequeo:
+    name: UPD · chequeo de actualización
+    # En la plantilla corre en toda PR a main; en un hijo, solo en las PRs upd/*.
+    if: github.repository == 'juancadavidc/wacrm-tenant-template' || startsWith(github.head_ref, 'upd/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx tsx scripts/upd/revisar-cambio.cli.ts --rango "origin/${{ github.base_ref }}...${{ github.event.pull_request.head.sha }}"

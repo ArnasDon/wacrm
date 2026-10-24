@@ -20,7 +20,10 @@ describe('moduloAsignacion · enganche', () => {
   it('se declara como asignacion con su migración', () => {
     const m = crearModuloAsignacion(vi.fn());
     expect(m.nombre).toBe('asignacion');
-    expect(m.migraciones).toEqual(['mod_asignacion_001_motor.sql']);
+    expect(m.migraciones).toEqual([
+      'mod_asignacion_001_motor.sql',
+      'mod_asignacion_002_reglas.sql',
+    ]);
   });
   it('sin asesor: llama asignar con conversación, mensaje y reglas en orden', async () => {
     const asignar = vi.fn<AsignarFn>().mockResolvedValue(null);
@@ -31,7 +34,13 @@ describe('moduloAsignacion · enganche', () => {
     expect(asignar).toHaveBeenCalledWith({
       conversacionId: IDS_STUB.conversacion,
       mensajeId: IDS_STUB.mensaje,
-      reglas: ['asesor-previo', 'reparto-equitativo'],
+      reglas: [
+        'asesor-previo',
+        'etiqueta',
+        'palabra-clave',
+        'campo',
+        'reparto-equitativo',
+      ],
     });
   });
   it('con asesor: no llama asignar', async () => {

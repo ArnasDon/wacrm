@@ -3,6 +3,9 @@ import { z } from 'zod';
 /** Reglas que el motor conoce, en el orden en que pueden evaluarse. */
 export const REGLAS_ASIGNACION = [
   'asesor-previo',
+  'etiqueta',
+  'palabra-clave',
+  'campo',
   'reparto-equitativo',
 ] as const;
 
@@ -15,7 +18,7 @@ export const ConfigAsignacionSchema: z.ZodType<ConfigAsignacion> =
     reglas: z
       .array(z.enum(REGLAS_ASIGNACION))
       .min(1)
-      .default(['asesor-previo', 'reparto-equitativo'])
+      .default([...REGLAS_ASIGNACION])
       .refine((r) => new Set(r).size === r.length, {
         message: 'las reglas no pueden repetirse',
       })

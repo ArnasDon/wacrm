@@ -44,7 +44,10 @@ export function crearModuloAsignacion(
   return definirModulo<ConfigAsignacion>({
     nombre: NOMBRE_ASIGNACION,
     configSchema: ConfigAsignacionSchema,
-    migraciones: ['mod_asignacion_001_motor.sql'],
+    migraciones: [
+      'mod_asignacion_001_motor.sql',
+      'mod_asignacion_002_reglas.sql',
+    ],
     async alEntrarMensaje(evento, config) {
       if (evento.asesorAsignadoId !== null) return;
       await asignar({

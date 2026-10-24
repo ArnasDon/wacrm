@@ -22,8 +22,18 @@ describe('CDC ASG.1 (módulo real) contra el stub de I3', () => {
     expect(r).toEqual({ ejecutados: ['asignacion'], errores: [] });
     expect(asignar.mock.calls[0]![0].reglas).toEqual([
       'asesor-previo',
+      'etiqueta',
+      'palabra-clave',
+      'campo',
       'reparto-equitativo',
     ]);
+  });
+  it('config con un tipo desconocido falla al arrancar (R18)', () => {
+    expect(() =>
+      stubFlujoEntrada([moduloAsignacion as never], {
+        asignacion: { activo: true, config: { reglas: ['por-ia'] } },
+      })
+    ).toThrow(ErrorConfigModulo);
   });
   it('apagado: no se llama (R16)', async () => {
     const asignar = vi.fn<AsignarFn>();

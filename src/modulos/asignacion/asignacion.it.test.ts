@@ -31,6 +31,7 @@ const A3 = '00000000-0000-4000-8000-0000000000a3';
 const ASESORES = [A1, A2, A3];
 
 const REGLAS = `array['asesor-previo','reparto-equitativo']`;
+const TODAS = `array['asesor-previo','etiqueta','palabra-clave','campo','reparto-equitativo']`;
 const SOLO_REPARTO = `array['reparto-equitativo']`;
 
 type Resultado = { asesorId: string; regla: string } | null;
@@ -74,9 +75,14 @@ describe.skipIf(process.env['COMPOSE_IT'] !== '1')(
       );
       return { contacto, conv };
     };
-    const asignar = (conv: string, reglas = REGLAS): Resultado => {
+    const asignar = (
+      conv: string,
+      reglas = REGLAS,
+      mensajeId?: string
+    ): Resultado => {
+      const msg = mensajeId ? `'${mensajeId}'` : 'gen_random_uuid()';
       const out = sql(
-        `select coalesce(mod_asignacion_asignar('${conv}', gen_random_uuid(), ${reglas})::text, 'null')`
+        `select coalesce(mod_asignacion_asignar('${conv}', ${msg}, ${reglas})::text, 'null')`
       );
       return JSON.parse(out) as Resultado;
     };
@@ -99,6 +105,57 @@ describe.skipIf(process.env['COMPOSE_IT'] !== '1')(
           `select count(*) from mod_asignacion_registro where conversacion_id='${conv}'`
         )
       );
+
+    const uuid = () => sql('select gen_random_uuid()');
+    const crearEtiqueta = (nombre: string, cuentaId = cuenta) => {
+      const id = uuid();
+      sql(
+        `insert into tags (id, user_id, account_id, name) values ('${id}','${OWNER}','${cuentaId}','${nombre}')`
+      );
+      return id;
+    };
+    const etiquetar = (contacto: string, tag: string) =>
+      sql(
+        `insert into contact_tags (contact_id, tag_id) values ('${contacto}','${tag}')`
+      );
+    const crearCampo = (nombre: string) => {
+      const id = uuid();
+      sql(
+        `insert into custom_fields (id, user_id, account_id, field_name) values ('${id}','${OWNER}','${cuenta}','${nombre}')`
+      );
+      return id;
+    };
+    const ponerCampo = (contacto: string, campo: string, valor: string) =>
+      sql(
+        `insert into contact_custom_values (contact_id, custom_field_id, value) values ('${contacto}','${campo}','${valor}')`
+      );
+    const mensaje = (conv: string, texto: string | null) => {
+      const id = uuid();
+      sql(
+        texto === null
+          ? `insert into messages (id, conversation_id, sender_type, content_type) values ('${id}','${conv}','customer','image')`
+          : `insert into messages (id, conversation_id, sender_type, content_text) values ('${id}','${conv}','customer','${texto}')`
+      );
+      return id;
+    };
+    const crearRegla = (r: {
+      orden: number;
+      tipo: 'etiqueta' | 'palabra-clave' | 'campo';
+      tagId?: string;
+      campoId?: string;
+      valor?: string;
+      asesorId: string;
+      activa?: boolean;
+      cuentaId?: string;
+    }) => {
+      const id = uuid();
+      const q = (v?: string) => (v ? `'${v}'` : 'null');
+      sql(
+        `insert into mod_asignacion_reglas (id, account_id, orden, tipo, tag_id, custom_field_id, valor, asesor_id, activa)
+         values ('${id}','${r.cuentaId ?? cuenta}',${r.orden},'${r.tipo}',${q(r.tagId)},${q(r.campoId)},${q(r.valor)},'${r.asesorId}',${r.activa ?? true})`
+      );
+      return id;
+    };
 
     beforeAll(() => {
       hijo = crearRepoHijo({ id: 'asignacion-it', nombre: 'Asignacion IT' });
@@ -144,6 +201,9 @@ describe.skipIf(process.env['COMPOSE_IT'] !== '1')(
     beforeEach(() => {
       sql(
         `delete from mod_asignacion_registro; delete from mod_asignacion_cursor;
+         delete from mod_asignacion_reglas; delete from contact_tags;
+         delete from contact_custom_values; delete from tags;
+         delete from custom_fields; delete from messages;
          delete from mod_asignacion_asesores;
          update profiles set account_role='agent' where user_id in ('${A1}','${A2}','${A3}')`
       );
@@ -272,6 +332,183 @@ describe.skipIf(process.env['COMPOSE_IT'] !== '1')(
         )
       ).toThrow(/permission denied/);
       expect(asesorDe(conv)).toBe('');
+    });
+
+    describe('reglas de la empresa (ASG.2)', () => {
+      it('regla por etiqueta asigna al asesor de la regla', () => {
+        const c1 = nuevaConversacion();
+        const c2 = nuevaConversacion();
+        const vip = crearEtiqueta('VIP');
+        etiquetar(c1.contacto, vip);
+        const regla = crearRegla({
+          orden: 1,
+          tipo: 'etiqueta',
+          tagId: vip,
+          asesorId: A3,
+        });
+        expect(asignar(c1.conv, TODAS)).toEqual({
+          asesorId: A3,
+          regla: 'etiqueta',
+        });
+        expect(
+          sql(
+            `select regla || '|' || regla_id from mod_asignacion_registro where conversacion_id='${c1.conv}'`
+          )
+        ).toBe(`etiqueta|${regla}`);
+        expect(asignar(c2.conv, TODAS)?.regla).toBe('reparto-equitativo');
+      });
+
+      it('regla por palabra clave asigna al asesor de la regla', () => {
+        const [c1, c2, c3, c4] = [1, 2, 3, 4].map(() => nuevaConversacion());
+        crearRegla({
+          orden: 1,
+          tipo: 'palabra-clave',
+          valor: 'credito',
+          asesorId: A2,
+        });
+        const m1 = mensaje(c1!.conv, 'Hola, quiero info de CRÉDITO');
+        expect(asignar(c1!.conv, TODAS, m1)).toEqual({
+          asesorId: A2,
+          regla: 'palabra-clave',
+        });
+        const m2 = mensaje(c2!.conv, 'ya quedó acreditado');
+        expect(asignar(c2!.conv, TODAS, m2)?.regla).toBe('reparto-equitativo');
+        const m3 = mensaje(c3!.conv, null);
+        expect(asignar(c3!.conv, TODAS, m3)?.regla).toBe('reparto-equitativo');
+        // el mensaje de C1 no es de la conversación C4
+        expect(asignar(c4!.conv, TODAS, m1)?.regla).toBe('reparto-equitativo');
+      });
+
+      it('regla por campo asigna al asesor de la regla', () => {
+        const c1 = nuevaConversacion();
+        const c2 = nuevaConversacion();
+        const ciudad = crearCampo('Ciudad');
+        ponerCampo(c1.contacto, ciudad, ' medellín ');
+        ponerCampo(c2.contacto, ciudad, 'Bogotá');
+        crearRegla({
+          orden: 1,
+          tipo: 'campo',
+          campoId: ciudad,
+          valor: 'Medellin',
+          asesorId: A1,
+        });
+        expect(asignar(c1.conv, TODAS)).toEqual({
+          asesorId: A1,
+          regla: 'campo',
+        });
+        expect(asignar(c2.conv, TODAS)?.regla).toBe('reparto-equitativo');
+      });
+
+      it('con varias reglas que se cumplen, gana la primera en orden', () => {
+        const { conv, contacto } = nuevaConversacion();
+        const vip = crearEtiqueta('VIP');
+        const ciudad = crearCampo('Ciudad');
+        etiquetar(contacto, vip);
+        ponerCampo(contacto, ciudad, 'Medellín');
+        const msg = mensaje(conv, 'credito');
+        crearRegla({ orden: 10, tipo: 'etiqueta', tagId: vip, asesorId: A3 });
+        crearRegla({
+          orden: 20,
+          tipo: 'palabra-clave',
+          valor: 'credito',
+          asesorId: A2,
+        });
+        crearRegla({
+          orden: 30,
+          tipo: 'campo',
+          campoId: ciudad,
+          valor: 'Medellin',
+          asesorId: A1,
+        });
+        // (a) orden de tipos por defecto
+        expect(asignar(conv, TODAS, msg)).toMatchObject({
+          asesorId: A3,
+          regla: 'etiqueta',
+        });
+        // (b) el orden de tipos de la config manda
+        desasignar(conv);
+        sql(`delete from mod_asignacion_registro`);
+        expect(
+          asignar(conv, `array['campo','etiqueta','reparto-equitativo']`, msg)
+        ).toMatchObject({ asesorId: A1, regla: 'campo' });
+        // (c) mismo tipo: gana el orden menor
+        desasignar(conv);
+        sql(`delete from mod_asignacion_registro`);
+        crearRegla({ orden: 5, tipo: 'etiqueta', tagId: vip, asesorId: A1 });
+        expect(asignar(conv, TODAS, msg)).toMatchObject({
+          asesorId: A1,
+          regla: 'etiqueta',
+        });
+        // (d) asesor previo va primero
+        desasignar(conv);
+        expect(asignar(conv, TODAS, msg)).toMatchObject({
+          asesorId: A1,
+          regla: 'asesor-previo',
+        });
+      });
+
+      it('regla con asesor inactivo se salta', () => {
+        const c = nuevaConversacion();
+        const vip = crearEtiqueta('VIP');
+        etiquetar(c.contacto, vip);
+        crearRegla({ orden: 1, tipo: 'etiqueta', tagId: vip, asesorId: A3 });
+        crearRegla({ orden: 2, tipo: 'etiqueta', tagId: vip, asesorId: A2 });
+        desactivar(A3);
+        expect(asignar(c.conv, TODAS)).toEqual({
+          asesorId: A2,
+          regla: 'etiqueta',
+        });
+        desasignar(c.conv);
+        sql(`delete from mod_asignacion_registro`);
+        sql(`update profiles set account_role='admin' where user_id='${A2}'`);
+        expect(asignar(c.conv, TODAS)?.regla).toBe('reparto-equitativo');
+      });
+
+      it('regla desactivada o de otra cuenta no aplica', () => {
+        const c = nuevaConversacion();
+        const vip = crearEtiqueta('VIP');
+        etiquetar(c.contacto, vip);
+        crearRegla({
+          orden: 1,
+          tipo: 'etiqueta',
+          tagId: vip,
+          asesorId: A3,
+          activa: false,
+        });
+        expect(asignar(c.conv, TODAS)?.regla).toBe('reparto-equitativo');
+
+        const c2 = nuevaConversacion();
+        const dueno = uuid();
+        sql(
+          `insert into auth.users (id, email) values ('${dueno}','ajeno-${dueno}@asg.test')`
+        );
+        const ajena = sql(
+          `select account_id from profiles where user_id='${dueno}'`
+        );
+        const tagAjena = crearEtiqueta('VIP-ajena', ajena);
+        etiquetar(c2.contacto, tagAjena);
+        crearRegla({
+          orden: 2,
+          tipo: 'etiqueta',
+          tagId: tagAjena,
+          asesorId: A1,
+          cuentaId: ajena,
+        });
+        expect(asignar(c2.conv, TODAS)?.regla).toBe('reparto-equitativo');
+      });
+
+      it('un asesor no puede escribir reglas', () => {
+        const vip = crearEtiqueta('VIP');
+        const ins = (sub: string) =>
+          sql(
+            `begin; set local role authenticated;
+             select set_config('request.jwt.claims','{"sub":"${sub}","role":"authenticated"}',true);
+             insert into mod_asignacion_reglas (account_id, orden, tipo, tag_id, asesor_id)
+             values ('${cuenta}', 99, 'etiqueta', '${vip}', '${A1}'); commit`
+          );
+        expect(() => ins(A1)).toThrow(/row-level security/);
+        expect(() => ins(OWNER)).not.toThrow();
+      });
     });
   }
 );

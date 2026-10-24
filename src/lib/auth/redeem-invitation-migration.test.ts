@@ -19,6 +19,8 @@ const tablesWithoutDomainData = new Set([
   "mod_asignacion_asesores",
   "mod_asignacion_registro",
   "mod_asignacion_cursor",
+  // ASG.2: reglas que carga el admin de la empresa, no datos de uso.
+  "mod_asignacion_reglas",
 ]);
 
 function accountScopedTables(): Set<string> {

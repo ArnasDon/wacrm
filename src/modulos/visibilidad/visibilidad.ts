@@ -21,8 +21,9 @@ export interface Visibilidad {
 
 export function visibleConversations(usuario: UsuarioVisibilidad): Visibilidad {
   const { userId, rol, moduloActivo } = usuario;
-  const veTodas = !moduloActivo || rol === 'owner' || rol === 'admin';
   const listo = !moduloActivo || (rol !== null && userId !== null);
+  const veTodas =
+    listo && (!moduloActivo || rol === 'owner' || rol === 'admin');
   const puedeVer = (c: ConAsesor): boolean => {
     if (!listo) return false;
     if (veTodas) return true;

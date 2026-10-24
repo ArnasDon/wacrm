@@ -332,6 +332,14 @@
     "page": {
       "whatsappNotConnected": "WhatsApp® no está conectado. Ve a Configuración para conectar tu cuenta."
     },
+    "visibilidad": {
+      "sinAccesoTitulo": "Sin acceso",
+      "sinAccesoTexto": "Esta conversación no está asignada a ti.",
+      "volver": "Volver a la bandeja",
+      "filtroAsesor": "Asesor",
+      "todos": "Todos",
+      "sinAsignar": "Sin asignar"
+    },
     "conversationList": {
       "searchPlaceholder": "Buscar conversaciones...",
       "filterAll": "Todas",

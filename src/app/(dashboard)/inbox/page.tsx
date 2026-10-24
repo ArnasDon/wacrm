@@ -1,6 +1,13 @@
 "use client";
 
-import { Suspense, useState, useCallback, useEffect, useRef } from "react";
+import {
+  Suspense,
+  useState,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+} from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { createClient } from "@/lib/supabase/client";
@@ -14,6 +21,12 @@ import { ConversationList } from "@/components/inbox/conversation-list";
 import { parseInboxFilter } from "@/lib/inbox/inbox-filters";
 import { MessageThread } from "@/components/inbox/message-thread";
 import { ContactSidebar } from "@/components/inbox/contact-sidebar";
+import { SinAcceso } from "@/components/inbox/sin-acceso";
+import {
+  useModuloVisibilidadActivo,
+  useVisibilidad,
+} from "@/modulos/visibilidad/contexto";
+import { resolverEnlaceDirecto } from "@/modulos/visibilidad/visibilidad";
 import { toast } from "sonner";
 import { WifiOff } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -51,6 +64,10 @@ function InboxPageInner() {
   const deepLinkConvId = searchParams.get("c");
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const vis = useVisibilidad();
+  const moduloActivo = useModuloVisibilidadActivo();
+  // Enlace directo a un chat que el usuario no puede ver (o que no existe).
+  const [sinAccesoEnlace, setSinAccesoEnlace] = useState(false);
   const [activeConversation, setActiveConversation] =
     useState<Conversation | null>(null);
   const [activeContact, setActiveContact] = useState<Contact | null>(null);
@@ -409,10 +426,9 @@ function InboxPageInner() {
       // user back to the deep-linked thread after they've navigated.
       if (
         deepLinkConvId &&
-        autoSelectedForDeepLinkRef.current !== deepLinkConvId &&
-        loaded.length > 0
+        vis.listo &&
+        autoSelectedForDeepLinkRef.current !== deepLinkConvId
       ) {
-        autoSelectedForDeepLinkRef.current = deepLinkConvId;
         // If the deep-linked conversation is already the active one
         // (e.g. because the user clicked it in the list and we
         // router.replace()'d the URL, which made the ConversationList
@@ -422,9 +438,19 @@ function InboxPageInner() {
         // conversationId didn't change, MessageThread wouldn't
         // refetch. The thread would read "No messages yet" until a
         // full page reload rehydrated state from scratch.
-        if (activeConversation?.id === deepLinkConvId) return;
-        const match = loaded.find((c) => c.id === deepLinkConvId);
-        if (match) {
+        if (activeConversation?.id === deepLinkConvId) {
+          autoSelectedForDeepLinkRef.current = deepLinkConvId;
+          return;
+        }
+        const enlace = resolverEnlaceDirecto(deepLinkConvId, loaded, vis);
+        if (enlace.tipo === "sin-acceso") {
+          // No se marca la ref: si el chat propio llega en una carga
+          // posterior (resync), se vuelve a resolver y se abre.
+          setSinAccesoEnlace(true);
+        } else if (enlace.tipo === "abrir") {
+          const match = enlace.conversacion;
+          autoSelectedForDeepLinkRef.current = deepLinkConvId;
+          setSinAccesoEnlace(false);
           setActiveConversation(match);
           setActiveContact(match.contact ?? null);
           setMessages([]);
@@ -442,7 +468,7 @@ function InboxPageInner() {
         }
       }
     },
-    [deepLinkConvId, activeConversation?.id]
+    [deepLinkConvId, activeConversation?.id, vis]
   );
 
   const handleSelectConversation = useCallback(
@@ -452,6 +478,7 @@ function InboxPageInner() {
       // when conversationId changes — so messages would stay empty until
       // the user navigated away and back. Bail out early instead.
       if (activeConversation?.id === conv.id) return;
+      setSinAccesoEnlace(false);
       setActiveConversation(conv);
       setActiveContact(conv.contact ?? null);
       setMessages([]);
@@ -491,6 +518,7 @@ function InboxPageInner() {
   // back. Also clears the ?c= param so a refresh lands on the list
   // instead of re-opening the thread the user just backed out of.
   const handleCloseConversation = useCallback(() => {
+    setSinAccesoEnlace(false);
     setActiveConversation(null);
     setActiveContact(null);
     setMessages([]);
@@ -563,7 +591,15 @@ function InboxPageInner() {
   // conversation slides the thread in; the thread's back button pops
   // it back to the list. On lg+ both panes render side-by-side as
   // before, unchanged.
-  const hasActiveConv = !!activeConversation;
+  // La lista visible se deriva aquí, en un solo punto; el estado guarda lo
+  // que entrega RLS.
+  const visibles = useMemo(() => vis.filtrar(conversations), [vis, conversations]);
+  // Un chat abierto que deja de ser visible (reasignado) se detecta en el
+  // render, sin efecto.
+  const sinAcceso =
+    sinAccesoEnlace ||
+    (activeConversation != null && !vis.puedeVer(activeConversation));
+  const hasActiveConv = !!activeConversation || sinAcceso;
 
   return (
     <div className="-m-4 flex h-[calc(100vh-3.5rem)] flex-col overflow-hidden sm:-m-6">
@@ -588,14 +624,21 @@ function InboxPageInner() {
             hasActiveConv ? "hidden lg:flex" : "flex",
           )}
         >
+          {vis.listo ? (
           <ConversationList
             activeConversationId={activeConversation?.id ?? null}
             onSelect={handleSelectConversation}
-            conversations={conversations}
+            conversations={visibles}
+            mostrarFiltroAsesor={moduloActivo && vis.veTodas}
             onConversationsLoaded={handleConversationsLoaded}
             resyncToken={resyncToken}
             initialFilter={parseInboxFilter(searchParams.get("filter"))}
           />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center border-r border-border bg-card lg:w-80">
+              <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+            </div>
+          )}
         </div>
 
         {/* Center panel: Message thread.
@@ -614,6 +657,9 @@ function InboxPageInner() {
             hasActiveConv ? "flex" : "hidden lg:flex",
           )}
         >
+          {sinAcceso ? (
+            <SinAcceso onVolver={handleCloseConversation} />
+          ) : (
           <MessageThread
             conversation={activeConversation}
             contact={activeContact}
@@ -630,6 +676,7 @@ function InboxPageInner() {
             contactPanelOpen={contactPanelOpen}
             onToggleContactPanel={handleToggleContactPanel}
           />
+          )}
         </div>
 
         {/* Right panel: Contact sidebar — desktop only, and only when the
@@ -638,7 +685,7 @@ function InboxPageInner() {
             toggle — which is itself desktop-only — never affects it. */}
         {contactPanelOpen && (
           <div className="hidden lg:block">
-            <ContactSidebar contact={activeContact} />
+            <ContactSidebar contact={sinAcceso ? null : activeContact} />
           </div>
         )}
       </div>

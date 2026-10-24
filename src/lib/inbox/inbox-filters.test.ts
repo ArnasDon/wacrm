@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { Conversation } from "@/types";
+import { visibleConversations } from "@/modulos/visibilidad/visibilidad";
 import {
   applyInboxFilter,
+  coincideBusqueda,
   isAwaitingReply,
   isWindowClosing,
   parseInboxFilter,
@@ -91,5 +93,35 @@ describe("applyInboxFilter", () => {
     const before = list.map((c) => c.id);
     applyInboxFilter(list, "waiting", NOW);
     expect(list.map((c) => c.id)).toEqual(before);
+  });
+});
+
+describe("coincideBusqueda", () => {
+  const c = conv("1", {
+    last_message_text: "Necesito la Factura",
+    contact: { name: "Ana Pérez", phone: "+57300111" },
+  } as Partial<Conversation>);
+
+  it("encuentra por nombre, teléfono y último mensaje sin distinguir mayúsculas", () => {
+    expect(coincideBusqueda(c, "ANA")).toBe(true);
+    expect(coincideBusqueda(c, "300111")).toBe(true);
+    expect(coincideBusqueda(c, "factura")).toBe(true);
+    expect(coincideBusqueda(c, "zzz")).toBe(false);
+  });
+
+  it("sobre lo visible no devuelve el chat de otro asesor", () => {
+    const mia = conv("a", { assigned_agent_id: "A1" });
+    const ajena = conv("b", {
+      assigned_agent_id: "A2",
+      contact: { name: "Ana" },
+    } as Partial<Conversation>);
+    const res = visibleConversations({
+      userId: "A1",
+      rol: "agent",
+      moduloActivo: true,
+    })
+      .filtrar([mia, ajena])
+      .filter((x) => coincideBusqueda(x, "ana"));
+    expect(res).toEqual([]);
   });
 });

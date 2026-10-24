@@ -7,7 +7,17 @@ import {
   matchesContactFilters,
   normalizeConversations,
 } from "@/lib/inbox/conversations";
-import { applyInboxFilter, type InboxFilter } from "@/lib/inbox/inbox-filters";
+import {
+  applyInboxFilter,
+  coincideBusqueda,
+  type InboxFilter,
+} from "@/lib/inbox/inbox-filters";
+import { fetchAccountMembers, memberLabel } from "@/lib/account/members";
+import {
+  filtrarPorAsesor,
+  type FiltroAsesor as FiltroAsesorValor,
+} from "@/modulos/visibilidad/visibilidad";
+import { FiltroAsesor } from "@/components/inbox/filtro-asesor";
 import { cn } from "@/lib/utils";
 import type { Conversation, ConversationStatus, Tag } from "@/types";
 import { Search, ChevronDown, X } from "lucide-react";
@@ -36,6 +46,8 @@ interface ConversationListProps {
    */
   resyncToken?: number;
   initialFilter?: InboxFilter;
+  /** Módulo visibilidad encendido y el usuario ve todas: muestra el filtro por asesor. */
+  mostrarFiltroAsesor?: boolean;
 }
 
 const STATUS_COLORS: Record<ConversationStatus, string> = {
@@ -52,6 +64,7 @@ export function ConversationList({
   onConversationsLoaded,
   resyncToken = 0,
   initialFilter = "all",
+  mostrarFiltroAsesor = false,
 }: ConversationListProps) {
   const t = useTranslations("Inbox.conversationList");
   
@@ -69,6 +82,29 @@ export function ConversationList({
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<InboxFilter>(initialFilter);
   const [now, setNow] = useState(() => Date.now());
+  const [filtroAsesor, setFiltroAsesor] = useState<FiltroAsesorValor>({
+    tipo: "todos",
+  });
+  const [asesores, setAsesores] = useState<
+    { userId: string; nombre: string }[]
+  >([]);
+
+  useEffect(() => {
+    if (!mostrarFiltroAsesor) return;
+    let cancelled = false;
+    (async () => {
+      const members = await fetchAccountMembers();
+      if (cancelled) return;
+      setAsesores(
+        members
+          .filter((m) => m.role === "agent")
+          .map((m) => ({ userId: m.user_id, nombre: memberLabel(m) })),
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [mostrarFiltroAsesor]);
 
   useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), 60_000);
@@ -168,7 +204,13 @@ export function ConversationList({
   }, [tags]);
 
   const filtered = useMemo(() => {
-    let result = applyInboxFilter(conversations, filter, now);
+    let result = applyInboxFilter(
+      mostrarFiltroAsesor
+        ? filtrarPorAsesor(conversations, filtroAsesor)
+        : conversations,
+      filter,
+      now,
+    );
 
     // Contact-based filters (tags via OR logic, exact company match).
     if (selectedTagIds.length > 0 || selectedCompany !== null) {
@@ -181,17 +223,20 @@ export function ConversationList({
     }
 
     if (search.trim()) {
-      const q = search.toLowerCase();
-      result = result.filter((c) => {
-        const name = c.contact?.name?.toLowerCase() ?? "";
-        const phone = c.contact?.phone?.toLowerCase() ?? "";
-        const lastMsg = c.last_message_text?.toLowerCase() ?? "";
-        return name.includes(q) || phone.includes(q) || lastMsg.includes(q);
-      });
+      result = result.filter((c) => coincideBusqueda(c, search));
     }
 
     return result;
-  }, [conversations, filter, now, search, selectedTagIds, selectedCompany]);
+  }, [
+    conversations,
+    filter,
+    now,
+    search,
+    selectedTagIds,
+    selectedCompany,
+    mostrarFiltroAsesor,
+    filtroAsesor,
+  ]);
 
   const toggleTag = useCallback((id: string) => {
     setSelectedTagIds((prev) =>
@@ -265,6 +310,14 @@ export function ConversationList({
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
+
+          {mostrarFiltroAsesor && (
+            <FiltroAsesor
+              valor={filtroAsesor}
+              asesores={asesores}
+              onCambio={setFiltroAsesor}
+            />
+          )}
 
           {tags.length > 0 && (
             <DropdownMenu>

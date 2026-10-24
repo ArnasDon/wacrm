@@ -58,3 +58,12 @@ export function applyInboxFilter(
       return conversations.filter((c) => c.status === (filter as ConversationStatus));
   }
 }
+
+/** Búsqueda de la bandeja: nombre, teléfono o último mensaje, sin distinguir mayúsculas. */
+export function coincideBusqueda(c: Conversation, consulta: string): boolean {
+  const q = consulta.toLowerCase();
+  const name = c.contact?.name?.toLowerCase() ?? "";
+  const phone = c.contact?.phone?.toLowerCase() ?? "";
+  const lastMsg = c.last_message_text?.toLowerCase() ?? "";
+  return name.includes(q) || phone.includes(q) || lastMsg.includes(q);
+}

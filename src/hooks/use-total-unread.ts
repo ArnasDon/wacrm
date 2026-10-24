@@ -1,23 +1,33 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { useVisibilidad } from "@/modulos/visibilidad/contexto";
+import { contarNoLeidas } from "@/modulos/visibilidad/visibilidad";
 import type { Conversation } from "@/types";
+
+interface FilaNoLeidas {
+  id: string;
+  unread_count: number | null;
+  assigned_agent_id?: string | null;
+}
 
 /**
  * Count of conversations with at least one unread inbound message for
  * the current user. Used by the sidebar to surface a green dot on the
  * Inbox nav entry when the user is elsewhere in the app.
  *
+ * Con el módulo de visibilidad encendido, solo cuenta las conversaciones
+ * que el usuario puede ver (por eso guarda `assigned_agent_id`).
+ *
  * Lives on its own realtime channel (distinct from the inbox page's
  * "inbox-realtime") so both can coexist without sharing state.
  */
 export function useTotalUnread(): number {
-  const [total, setTotal] = useState(0);
-
-  // Keep a live local mirror of {id: unread_count} so INSERT/UPDATE/DELETE
-  // events can adjust the total in O(1) without refetching.
-  const countsRef = useRef<Map<string, number>>(new Map());
+  const vis = useVisibilidad();
+  // Mirror of the visible-relevant columns by id so INSERT/UPDATE/DELETE
+  // events can adjust the total without refetching.
+  const [filas, setFilas] = useState<Map<string, FilaNoLeidas>>(new Map());
 
   useEffect(() => {
     const supabase = createClient();
@@ -28,18 +38,13 @@ export function useTotalUnread(): number {
     (async () => {
       const { data, error } = await supabase
         .from("conversations")
-        .select("id, unread_count");
+        .select("id, unread_count, assigned_agent_id");
       if (cancelled || error || !data) return;
 
-      const map = new Map<string, number>();
-      let sum = 0;
-      for (const row of data as { id: string; unread_count: number }[]) {
-        const n = row.unread_count ?? 0;
-        map.set(row.id, n);
-        if (n > 0) sum += 1;
-      }
-      countsRef.current = map;
-      setTotal(sum);
+      const map = new Map<string, FilaNoLeidas>();
+      for (const row of data as FilaNoLeidas[]) map.set(row.id, row);
+      // Merge sobre lo que ya llegó por realtime durante la carga.
+      setFilas((prev) => new Map([...map, ...prev]));
     })();
 
     const channel = supabase
@@ -48,18 +53,26 @@ export function useTotalUnread(): number {
         "postgres_changes",
         { event: "*", schema: "public", table: "conversations" },
         (payload) => {
-          const map = countsRef.current;
           if (payload.eventType === "DELETE") {
             const oldRow = payload.old as Partial<Conversation>;
-            if (oldRow.id) map.delete(oldRow.id);
+            const id = oldRow.id;
+            if (id) {
+              setFilas((prev) => {
+                const next = new Map(prev);
+                next.delete(id);
+                return next;
+              });
+            }
           } else {
             const row = payload.new as Conversation;
-            map.set(row.id, row.unread_count ?? 0);
+            setFilas((prev) =>
+              new Map(prev).set(row.id, {
+                id: row.id,
+                unread_count: row.unread_count ?? 0,
+                assigned_agent_id: row.assigned_agent_id ?? null,
+              }),
+            );
           }
-          // Recompute — cheap, conversations per user stay small.
-          let sum = 0;
-          for (const n of map.values()) if (n > 0) sum += 1;
-          setTotal(sum);
         },
       )
       .subscribe();
@@ -70,5 +83,5 @@ export function useTotalUnread(): number {
     };
   }, []);
 
-  return total;
+  return useMemo(() => contarNoLeidas([...filas.values()], vis), [filas, vis]);
 }

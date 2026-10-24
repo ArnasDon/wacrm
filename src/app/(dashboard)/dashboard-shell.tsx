@@ -8,6 +8,7 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { AccountAccessAlert } from "@/components/layout/account-access-alert";
 import { PresenceHeartbeat } from "@/components/presence/presence-heartbeat";
+import { VisibilidadProvider } from "@/modulos/visibilidad/contexto";
 import { BrowserNotificationsListener } from "@/components/notifications/browser-notifications-listener";
 
 // Auth-gated dashboard shell. Extracted from the layout so the layout
@@ -66,10 +67,18 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function DashboardShell({ children }: { children: React.ReactNode }) {
+export function DashboardShell({
+  children,
+  visibilidadActiva,
+}: {
+  children: React.ReactNode;
+  visibilidadActiva: boolean;
+}) {
   return (
     <AuthProvider>
-      <DashboardShellInner>{children}</DashboardShellInner>
+      <VisibilidadProvider activo={visibilidadActiva}>
+        <DashboardShellInner>{children}</DashboardShellInner>
+      </VisibilidadProvider>
     </AuthProvider>
   );
 }

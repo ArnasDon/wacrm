@@ -2,7 +2,7 @@
 
 Cada asesor ve solo las conversaciones asignadas a él en la bandeja, el contador de no leídos, la búsqueda y la URL directa de un chat.
 
-> **No encender hasta que la Parte 2 de VIS.1 (interfaz) esté mergeada.** La Parte 1 solo registra el módulo y deja la función compartida `visibleConversations`; la interfaz aún no la usa.
+> Con la Parte 2 (interfaz) la bandeja, el contador, la búsqueda y el enlace directo ya usan `visibleConversations`. Se aplica al reiniciar la app con el módulo encendido.
 
 ## Cómo se enciende
 

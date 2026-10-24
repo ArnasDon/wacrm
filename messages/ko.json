@@ -332,6 +332,14 @@
     "page": {
       "whatsappNotConnected": "WhatsApp®이 연결되어 있지 않습니다. 설정으로 이동해 계정을 연결하세요."
     },
+    "visibilidad": {
+      "sinAccesoTitulo": "접근 권한 없음",
+      "sinAccesoTexto": "이 대화는 회원님에게 배정되지 않았습니다.",
+      "volver": "받은편지함으로 돌아가기",
+      "filtroAsesor": "담당자",
+      "todos": "전체",
+      "sinAsignar": "미배정"
+    },
     "conversationList": {
       "searchPlaceholder": "대화 검색...",
       "filterAll": "전체",

@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { connection } from "next/server";
+import { estadoVisibilidad } from "@/modulos/visibilidad/servidor";
 import { DashboardShell } from "./dashboard-shell";
 
 // Server layout whose only job is to declare "do not index" metadata
@@ -19,10 +21,13 @@ export const metadata: Metadata = {
   },
 };
 
-export default function DashboardLayout({
+export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  return <DashboardShell>{children}</DashboardShell>;
+  // Lee la config de módulos en cada request (el build no tiene config/).
+  await connection();
+  const { activo } = estadoVisibilidad();
+  return <DashboardShell visibilidadActiva={activo}>{children}</DashboardShell>;
 }

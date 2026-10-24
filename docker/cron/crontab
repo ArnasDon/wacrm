@@ -1,0 +1,2 @@
+@SCHEDULE@ /run-task.sh /api/automations/cron
+@SCHEDULE@ /run-task.sh /api/flows/cron

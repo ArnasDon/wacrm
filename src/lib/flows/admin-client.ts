@@ -8,7 +8,9 @@ let _adminClient: SupabaseClient | null = null
 export function supabaseAdmin(): SupabaseClient {
   if (!_adminClient) {
     _adminClient = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      // Containerised deploys reach kong by its compose DNS name; the public
+      // URL is localhost, unreachable from inside the app container.
+      process.env.SUPABASE_INTERNAL_URL || process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
     )
   }

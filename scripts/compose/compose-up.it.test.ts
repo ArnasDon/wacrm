@@ -79,7 +79,7 @@ function dumpComposeDiagnostics(): void {
     } catch (error) {
       const failed = error as { stdout?: string; stderr?: string };
       console.error(
-        `\n--- ${label} (failed) ---\n${failed.stdout ?? ''}${failed.stderr ?? ''}`,
+        `\n--- ${label} (failed) ---\n${failed.stdout ?? ''}${failed.stderr ?? ''}`
       );
     }
   }
@@ -89,140 +89,169 @@ describe.skipIf(!enabled)('docker compose up on a clean machine', () => {
   beforeAll(() => {
     if (existsSync(ENV_PATH)) {
       throw new Error(
-        `.env already exists at ${ENV_PATH} — this test only runs on a clean machine (no existing .env).`,
+        `.env already exists at ${ENV_PATH} — this test only runs on a clean machine (no existing .env).`
       );
     }
     const envContent = readFileSync(resolve(REPO_ROOT, '.env.example'), 'utf8');
-    writeFileSync(ENV_PATH, envContent + '\n' + mintKeys());
+    // Every-minute schedule so the cron case does not wait five minutes.
+    writeFileSync(
+      ENV_PATH,
+      envContent + '\n' + mintKeys() + 'CRON_SCHEDULE=* * * * *\n'
+    );
   }, 30_000);
 
   afterAll(() => {
     try {
-      execFileSync(
-        'docker',
-        ['compose', 'down', '-v', '--remove-orphans'],
-        { ...execOpts, stdio: 'ignore' },
-      );
+      execFileSync('docker', ['compose', 'down', '-v', '--remove-orphans'], {
+        ...execOpts,
+        stdio: 'ignore',
+      });
     } finally {
       rmSync(ENV_PATH, { force: true });
     }
   }, 300_000);
 
-  it(
-    'brings every service to healthy',
-    () => {
-      // `--wait` exits non-zero if any service fails to reach healthy before
-      // the timeout — that IS the assertion. Dump ps/logs before afterAll
-      // tears the stack down.
-      try {
-        execFileSync(
-          'docker',
-          ['compose', 'up', '-d', '--wait', '--wait-timeout', '600'],
-          { ...execOpts, stdio: 'inherit' },
-        );
-      } catch (error) {
-        dumpComposeDiagnostics();
-        throw error;
-      }
-
-      // Double-check via `docker compose ps` — every service must report healthy.
-      const psOutput = execFileSync(
+  it('brings every service to healthy', () => {
+    // `--wait` exits non-zero if any service fails to reach healthy before
+    // the timeout — that IS the assertion. Dump ps/logs before afterAll
+    // tears the stack down.
+    try {
+      execFileSync(
         'docker',
-        ['compose', 'ps', '--format', 'json'],
-        execOpts,
+        ['compose', 'up', '-d', '--wait', '--wait-timeout', '600'],
+        { ...execOpts, stdio: 'inherit' }
       );
-      // Each line is a JSON object (one per service)
-      const rows = psOutput
-        .trim()
-        .split('\n')
-        .filter(Boolean)
-        .map((l) => JSON.parse(l) as { Name: string; Health: string });
+    } catch (error) {
+      dumpComposeDiagnostics();
+      throw error;
+    }
 
-      for (const row of rows) {
-        expect(row.Health, `service ${row.Name} is not healthy`).toBe(
-          'healthy',
-        );
+    // Double-check via `docker compose ps` — every service must report healthy.
+    const psOutput = execFileSync(
+      'docker',
+      ['compose', 'ps', '--format', 'json'],
+      execOpts
+    );
+    // Each line is a JSON object (one per service)
+    const rows = psOutput
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map((l) => JSON.parse(l) as { Name: string; Health: string });
+
+    expect(rows).toHaveLength(9);
+    for (const row of rows) {
+      expect(row.Health, `service ${row.Name} is not healthy`).toBe('healthy');
+    }
+  }, 900_000);
+
+  it('runs the wacrm scheduled tasks from inside the compose network', async () => {
+    // Migrations need auth.users (created by gotrue), so they are applied
+    // after the first `up --wait`, as docs/docker.md describes.
+    execFileSync(
+      'docker',
+      [
+        'compose',
+        'exec',
+        '-T',
+        'supabase-db',
+        'sh',
+        '-c',
+        'for f in /migrations/*.sql; do psql -v ON_ERROR_STOP=1 -U postgres -d postgres -f "$f" >/dev/null || exit 1; done',
+      ],
+      execOpts
+    );
+    // 200 (not 503) proves the AUTOMATION_CRON_SECRET header arrived.
+    const deadline = Date.now() + 180_000;
+    let logs = '';
+    while (Date.now() < deadline) {
+      logs = execFileSync('docker', ['compose', 'logs', 'cron'], execOpts);
+      if (
+        logs.includes('/api/automations/cron 200') &&
+        logs.includes('/api/flows/cron 200')
+      )
+        return;
+      await new Promise((r) => setTimeout(r, 5_000));
+    }
+    throw new Error(`cron did not report 200 for both tasks:\n${logs}`);
+  }, 300_000);
+
+  it('publishes no Postgres port on the host', () => {
+    const psOutput = execFileSync(
+      'docker',
+      ['compose', 'ps', '--format', 'json'],
+      execOpts
+    );
+    const rows = psOutput
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map(
+        (l) =>
+          JSON.parse(l) as {
+            Name: string;
+            Publishers: Array<{ PublishedPort: number; URL: string }>;
+          }
+      );
+
+    const postgresPorts = [5432, 6543];
+    for (const row of rows) {
+      for (const pub of row.Publishers ?? []) {
+        expect(
+          postgresPorts,
+          `Service ${row.Name} publishes Postgres port ${pub.PublishedPort}`
+        ).not.toContain(pub.PublishedPort);
       }
-    },
-    900_000,
-  );
+    }
 
-  it(
-    'publishes no Postgres port on the host',
-    () => {
-      const psOutput = execFileSync(
-        'docker',
-        ['compose', 'ps', '--format', 'json'],
-        execOpts,
+    // docker compose port exits 0 in Compose v2 even when no port is mapped;
+    // docker inspect is reliable across all versions.
+    const inspectOut = execFileSync(
+      'docker',
+      [
+        'inspect',
+        'wacrm-supabase-db-1',
+        '--format',
+        '{{json .NetworkSettings.Ports}}',
+      ],
+      execOpts
+    );
+    const ports = JSON.parse(inspectOut.toString().trim()) as Record<
+      string,
+      unknown
+    >;
+    expect(
+      ports['5432/tcp'] ?? null,
+      'supabase-db port 5432 should not be published'
+    ).toBeNull();
+  }, 60_000);
+
+  it('publishes nothing on a public interface', () => {
+    const psOutput = execFileSync(
+      'docker',
+      ['compose', 'ps', '--format', 'json'],
+      execOpts
+    );
+    const rows = psOutput
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map(
+        (l) =>
+          JSON.parse(l) as {
+            Name: string;
+            Publishers: Array<{ URL: string; PublishedPort: number }>;
+          }
       );
-      const rows = psOutput
-        .trim()
-        .split('\n')
-        .filter(Boolean)
-        .map(
-          (l) =>
-            JSON.parse(l) as {
-              Name: string;
-              Publishers: Array<{ PublishedPort: number; URL: string }>;
-            },
-        );
 
-      const postgresPorts = [5432, 6543];
-      for (const row of rows) {
-        for (const pub of row.Publishers ?? []) {
-          expect(
-            postgresPorts,
-            `Service ${row.Name} publishes Postgres port ${pub.PublishedPort}`,
-          ).not.toContain(pub.PublishedPort);
-        }
+    for (const row of rows) {
+      for (const pub of row.Publishers ?? []) {
+        if (pub.PublishedPort === 0) continue; // not published
+        expect(
+          pub.URL,
+          `Service ${row.Name} publishes on non-loopback interface`
+        ).toBe('127.0.0.1');
       }
-
-      // docker compose port exits 0 in Compose v2 even when no port is mapped;
-      // docker inspect is reliable across all versions.
-      const inspectOut = execFileSync(
-        'docker',
-        ['inspect', 'wacrm-supabase-db-1', '--format', '{{json .NetworkSettings.Ports}}'],
-        execOpts,
-      );
-      const ports = JSON.parse(inspectOut.toString().trim()) as Record<string, unknown>;
-      expect(
-        ports['5432/tcp'] ?? null,
-        'supabase-db port 5432 should not be published',
-      ).toBeNull();
-    },
-    60_000,
-  );
-
-  it(
-    'publishes nothing on a public interface',
-    () => {
-      const psOutput = execFileSync(
-        'docker',
-        ['compose', 'ps', '--format', 'json'],
-        execOpts,
-      );
-      const rows = psOutput
-        .trim()
-        .split('\n')
-        .filter(Boolean)
-        .map(
-          (l) =>
-            JSON.parse(l) as {
-              Name: string;
-              Publishers: Array<{ URL: string; PublishedPort: number }>;
-            },
-        );
-
-      for (const row of rows) {
-        for (const pub of row.Publishers ?? []) {
-          if (pub.PublishedPort === 0) continue; // not published
-          expect(
-            pub.URL,
-            `Service ${row.Name} publishes on non-loopback interface`,
-          ).toBe('127.0.0.1');
-        }
-      }
-    },
-    60_000,
-  );
+    }
+  }, 60_000);
 });

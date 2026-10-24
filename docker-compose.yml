@@ -37,7 +37,16 @@ services:
       # R1: published on loopback only. BASE.2 adds the outbound tunnel.
       - '127.0.0.1:${KONG_HTTP_PORT:-8000}:8000'
     volumes:
-      - ./docker/supabase/kong/kong.yml:/home/kong/kong.yml:ro
+      # Template: Kong does not expand ${VARS}, the entrypoint renders it.
+      - ./docker/supabase/kong/kong.yml:/home/kong/temp.yml:ro
+    entrypoint:
+      - bash
+      - -c
+      - >-
+        sed -e 's|[$$]{ANON_KEY}|'"$$ANON_KEY"'|g'
+        -e 's|[$$]{SERVICE_ROLE_KEY}|'"$$SERVICE_ROLE_KEY"'|g'
+        /home/kong/temp.yml > /home/kong/kong.yml &&
+        /docker-entrypoint.sh kong docker-start
     environment:
       KONG_DATABASE: 'off'
       KONG_DECLARATIVE_CONFIG: /home/kong/kong.yml
@@ -242,7 +251,7 @@ services:
       test:
         [
           'CMD-SHELL',
-          "node -e \"fetch('http://localhost:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\"",
+          'node -e "fetch(''http://localhost:8080/health'').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"',
         ]
       interval: 10s
       timeout: 5s
@@ -271,6 +280,9 @@ services:
     # can't desync the app from the mapping and the healthcheck below.
     environment:
       PORT: 3000
+      # Server-side Supabase calls (cron admin clients) reach kong over the
+      # compose network; NEXT_PUBLIC_SUPABASE_URL stays the browser URL.
+      SUPABASE_INTERNAL_URL: http://supabase-kong:8000
     ports:
       # R1: published on loopback only. BASE.2 adds the outbound tunnel.
       - '127.0.0.1:${HOST_PORT:-3000}:3000'
@@ -293,6 +305,27 @@ services:
       timeout: 5s
       retries: 3
       start_period: 60s
+
+  # ---------------------------------------------------------------------------
+  # Cron — wacrm scheduled tasks (automations and flows)
+  # ---------------------------------------------------------------------------
+  cron:
+    build: ./docker/cron
+    image: wacrm/cron:1.0.0
+    env_file:
+      - .env
+    environment:
+      APP_URL: http://app:3000
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', '/healthcheck.sh']
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
 volumes:
   supabase-db-data: {}

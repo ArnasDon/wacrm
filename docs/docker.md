@@ -10,16 +10,16 @@ it stays as it is. The Docker stack uses `.env` (generated from `.env.example`).
 
 ## Servicios y puertos
 
-| Service | Internal port | Published on host |
-|---|---|---|
-| `supabase-db` | 5432 | — (R1: not published) |
-| `supabase-kong` | 8000 | `127.0.0.1:8000` |
-| `supabase-auth` | 9999 | — |
-| `supabase-rest` | 3000 / 3001 (admin) | — |
-| `supabase-realtime` | 4000 | — |
-| `supabase-storage` | 5000 | — |
-| `supabase-meta` | 8080 | — |
-| `app` | 3000 | `127.0.0.1:3000` |
+| Service             | Internal port       | Published on host     |
+| ------------------- | ------------------- | --------------------- |
+| `supabase-db`       | 5432                | — (R1: not published) |
+| `supabase-kong`     | 8000                | `127.0.0.1:8000`      |
+| `supabase-auth`     | 9999                | —                     |
+| `supabase-rest`     | 3000 / 3001 (admin) | —                     |
+| `supabase-realtime` | 4000                | —                     |
+| `supabase-storage`  | 5000                | —                     |
+| `supabase-meta`     | 8080                | —                     |
+| `app`               | 3000                | `127.0.0.1:3000`      |
 
 **R1 (BASE.1):** Postgres (ports 5432 and 6543) is never published on the host;
 everything published binds to `127.0.0.1`. The public entry point arrives in
@@ -47,7 +47,7 @@ verifies both rules automatically against the live `docker-compose.yml`.
    ```
 
    On a clean machine this takes roughly 2–3 minutes for all services to reach
-   *healthy*. Use `docker compose ps` to track progress.
+   _healthy_. Use `docker compose ps` to track progress.
 
 3. Open [http://localhost:3000](http://localhost:3000).  
    Use `HOST_PORT=8080` in `.env` to publish the app on a different port.
@@ -58,7 +58,7 @@ verifies both rules automatically against the live `docker-compose.yml`.
 ## Migraciones (primer arranque)
 
 The `supabase/migrations/` files reference `auth.users`, which gotrue creates on
-startup — *after* the Postgres init scripts run. They cannot go in
+startup — _after_ the Postgres init scripts run. They cannot go in
 `/docker-entrypoint-initdb.d`. After the first `docker compose up --wait`, apply
 them manually:
 
@@ -66,6 +66,8 @@ them manually:
 docker compose exec -T supabase-db sh -c \
   'for f in /migrations/*.sql; do psql -v ON_ERROR_STOP=1 -U postgres -d postgres -f "$f"; done'
 ```
+
+The integration test (`scripts/compose/compose-up.it.test.ts`) applies them the same way before exercising the cron routes.
 
 The `/migrations` bind-mount is already declared in `docker-compose.yml`.
 CFG.1 can automate this step when it defines the per-tenant startup sequence.
@@ -99,13 +101,19 @@ COMPOSE_IT=1 npx vitest run scripts/compose/compose-up.it.test.ts
 
 ## Scheduled tasks (cron)
 
-The `cron` service (arriving in BASE.1 Part 2) calls two endpoints every 5 minutes:
+The `cron` service (a small `alpine` + `curl` image built from `docker/cron/`) calls two
+endpoints of the `app` service from inside the compose network, on `CRON_SCHEDULE`
+(default `*/5 * * * *`, set it in `.env`):
+
 - `GET /api/automations/cron` — runs pending automation Wait steps
 - `GET /api/flows/cron` — advances flow instances
 
-Both require the `x-cron-secret` header (`AUTOMATION_CRON_SECRET`); they return 503
-until that variable is set. The cron container sends it automatically using its
-`CRON_SECRET` env var (same value).
+Both require the `x-cron-secret` header, which the cron sends from `AUTOMATION_CRON_SECRET`.
+That variable is mandatory: without it the endpoints answer 503. `npm run keys` generates it.
+
+Watch the runs with `docker compose logs -f cron` (each line is `<path> <http code>`).
+The container is `healthy` while `crond` is alive and the last run is under 15 minutes old.
+The daily backup of BAK.1 will be added to this same cron.
 
 ## Plain Docker (no Compose)
 

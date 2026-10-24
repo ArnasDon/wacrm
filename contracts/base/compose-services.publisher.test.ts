@@ -6,7 +6,10 @@ import { describe, expect, it } from 'vitest';
 import {
   ComposeServiceSchema,
   ComposeVolumeSchema,
+  OPTIONAL_SERVICE_NAMES,
+  parseTopology,
   POSTGRES_PORTS,
+  SERVICE_NAMES,
   VOLUME_NAMES,
 } from './compose-services.js';
 import {
@@ -26,7 +29,6 @@ describe('publisher verification · docker-compose.yml satisfies CT.2 [BASE.1]',
   const services = input.services.map((s) => ComposeServiceSchema.parse(s));
 
   it('reads docker-compose.yml and builds a ComposeTopology from its services and volumes', () => {
-    // Part 1 declares 8 services (cron arrives in Part 2)
     expect(services.map((s) => s.name)).toEqual([
       'supabase-db',
       'supabase-kong',
@@ -36,22 +38,28 @@ describe('publisher verification · docker-compose.yml satisfies CT.2 [BASE.1]',
       'supabase-storage',
       'supabase-meta',
       'app',
+      'cron',
     ]);
-    expect(
-      input.volumes.map((v) => ComposeVolumeSchema.parse(v).name),
-    ).toEqual(VOLUME_NAMES);
+    expect(input.volumes.map((v) => ComposeVolumeSchema.parse(v).name)).toEqual(
+      VOLUME_NAMES
+    );
   });
 
-  it.todo(
-    'parses that topology with parseTopology without errors (Parte 2: falta el servicio cron)',
-  );
-  it.todo(
-    'declares every required service of SERVICE_NAMES (Parte 2: falta el servicio cron)',
-  );
+  it('parses that topology with parseTopology without errors', () => {
+    expect(() => parseTopology(input)).not.toThrow();
+  });
+
+  it('declares every required service of SERVICE_NAMES', () => {
+    const declared = new Set(parseTopology(input).services.map((s) => s.name));
+    const required = SERVICE_NAMES.filter(
+      (n) => !(OPTIONAL_SERVICE_NAMES as readonly string[]).includes(n)
+    );
+    expect([...required].filter((n) => !declared.has(n))).toEqual([]);
+  });
 
   it('declares every volume of VOLUME_NAMES', () => {
     const parsedVolumes = input.volumes.map((v) =>
-      ComposeVolumeSchema.parse(v),
+      ComposeVolumeSchema.parse(v)
     );
     const volumeNames = new Set(parsedVolumes.map((v) => v.name));
     for (const name of VOLUME_NAMES) {
@@ -98,11 +106,8 @@ describe('publisher verification · docker-compose.yml satisfies CT.2 [BASE.1]',
 
     for (const entry of allPortStrings) {
       // Must start with '127.0.0.1:' or a variable reference ('${...')
-      const ok =
-        entry.startsWith('127.0.0.1:') || entry.startsWith('${');
-      expect(ok, `Port entry "${entry}" does not bind to 127.0.0.1`).toBe(
-        true,
-      );
+      const ok = entry.startsWith('127.0.0.1:') || entry.startsWith('${');
+      expect(ok, `Port entry "${entry}" does not bind to 127.0.0.1`).toBe(true);
     }
   });
 });

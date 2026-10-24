@@ -46,7 +46,8 @@ const jwtSecret = hex(64);
 const anonKey = mintJwt('anon', jwtSecret);
 const serviceRoleKey = mintJwt('service_role', jwtSecret);
 const encryptionKey = hex(64);
-const realtimeEncKey = randomBytes(8).toString('hex');  // 16 chars = 16 bytes raw → AES-128-ECB
+const cronSecret = hex(32);
+const realtimeEncKey = randomBytes(8).toString('hex'); // 16 chars = 16 bytes raw → AES-128-ECB
 
 process.stdout.write(
   [
@@ -56,5 +57,6 @@ process.stdout.write(
     `SERVICE_ROLE_KEY=${serviceRoleKey}`,
     `ENCRYPTION_KEY=${encryptionKey}`,
     `REALTIME_ENC_KEY=${realtimeEncKey}`,
+    `AUTOMATION_CRON_SECRET=${cronSecret}`,
   ].join('\n') + '\n'
 );

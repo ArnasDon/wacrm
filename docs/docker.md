@@ -67,6 +67,8 @@ docker compose exec -T supabase-db sh -c \
   'for f in /migrations/*.sql; do psql -v ON_ERROR_STOP=1 -U postgres -d postgres -f "$f"; done'
 ```
 
+Module migrations (`mod_<name>_NNN.sql`, see `docs/modulos.md`) live in the same folder and sort after every wacrm migration, so the same loop applies them last.
+
 The integration test (`scripts/compose/compose-up.it.test.ts`) applies them the same way before exercising the cron routes.
 
 The `/migrations` bind-mount is already declared in `docker-compose.yml`.

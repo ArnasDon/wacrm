@@ -24,11 +24,13 @@ on:
     # "expected", which blocks every PR that doesn't touch SQL.
     paths:
       - 'supabase/**'
+      - 'src/modulos/**'
       - '.github/workflows/migrations.yml'
   push:
     branches: [main]
     paths:
       - 'supabase/**'
+      - 'src/modulos/**'
       - '.github/workflows/migrations.yml'
 
 concurrency:
@@ -53,6 +55,12 @@ jobs:
       - name: Start Postgres
         run: supabase db start
 
+      # MOD.1: a module migration sits next to wacrm's. The CLI only
+      # applies files that start with digits, so it must skip this one
+      # without failing; the step after the reset applies it in glob order.
+      - name: Add the test module migration
+        run: cp supabase/ci/modulos/mod_demo_001.sql supabase/migrations/
+
       # `db start` already applies the migrations on a cold volume, but
       # only on a cold volume — it is a no-op against a database that
       # already exists. `db reset` drops and rebuilds unconditionally,
@@ -69,3 +77,16 @@ jobs:
       # just the absence of an error.
       - name: Verify the resulting schema
         run: supabase db query --local --file supabase/ci/verify-schema.sql
+
+      # Module migrations (mod_<name>_NNN.sql) run after every wacrm one,
+      # in the same byte order as the compose glob (/migrations/*.sql).
+      - name: Apply module migrations after wacrm
+        run: |
+          for f in $(ls supabase/migrations/*.sql | LC_ALL=C sort); do
+            case "$(basename "$f")" in
+              mod_*) supabase db query --local --file "$f" ;;
+            esac
+          done
+
+      - name: Verify module migrations
+        run: supabase db query --local --file supabase/ci/modulos/verify-modulos.sql

@@ -21,17 +21,22 @@ export function arrancarModulos(
   );
 }
 
-let flujo: FlujoEntrada | undefined;
+// Next compila instrumentation y cada ruta como bundles aparte: una variable de
+// módulo no se compartiría entre ellos. La caché vive en globalThis para que el
+// arranque y el webhook vean el mismo flujo (y, si no, la ruta lo crea perezosa).
+const CLAVE = Symbol.for('wacrm.modulos.flujoEntrada');
+type ConCache = { [CLAVE]?: FlujoEntrada };
+const global_ = globalThis as unknown as ConCache;
 
-/** Arranca una sola vez y cachea. */
+/** Arranca una sola vez y cachea (compartido entre bundles). */
 export function obtenerFlujoEntrada(): FlujoEntrada {
-  flujo ??= arrancarModulos();
-  return flujo;
+  global_[CLAVE] ??= arrancarModulos();
+  return global_[CLAVE];
 }
 
 /** Solo pruebas: reemplaza o limpia la caché. */
 export function fijarFlujoEntrada(f: FlujoEntrada | undefined): void {
-  flujo = f;
+  global_[CLAVE] = f;
 }
 
 /** Nunca lanza. Con hayEnganches === false vuelve sin parsear el evento. */

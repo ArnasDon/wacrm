@@ -75,4 +75,13 @@ describe('arranque', () => {
       despacharEntradaAModulos(stubEventoEntrada())
     ).resolves.toBeUndefined();
   });
+  it('la caché se comparte entre bundles (instancias distintas del módulo)', async () => {
+    const espia = vi.fn(async () => {});
+    fijarFlujoEntrada(crearFlujoEntrada([demo(espia)], on));
+    vi.resetModules();
+    const otro = await import('./arranque');
+    expect(otro.obtenerFlujoEntrada()).toBe(obtenerFlujoEntrada());
+    await otro.despacharEntradaAModulos(stubEventoEntrada());
+    expect(espia).toHaveBeenCalledTimes(1);
+  });
 });

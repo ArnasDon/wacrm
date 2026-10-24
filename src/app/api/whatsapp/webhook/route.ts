@@ -21,6 +21,7 @@ import {
 } from '@/lib/whatsapp/webhook-signature'
 import { readCappedBody } from '@/lib/whatsapp/webhook-body'
 import { resumeAwaitingReply, runAutomationsForTrigger } from '@/lib/automations/engine'
+import { despacharEntradaAModulos } from '@/modulos/arranque'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
@@ -780,6 +781,21 @@ async function processMessage(
   // so the broadcast's `replied_count` advances (via the aggregate
   // trigger installed in migration 003).
   await flagBroadcastReplyIfAny(accountId, contactRecord.id)
+
+  // Tenant modules (MOD.1, contract I3): run after the message is stored
+  // and before flows / automations / AI, so a module (e.g. assignment)
+  // acts before any bot replies. Never throws; with every module off it
+  // returns without touching anything (R16). Replays and reactions
+  // returned earlier, so they never reach here (R19).
+  await despacharEntradaAModulos({
+    cuentaId: accountId,
+    conversacionId: conversation.id,
+    contactoId: contactRecord.id,
+    mensajeId: insertedRows[0].id,
+    asesorAsignadoId: conversation.assigned_agent_id ?? null,
+    conversacionNueva: convResult.created,
+    recibidoEn: receivedAt,
+  })
 
   // ============================================================
   // Flow runner dispatch.

@@ -15,7 +15,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { MessageSquare, CheckCircle, UsersRound } from "lucide-react";
+import { MessageSquare, UsersRound } from "lucide-react";
 
 // `useSearchParams` opts the component out of static prerendering
 // unless wrapped in Suspense — same pattern as /login.
@@ -43,7 +43,6 @@ function SignupPageInner() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [success, setSuccess] = useState(false);
   const supabase = createClient();
 
   const handleSignup = async (e: React.FormEvent) => {
@@ -62,83 +61,37 @@ function SignupPageInner() {
 
     setLoading(true);
 
-    // Always name our own origin as the place the confirmation link
-    // returns to. Previously this was left unset unless an invite was
-    // involved, so Supabase fell back to its Site URL — which on a
-    // freshly-created or self-hosted project is `http://localhost:3000`
-    // (issue #595) — and even when the Site URL was right the link
-    // landed on `/` with an unexchanged `?code=`, so the user had to
-    // sign in again after verifying. /auth/callback exchanges the link
-    // for a session and forwards to `next` (issue #592). Supabase still
-    // has to allow this origin under Authentication → URL Configuration
-    // → Redirect URLs; see docs/auth-emails.md.
-    const next = inviteToken
-      ? `/join/${encodeURIComponent(inviteToken)}`
-      : "/dashboard";
-    const emailRedirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`;
-
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          full_name: fullName,
-        },
-        emailRedirectTo,
+    // Registro cerrado: el alta pasa por una ruta del servidor que exige una
+    // invitación pendiente real (Auth tiene el autorregistro desactivado).
+    const res = await fetch(
+      `/api/invitations/${encodeURIComponent(inviteToken ?? "")}/signup`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password, fullName }),
       },
-    });
+    );
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      setError(
+        body.error === "invite_invalid"
+          ? "Esta invitación ya no es válida. Pide una nueva."
+          : "No se pudo crear la cuenta. Revisa los datos e inténtalo de nuevo.",
+      );
+      setLoading(false);
+      return;
+    }
 
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
       setError(error.message);
       setLoading(false);
       return;
     }
-
-    setSuccess(true);
-    setLoading(false);
+    // La invitación ya quedó canjeada en el servidor.
+    window.location.href = "/dashboard";
+    return;
   };
-
-  if (success) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background px-4">
-        <Card className="w-full max-w-md border-border bg-card">
-          <CardHeader className="items-center text-center">
-            <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
-              <CheckCircle className="h-6 w-6 text-primary" />
-            </div>
-            <CardTitle className="text-xl text-foreground">
-              {t("checkEmailTitle")}
-            </CardTitle>
-            <CardDescription className="text-muted-foreground">
-              {t.rich("checkEmailDesc", {
-                email,
-                strong: (chunks) => (
-                  <span className="text-foreground">{chunks}</span>
-                ),
-              })}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Link
-              href={
-                inviteToken
-                  ? `/login?invite=${encodeURIComponent(inviteToken)}`
-                  : "/login"
-              }
-            >
-              <Button
-                variant="outline"
-                className="w-full border-border text-muted-foreground hover:bg-muted hover:text-foreground"
-              >
-                {t("backToSignIn")}
-              </Button>
-            </Link>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <Card className="w-full max-w-md border-border bg-card">

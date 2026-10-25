@@ -3,8 +3,21 @@ name: CI
 on:
   pull_request:
     branches: [main]
+    # Skip docs-only changes (plans, specs, READMEs). `paths` instead of
+    # `paths-ignore` so docs/repo-hijo.md can be re-included: the test
+    # suite reads it (scripts/empresa/nueva-empresa.test.ts).
+    paths:
+      - '**'
+      - '!**.md'
+      - '!docs/**'
+      - 'docs/repo-hijo.md'
   push:
     branches: [main]
+    paths:
+      - '**'
+      - '!**.md'
+      - '!docs/**'
+      - 'docs/repo-hijo.md'
 
 # Cancel older CI runs for the same branch when a new commit arrives —
 # saves minutes when someone pushes a stack of fixes to one PR.

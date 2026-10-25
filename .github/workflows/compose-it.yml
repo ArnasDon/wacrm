@@ -16,6 +16,12 @@ on:
       - .github/workflows/compose-it.yml
   push:
     branches: [main]
+    # Same docs-only skip as ci.yml.
+    paths:
+      - '**'
+      - '!**.md'
+      - '!docs/**'
+      - 'docs/repo-hijo.md'
 
 # Only one compose-IT run per ref at a time — these are heavyweight.
 concurrency:

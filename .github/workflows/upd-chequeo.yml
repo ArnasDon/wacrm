@@ -9,7 +9,7 @@ jobs:
     name: UPD · chequeo de actualización
     # En la plantilla corre en toda PR a main; en un hijo, solo en las PRs upd/*.
     if: github.repository == 'juancadavidc/wacrm-tenant-template' || startsWith(github.head_ref, 'upd/')
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v7
         with:

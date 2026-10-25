@@ -15,7 +15,7 @@ concurrency:
 jobs:
   check:
     name: Lint, typecheck, test, build
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     # Dummy env vars so `next build` doesn't fail when it reads the
     # public Supabase config at build time. These never leave CI and
     # never hit a real service — they just satisfy the `!` non-null

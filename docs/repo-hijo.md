@@ -69,3 +69,15 @@ cada módulo la define CT.3.
 Cada empresa tiene su proyecto de Compose (`COMPOSE_PROJECT_NAME=wacrm-<id>`) y por eso
 sus propios volúmenes, red y contenedores. Los puertos del host sí chocan: en el `.env`
 de la segunda empresa cambia `HOST_PORT` y `KONG_HTTP_PORT` (y las URLs que los usan).
+
+## CI en runners self-hosted
+
+Un repo hijo es privado y su CI gasta minutos de GitHub Actions. Todos los workflows eligen el
+runner con `vars.CI_RUNNER || 'ubuntu-latest'`, así que para mandarlos a los runners del PC de la
+casa (`juancadavidc/home-runners`) basta con sumar el repo a su `compose.yml` y:
+
+```bash
+gh variable set CI_RUNNER --repo <owner>/<repo-de-la-empresa> --body home-pc
+```
+
+Sin la variable (como en esta plantilla, que es pública) corren en `ubuntu-latest`.

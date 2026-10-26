@@ -7,6 +7,7 @@ import { connection } from "next/server";
 import "./globals.css";
 import { tokensDeColor } from "@/lib/marca/color";
 import { leerMarca } from "@/lib/marca/marca";
+import { MarcaProvider } from "@/components/marca/marca-context";
 import { ThemeProvider } from "@/hooks/use-theme";
 import { ThemedToaster } from "@/components/themed-toaster";
 import {
@@ -98,7 +99,8 @@ export default async function RootLayout({
   await connection();
   const locale = await getLocale();
   const messages = await getMessages();
-  const t = tokensDeColor(leerMarca().color);
+  const marca = leerMarca();
+  const t = tokensDeColor(marca.color);
   // Más específico que los bloques de acento de globals.css (0,2,1 vs 0,1,1),
   // así el color de la empresa gana sin depender del orden de las hojas.
   const marcaCss = `html[data-theme][data-mode]{--primary:${t.primary};--primary-foreground:${t.primaryForeground};--primary-hover:${t.hover};--primary-soft:${t.soft};--primary-soft-2:${t.soft2};--ring:${t.primary};--chart-1:${t.primary};--sidebar-primary:${t.primary};--sidebar-primary-foreground:${t.primaryForeground};--sidebar-ring:${t.primary}}`;
@@ -129,7 +131,7 @@ export default async function RootLayout({
       <body className="min-h-full bg-background text-foreground font-sans">
         <NextIntlClientProvider messages={messages} locale={locale}>
           <ThemeProvider>
-            {children}
+            <MarcaProvider marca={marca}>{children}</MarcaProvider>
             <ThemedToaster />
           </ThemeProvider>
         </NextIntlClientProvider>

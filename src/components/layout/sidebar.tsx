@@ -112,9 +112,13 @@ interface SidebarProps {
 }
 
 import { useTranslations } from "next-intl";
+import { MarcaLogo } from "@/components/marca/marca-logo";
+import { PoweredBy } from "@/components/marca/powered-by";
+import { useMarca } from "@/components/marca/marca-context";
 
 export function Sidebar({ open = false, onClose }: SidebarProps) {
   const t = useTranslations("Sidebar");
+  const marca = useMarca();
   const pathname = usePathname();
   const { profile, profileLoading, account, accountRole, signOut } = useAuth();
   const totalUnread = useTotalUnread();
@@ -188,11 +192,9 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
             close button is hidden since the sidebar is always-visible. */}
         <div className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border px-4">
           <Link href="/dashboard" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <MessageSquare className="h-4 w-4" />
-            </div>
-            <span className="text-sm font-semibold text-foreground">
-              {t("title")}
+            <MarcaLogo className="h-8 w-8" />
+            <span className="truncate text-sm font-semibold text-foreground">
+              {marca.nombre}
             </span>
           </Link>
           <button
@@ -395,6 +397,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
+        <PoweredBy className="shrink-0 border-t border-border py-2" />
       </aside>
     </>
   );

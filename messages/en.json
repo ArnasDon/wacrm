@@ -2061,7 +2061,15 @@
         "document": "📄 Document",
         "location": "📍 Location",
         "template": "📋 Template"
-      }
+      },
+      "pushToggleLabel": "Phone & closed-browser alerts (push)",
+      "pushToggleDesc": "Get a notification on this device even when WACRM is closed. On Android, add WACRM to your home screen for best results. You can reply right from the notification where your browser supports it.",
+      "pushEnabledToast": "Push notifications enabled on this device",
+      "pushNotConfigured": "Push is not set up on this server yet (VAPID keys missing). See docs/push-notifications.md.",
+      "pushErrorToast": "Could not set up push notifications. Please try again.",
+      "pushSendTest": "Send test push",
+      "pushTestSent": "Test push sent. It should appear on this device in a few seconds.",
+      "pushTestNone": "No device received it. Turn push off and on again on this device."
     },
     "apiKeys": {
       "title": "API keys",

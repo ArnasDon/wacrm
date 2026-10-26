@@ -9,6 +9,18 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [Unreleased]
+
+### Added
+
+- **Push notifications for phones and closed browsers.** Web Push (service worker + VAPID) alerts for new
+  customer messages, an installable web app manifest, and a **Reply** / **Open chat** action on the
+  notification (inline reply where the browser supports it). Off by default.
+
+> **Migration required:** apply `supabase/migrations/060_push_subscriptions.sql` (adds one table, nothing
+> existing is changed) and set `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT`.
+> See `docs/push-notifications.md`.
+
 ## [0.8.1] — 2026-07-10
 
 Fixes inbound chats fragmenting into multiple threads for the same

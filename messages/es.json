@@ -2061,7 +2061,15 @@
         "document": "📄 Documento",
         "location": "📍 Ubicación",
         "template": "📋 Plantilla"
-      }
+      },
+      "pushToggleLabel": "Alertas en el teléfono y con el navegador cerrado (push)",
+      "pushToggleDesc": "Recibe una notificación en este dispositivo incluso con WACRM cerrado. En Android, añade WACRM a la pantalla de inicio para mejores resultados. Puedes responder desde la notificación si tu navegador lo admite.",
+      "pushEnabledToast": "Notificaciones push activadas en este dispositivo",
+      "pushNotConfigured": "El push aún no está configurado en este servidor (faltan las claves VAPID). Consulta docs/push-notifications.md.",
+      "pushErrorToast": "No se pudieron configurar las notificaciones push. Inténtalo de nuevo.",
+      "pushSendTest": "Enviar push de prueba",
+      "pushTestSent": "Push de prueba enviado. Debería aparecer en este dispositivo en unos segundos.",
+      "pushTestNone": "Ningún dispositivo lo recibió. Desactiva y vuelve a activar el push en este dispositivo."
     },
     "apiKeys": {
       "title": "Claves de API",

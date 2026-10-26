@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { createClient } from "@/lib/supabase/client";
 import type { Message } from "@/types";
+import { readPushPref, subscribePushPref, syncPushSubscription } from "@/lib/push/client";
 import {
   DEFAULT_NOTIFICATION_LABELS,
   buildNotificationContent,
@@ -32,6 +33,11 @@ export function useBrowserNotifyPref(): boolean {
   );
 }
 
+/** True when this device is subscribed to Web Push (service worker alerts). */
+export function usePushPref(): boolean {
+  return useSyncExternalStore(subscribePushPref, readPushPref, serverSnapshot);
+}
+
 /**
  * Desktop notifications for new inbound customer messages. Mount ONCE
  * per signed-in dashboard tab (the dashboard shell does this via
@@ -45,11 +51,14 @@ export function useBrowserNotifyPref(): boolean {
  * Own channel name so it coexists with the inbox page's subscription
  * and the sidebar's unread counters.
  *
- * Fires only while a dashboard tab is open — there is no service worker
- * or Web Push here, so a closed browser stays quiet.
+ * This in-page path fires only while a dashboard tab is open. Devices that
+ * enabled Web Push (public/sw.js, src/lib/push/*) are served by the
+ * service worker instead — including with the browser closed — so this
+ * listener stands down for them to avoid duplicate alerts.
  */
 export function useBrowserNotifications(): void {
   const enabled = useBrowserNotifyPref();
+  const pushOn = usePushPref();
   const router = useRouter();
   const t = useTranslations("Settings.browserNotifications.labels");
 
@@ -73,8 +82,13 @@ export function useBrowserNotifications(): void {
   // pruned by shouldNotifyForMessage.
   const seenRef = useRef<Map<string, number>>(new Map());
 
+  // Heal an expired/rotated push subscription whenever the app opens.
   useEffect(() => {
-    if (!enabled) return;
+    if (pushOn) void syncPushSubscription();
+  }, [pushOn]);
+
+  useEffect(() => {
+    if (!enabled || pushOn) return;
     if (getNotificationPermission() === "unsupported") return;
 
     const supabase = createClient();
@@ -147,5 +161,5 @@ export function useBrowserNotifications(): void {
       cancelled = true;
       supabase.removeChannel(channel);
     };
-  }, [enabled, router]);
+  }, [enabled, pushOn, router]);
 }

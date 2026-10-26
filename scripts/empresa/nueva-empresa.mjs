@@ -5,10 +5,12 @@
  * Uso:
  *   node scripts/empresa/nueva-empresa.mjs --id <id> --nombre <nombre> [--dir <ruta>]
  *     [--meta-app-secret <v>] [--backup-destino <v>] [--backup-credencial <v>] [--backup-aviso <v>]
+ *     [--logo <archivo.png|svg|webp>] [--color <#rrggbb>]
  *
  * Crea en el directorio del hijo:
  *   config/empresa.yaml, config/modules.yaml, config/policies.yaml  (desde config.ejemplo/)
  *   .env  (desde .env.example + llaves nuevas + COMPOSE_PROJECT_NAME=wacrm-<id>)
+ *   config/marca.yaml y config/marca/logo.<ext>  (solo con --logo / --color)
  *
  * Nunca reescribe: si ya existe .env o config/, sale con error sin escribir nada
  * (regenerar ENCRYPTION_KEY dejaría ilegibles los secretos cifrados, R7).
@@ -21,14 +23,20 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 
 // Misma expresión que IDENTIFICADOR en contracts/cfg/tenant-config.ts (una prueba lo fija).
 const IDENTIFICADOR = /^[a-z][a-z0-9-]*$/;
+
+// Mismos valores que src/lib/marca (una prueba los fija).
+const COLOR_HEX = /^#[0-9a-fA-F]{6}$/;
+const EXTENSIONES_LOGO = ['.png', '.svg', '.webp'];
+const LOGO_MAX_BYTES = 1 * 1024 * 1024;
 
 const EJEMPLOS = ['empresa.yaml', 'modules.yaml', 'policies.yaml'];
 
@@ -48,6 +56,8 @@ try {
       'backup-destino': { type: 'string' },
       'backup-credencial': { type: 'string' },
       'backup-aviso': { type: 'string' },
+      logo: { type: 'string' },
+      color: { type: 'string' },
     },
     strict: true,
   }).values;
@@ -65,6 +75,26 @@ if (!IDENTIFICADOR.test(id)) {
   );
 }
 if (nombre.trim() === '') fallar('falta --nombre');
+if (args.color !== undefined && !COLOR_HEX.test(args.color)) {
+  fallar(`--color ${JSON.stringify(args.color)} no es válido: usa #rrggbb`);
+}
+let logoOrigen;
+let logoExt;
+if (args.logo !== undefined) {
+  logoOrigen = resolve(args.logo);
+  logoExt = extname(logoOrigen).toLowerCase();
+  if (!EXTENSIONES_LOGO.includes(logoExt)) {
+    fallar(
+      `--logo debe ser ${EXTENSIONES_LOGO.join(', ')} (recibí "${logoExt}")`
+    );
+  }
+  if (!existsSync(logoOrigen) || !statSync(logoOrigen).isFile()) {
+    fallar(`--logo: no existe el archivo ${logoOrigen}`);
+  }
+  if (statSync(logoOrigen).size > LOGO_MAX_BYTES) {
+    fallar(`--logo pesa más de ${LOGO_MAX_BYTES / 1024 / 1024} MB`);
+  }
+}
 if (existsSync(join(dir, '.env'))) {
   fallar(`ya existe ${join(dir, '.env')}: este repo ya es de una empresa`);
 }
@@ -120,6 +150,20 @@ writeFileSync(
   join(dir, 'config', 'empresa.yaml'),
   `# Identidad de la empresa.\nempresa:\n  id: ${id}\n  nombre: ${JSON.stringify(nombre)}\n`
 );
+if (logoOrigen !== undefined || args.color !== undefined) {
+  const lineas = [
+    '# Marca de la empresa (la lee el layout; ver docs/repo-hijo.md).',
+    'marca:',
+  ];
+  if (args.color !== undefined)
+    lineas.push(`  color: ${JSON.stringify(args.color)}`);
+  if (logoOrigen !== undefined) {
+    mkdirSync(join(dir, 'config', 'marca'));
+    copyFileSync(logoOrigen, join(dir, 'config', 'marca', `logo${logoExt}`));
+    lineas.push(`  logo: logo${logoExt}`);
+  }
+  writeFileSync(join(dir, 'config', 'marca.yaml'), lineas.join('\n') + '\n');
+}
 writeFileSync(join(dir, '.env'), ejemplo + llaves + extras.join('\n') + '\n', {
   mode: 0o600,
 });
@@ -133,6 +177,7 @@ process.stdout.write(
     '  2. docker compose up -d --wait',
     '  3. Guarda el .env fuera del repo (gestor de secretos); no se commitea.',
     '  4. git add config/ && git commit -m "config de la empresa"',
+    '  (La marca se cambia editando config/marca.yaml y config/marca/; ver docs/repo-hijo.md)',
     '',
   ].join('\n')
 );

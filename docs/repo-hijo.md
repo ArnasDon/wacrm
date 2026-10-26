@@ -24,6 +24,10 @@ Fuente de verdad de lo que es de la empresa: `contracts/cfg/tenant-config.ts`.
 
    El `--id` usa minúsculas, dígitos y guiones, y empieza por letra.
 
+   Para poner la marca de la empresa, añade `--logo <archivo>` (PNG, SVG o WebP, máx. 1 MB) y
+   `--color "#rrggbb"`. Ambos son opcionales; sin ellos la app muestra la marca de Stackless. Ver
+   [Marca de la empresa](#marca-de-la-empresa).
+
 4. `docker compose up -d --wait`
 5. Editar `config/policies.yaml` y aplicarlo a la base (con la base arriba y las migraciones
    aplicadas): ver [docs/policies.md](policies.md).
@@ -40,9 +44,10 @@ sola vez por empresa y no se cambia (R7): `nueva-empresa` se niega a correr si y
 | De la empresa                   | Qué es                                                                                               |
 | ------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | `config/modules.yaml`           | Interruptores de módulos (ruta obligatoria)                                                          |
-| `config/policies.yaml`          | Políticas de la empresa (ruta obligatoria; esquema y script en [policies.md](policies.md))                                       |
+| `config/policies.yaml`          | Políticas de la empresa (ruta obligatoria; esquema y script en [policies.md](policies.md))           |
 | `config/`                       | Todo lo que esté bajo este prefijo                                                                   |
 | `config/empresa.yaml`           | Identidad de la empresa (`id`, `nombre`)                                                             |
+| `config/marca.yaml`             | Marca de la empresa (`marca.color`, `marca.logo`); el logo vive en `config/marca/`                   |
 | `.env*`                         | Todos los archivos de entorno, salvo los ejemplos del template                                       |
 | `ENCRYPTION_KEY`                | Variable de entorno                                                                                  |
 | `SUPABASE_SERVICE_ROLE_KEY`     | Variable de entorno                                                                                  |
@@ -81,3 +86,19 @@ gh variable set CI_RUNNER --repo <owner>/<repo-de-la-empresa> --body home-pc
 ```
 
 Sin la variable (como en esta plantilla, que es pública) corren en `ubuntu-latest`.
+
+## Marca de la empresa
+
+La app muestra el nombre (`config/empresa.yaml`), el logo y el color de la empresa, con una firma
+discreta "Powered by Stackless" en el sidebar y en las pantallas de acceso (no se puede quitar).
+
+`config/marca.yaml`:
+
+```yaml
+marca:
+  color: '#e11d48' # #rrggbb; deriva el color primario (hover, fondos suaves) en claro y oscuro
+  logo: logo.png # archivo dentro de config/marca/ (png, svg o webp, máx. 1 MB)
+```
+
+Todo es opcional y se lee en cada petición: para cambiar la marca basta editar estos archivos y
+reiniciar el contenedor, sin recompilar. Un archivo ausente o inválido cae a la marca de Stackless.

@@ -20,9 +20,8 @@ import type {
 } from '@/types'
 import { supabaseAdmin } from './admin-client'
 import {
-  nextAgent,
+  agentForTurn,
   rotationPool,
-  tallyAssignments,
   type RotationMember,
 } from './round-robin'
 import { addContactTagIfAbsent } from '@/lib/contacts/tag-write'
@@ -504,19 +503,21 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
         const pool = rotationPool(members, cfg.agent_ids)
         if (pool.length === 0) return 'no agent resolved'
 
-        // Live conversations only — closed ones are finished work and must
-        // not keep counting against the agent who handled them.
-        const { data: assigned } = await db
-          .from('conversations')
-          .select('assigned_agent_id')
-          .eq('account_id', args.automation.account_id)
-          .neq('status', 'closed')
-        agentId = nextAgent(
-          pool,
-          tallyAssignments(
-            (assigned ?? []) as { assigned_agent_id: string | null }[],
-          ),
-        )
+        // The turn is how many times this step has already assigned
+        // someone, read from the run history — there is no cursor column.
+        // A run's results are written when its scope finishes, so two
+        // leads arriving within the same few seconds can share a turn;
+        // the next lead resumes the cycle, so that never compounds.
+        const { count: turn, error: turnErr } = await db
+          .from('automation_logs')
+          .select('id', { count: 'exact', head: true })
+          .eq('automation_id', args.automation.id)
+          .contains(
+            'steps_executed',
+            JSON.stringify([{ step_id: step.id, status: 'success' }]),
+          )
+        if (turnErr) throw new Error(`round-robin turn lookup failed: ${turnErr.message}`)
+        agentId = agentForTurn(pool, turn ?? 0)
       }
       if (!agentId) return 'no agent resolved'
       await db

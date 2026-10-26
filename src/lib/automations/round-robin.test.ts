@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  nextAgent,
+  agentForTurn,
   rotationPool,
-  tallyAssignments,
   type RotationMember,
 } from './round-robin';
 
@@ -54,18 +53,11 @@ describe('rotationPool', () => {
   });
 });
 
-describe('nextAgent', () => {
+describe('agentForTurn', () => {
   const pool = ['agent-a', 'agent-b', 'agent-c'];
 
-  it('cycles through the pool when everyone starts even', () => {
-    const loads = new Map<string, number>();
-    const picked: string[] = [];
-    for (let i = 0; i < 6; i++) {
-      const agent = nextAgent(pool, loads);
-      expect(agent).toBeDefined();
-      picked.push(agent!);
-      loads.set(agent!, (loads.get(agent!) ?? 0) + 1);
-    }
+  it('walks the pool in order and wraps around', () => {
+    const picked = [0, 1, 2, 3, 4, 5].map((turn) => agentForTurn(pool, turn));
     expect(picked).toEqual([
       'agent-a',
       'agent-b',
@@ -76,35 +68,16 @@ describe('nextAgent', () => {
     ]);
   });
 
-  it('gives the next conversation to the least loaded agent', () => {
-    const loads = new Map([
-      ['agent-a', 4],
-      ['agent-b', 1],
-      ['agent-c', 3],
-    ]);
-    expect(nextAgent(pool, loads)).toBe('agent-b');
-  });
-
-  it('never picks someone outside the pool', () => {
-    const loads = new Map([['owner-1', 0]]);
-    expect(nextAgent(pool, loads)).toBe('agent-a');
+  it('gives every member an equal share over a long run', () => {
+    const counts = new Map<string, number>();
+    for (let turn = 0; turn < 300; turn++) {
+      const agent = agentForTurn(pool, turn)!;
+      counts.set(agent, (counts.get(agent) ?? 0) + 1);
+    }
+    expect([...counts.values()]).toEqual([100, 100, 100]);
   });
 
   it('returns undefined for an empty pool', () => {
-    expect(nextAgent([], new Map())).toBeUndefined();
-  });
-});
-
-describe('tallyAssignments', () => {
-  it('counts per agent and ignores unassigned rows', () => {
-    const loads = tallyAssignments([
-      { assigned_agent_id: 'agent-a' },
-      { assigned_agent_id: null },
-      { assigned_agent_id: 'agent-a' },
-      { assigned_agent_id: 'agent-b' },
-    ]);
-    expect(loads.get('agent-a')).toBe(2);
-    expect(loads.get('agent-b')).toBe(1);
-    expect(loads.has('agent-c')).toBe(false);
+    expect(agentForTurn([], 7)).toBeUndefined();
   });
 });

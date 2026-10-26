@@ -56,9 +56,7 @@ describe('leerMarca', () => {
   });
 
   it('YAML roto → por defecto, sin lanzar', () => {
-    const m = leerMarca(
-      conf({ 'empresa.yaml': ': : [', 'marca.yaml': '{{{' })
-    );
+    const m = leerMarca(conf({ 'empresa.yaml': ': : [', 'marca.yaml': '{{{' }));
     expect(m.nombre).toBe('Stackless');
     expect(m.color).toBe(COLOR_DEFECTO);
   });

@@ -1,7 +1,7 @@
-"use client";
+'use client';
 
-import { cn } from "@/lib/utils";
-import { useMarca } from "./marca-context";
+import { cn } from '@/lib/utils';
+import { useMarca } from './marca-context';
 
 /** Logo compacto de la empresa (o isotipo de Stackless si no subió uno). */
 export function MarcaLogo({ className }: { className?: string }) {
@@ -11,7 +11,7 @@ export function MarcaLogo({ className }: { className?: string }) {
     <img
       src={marca.marcaUrl}
       alt={marca.nombre}
-      className={cn("shrink-0 rounded-lg object-contain", className)}
+      className={cn('shrink-0 rounded-lg object-contain', className)}
     />
   );
 }

@@ -1,7 +1,7 @@
-"use client";
+'use client';
 
-import { createContext, useContext } from "react";
-import type { Marca } from "@/lib/marca/marca";
+import { createContext, useContext } from 'react';
+import type { Marca } from '@/lib/marca/marca';
 
 // La marca se lee en el servidor (config/ de la empresa) y baja por contexto
 // a los componentes cliente: sidebar y pantallas de auth.
@@ -14,11 +14,13 @@ export function MarcaProvider({
   marca: Marca;
   children: React.ReactNode;
 }) {
-  return <MarcaContext.Provider value={marca}>{children}</MarcaContext.Provider>;
+  return (
+    <MarcaContext.Provider value={marca}>{children}</MarcaContext.Provider>
+  );
 }
 
 export function useMarca(): Marca {
   const marca = useContext(MarcaContext);
-  if (!marca) throw new Error("useMarca fuera de <MarcaProvider>");
+  if (!marca) throw new Error('useMarca fuera de <MarcaProvider>');
   return marca;
 }

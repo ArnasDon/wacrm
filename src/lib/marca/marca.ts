@@ -64,8 +64,9 @@ export function rutaLogoPropio(
 
 /** Marca de la empresa; cualquier dato ausente o inválido cae al de Stackless. */
 export function leerMarca(dir: string = dirConfigEmpresa()): Marca {
-  const nombre = objeto(leerYaml(path.join(dir, 'empresa.yaml')).empresa)
-    .nombre;
+  const nombre = objeto(
+    leerYaml(path.join(dir, 'empresa.yaml')).empresa
+  ).nombre;
   const color = objeto(leerYaml(path.join(dir, 'marca.yaml')).marca).color;
   const logoPropio = rutaLogoPropio(dir) !== null;
   return {

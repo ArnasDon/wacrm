@@ -20,6 +20,7 @@ import { LeadMatchesModal } from '@/components/match/lead-matches-modal';
 import { SendWhatsAppModal } from '@/components/match/send-whatsapp-modal';
 import type { LeadMatchGroup, MatchRecord } from '@/lib/match/types';
 import type { MatchCardItem } from '@/components/match/match-card';
+import { PULL_TO_REFRESH_EVENT } from '@/hooks/use-pull-to-refresh';
 import { toast } from 'sonner';
 import {
   ArrowLeft,
@@ -131,9 +132,9 @@ export default function LeadMatchProfilePage() {
   const [selectedMatchForSend, setSelectedMatchForSend] = useState<MatchCardItem | null>(null);
   const [diagnosticsExpanded, setDiagnosticsExpanded] = useState(false);
 
-  const fetchLeadDetails = useCallback(async () => {
+  const fetchLeadDetails = useCallback(async (silent = false) => {
     if (!leadId) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       const res = await fetch(`/api/match/lead/${leadId}`);
       if (!res.ok) throw new Error('Falha ao carregar perfil do lead');
@@ -141,7 +142,7 @@ export default function LeadMatchProfilePage() {
       setData(json);
     } catch (err) {
       console.error(err);
-      toast.error('Erro ao carregar perfil comercial do lead');
+      if (!silent) toast.error('Erro ao carregar perfil comercial do lead');
     } finally {
       setLoading(false);
     }
@@ -149,6 +150,29 @@ export default function LeadMatchProfilePage() {
 
   useEffect(() => {
     fetchLeadDetails();
+  }, [fetchLeadDetails]);
+
+  // Sincronização em retomada de tela (PWA no iPhone/Windows) e Pull-to-Refresh
+  useEffect(() => {
+    const handleResume = () => {
+      if (document.visibilityState === 'visible') {
+        fetchLeadDetails(true);
+      }
+    };
+
+    const handlePull = () => {
+      fetchLeadDetails(true);
+    };
+
+    document.addEventListener('visibilitychange', handleResume);
+    window.addEventListener('online', handleResume);
+    window.addEventListener(PULL_TO_REFRESH_EVENT, handlePull);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleResume);
+      window.removeEventListener('online', handleResume);
+      window.removeEventListener(PULL_TO_REFRESH_EVENT, handlePull);
+    };
   }, [fetchLeadDetails]);
 
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);

@@ -16,14 +16,10 @@ import { LeadMatchesModal } from '@/components/match/lead-matches-modal';
 import { SendWhatsAppModal } from '@/components/match/send-whatsapp-modal';
 import type { MatchCardItem } from '@/components/match/match-card';
 import { toast } from 'sonner';
-import {
-  Sparkles,
-  Search,
-  RefreshCw,
-  Loader2,
-  Building2,
-} from 'lucide-react';
+import { Sparkles, Search, RefreshCw, Loader2, Building2 } from 'lucide-react';
 import type { MatchStatus, LeadMatchGroup } from '@/lib/match/types';
+import { createClient } from '@/lib/supabase/client';
+import { PULL_TO_REFRESH_EVENT } from '@/hooks/use-pull-to-refresh';
 
 const SCORE_FILTER_LABELS: Record<string, string> = {
   all: 'Todas as faixas',
@@ -64,8 +60,13 @@ export default function MatchPage() {
   const [selectedGroupForModal, setSelectedGroupForModal] = useState<LeadMatchGroup | null>(null);
   const [selectedMatchForSend, setSelectedMatchForSend] = useState<MatchCardItem | null>(null);
 
-  const fetchMatches = useCallback(async () => {
-    setLoading(true);
+  const fetchMatches = useCallback(async (silent = false) => {
+    if (!silent) {
+      setLoading(true);
+    } else {
+      setRefreshing(true);
+    }
+
     try {
       const params = new URLSearchParams();
       params.set('status', activeTab);
@@ -110,7 +111,9 @@ export default function MatchPage() {
       });
     } catch (err) {
       console.error(err);
-      toast.error('Erro ao carregar lista de matches');
+      if (!silent) {
+        toast.error('Erro ao carregar lista de matches');
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -119,6 +122,62 @@ export default function MatchPage() {
 
   useEffect(() => {
     fetchMatches();
+  }, [fetchMatches]);
+
+  // Sincronização em tempo real via Supabase Realtime
+  // Atualiza automaticamente quando imóveis ou matches forem modificados no banco
+  useEffect(() => {
+    const supabase = createClient();
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleRefresh = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        debounceTimer = null;
+        fetchMatches(true);
+      }, 1200);
+    };
+
+    const channel = supabase
+      .channel('match-page-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'lead_property_matches' },
+        scheduleRefresh
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'property_match_projections' },
+        scheduleRefresh
+      )
+      .subscribe();
+
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      supabase.removeChannel(channel);
+    };
+  }, [fetchMatches]);
+
+  // Sincronização em retomada de tela (PWA no iPhone/Windows) e Pull-to-Refresh
+  useEffect(() => {
+    const handleResume = () => {
+      if (document.visibilityState === 'visible') {
+        fetchMatches(true);
+      }
+    };
+
+    const handlePull = () => {
+      fetchMatches(true);
+    };
+
+    document.addEventListener('visibilitychange', handleResume);
+    window.addEventListener('online', handleResume);
+    window.addEventListener(PULL_TO_REFRESH_EVENT, handlePull);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleResume);
+      window.removeEventListener('online', handleResume);
+      window.removeEventListener(PULL_TO_REFRESH_EVENT, handlePull);
+    };
   }, [fetchMatches]);
 
   return (

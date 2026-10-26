@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import { authenticateTunnelRequest, ensurePropertyUuid } from '@/lib/tunnel/auth';
 import { recalculateMatchesForProperty } from '@/lib/match/service';
 
@@ -98,14 +98,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Erro ao persistir projeção' }, { status: 500 });
   }
 
-  // Recalcula os Matches para os leads ativos e elegíveis
-  const recalculation = await recalculateMatchesForProperty(db, accountId, canonicalPropertyId);
+  // Recalcula os Matches para os leads ativos e elegíveis em segundo plano
+  // liberando a resposta HTTP de imediato para evitar timeouts e travamentos no PWA (iPhone / Windows)
+  after(async () => {
+    try {
+      await recalculateMatchesForProperty(db, accountId, canonicalPropertyId);
+    } catch (err) {
+      console.error('[POST /api/tunnel/v1/properties/sync] Erro ao recalcular matches em background:', err);
+    }
+  });
 
   return NextResponse.json({
     success: true,
     action: 'upserted',
     property_id: canonicalPropertyId,
-    matches_recalculated: recalculation.totalLeadsEvaluated,
-    strong_matches_count: recalculation.strongMatchesCount,
   });
 }

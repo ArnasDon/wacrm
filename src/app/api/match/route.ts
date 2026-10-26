@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import { requireRole, toErrorResponse } from '@/lib/auth/account';
 
 export async function GET(request: Request) {
@@ -42,73 +42,59 @@ export async function GET(request: Request) {
       }
     };
 
-    // Contadores para cada aba de status (contando LEADS ÚNICOS de matches com projeção válida)
-    const [
-      { data: distinctNovos },
-      { data: distinctEnviados },
-      { data: distinctPausados },
-      { data: distinctArquivados },
-    ] = await Promise.all([
-      ctx.supabase
-        .from('lead_property_matches')
-        .select('lead_id, property_id')
-        .eq('account_id', ctx.accountId)
-        .eq('match_status', 'novo')
-        .eq('suppressed', false),
-      ctx.supabase
-        .from('lead_property_matches')
-        .select('lead_id, property_id')
-        .eq('account_id', ctx.accountId)
-        .eq('match_status', 'enviado')
-        .eq('suppressed', false),
-      ctx.supabase
-        .from('lead_property_matches')
-        .select('lead_id, property_id')
-        .eq('account_id', ctx.accountId)
-        .eq('match_status', 'pausado')
-        .eq('suppressed', false),
-      ctx.supabase
-        .from('lead_property_matches')
-        .select('lead_id, property_id')
-        .eq('account_id', ctx.accountId)
-        .eq('match_status', 'arquivado')
-        .eq('suppressed', false),
-    ]);
+    // Contadores para cada aba de status em consulta consolidada (1 query em vez de 4)
+    const { data: allMatchesRaw } = await ctx.supabase
+      .from('lead_property_matches')
+      .select('lead_id, property_id, match_status')
+      .eq('account_id', ctx.accountId)
+      .eq('suppressed', false);
 
-    // Elimina eventuais órfãos encontrados nos contadores
-    const allMatchesRaw = [
-      ...(distinctNovos || []),
-      ...(distinctEnviados || []),
-      ...(distinctPausados || []),
-      ...(distinctArquivados || []),
-    ];
-    const orphanPropertyIds = allMatchesRaw
-      .filter((r) => !validPropertyIds.has(r.property_id))
-      .map((r) => r.property_id);
-    if (orphanPropertyIds.length > 0 && validPropertyIds.size > 0) {
-      safeDeleteInChunks('property_id', orphanPropertyIds);
+    const novosLeads = new Set<string>();
+    const enviadosLeads = new Set<string>();
+    const pausadosLeads = new Set<string>();
+    const arquivadosLeads = new Set<string>();
+
+    const orphanPropertyIds: string[] = [];
+    const staleNovoPropertyIds: string[] = [];
+
+    for (const r of allMatchesRaw || []) {
+      const isValid = validPropertyIds.has(r.property_id);
+      if (!isValid) {
+        orphanPropertyIds.push(r.property_id);
+        continue;
+      }
+
+      if (r.match_status === 'novo') {
+        if (activePropertyIds.has(r.property_id)) {
+          novosLeads.add(r.lead_id);
+        } else {
+          staleNovoPropertyIds.push(r.property_id);
+        }
+      } else if (r.match_status === 'enviado') {
+        enviadosLeads.add(r.lead_id);
+      } else if (r.match_status === 'pausado') {
+        pausadosLeads.add(r.lead_id);
+      } else if (r.match_status === 'arquivado') {
+        arquivadosLeads.add(r.lead_id);
+      }
     }
 
-    // Limpa matches 'novo' associados a imóveis indisponíveis (inativo, arquivado ou esgotado)
-    const staleNovoPropertyIds = (distinctNovos || [])
-      .filter((r) => !activePropertyIds.has(r.property_id))
-      .map((r) => r.property_id);
-    if (staleNovoPropertyIds.length > 0 && activePropertyIds.size > 0) {
-      safeDeleteInChunks('property_id', staleNovoPropertyIds);
+    // Delegamos a limpeza de órfãos ao after() para não bloquear a resposta de leitura GET
+    if (orphanPropertyIds.length > 0 || staleNovoPropertyIds.length > 0) {
+      after(() => {
+        if (orphanPropertyIds.length > 0 && validPropertyIds.size > 0) {
+          safeDeleteInChunks('property_id', orphanPropertyIds);
+        }
+        if (staleNovoPropertyIds.length > 0 && activePropertyIds.size > 0) {
+          safeDeleteInChunks('property_id', staleNovoPropertyIds);
+        }
+      });
     }
 
-    const countNovos = new Set(
-      distinctNovos?.filter((r) => activePropertyIds.has(r.property_id)).map((r) => r.lead_id)
-    ).size;
-    const countEnviados = new Set(
-      distinctEnviados?.filter((r) => validPropertyIds.has(r.property_id)).map((r) => r.lead_id)
-    ).size;
-    const countPausados = new Set(
-      distinctPausados?.filter((r) => validPropertyIds.has(r.property_id)).map((r) => r.lead_id)
-    ).size;
-    const countArquivados = new Set(
-      distinctArquivados?.filter((r) => validPropertyIds.has(r.property_id)).map((r) => r.lead_id)
-    ).size;
+    const countNovos = novosLeads.size;
+    const countEnviados = enviadosLeads.size;
+    const countPausados = pausadosLeads.size;
+    const countArquivados = arquivadosLeads.size;
 
     // 2. Query dos Matches no status selecionado
     let query = ctx.supabase
@@ -183,7 +169,9 @@ export async function GET(request: Request) {
       });
       if (staleMatches.length > 0) {
         const staleIds = staleMatches.map((m) => m.id);
-        safeDeleteInChunks('id', staleIds);
+        after(() => {
+          safeDeleteInChunks('id', staleIds);
+        });
       }
     }
 

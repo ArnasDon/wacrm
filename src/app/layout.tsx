@@ -3,7 +3,10 @@ import { NextIntlClientProvider } from 'next-intl';
 import { getLocale, getMessages, getTranslations } from 'next-intl/server';
 import { Inter } from "next/font/google";
 import Script from "next/script";
+import { connection } from "next/server";
 import "./globals.css";
+import { tokensDeColor } from "@/lib/marca/color";
+import { leerMarca } from "@/lib/marca/marca";
 import { ThemeProvider } from "@/hooks/use-theme";
 import { ThemedToaster } from "@/components/themed-toaster";
 import {
@@ -21,24 +24,27 @@ const inter = Inter({
 });
 
 export async function generateMetadata(): Promise<Metadata> {
+  // La marca vive en config/ (montada en runtime): se lee por request.
+  await connection();
   const t = await getTranslations("Metadata");
+  const marca = leerMarca();
   return {
     ...metadata,
+    title: {
+      default: marca.nombre,
+      template: `%s — ${marca.nombre}`,
+    },
+    icons: {
+      icon: [{ url: marca.logoPropio ? "/marca/logo" : "/stackless/icon.png" }],
+    },
     description: t("description"),
   };
 }
 
 const metadata: Metadata = {
-  title: {
-    default: "wacrm",
-    template: "%s — wacrm",
-  },
   robots: {
     index: false,
     follow: false,
-  },
-  icons: {
-    icon: [{ url: "/icon" }],
   },
   formatDetection: {
     email: false,
@@ -89,8 +95,13 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  await connection();
   const locale = await getLocale();
   const messages = await getMessages();
+  const t = tokensDeColor(leerMarca().color);
+  // Más específico que los bloques de acento de globals.css (0,2,1 vs 0,1,1),
+  // así el color de la empresa gana sin depender del orden de las hojas.
+  const marcaCss = `html[data-theme][data-mode]{--primary:${t.primary};--primary-foreground:${t.primaryForeground};--primary-hover:${t.hover};--primary-soft:${t.soft};--primary-soft-2:${t.soft2};--ring:${t.primary};--chart-1:${t.primary};--sidebar-primary:${t.primary};--sidebar-primary-foreground:${t.primaryForeground};--sidebar-ring:${t.primary}}`;
 
   return (
     <html
@@ -108,6 +119,7 @@ export default async function RootLayout({
       suppressHydrationWarning
     >
       <head>
+        <style id="marca-tokens" dangerouslySetInnerHTML={{ __html: marcaCss }} />
         <Script
           id="theme-boot"
           strategy="beforeInteractive"

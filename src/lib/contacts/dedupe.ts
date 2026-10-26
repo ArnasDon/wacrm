@@ -1,5 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { normalizePhone, phonesMatch } from "@/lib/whatsapp/phone-utils";
+import {
+  normalizePhone,
+  parseInternationalPhone,
+  phonesMatch,
+  phoneVariants,
+} from "@/lib/whatsapp/phone-utils";
 
 /**
  * Contact de-duplication helpers, shared by the WhatsApp webhook, the
@@ -9,8 +14,7 @@ import { normalizePhone, phonesMatch } from "@/lib/whatsapp/phone-utils";
  * The canonical key is `normalizePhone` (digits-only) — the same form
  * the DB stores in the generated `contacts.phone_normalized` column
  * and enforces unique per account. `phonesMatch` adds trunk-prefix
- * tolerance (last-8-digit match) for the softer "possible duplicate"
- * surfaces.
+ * tolerance for the softer "possible duplicate" surfaces.
  */
 
 /** Canonical de-dup key for a phone string (digits only). */
@@ -28,9 +32,7 @@ export interface ExistingContact {
 
 /**
  * Find an existing contact in `accountId` whose phone matches `phone`,
- * or null. Pre-filters in SQL by the last-8-digit suffix (so we don't
- * pull every contact), then applies the strict `phonesMatch` in JS on
- * the small candidate set — the exact approach the webhook has used.
+ * or null.
  */
 export async function findExistingContact(
   db: SupabaseClient,
@@ -40,18 +42,26 @@ export async function findExistingContact(
   const normalized = normalizePhone(phone);
   if (!normalized) return null;
 
-  const suffix = normalized.length >= 8 ? normalized.slice(-8) : normalized;
-
   const { data, error } = await db
     .from("contacts")
     .select("*")
     .eq("account_id", accountId)
-    .like("phone", `%${suffix}`);
+    .in("phone_normalized", phoneVariants(normalized));
 
   if (error || !data) return null;
 
+  return pickBestPhoneMatch(data as ExistingContact[], phone);
+}
+
+export function pickBestPhoneMatch<T extends { phone: string }>(
+  candidates: T[],
+  phone: string,
+): T | null {
+  const key = normalizeKey(phone);
   return (
-    (data as ExistingContact[]).find((c) => phonesMatch(c.phone, phone)) ?? null
+    candidates.find((c) => normalizeKey(c.phone) === key) ??
+    candidates.find((c) => phonesMatch(c.phone, phone)) ??
+    null
   );
 }
 
@@ -76,21 +86,30 @@ export function isUniqueViolation(error: unknown): boolean {
 
 /**
  * De-duplicate parsed CSV rows by normalized phone, keeping the first
- * occurrence of each. Rows with an empty normalized phone are dropped
- * (they can't be a valid contact). Returns the unique rows plus the
- * count removed as in-file duplicates.
+ * occurrence of each. Rows whose phone is not a usable international
+ * number are dropped too, but counted separately as `invalid` rather
+ * than folded into `duplicates` — they never duplicated anything, and
+ * the import result should say so instead of telling the user a
+ * contact with a real, unique number was skipped as a dupe.
+ *
+ * "Usable" means `parseInternationalPhone` accepts it: a leading `+`
+ * and country code are required. A CSV of national-format numbers
+ * ("4155551212") is the bulk version of issue #586 — every row would
+ * be stored and later delivered to the wrong country — so those rows
+ * are reported as invalid here, before anything is written.
  */
 export function dedupeByPhone<T extends { phone: string }>(
   rows: T[],
-): { unique: T[]; duplicates: number } {
+): { unique: T[]; duplicates: number; invalid: number } {
   const seen = new Set<string>();
   const unique: T[] = [];
   let duplicates = 0;
+  let invalid = 0;
 
   for (const row of rows) {
-    const key = normalizeKey(row.phone);
+    const key = parseInternationalPhone(row.phone);
     if (!key) {
-      duplicates++;
+      invalid++;
       continue;
     }
     if (seen.has(key)) {
@@ -101,5 +120,5 @@ export function dedupeByPhone<T extends { phone: string }>(
     unique.push(row);
   }
 
-  return { unique, duplicates };
+  return { unique, duplicates, invalid };
 }

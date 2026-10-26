@@ -37,16 +37,17 @@ import {
 import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption';
 import { supabaseAdmin } from '@/lib/flows/admin-client';
 import {
-  sanitizePhoneForMeta,
-  isValidE164,
   phoneVariants,
   isRecipientNotAllowedError,
 } from '@/lib/whatsapp/phone-utils';
+import { resolveContactSendTarget } from '@/lib/whatsapp/wa-identity';
+import { applyPendingMessageStatuses } from '@/lib/whatsapp/message-status-sync';
 import type { MessageTemplate } from '@/types';
 import {
   resolveTemplateRow,
   templateBodyParams,
   templateContentText,
+  templateHeaderMediaUrl,
 } from '@/lib/whatsapp/template-body';
 
 export const MEDIA_KINDS = ['image', 'video', 'document', 'audio'] as const;
@@ -88,6 +89,7 @@ export interface SendMessageParams {
   /** Structured payload for `messageType === 'interactive'`. */
   interactivePayload?: InteractiveMessagePayload | null;
   replyToMessageId?: string | null;
+  senderId?: string | null;
 }
 
 export interface SendMessageResult {
@@ -197,6 +199,7 @@ export async function sendMessageToConversation(
     filename,
     templateName,
     templateLanguage,
+    senderId,
     templateParams,
     templateMessageParams,
     interactivePayload,
@@ -234,22 +237,26 @@ export async function sendMessageToConversation(
   }
 
   const contact = conversation.contact;
-  if (!contact?.phone) {
-    throw new SendMessageError(
-      'bad_request',
-      'Contact phone number not found',
-      400
-    );
-  }
 
-  const sanitizedPhone = sanitizePhoneForMeta(contact.phone);
-  if (!isValidE164(sanitizedPhone)) {
+  // A contact is addressable by phone number OR by business-scoped user
+  // ID. Meta withholds the phone number for a customer who has adopted
+  // a WhatsApp username, so those contacts carry only a BSUID and are
+  // reached through Meta's `recipient` field instead of `to` (issue
+  // #519). Phone stays preferred when we have one: only it supports the
+  // trunk-prefix variant retry below.
+  const resolvedTarget = resolveContactSendTarget(contact);
+  if (!resolvedTarget) {
     throw new SendMessageError(
       'bad_request',
-      'Invalid phone number format',
+      contact?.phone
+        ? 'Invalid phone number format'
+        : 'Contact has no phone number or WhatsApp user ID',
       400
     );
   }
+  const sendTarget = resolvedTarget.target;
+  const hasValidPhone = resolvedTarget.isPhone;
+  const sanitizedPhone = hasValidPhone ? sendTarget : '';
 
   // WhatsApp config, account-scoped.
   const { data: config, error: configError } = await db
@@ -406,9 +413,11 @@ export async function sendMessageToConversation(
   // with "recipient not in allowed list"; persist a working variant
   // back to the contact so the next send goes straight through.
   let waMessageId = '';
-  let workingPhone = sanitizedPhone;
+  let workingPhone = sendTarget;
   try {
-    const variants = phoneVariants(sanitizedPhone);
+    // Variants only make sense for a phone number — a BSUID is opaque
+    // and has exactly one correct form, so it gets a single attempt.
+    const variants = hasValidPhone ? phoneVariants(sanitizedPhone) : [sendTarget];
     let lastError: unknown = null;
 
     for (const variant of variants) {
@@ -437,7 +446,7 @@ export async function sendMessageToConversation(
     throw new SendMessageError('meta_error', `Meta API error: ${message}`, 502);
   }
 
-  if (workingPhone !== sanitizedPhone) {
+  if (hasValidPhone && workingPhone !== sanitizedPhone) {
     console.log(
       `[send-message] Auto-corrected contact phone: ${sanitizedPhone} → ${workingPhone}`
     );
@@ -473,9 +482,13 @@ export async function sendMessageToConversation(
     .insert({
       conversation_id: conversationId,
       sender_type: 'agent',
+      sender_id: senderId ?? null,
       content_type: messageType,
       content_text: persistedText,
-      media_url: mediaUrl || null,
+      media_url:
+        messageType === 'template'
+          ? templateHeaderMediaUrl(templateRow, templateMessageParams)
+          : mediaUrl || null,
       template_name: templateName || null,
       interactive_payload:
         messageType === 'interactive' ? interactivePayload : null,
@@ -494,6 +507,8 @@ export async function sendMessageToConversation(
       500
     );
   }
+
+  await applyPendingMessageStatuses(supabaseAdmin(), accountId, waMessageId);
 
   const lastMessageText =
     messageType === 'interactive'

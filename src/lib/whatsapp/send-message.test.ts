@@ -193,6 +193,11 @@ vi.mock('@/lib/flows/admin-client', () => ({
   }),
 }));
 
+const applyPendingMessageStatuses = vi.hoisted(() => vi.fn(async () => []));
+vi.mock('@/lib/whatsapp/message-status-sync', () => ({
+  applyPendingMessageStatuses,
+}));
+
 interface CapturedWrites {
   message?: Record<string, unknown>;
   conversation?: Record<string, unknown>;
@@ -206,11 +211,12 @@ interface CapturedWrites {
  */
 function sendPathDb(
   templateRows: unknown[],
-  captured: CapturedWrites
+  captured: CapturedWrites,
+  contact: Record<string, unknown> = { id: 'ct-1', phone: '+15551234567' }
 ): SupabaseClient {
   const conversation = {
     id: 'cv-1',
-    contact: { id: 'ct-1', phone: '+15551234567' },
+    contact,
   };
   const config = {
     id: 'cfg-1',
@@ -290,6 +296,29 @@ describe('sendMessageToConversation — template persistence (#483)', () => {
     );
   });
 
+  it('records which teammate sent the message', async () => {
+    const captured: CapturedWrites = {};
+    await sendMessageToConversation(sendPathDb([TEMPLATE_ROW], captured), 'acct-1', {
+      conversationId: 'cv-1',
+      messageType: 'template',
+      templateName: 'order_update',
+      templateMessageParams: { body: ['A1', 'Friday'] },
+      senderId: 'user-42',
+    });
+    expect(captured.message?.sender_id).toBe('user-42');
+  });
+
+  it('leaves sender_id empty when no teammate is known', async () => {
+    const captured: CapturedWrites = {};
+    await sendMessageToConversation(sendPathDb([TEMPLATE_ROW], captured), 'acct-1', {
+      conversationId: 'cv-1',
+      messageType: 'template',
+      templateName: 'order_update',
+      templateMessageParams: { body: ['A1', 'Friday'] },
+    });
+    expect(captured.message?.sender_id).toBeNull();
+  });
+
   it('reads body values out of the structured params shape too', async () => {
     const captured: CapturedWrites = {};
     await sendMessageToConversation(sendPathDb([TEMPLATE_ROW], captured), 'acct-1', {
@@ -344,5 +373,160 @@ describe('sendMessageToConversation — template persistence (#483)', () => {
     // name rather than inventing a body.
     expect(captured.message?.content_text).toBeNull();
     expect(captured.conversation?.last_message_text).toBe('[template]');
+  });
+
+  it('stores the header image so the Inbox can render it (#655)', async () => {
+    const captured: CapturedWrites = {};
+    await sendMessageToConversation(
+      sendPathDb(
+        [
+          {
+            ...TEMPLATE_ROW,
+            header_type: 'image',
+            header_media_url: 'https://cdn.example.com/banner.png',
+          },
+        ],
+        captured
+      ),
+      'acct-1',
+      {
+        conversationId: 'cv-1',
+        messageType: 'template',
+        templateName: 'order_update',
+        templateParams: ['A123', 'Friday'],
+      }
+    );
+    expect(captured.message?.media_url).toBe(
+      'https://cdn.example.com/banner.png'
+    );
+  });
+
+  it('stores no media for a template without a media header', async () => {
+    const captured: CapturedWrites = {};
+    await sendMessageToConversation(sendPathDb([TEMPLATE_ROW], captured), 'acct-1', {
+      conversationId: 'cv-1',
+      messageType: 'template',
+      templateName: 'order_update',
+      templateParams: ['A123', 'Friday'],
+      mediaUrl: 'https://cdn.example.com/ignored.png',
+    });
+    expect(captured.message?.media_url).toBeNull();
+  });
+});
+
+// ============================================================
+// Business-scoped user IDs (issue #519)
+//
+// Meta withholds the phone number for a customer who has adopted a
+// WhatsApp username, so their contact row carries only `wa_user_id`.
+// The send path used to reject those outright with "Contact phone
+// number not found" — the business could receive their messages but
+// never answer them.
+// ============================================================
+
+const BSUID = 'US.13491208655302741918';
+
+describe('sendMessageToConversation — BSUID recipients (#519)', () => {
+  it('sends to the BSUID when the contact has no phone number', async () => {
+    const captured: CapturedWrites = {};
+    const { sendTextMessage } = await import('@/lib/whatsapp/meta-api');
+    vi.mocked(sendTextMessage).mockClear();
+
+    await sendMessageToConversation(
+      sendPathDb([], captured, { id: 'ct-1', phone: '', wa_user_id: BSUID }),
+      'acct-1',
+      { conversationId: 'cv-1', messageType: 'text', contentText: 'hi' }
+    );
+
+    expect(vi.mocked(sendTextMessage)).toHaveBeenCalledWith(
+      expect.objectContaining({ to: BSUID })
+    );
+  });
+
+  it('still prefers the phone number when the contact has both', async () => {
+    const captured: CapturedWrites = {};
+    const { sendTextMessage } = await import('@/lib/whatsapp/meta-api');
+    vi.mocked(sendTextMessage).mockClear();
+
+    await sendMessageToConversation(
+      sendPathDb([], captured, {
+        id: 'ct-1',
+        phone: '+15551234567',
+        wa_user_id: BSUID,
+      }),
+      'acct-1',
+      { conversationId: 'cv-1', messageType: 'text', contentText: 'hi' }
+    );
+
+    // Only the phone path supports the trunk-prefix variant retry, so
+    // it wins whenever we have a usable number.
+    expect(vi.mocked(sendTextMessage)).toHaveBeenCalledWith(
+      expect.objectContaining({ to: '15551234567' })
+    );
+  });
+
+  it('falls back to the BSUID when the stored phone is unusable', async () => {
+    const captured: CapturedWrites = {};
+    const { sendTextMessage } = await import('@/lib/whatsapp/meta-api');
+    vi.mocked(sendTextMessage).mockClear();
+
+    await sendMessageToConversation(
+      sendPathDb([], captured, {
+        id: 'ct-1',
+        phone: 'not-a-number',
+        wa_user_id: BSUID,
+      }),
+      'acct-1',
+      { conversationId: 'cv-1', messageType: 'text', contentText: 'hi' }
+    );
+
+    expect(vi.mocked(sendTextMessage)).toHaveBeenCalledWith(
+      expect.objectContaining({ to: BSUID })
+    );
+  });
+
+  it('400s when the contact has neither a usable phone nor a BSUID', async () => {
+    const captured: CapturedWrites = {};
+    await expect(
+      sendMessageToConversation(
+        sendPathDb([], captured, { id: 'ct-1', phone: '' }),
+        'acct-1',
+        { conversationId: 'cv-1', messageType: 'text', contentText: 'hi' }
+      )
+    ).rejects.toThrow(/no phone number or WhatsApp user ID/);
+  });
+
+  it('ignores a wa_user_id that is not BSUID-shaped', async () => {
+    const captured: CapturedWrites = {};
+    await expect(
+      sendMessageToConversation(
+        sendPathDb([], captured, {
+          id: 'ct-1',
+          phone: '',
+          wa_user_id: 'garbage',
+        }),
+        'acct-1',
+        { conversationId: 'cv-1', messageType: 'text', contentText: 'hi' }
+      )
+    ).rejects.toThrow(/no phone number or WhatsApp user ID/);
+  });
+});
+
+describe('sendMessageToConversation — statuses that beat the insert', () => {
+  it('applies any status Meta delivered before the row existed', async () => {
+    applyPendingMessageStatuses.mockClear();
+
+    await sendMessageToConversation(
+      sendPathDb([], {}, { id: 'ct-1', phone: '+15551234567' }),
+      'acct-1',
+      { conversationId: 'cv-1', messageType: 'text', contentText: 'hi' }
+    );
+
+    expect(applyPendingMessageStatuses).toHaveBeenCalledTimes(1);
+    expect(applyPendingMessageStatuses).toHaveBeenCalledWith(
+      expect.anything(),
+      'acct-1',
+      'wamid.text'
+    );
   });
 });

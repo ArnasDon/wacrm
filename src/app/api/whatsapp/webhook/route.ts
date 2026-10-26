@@ -4,17 +4,34 @@ import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption'
 import { getMediaUrl, downloadMedia } from '@/lib/whatsapp/meta-api'
 import { mirrorInboundMedia } from '@/lib/whatsapp/mirror-inbound-media'
 import { normalizePhone } from '@/lib/whatsapp/phone-utils'
+import {
+  hasUsableIdentity,
+  identityDisplayName,
+  resolveInboundIdentity,
+  type WaContactPayload,
+  type WaIdentity,
+} from '@/lib/whatsapp/wa-identity'
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
 import { reopenClosedConversation } from '@/lib/conversations/reopen'
-import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
-import { runAutomationsForTrigger } from '@/lib/automations/engine'
+import { claimFirstInboundMessage } from '@/lib/conversations/first-inbound'
+import {
+  verifyMetaWebhookSignature,
+  verifyTokenMatches,
+} from '@/lib/whatsapp/webhook-signature'
+import { readCappedBody } from '@/lib/whatsapp/webhook-body'
+import { resumeAwaitingReply, runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
 import {
+  applyBroadcastRecipientStatus,
+  flagBroadcastReply,
+} from '@/lib/whatsapp/broadcast-recipient-webhook'
+import {
   handleTemplateWebhookChange,
   isTemplateWebhookField,
 } from '@/lib/whatsapp/template-webhook'
+import { applyMessageStatus } from '@/lib/whatsapp/message-status-sync'
 
 // The `after()` callback in POST runs within this route's max duration.
 // Inbound processing can fan out to per-media Meta verification calls, so
@@ -37,7 +54,18 @@ function supabaseAdmin() {
 
 interface WhatsAppMessage {
   id: string
-  from: string
+  /**
+   * Sender's phone number. **Optional since Meta's username rollout** —
+   * a sender who has adopted a WhatsApp username and has no recent
+   * interaction history with this business arrives with no phone number
+   * at all, identified only by `from_user_id` (issue #519). See
+   * `@/lib/whatsapp/wa-identity`.
+   */
+  from?: string
+  /** Sender's business-scoped user ID (BSUID). */
+  from_user_id?: string
+  /** Sender's portfolio-level BSUID. */
+  from_parent_user_id?: string
   timestamp: string
   type: string
   text?: { body: string }
@@ -72,6 +100,15 @@ interface WhatsAppMessage {
   context?: { id: string }
 }
 
+/** One entry of a failed status's `errors` array, as Meta sends it. */
+interface MetaStatusError {
+  code: number
+  title: string
+  message?: string
+  error_data?: { details?: string }
+  href?: string
+}
+
 interface WhatsAppWebhookEntry {
   id: string
   changes: Array<{
@@ -82,8 +119,11 @@ interface WhatsAppWebhookEntry {
         phone_number_id: string
       }
       contacts?: Array<{
-        profile: { name: string }
-        wa_id: string
+        profile: { name?: string; username?: string }
+        /** Absent for a username-only sender — see WhatsAppMessage.from. */
+        wa_id?: string
+        user_id?: string
+        parent_user_id?: string
       }>
       messages?: WhatsAppMessage[]
       statuses?: Array<{
@@ -92,17 +132,12 @@ interface WhatsAppWebhookEntry {
         timestamp: string
         recipient_id: string
         /**
-         * Present only on `status: 'failed'`. Meta's asynchronous
-         * rejection — the send itself returned 200 with a message id,
-         * and this is the delivery attempt failing afterwards. Without
-         * it a failed bubble carries no reason anywhere in the system.
+         * Only present when `status === 'failed'`. Meta's reason for the
+         * failure — `code` is a stable numeric error code (e.g. 131049),
+         * `title` a short label, `error_data.details` the human-readable
+         * explanation. See #535.
          */
-        errors?: Array<{
-          code?: number
-          title?: string
-          message?: string
-          error_data?: { details?: string }
-        }>
+        errors?: MetaStatusError[]
       }>
     }
     field: string
@@ -145,7 +180,7 @@ export async function GET(request: Request) {
     for (const config of configs) {
       if (!config.verify_token) continue
       try {
-        if (decrypt(config.verify_token) === verifyToken) {
+        if (verifyTokenMatches(decrypt(config.verify_token), verifyToken)) {
           matchedConfig = config
           break
         }
@@ -195,7 +230,11 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   // Read raw body first so we can HMAC-verify the exact bytes Meta
   // signed. request.json() would re-encode and break the signature.
-  const rawBody = await request.text()
+  const rawBody = await readCappedBody(request)
+  if (rawBody === null) {
+    console.warn('[webhook] rejected oversized payload')
+    return NextResponse.json({ error: 'Payload too large' }, { status: 413 })
+  }
   const signature = request.headers.get('x-hub-signature-256')
 
   if (!verifyMetaWebhookSignature(rawBody, signature)) {
@@ -238,6 +277,33 @@ export async function POST(request: Request) {
   return NextResponse.json({ status: 'received' }, { status: 200 })
 }
 
+async function resolveAccountForPhoneNumber(
+  phoneNumberId: string | undefined
+): Promise<string | null> {
+  if (!phoneNumberId) return null
+  const { data, error } = await supabaseAdmin()
+    .from('whatsapp_config')
+    .select('account_id')
+    .eq('phone_number_id', phoneNumberId)
+
+  if (error) {
+    console.error('Error resolving account for status update:', phoneNumberId, error)
+    return null
+  }
+  if (!data || data.length !== 1) {
+    console.error(
+      `Status update for phone_number_id ${phoneNumberId} matched ${data?.length ?? 0} configs; message statuses skipped`
+    )
+    return null
+  }
+  return data[0].account_id
+}
+
+function metaTimestampToIso(timestamp: string): string | null {
+  const seconds = Number.parseInt(timestamp, 10)
+  return Number.isFinite(seconds) ? new Date(seconds * 1000).toISOString() : null
+}
+
 async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
   if (!body.entry) return
 
@@ -248,9 +314,16 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
       // have a different value shape — route them through the
       // dedicated handler. Skip the messaging branches below so we
       // don't try to read message-shaped fields off a template event.
+      // `entry.id` is the WABA id for template events — the handler
+      // needs it to resolve the owning account when the template has
+      // no local row yet (#534).
       if (isTemplateWebhookField(change.field)) {
         await handleTemplateWebhookChange(
-          { field: change.field, value: change.value as unknown },
+          {
+            field: change.field,
+            value: change.value as unknown,
+            wabaId: entry.id,
+          },
           supabaseAdmin(),
         )
         continue
@@ -260,8 +333,11 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
 
       // Handle status updates
       if (value.statuses) {
+        const statusAccountId = await resolveAccountForPhoneNumber(
+          value.metadata?.phone_number_id
+        )
         for (const status of value.statuses) {
-          await handleStatusUpdate(status)
+          await handleStatusUpdate(status, statusAccountId)
         }
       }
 
@@ -334,88 +410,43 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
   }
 }
 
-// The happy-path status ladder — pending → sent → delivered → read →
-// replied. Webhook replays must never regress a recipient back down
-// this ladder.
-//
-// `failed` is NOT on this ladder. It's a terminal side branch that is
-// only valid from the early states (pending / sent) — once Meta has
-// delivered or the user has read or replied, a later "failed" status
-// event is a bug in Meta's pipeline or a spoof attempt and must be
-// ignored.
-const RECIPIENT_STATUS_LADDER = [
-  'pending',
-  'sent',
-  'delivered',
-  'read',
-  'replied',
-] as const
+async function handleStatusUpdate(
+  status: {
+    id: string
+    status: string
+    timestamp: string
+    recipient_id: string
+    errors?: MetaStatusError[]
+  },
+  accountId: string | null
+) {
+  // Meta's reason for a failed send (#535). Only read on `failed`; a
+  // later non-failed status for the same wamid leaves the error
+  // columns alone rather than clearing them, so the reason survives.
+  const failure =
+    status.status === 'failed' && status.errors?.[0]
+      ? {
+          code: status.errors[0].code,
+          title: status.errors[0].title,
+          details: status.errors[0].error_data?.details ?? null,
+        }
+      : null
 
-function ladderLevel(s: string): number {
-  const idx = (RECIPIENT_STATUS_LADDER as readonly string[]).indexOf(s)
-  return idx < 0 ? -1 : idx
-}
-
-/**
- * Can a recipient transition from `current` to `incoming`?
- *   - Along the ladder, only forward moves are allowed.
- *   - `failed` is accepted only from `pending` or `sent`; it's refused
- *     once the recipient has reached any of the success states.
- */
-function isValidStatusTransition(current: string, incoming: string): boolean {
-  if (incoming === 'failed') {
-    return current === 'pending' || current === 'sent'
-  }
-  if (current === 'failed') {
-    return false // failed is terminal
-  }
-  const ci = ladderLevel(current)
-  const ii = ladderLevel(incoming)
-  if (ii < 0) return false // unknown incoming status
-  if (ci < 0) return true // unknown current — accept anything on the ladder
-  return ii > ci
-}
-
-async function handleStatusUpdate(status: {
-  id: string
-  status: string
-  timestamp: string
-  recipient_id: string
-  errors?: Array<{
-    code?: number
-    title?: string
-    message?: string
-    error_data?: { details?: string }
-  }>
-}) {
-  // Meta reports an undeliverable message asynchronously: POST /messages
-  // answers 200 with a message id, then this webhook arrives carrying the
-  // real reason. It used to be dropped on the floor, so a bubble could
-  // flip to "failed" with no trace in any log — surface it before the
-  // status is mirrored anywhere.
-  if (status.status === 'failed' && status.errors?.length) {
-    for (const err of status.errors) {
-      console.error(
-        `[webhook] Meta could not deliver ${status.id} to ${status.recipient_id}: ` +
-          `code ${err.code ?? '?'} ${err.title ?? ''} — ` +
-          `${err.error_data?.details ?? err.message ?? 'no detail given'}`
-      )
-    }
+  if (failure) {
+    console.warn(
+      `WhatsApp message ${status.id} failed: [${failure.code}] ${failure.title}` +
+        (failure.details ? ` — ${failure.details}` : '')
+    )
   }
 
-  // 1) Mirror onto messages (legacy behavior) — Meta's status values
-  //    already match the CHECK constraint on messages.status. No
-  //    `.select()`: message_id is NOT unique (migration 009 — Meta ids
-  //    repeat across numbers), so this updates 0..N rows and must not
-  //    assume a single row.
-  const { error: msgErr } = await supabaseAdmin()
-    .from('messages')
-    .update({ status: status.status })
-    .eq('message_id', status.id)
-
-  if (msgErr) {
-    console.error('Error updating message status:', msgErr)
-  }
+  const advancedMessages = accountId
+    ? await applyMessageStatus(supabaseAdmin(), accountId, {
+        wamid: status.id,
+        status: status.status,
+        failure,
+        statusAt: metaTimestampToIso(status.timestamp),
+      })
+    : []
 
   // Webhook fan-out for this status change happens at the END of this
   // handler (after the broadcast mirror below), so a slow subscriber
@@ -425,100 +456,40 @@ async function handleStatusUpdate(status: {
   //    (added in migration 003). The aggregate trigger on
   //    broadcast_recipients re-derives the parent broadcast's
   //    sent/delivered/read/failed counts automatically.
-  const tsIso = new Date(parseInt(status.timestamp) * 1000).toISOString()
-
-  const { data: recipient, error: recFetchErr } = await supabaseAdmin()
-    .from('broadcast_recipients')
-    .select('id, status')
-    .eq('whatsapp_message_id', status.id)
-    .maybeSingle()
-
-  if (recFetchErr) {
-    console.error('Error fetching broadcast recipient:', recFetchErr)
-  } else if (
-    recipient &&
-    // Guard transitions — forward-only on the success ladder, and
-    // `failed` only from pre-delivered states.
-    isValidStatusTransition(recipient.status, status.status)
-  ) {
-    const update: Record<string, unknown> = { status: status.status }
-    if (status.status === 'sent' && !('sent_at' in update)) update.sent_at = tsIso
-    if (status.status === 'delivered') update.delivered_at = tsIso
-    if (status.status === 'read') update.read_at = tsIso
-
-    const { error: recUpdateErr } = await supabaseAdmin()
-      .from('broadcast_recipients')
-      .update(update)
-      .eq('id', recipient.id)
-
-    if (recUpdateErr) {
-      console.error('Error updating broadcast recipient status:', recUpdateErr)
-    }
-  }
+  await applyBroadcastRecipientStatus(supabaseAdmin(), {
+    whatsappMessageId: status.id,
+    status: status.status,
+    occurredAt: new Date(parseInt(status.timestamp) * 1000).toISOString(),
+    failure,
+  })
 
   // 3) Webhook fan-out for messages we store (inbox / API sends).
   //    Runs last so a slow subscriber can't delay the mirrors above.
-  //    Bounded to one row (message_id isn't unique) purely to resolve
-  //    the owning account for delivery.
-  const { data: msgRow } = await supabaseAdmin()
-    .from('messages')
-    .select('conversation_id, conversations(account_id)')
-    .eq('message_id', status.id)
-    .limit(1)
-    .maybeSingle()
-
-  if (msgRow) {
-    const conv = msgRow.conversations as { account_id: string } | null
-    const accountId = conv?.account_id
-    if (accountId) {
-      await dispatchWebhookEvent(
-        supabaseAdmin(),
-        accountId,
-        'message.status_updated',
-        {
-          whatsapp_message_id: status.id,
-          conversation_id: msgRow.conversation_id,
-          status: status.status,
-        }
-      )
-    }
+  if (!accountId) return
+  for (const advanced of advancedMessages) {
+    await dispatchWebhookEvent(
+      supabaseAdmin(),
+      accountId,
+      'message.status_updated',
+      {
+        whatsapp_message_id: status.id,
+        conversation_id: advanced.conversation_id,
+        status: status.status,
+      }
+    )
   }
 }
 
 /**
- * If an inbound message's sender is on a still-unreplied
- * broadcast_recipients row, flip it to `replied` so the reply count
- * advances on the parent broadcast.
+ * Flip the contact's most recent broadcast recipient row to `replied`
+ * when it was sent within the reply window and isn't already replied.
  *
  * Runs on a best-effort basis — failures here must not break the
  * main inbound-message flow, so errors are swallowed with a log.
  */
 async function flagBroadcastReplyIfAny(accountId: string, contactId: string) {
   try {
-    // Most recent outbound broadcast in this account that hasn't
-    // been replied to yet. Account-scoped so a shared inbox reply
-    // marks the broadcast as replied regardless of which teammate
-    // sent it.
-    const { data: recs, error } = await supabaseAdmin()
-      .from('broadcast_recipients')
-      .select('id, status, broadcast_id, broadcasts!inner(account_id)')
-      .eq('contact_id', contactId)
-      .eq('broadcasts.account_id', accountId)
-      .in('status', ['sent', 'delivered', 'read'])
-      .order('created_at', { ascending: false })
-      .limit(1)
-
-    if (error || !recs || recs.length === 0) return
-
-    const row = recs[0]
-    const { error: updErr } = await supabaseAdmin()
-      .from('broadcast_recipients')
-      .update({ status: 'replied', replied_at: new Date().toISOString() })
-      .eq('id', row.id)
-
-    if (updErr) {
-      console.error('Error marking broadcast recipient replied:', updErr)
-    }
+    await flagBroadcastReply(supabaseAdmin(), accountId, contactId)
   } catch (err) {
     console.error('flagBroadcastReplyIfAny failed:', err)
   }
@@ -607,7 +578,7 @@ async function handleReaction(
 
 async function processMessage(
   message: WhatsAppMessage,
-  contact: { profile: { name: string }; wa_id: string },
+  contact: WaContactPayload | undefined,
   // Tenancy. Resolved from the matched whatsapp_config row; every
   // contact / conversation / message row created downstream is
   // stamped with this so any member of the account can see it.
@@ -621,15 +592,25 @@ async function processMessage(
   // See parseMessageContent for what it turns off.
   mirrorMedia: boolean
 ) {
-  const senderPhone = normalizePhone(message.from)
-  const contactName = contact.profile.name
+  // Phone number OR business-scoped user ID — Meta sends only the
+  // latter for a sender who has adopted a WhatsApp username (#519).
+  const identity = resolveInboundIdentity(message, contact)
+  if (!hasUsableIdentity(identity)) {
+    // Neither key present. Creating a row anyway would mean an
+    // unreachable contact that can never be matched again, so drop the
+    // delivery loudly instead of silently accumulating them.
+    console.error(
+      '[webhook] inbound message carries neither a phone number nor a BSUID; skipping:',
+      message.id
+    )
+    return
+  }
 
   // Find or create contact
   const contactOutcome = await findOrCreateContact(
     accountId,
     configOwnerUserId,
-    senderPhone,
-    contactName
+    identity
   )
   if (!contactOutcome) return
   const contactRecord = contactOutcome.contact
@@ -709,16 +690,7 @@ async function processMessage(
         ? 'interactive' // template quick-reply tap (issue #478)
         : 'text'        // reaction, unknown → text fallback
 
-  // Determine whether this is the contact's very first inbound message
-  // BEFORE we insert, so the count is accurate. Covers the case where
-  // the contact row already exists (manual add / CSV import) but they've
-  // never messaged us before — which new_contact_created wouldn't catch.
-  const { count: priorCustomerMsgCount } = await supabaseAdmin()
-    .from('messages')
-    .select('id', { count: 'exact', head: true })
-    .eq('conversation_id', conversation.id)
-    .eq('sender_type', 'customer')
-  const isFirstInboundMessage = (priorCustomerMsgCount ?? 0) === 0
+  const receivedAt = new Date(parseInt(message.timestamp) * 1000).toISOString()
 
   // Idempotent insert. Meta retries webhook deliveries (a slow ack, a
   // transient 5xx), and each retry replays the exact same message.id. The
@@ -744,7 +716,7 @@ async function processMessage(
         media_type: mediaType,
         message_id: message.id,
         status: 'delivered',
-        created_at: new Date(parseInt(message.timestamp) * 1000).toISOString(),
+        created_at: receivedAt,
         reply_to_message_id: replyToInternalId,
         // Only populated for content_type='interactive'. Migration 010 added
         // the column; null for every other content_type so existing inserts
@@ -771,6 +743,12 @@ async function processMessage(
     )
     return
   }
+
+  const isFirstInboundMessage = await claimFirstInboundMessage(
+    supabaseAdmin(),
+    conversation,
+    receivedAt
+  )
 
   // Update conversation. The unread bump is done DB-side (migration 037's
   // bump_conversation_on_inbound) rather than as a read-modify-write of the
@@ -849,6 +827,28 @@ async function processMessage(
   // Fire-and-forget: a slow or failing automation must not block the
   // webhook's 200 OK response to Meta.
   const inboundText = contentText ?? message.text?.body ?? ''
+
+  // An automation parked at a "wait for reply" Send Buttons / Send List
+  // step takes this message as its reply — a tap or typed text — and
+  // continues from the step after the send. Like a Flow consuming the
+  // message, that suppresses the content-level triggers and AI reply
+  // below so the customer doesn't get a second bot answering. Runs
+  // BEFORE the trigger dispatch so the message that parks a run can
+  // never also resume it. Flows still win: only checked if no flow
+  // consumed the message. Never throws.
+  const automationConsumed = flowConsumed
+    ? false
+    : await resumeAwaitingReply({
+        accountId,
+        contactId: contactRecord.id,
+        context: {
+          message_text: inboundText,
+          conversation_id: conversation.id,
+          interactive_reply_id: interactiveReplyId ?? undefined,
+        },
+      })
+  const contentConsumed = flowConsumed || automationConsumed
+
   const automationTriggers: (
     | 'new_contact_created'
     | 'first_inbound_message'
@@ -856,9 +856,9 @@ async function processMessage(
     | 'keyword_match'
     | 'interactive_reply'
   )[] = []
-  // Content-level triggers are suppressed when a flow consumed the
-  // message — see the comment block above.
-  if (!flowConsumed) {
+  // Content-level triggers are suppressed when a flow or a waiting
+  // automation consumed the message — see the comment blocks above.
+  if (!contentConsumed) {
     automationTriggers.push('new_message_received', 'keyword_match')
     // Interactive tap → fire the interactive_reply trigger too (only
     // meaningful when a button/list reply actually arrived). Enables
@@ -904,12 +904,15 @@ async function processMessage(
   // the account has enabled it. Awaited inside `after()` (same reason as
   // the webhook dispatch below); `dispatchInboundToAiReply` owns its
   // eligibility gates + try/catch and never throws.
-  if (!flowConsumed && !interactiveReplyId && inboundText.trim()) {
+  if (!contentConsumed && !interactiveReplyId && inboundText.trim()) {
     await dispatchInboundToAiReply({
       accountId,
       conversationId: conversation.id,
       contactId: contactRecord.id,
       configOwnerUserId,
+      // Lets the bot show "typing…" (and mark the message read) while
+      // the reply is generated.
+      inboundMessageId: message.id,
     })
   }
 
@@ -1145,31 +1148,122 @@ interface ContactOutcome {
   wasCreated: boolean
 }
 
+/**
+ * Look a contact up by BSUID. Exact match on the column backing
+ * migration 040's unique index — no fuzzy matching, because a BSUID is
+ * an opaque identifier with exactly one correct spelling.
+ */
+async function findContactByWaUserId(
+  accountId: string,
+  waUserId: string
+): Promise<ContactRow | null> {
+  const { data, error } = await supabaseAdmin()
+    .from('contacts')
+    .select('*')
+    .eq('account_id', accountId)
+    .eq('wa_user_id', waUserId)
+    .maybeSingle()
+
+  if (error) {
+    console.error('[webhook] BSUID contact lookup failed:', error.message)
+    return null
+  }
+  return data ?? null
+}
+
+/**
+ * Fields worth writing back onto a contact we just matched, given what
+ * this delivery told us. Returns null when nothing changed, so the
+ * common case costs no UPDATE.
+ *
+ * The BSUID backfill is the important one: it stamps the id onto a
+ * contact we have only ever known by phone, so the NEXT message from
+ * that person — which may well arrive with no phone number at all —
+ * still resolves to this same row instead of forking a new one.
+ * Likewise a phone backfill upgrades a BSUID-only contact the moment
+ * Meta discloses the number, making them reachable by every existing
+ * phone-based code path.
+ */
+function contactIdentityPatch(
+  existing: ContactRow,
+  identity: WaIdentity
+): Record<string, unknown> | null {
+  const patch: Record<string, unknown> = {}
+
+  // Only ever from a label Meta actually supplied. `identityDisplayName`
+  // falls back to the phone number / BSUID, which is the right choice
+  // for a brand-new row but would clobber an agent's hand-edited name
+  // on every inbound message from a contact with no WhatsApp profile
+  // name.
+  const name = identity.name || identity.waUsername
+  if (name && name !== existing.name) patch.name = name
+
+  if (identity.waUserId && identity.waUserId !== existing.wa_user_id) {
+    patch.wa_user_id = identity.waUserId
+  }
+  if (
+    identity.waParentUserId &&
+    identity.waParentUserId !== existing.wa_parent_user_id
+  ) {
+    patch.wa_parent_user_id = identity.waParentUserId
+  }
+  if (identity.waUsername && identity.waUsername !== existing.wa_username) {
+    patch.wa_username = identity.waUsername
+  }
+  // Only ever fills a blank. An existing number is left alone — the
+  // send path's variant retry already owns correcting it, and Meta's
+  // formatting differences are not a reason to rewrite it.
+  if (identity.phone && !normalizePhone(existing.phone ?? '')) {
+    patch.phone = identity.phone
+  }
+
+  return Object.keys(patch).length > 0 ? patch : null
+}
+
 async function findOrCreateContact(
   accountId: string,
   configOwnerUserId: string,
-  phone: string,
-  name: string
+  identity: WaIdentity
 ): Promise<ContactOutcome | null> {
-  // Find an existing contact for this account by phone. The shared
-  // helper pre-filters in SQL by the last-8-digit suffix (so we don't
-  // pull every contact on every inbound message) then applies the
-  // strict `phonesMatch` in JS on the small candidate set. The same
-  // helper backs the manual contact form and CSV import, so all three
-  // paths agree on what "same number" means (issue #212).
-  const existingContact = await findExistingContact(
-    supabaseAdmin(),
-    accountId,
-    phone,
-  )
+  // BSUID first when we have one. It's stable per (user, business
+  // portfolio) and, unlike the phone number, Meta will keep sending it
+  // — so it's the key that survives a customer adopting a username.
+  let existingContact: ContactRow | null = identity.waUserId
+    ? await findContactByWaUserId(accountId, identity.waUserId)
+    : null
+
+  // Fall back to the phone. The same helper backs the manual contact form
+  // and CSV import, so all three paths agree on what "same number"
+  // means (issue #212).
+  if (!existingContact && identity.phone) {
+    existingContact = await findExistingContact(
+      supabaseAdmin(),
+      accountId,
+      identity.phone,
+    )
+  }
 
   if (existingContact) {
-    // Update name if it changed
-    if (name && name !== existingContact.name) {
-      await supabaseAdmin()
+    const patch = contactIdentityPatch(existingContact, identity)
+    if (patch) {
+      const { data: updated, error: updateError } = await supabaseAdmin()
         .from('contacts')
-        .update({ name, updated_at: new Date().toISOString() })
+        .update({ ...patch, updated_at: new Date().toISOString() })
         .eq('id', existingContact.id)
+        .select()
+        .maybeSingle()
+
+      if (updateError) {
+        // A BSUID backfill can lose a race with a concurrent delivery
+        // that already claimed it for another row. Not fatal — the
+        // message still belongs to the contact we matched.
+        console.error(
+          '[webhook] contact identity backfill failed:',
+          updateError.message
+        )
+      } else if (updated) {
+        existingContact = updated
+      }
     }
     return { contact: existingContact, wasCreated: false }
   }
@@ -1178,25 +1272,43 @@ async function findOrCreateContact(
   // user_id is the NOT NULL FK audit column (no inbound message
   // has a single "user who created" it — we attribute to the
   // WhatsApp config owner as a stable default).
+  //
+  // `phone` stays NOT NULL in the schema, so a BSUID-only sender is
+  // stored with '' — which migration 022's partial unique index
+  // tolerates, and migration 040's BSUID index is what keeps them
+  // unique instead.
   const { data: newContact, error: createError } = await supabaseAdmin()
     .from('contacts')
     .insert({
       account_id: accountId,
       user_id: configOwnerUserId,
-      phone,
-      name: name || phone,
+      phone: identity.phone,
+      name: identityDisplayName(identity),
+      wa_user_id: identity.waUserId,
+      wa_parent_user_id: identity.waParentUserId,
+      wa_username: identity.waUsername,
     })
     .select()
     .single()
 
   if (createError) {
     // Lost a race: a concurrent inbound delivery (or another path)
-    // created this contact between our lookup and insert, and the
-    // unique index (migration 022) rejected the duplicate. Re-resolve
-    // the existing row instead of dropping the message.
+    // created this contact between our lookup and insert, and a unique
+    // index (022's phone, or 040's BSUID) rejected the duplicate.
+    // Re-resolve the existing row instead of dropping the message.
     if (isUniqueViolation(createError)) {
-      const raced = await findExistingContact(supabaseAdmin(), accountId, phone)
+      const raced = identity.waUserId
+        ? await findContactByWaUserId(accountId, identity.waUserId)
+        : null
       if (raced) return { contact: raced, wasCreated: false }
+      if (identity.phone) {
+        const racedByPhone = await findExistingContact(
+          supabaseAdmin(),
+          accountId,
+          identity.phone
+        )
+        if (racedByPhone) return { contact: racedByPhone, wasCreated: false }
+      }
     }
     console.error('Error creating contact:', createError)
     return null

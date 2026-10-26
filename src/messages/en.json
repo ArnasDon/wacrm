@@ -93,7 +93,8 @@
     "defaultAvatar": "Avatar",
     "menuProfile": "Profile",
     "menuSettings": "Settings",
-    "menuSignOut": "Sign out"
+    "menuSignOut": "Sign out",
+    "primaryNav": "Primary"
   },
   "header": {
     "profile": "Profile",
@@ -126,7 +127,9 @@
       "submit": "Sign in",
       "submitLoading": "Signing in...",
       "noAccount": "Don't have an account?",
-      "createAccount": "Create account"
+      "createAccount": "Create account",
+      "linkExpired": "That link has expired. For a password reset, use “Forgot password?” to request a new one; if you were confirming your email, sign up again.",
+      "linkInvalid": "That link couldn’t be used to sign you in. If you were confirming your email, it may already be verified — just sign in below. For a password reset, request a new link and open it in the same browser you requested it from."
     },
     "signup": {
       "title": "Create account",
@@ -365,7 +368,44 @@
       "deleteNode": "Delete node",
       "setAsEntry": "Set as entry",
       "entry": "Entry",
-      "noNodes": "No nodes yet."
+      "noNodes": "No nodes yet.",
+      "nodes": {
+        "start": {
+          "label": "Start"
+        },
+        "send_message": {
+          "label": "Send message"
+        },
+        "send_buttons": {
+          "label": "Send buttons"
+        },
+        "send_list": {
+          "label": "Send list"
+        },
+        "send_media": {
+          "label": "Send media"
+        },
+        "collect_input": {
+          "label": "Collect input"
+        },
+        "condition": {
+          "label": "If / else"
+        },
+        "set_tag": {
+          "label": "Tag contact"
+        },
+        "handoff": {
+          "label": "Handoff to agent"
+        },
+        "end": {
+          "label": "End"
+        }
+      },
+      "categories": {
+        "messaging": "Messaging",
+        "logic": "Logic & data",
+        "flow": "Flow control"
+      }
     },
     "trigger": {
       "title": "Trigger",
@@ -619,7 +659,9 @@
       "pickNextNode": "Pick a next node…",
       "filenamePlaceholder": "invoice.pdf",
       "tagUuidPlaceholder": "Tag UUID",
-      "varKeyPlaceholder": "e.g. name, email, company"
+      "varKeyPlaceholder": "e.g. name, email, company",
+      "defaultOptionTitle": "Option",
+      "optionN": "Option {n}"
     },
     "list": {
       "title": "Flows",
@@ -731,7 +773,8 @@
     "triggerKeywordNone": "Triggers on keyword (none set)",
     "triggerKeyword": "Triggers on: {keywords}",
     "triggerFirstInbound": "Triggers on a contact's first-ever inbound message",
-    "triggerManual": "Manual trigger"
+    "triggerManual": "Manual trigger",
+    "cloneFailedStatus": "Clone failed: {status}"
   },
   "pipelines": {
     "title": "Pipelines",
@@ -781,7 +824,8 @@
       "toastMoveOrDeleteDeals": "Move or delete deals in this stage first",
       "toastFailedDeleteStage": "Failed to delete stage",
       "toastFailedDeletePipeline": "Failed to delete pipeline",
-      "toastDeleted": "Pipeline deleted"
+      "toastDeleted": "Pipeline deleted",
+      "pickColor": "Pick color {color}"
     },
     "analytics": "Pipeline Analytics",
     "totalDeals": "Total Deals",
@@ -913,6 +957,14 @@
       "toastReopened": "Deal reopened",
       "toastFailedDelete": "Failed to delete deal",
       "toastDeleted": "Deal deleted"
+    },
+    "defaultPipelineName": "Sales Pipeline",
+    "defaultStages": {
+      "newLead": "New Lead",
+      "qualified": "Qualified",
+      "proposalSent": "Proposal Sent",
+      "negotiation": "Negotiation",
+      "won": "Won"
     }
   },
   "contacts": {
@@ -1104,7 +1156,9 @@
       "toastCustomFieldsSaved": "Custom fields saved",
       "toastCustomFieldsFailed": "Failed to save custom fields",
       "toastTemplateSent": "Template \"{name}\" sent",
-      "toastTemplateFailed": "Failed to send template: {reason}"
+      "toastTemplateFailed": "Failed to send template: {reason}",
+      "toastPhoneNeedsCountryCode": "Include the country code — the number must start with + (e.g. +14155550123)",
+      "networkError": "network error"
     },
     "form": {
       "newContact": "New Contact",
@@ -1297,7 +1351,15 @@
       "description": "Upload a CSV with a required <phoneCode>phone</phoneCode> column. Optional: <nameCode>name</nameCode>, <emailCode>email</emailCode>, <companyCode>company</companyCode>, <tagsCode>tags</tagsCode> (comma-separated; quote multi-tag cells).",
       "selectFile": "Click to choose a CSV file",
       "dragDrop": ".csv up to your browser limit",
-      "importButton": "Import"
+      "importButton": "Import",
+      "notAuthenticated": "Not authenticated",
+      "notLinkedToAccount": "Your profile is not linked to an account.",
+      "unknownReason": "Unknown error",
+      "toastTagsSkippedMore": " (+{count} more)",
+      "toastInvalidPhone": "{count} contact had no usable phone number",
+      "resultInvalidPhone": "{count} invalid phone",
+      "invalidPhoneHint": "Phone numbers must start with + and a country code (e.g. +14155550123). Numbers without one would be delivered to the wrong country.",
+      "failedRowsHeading": "Failed rows"
     },
     "subtitle": "Manage your contact list. {count} total contacts.",
     "subtitleZero": "Manage your contact list.",
@@ -1359,7 +1421,13 @@
     "dupSimilar": "A contact with a very similar number already exists.",
     "loadingTags": "Loading tags...",
     "noTagsAvailable": "No tags available. Create tags in Settings.",
-    "phoneRequired": "Phone number is required"
+    "phoneRequired": "Phone number is required",
+    "filterByTag": "Filter by {name}",
+    "removeTagFilter": "Remove {name} filter",
+    "selectContact": "Select {name}",
+    "phoneNeedsCountryCode": "Include the country code — the number must start with + (e.g. +14155550123)",
+    "notAuthenticated": "Not authenticated",
+    "notLinkedToAccount": "Your profile is not linked to an account."
   },
   "inbox": {
     "title": "Inbox",
@@ -1466,7 +1534,21 @@
         "travel": "Travel & places",
         "objects": "Objects",
         "symbols": "Symbols"
-      }
+      },
+      "aiNotConfigured": "AI isn't set up yet — enable it in Settings → AI Assistant.",
+      "draftFailed": "Couldn't draft a reply.",
+      "draftEmpty": "The assistant didn't return a reply.",
+      "aiUnreachable": "Couldn't reach the AI assistant.",
+      "fileTooLarge": "File is {size} MB — {kind} limit is {max} MB.",
+      "mediaKind": {
+        "image": "image",
+        "video": "video",
+        "document": "document",
+        "audio": "audio"
+      },
+      "uploadFailed": "Upload failed.",
+      "recordingTooLong": "Recording is too long (over 16 MB).",
+      "recordingUnsupported": "Voice recording isn't supported in this browser."
     },
     "sidebar": {
       "contactInfo": "Contact Info",
@@ -1506,7 +1588,10 @@
       "finalUrl": "Final URL: {url}",
       "back": "Back",
       "cancel": "Cancel",
-      "send": "Send template"
+      "send": "Send template",
+      "headerVarLabel": "Header {var}",
+      "bodyVarLabel": "Body {var}",
+      "urlButtonVarLabel": "URL button \"{text}\" — value for {var}"
     },
     "messageActions": {
       "reply": "Reply",
@@ -1577,7 +1662,18 @@
       "yesterday": "Yesterday",
       "you": "You",
       "customer": "Customer",
-      "noTeammatesAvailable": "No teammates available"
+      "noTeammatesAvailable": "No teammates available",
+      "loadOlderFailed": "Could not load older messages.",
+      "sendFailed": "Failed to send: {reason}",
+      "networkError": "network error",
+      "documentFallback": "Document",
+      "sendTemplateFailed": "Failed to send template: {reason}",
+      "waitForSending": "Wait for the message to finish sending",
+      "reactionFailed": "Reaction failed: {reason}",
+      "assignmentUpdateFailed": "Failed to update assignment",
+      "loadingOlder": "Loading…",
+      "loadOlder": "Load older messages",
+      "unknown": "Unknown"
     },
     "sessionTimer": {
       "expired": "Expired",
@@ -1602,7 +1698,8 @@
       "viewImage": "View full size",
       "expandVideo": "Expand video",
       "download": "Download",
-      "downloadFailed": "Couldn't download the attachment"
+      "downloadFailed": "Couldn't download the attachment",
+      "notDelivered": "Not delivered"
     },
     "actions": {
       "reply": "Reply",
@@ -1639,7 +1736,10 @@
       "failed": "This attachment is no longer available",
       "imageAlt": "Shared image",
       "you": "You"
-    }
+    },
+    "filterWaiting": "Waiting for reply",
+    "filterUnassigned": "Unassigned",
+    "filterExpiring": "Reply window closing"
   },
   "broadcasts": {
     "title": "Broadcasts",
@@ -1703,7 +1803,10 @@
       "next": "Next",
       "errorCsvMissingPhone": "CSV must have a 'phone' column.",
       "errorCsvParse": "Could not parse CSV file.",
-      "csvContactsFound": "{count} valid contact(s) found in CSV."
+      "csvContactsFound": "{count} valid contact(s) found in CSV.",
+      "selectAudience": {
+        "csvInvalidPhones": "{count} row(s) skipped: phone numbers must start with + and a country code (e.g. +14155550123)."
+      }
     },
     "step3": {
       "title": "Personalize Message",
@@ -1733,7 +1836,12 @@
       "contactFieldEmail": "Email Address",
       "contactFieldCompany": "Company",
       "back": "Back",
-      "next": "Next"
+      "next": "Next",
+      "personalize": {
+        "sampleName": "John Doe",
+        "sampleCompany": "Acme Corp",
+        "headerPreviewAlt": "Header preview"
+      }
     },
     "step4": {
       "title": "Review & Send",
@@ -1973,7 +2081,9 @@
         "progressDesc": "Processing {current} of {total} recipients...",
         "toastFailedPreview": "Failed to load preview data"
       }
-    }
+    },
+    "broadcastFailed": "Broadcast failed",
+    "broadcastInProgress": "Broadcast in progress"
   },
   "automations": {
     "title": "Automations",
@@ -2102,7 +2212,8 @@
       "toasts": {
         "saved": "Automation saved",
         "created": "Automation created",
-        "saveFailed": "Save failed"
+        "saveFailed": "Save failed",
+        "issueAt": "at {path}"
       },
       "tags": {
         "select": "Select a tag…",
@@ -2191,9 +2302,32 @@
         "matchExact": "Exact",
         "matchWord": "Whole word",
         "matchWordHint": "Matches the keyword only as a standalone word, so \"k\" no longer fires on \"thanks\". Best for short keywords in space-separated languages; use Contains for languages written without spaces.",
-        "closeConversationHint": "Sets the conversation status to \"closed\". No configuration needed."
+        "closeConversationHint": "Sets the conversation status to \"closed\". No configuration needed.",
+        "timezoneLabel": "Time zone",
+        "waitForReply": "Wait for reply before continuing",
+        "waitForReplyHint": "Pauses here until the customer taps a button or replies (up to 24h). The steps after this one, including If/Else on message content, then use their reply."
       },
-      "delete": "Delete"
+      "delete": "Delete",
+      "schedulePlaceholder": "Cron expression or HH:mm",
+      "kindCondition": "Condition",
+      "kindWait": "Wait",
+      "kindAction": "Action",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "preview": {
+        "noText": "no text yet",
+        "noBody": "no body yet",
+        "withWaitForReply": "{preview} · waits for reply",
+        "pickTemplate": "pick a template",
+        "units": {
+          "minutes": "minutes",
+          "hours": "hours",
+          "days": "days"
+        },
+        "wait": "{amount} {unit}",
+        "when": "when {subject}",
+        "noUrl": "no url"
+      }
     },
     "list": {
       "title": "Automations",
@@ -2273,7 +2407,10 @@
       "updateError": "Failed to update",
       "duplicateError": "Failed to duplicate",
       "deleteError": "Failed to delete"
-    }
+    },
+    "loadFailed": "Failed to load automations",
+    "activeIndicator": "active",
+    "openMenu": "Open menu"
   },
   "settings": {
     "title": "Settings",
@@ -2393,7 +2530,10 @@
       "cancel": "Cancel",
       "signingOut": "Signing out…",
       "signOutEverywhere": "Sign out everywhere",
-      "signOutFailed": "Sign-out failed: {message}"
+      "signOutFailed": "Sign-out failed: {message}",
+      "unknownError": "Unknown error",
+      "avatarAlt": "Avatar",
+      "fullNamePlaceholder": "Ada Lovelace"
     },
     "password": {
       "title": "Password",
@@ -2408,7 +2548,8 @@
       "tooShort": "Password must be at least {min} characters",
       "mismatch": "New password and confirmation do not match",
       "incorrectCurrent": "Current password is incorrect",
-      "noEmail": "Cannot change password without a current email"
+      "noEmail": "Cannot change password without a current email",
+      "unknownError": "Unknown error"
     },
     "sessions": {
       "title": "Active sessions",
@@ -2424,7 +2565,8 @@
       "revoke": "Revoke",
       "revoked": "Session revoked",
       "failedToRevoke": "Failed to revoke session",
-      "signOutFailed": "Sign-out failed: {message}"
+      "signOutFailed": "Sign-out failed: {message}",
+      "unknownError": "Unknown error"
     },
     "whatsapp": {
       "title": "WhatsApp Configuration",
@@ -2501,7 +2643,40 @@
       "step4_3": "Paste the <strong class=\"text-foreground\">Webhook Callback URL</strong> from above",
       "step4_4": "Enter the same <strong class=\"text-foreground\">Verify Token</strong> you set here",
       "step4_5": "Subscribe to \"messages\" webhook field",
-      "metaDocs": "Meta WhatsApp API Documentation"
+      "metaDocs": "Meta WhatsApp API Documentation",
+      "loadFailed": "Failed to load WhatsApp configuration",
+      "phoneNumberIdRequired": "Phone Number ID is required",
+      "phoneNumberIdNotNumeric": "Phone Number ID must contain only digits. Copy the numeric id from Meta → WhatsApp → API Setup, not the phone number itself.",
+      "wabaIdNotNumeric": "WhatsApp Business Account ID must contain only digits. Copy it from Meta → WhatsApp → API Setup.",
+      "accessTokenRequired": "Access Token is required for initial setup",
+      "reenterAccessToken": "Please re-enter the Access Token to save changes",
+      "saveFailed": "Failed to save configuration",
+      "savedButRegistrationFailed": "Saved, but Meta couldn't register the number: {error}",
+      "savedRegistrationSkipped": "Credentials saved and verified. Inbound registration was skipped (no PIN) — see Registration status below.",
+      "liveWithName": "Live — {name} can now receive events.",
+      "connectedGeneric": "WhatsApp connected. Events will start flowing within a minute.",
+      "connectedTo": "Connected to {name}",
+      "apiConnectionOk": "API connection successful",
+      "apiConnectionFailed": "API connection failed",
+      "connectionTestFailed": "Connection test failed. Check network and try again.",
+      "fullyWired": "Number is fully wired — Meta is delivering events.",
+      "notFullyRegistered": "Number is not fully registered. See the checks below for which step failed.",
+      "verifyEndpointUnreachable": "Could not reach the verification endpoint.",
+      "resetConfirm": "This will delete the current WhatsApp config so you can re-enter it. Continue?",
+      "resetFailed": "Failed to reset configuration",
+      "resetDone": "Configuration cleared. You can now re-enter your credentials.",
+      "webhookCopied": "Webhook URL copied to clipboard",
+      "metaErrorStep": "Step",
+      "metaErrorCode": "Meta error code",
+      "metaErrorTrace": "Trace ID",
+      "metaErrorMessage": "Meta said",
+      "metaErrorDetailsHint": "Quote these details when contacting Meta support.",
+      "lastSaveFailed": "Last save failed",
+      "wabaNotSubscribed": "The WhatsApp Business Account is not subscribed to this app, so Meta will not deliver inbound webhooks. Re-enter the access token and save again to subscribe it.",
+      "wabaSubscribed": "The WhatsApp Business Account is subscribed to this app — inbound webhooks can be delivered.",
+      "phoneNumberIdPlaceholder": "e.g. 100234567890123",
+      "wabaIdPlaceholder": "e.g. 100234567890456",
+      "webhookVerifyTokenSaved": "Saved. Leave as is to keep it, or enter a new value to rotate."
     },
     "templates": {
       "title": "Message Templates",
@@ -2609,7 +2784,19 @@
       "toastInvalidImage": "Header image must be a JPEG or PNG.",
       "toastImageTooLarge": "Image is {size} MB — Meta's limit is 5 MB.",
       "toastUploadSuccess": "Image uploaded.",
-      "toastUploadFailed": "Upload failed."
+      "toastUploadFailed": "Upload failed.",
+      "categoryLabels": {
+        "Marketing": "Marketing",
+        "Utility": "Utility",
+        "Authentication": "Authentication"
+      },
+      "syncFailedHttp": "Sync failed (HTTP {status})",
+      "syncMoreSuffix": ", +{count} more",
+      "deleteFailedHttp": "Delete failed (HTTP {status})",
+      "toastMediaTooLarge": "File is {size} MB — the upload limit is {max} MB.",
+      "qualityScoreTitle": "Meta quality score",
+      "headerTextLabel": "Header text",
+      "headerSampleAlt": "Header sample"
     },
     "fieldsAndTags": {
       "fieldsTab": "Custom Fields",
@@ -2683,7 +2870,14 @@
       "removeDialogDesc": "Remove <bold>{name}</bold> from the account? They'll be signed out of this account and given a fresh personal account on their next sign-in. Their login isn't deleted.",
       "cancel": "Cancel",
       "removing": "Removing...",
-      "removeBtn": "Remove member"
+      "removeBtn": "Remove member",
+      "loadFailed": "Failed to load members",
+      "loadInvitationsFailed": "Failed to load invitations",
+      "networkError": "Could not reach the server",
+      "updateRoleFailed": "Failed to update role",
+      "removeFailed": "Failed to remove member",
+      "revokeFailed": "Failed to revoke invitation",
+      "memberAlt": "Member"
     },
     "invite": {
       "title": "Invite Member",
@@ -2718,7 +2912,10 @@
       "labelTooLong": "Label must be {max} characters or fewer",
       "copied": "Invite link copied",
       "clipboardBlocked": "Clipboard blocked — copy the link manually",
-      "whatsappMessage": "Join {accountName} on wacrm using this link (valid for {expiresInDays} days): {url}"
+      "whatsappMessage": "Join {accountName} on wacrm using this link (valid for {expiresInDays} days): {url}",
+      "createFailed": "Failed to create invitation",
+      "fallbackAccountName": "our SharapatCRM account",
+      "networkError": "Could not reach the server. Try again?"
     },
     "apiKeys": {
       "title": "API Keys",
@@ -2785,7 +2982,9 @@
       "useMode": "Use {mode} mode",
       "active": "Active",
       "accentColor": "Accent color",
-      "useTheme": "Use {name} theme"
+      "useTheme": "Use {name} theme",
+      "colorMode": "Color mode",
+      "themeId": "Theme id: {id}"
     },
     "pageTitle": "Settings",
     "pageDesc": "Everything in one place — your account and your workspace. Pick a section to manage it.",
@@ -2872,7 +3071,11 @@
       "saveSuccess": "AI assistant saved.",
       "saveFailed": "Failed to save.",
       "removeSuccess": "AI configuration removed.",
-      "removeFailed": "Failed to remove."
+      "removeFailed": "Failed to remove.",
+      "missingBaseUrl": "Enter the Base URL for the OpenAI-compatible API.",
+      "providerOpenAiCompatible": "OpenAI-compatible API",
+      "baseUrl": "Base URL",
+      "baseUrlHint": "Base URL for the OpenAI-compatible API, for example https://api.groq.com/openai/v1. /chat/completions is added automatically unless you include that path yourself."
     },
     "aiKnowledge": {
       "loadFailed": "Failed to load knowledge base",
@@ -2899,8 +3102,13 @@
       "addDoc": "Add document",
       "reindex": "Reindex",
       "reindexTooltip": "Re-embed all documents (e.g. after adding an embeddings key)",
-      "loading": "Loading…"
-    }
+      "loading": "Loading…",
+      "reindexWithFailures": "Reindexed {reindexed} of {total} document(s). {failedCount} failed: {titles}. Use Reindex to retry.",
+      "reindexKeywordOnly": "Reindexed {count} document(s), but {keywordOnlyCount} are searchable by keyword only (semantic indexing failed). Use Reindex to retry.",
+      "editDoc": "Edit",
+      "deleteDoc": "Delete"
+    },
+    "sectionsNav": "Settings sections"
   },
   "modeToggle": {
     "toggleTheme": "Toggle theme",
@@ -2921,5 +3129,1013 @@
     "errorTitle": "Could not load your permissions",
     "errorBody": "Your account role did not load, so every action is treated as read-only and changes will not save. Check your connection and try again.",
     "retry": "Retry"
+  },
+  "Api": {
+    "account": {
+      "apiKeys": {
+        "loadFailed": "Failed to load API keys",
+        "nameRequired": "'name' is required",
+        "nameTooLong": "Name must be {max} characters or fewer",
+        "scopesInvalid": "'scopes' must be an array of known scope strings",
+        "createFailed": "Failed to create API key",
+        "revokeFailed": "Failed to revoke API key",
+        "notFoundOrRevoked": "API key not found or already revoked"
+      },
+      "invitations": {
+        "loadFailed": "Failed to load invitations",
+        "roleInvalid": "'role' must be one of admin, agent, viewer",
+        "labelTooLong": "Label must be {max} characters or fewer",
+        "createFailed": "Failed to create invitation",
+        "revokeFailed": "Failed to revoke invitation",
+        "notFound": "Invitation not found"
+      },
+      "members": {
+        "loadFailed": "Failed to load members",
+        "updateFailed": "Failed to update member",
+        "roleInvalid": "'role' must be one of owner, admin, agent, viewer",
+        "useTransferOwnership": "Use POST /api/account/transfer-ownership to promote a member to owner"
+      },
+      "nameMustBeString": "'name' must be a string",
+      "nameEmpty": "Account name cannot be empty",
+      "nameTooLong": "Account name must be {max} characters or fewer",
+      "updateFailed": "Failed to update account",
+      "transferFailed": "Failed to transfer ownership",
+      "newOwnerInvalid": "'newOwnerUserId' must be a valid UUID"
+    },
+    "ai": {
+      "pausedRequired": "paused (boolean) is required",
+      "updateConversationFailed": "Failed to update conversation",
+      "loadConfigFailed": "Failed to load AI configuration",
+      "providerInvalid": "provider must be \"openai\", \"anthropic\", or \"openai_compatible\"",
+      "modelRequired": "model is required",
+      "handoffNotMember": "handoff_agent_id must be a member of this account",
+      "baseUrlRequired": "base_url is required for openai_compatible",
+      "baseUrlInvalid": "base_url must be a valid http(s) URL",
+      "storedKeyReenter": "Stored API key could not be decrypted — re-enter your key.",
+      "apiKeyRequired": "api_key is required",
+      "validateWithProviderFailed": "Could not validate the API key with the provider.",
+      "embeddingsKeyError": "Embeddings key: {message}",
+      "validateEmbeddingsFailed": "Could not validate the embeddings key.",
+      "saveConfigFailed": "Failed to save AI configuration",
+      "deleteConfigFailed": "Failed to delete AI configuration",
+      "conversationIdRequired": "conversation_id is required",
+      "storedKeyUndecryptable": "Stored API key could not be decrypted.",
+      "notConfigured": "AI assistant is not set up. Enable it in Settings → AI Assistant.",
+      "noMessages": "No messages to draft from yet.",
+      "knowledge": {
+        "loadDocsFailed": "Failed to load documents",
+        "reindexKeyCorrupt": "Your embeddings key could not be decrypted (check ENCRYPTION_KEY, then re-enter the key in Settings → AI Assistant). Nothing was reindexed.",
+        "loadKbFailed": "Failed to load knowledge base",
+        "titleContentRequired": "title and content are required",
+        "saveDocFailed": "Failed to save document",
+        "indexingFailed": "indexing failed",
+        "savedNotIndexed": "Saved, but indexing failed ({message}). The document is not searchable yet; use Reindex to retry.",
+        "savedIndexFailed": "Saved, but semantic indexing failed ({message}). Lexical search still works; use Reindex to retry.",
+        "savedKeywordOnly": "Saved with keyword search only — your embeddings key could not be decrypted (check ENCRYPTION_KEY, then re-enter the key).",
+        "loadDocFailed": "Failed to load document",
+        "nothingToUpdate": "Nothing to update",
+        "contentEmpty": "content cannot be empty",
+        "updateDocFailed": "Failed to update document",
+        "updatedNotIndexed": "Updated, but indexing failed ({message}). The document is not searchable yet; use Reindex to retry.",
+        "updatedIndexFailed": "Updated, but semantic indexing failed ({message}). Lexical search still works; use Reindex to retry.",
+        "updatedKeywordOnly": "Updated with keyword search only — your embeddings key could not be decrypted (check ENCRYPTION_KEY, then re-enter the key).",
+        "deleteDocFailed": "Failed to delete document"
+      },
+      "messagesRequired": "messages is required",
+      "sendMessageToTest": "Send a message to test the agent.",
+      "noAgentConfigured": "No agent configured yet. Add your provider key in Setup.",
+      "enterApiKey": "Enter an API key to test.",
+      "validateFailed": "Could not validate the API key.",
+      "loadUsageFailed": "Failed to load usage"
+    },
+    "common": {
+      "failedToLoadConversation": "Failed to load conversation",
+      "conversationNotFound": "Conversation not found",
+      "invalidRequestBody": "Invalid request body",
+      "notFound": "Not found",
+      "titleEmpty": "title cannot be empty",
+      "unauthorized": "Unauthorized",
+      "profileNotLinked": "Your profile is not linked to an account.",
+      "invalidJson": "Invalid JSON",
+      "insertFailed": "insert failed",
+      "whatsappNotConfiguredSetup": "WhatsApp not configured. Please set up your WhatsApp integration first.",
+      "unknownError": "Unknown error",
+      "internalServerError": "Internal server error",
+      "whatsappNotConfigured": "WhatsApp not configured",
+      "whatsappNotConfiguredDot": "WhatsApp not configured.",
+      "whatsappNotConfiguredConnect": "WhatsApp not configured. Connect your WhatsApp Business account in Settings first.",
+      "wabaIdMissing": "WABA (WhatsApp Business Account) ID missing. Re-connect your account in Settings."
+    },
+    "automations": {
+      "nameTriggerRequired": "name and trigger_type are required",
+      "invalidActivateConfig": "Cannot activate automation with invalid configuration",
+      "copyName": "{name} (Copy)",
+      "copyFailed": "copy failed",
+      "invalidActiveConfig": "Cannot keep automation active with invalid configuration"
+    },
+    "contacts": {
+      "tagIdRequired": "tag_id required"
+    },
+    "flows": {
+      "unknownTemplate": "Unknown template_slug \"{slug}\"",
+      "insertFailed": "flow insert failed",
+      "nameRequired": "name is required",
+      "statusInvalid": "status must be one of 'draft' | 'active' | 'archived'",
+      "cannotActivate": "Cannot activate flow — fix the issues below first.",
+      "nameEmpty": "name cannot be empty",
+      "cannotSaveActive": "This flow is live, so it can't be saved with these issues. Fix them or pause the flow first."
+    },
+    "invitations": {
+      "redeemFailed": "Failed to redeem invitation",
+      "missingToken": "Missing invitation token"
+    },
+    "quickReplies": {
+      "titleRequired": "title is required",
+      "contentTextRequired": "content_text is required for text quick replies",
+      "kindInvalid": "kind must be \"text\" or \"interactive\""
+    },
+    "broadcast": {
+      "recipientsRequired": "Provide either `recipients` (preferred) or `phone_numbers` — must be a non-empty array",
+      "templateNameRequired": "template_name is required",
+      "templateMalformed": "Template row is malformed locally — run \"Sync from Meta\" in Settings to repair it before broadcasting.",
+      "invalidPhoneFormat": "Invalid phone number format",
+      "alreadyRunning": "A delivery pass is already running for this broadcast. Wait for it to finish before resuming again."
+    },
+    "whatsappConfig": {
+      "fetchFailed": "Failed to fetch configuration",
+      "noConfig": "No WhatsApp configuration saved yet. Fill in the form and click Save Configuration.",
+      "tokenCorrupted": "The stored access token cannot be decrypted with the current ENCRYPTION_KEY. This usually means the key changed, or it differs between environments (local vs Hostinger vs Vercel). Click \"Reset Configuration\" below, then re-save.",
+      "credentialsRequired": "access_token and phone_number_id are required",
+      "phoneIdDigits": "Phone Number ID must contain only digits — it is the numeric id shown under Meta → WhatsApp → API Setup, not the phone number itself.",
+      "wabaIdDigits": "WhatsApp Business Account ID must contain only digits — copy it from Meta → WhatsApp → API Setup.",
+      "pinDigits": "PIN must be exactly 6 digits.",
+      "validateFailed": "Failed to validate configuration",
+      "numberLinkedElsewhere": "This WhatsApp phone number is already linked to another account on this instance. Each phone number can only be connected to one wacrm user.",
+      "encryptFailed": "Failed to encrypt token. Check that ENCRYPTION_KEY is a valid 64-character hex string in your environment variables.",
+      "updateFailed": "Failed to update configuration",
+      "saveFailed": "Failed to save configuration",
+      "deleteFailed": "Failed to delete configuration",
+      "noConfigShort": "No WhatsApp configuration saved yet.",
+      "tokenUndecryptable": "Stored access token can't be decrypted — likely ENCRYPTION_KEY changed. Re-enter the token to repair.",
+      "phoneCheckFailed": "Phone metadata check failed: {message}",
+      "wabaNoApps": "WABA has no subscribed apps. Re-save the configuration to subscribe.",
+      "wabaCheckFailed": "WABA subscription check failed: {message}",
+      "noWabaId": "No WABA ID on file — webhooks can't be wired without it. Add it in the form and re-save."
+    },
+    "media": {
+      "idRequired": "Media ID is required",
+      "fetchFailed": "Failed to fetch media"
+    },
+    "react": {
+      "idEmojiRequired": "message_id and emoji are required",
+      "messageNotFound": "Message not found",
+      "notSent": "Cannot react to a message that has not been sent to WhatsApp",
+      "contactNoPhone": "Contact has no phone number or WhatsApp user ID",
+      "unknownMetaError": "Unknown Meta API error",
+      "metaError": "Meta API error: {message}",
+      "dbDeleteFailed": "Reaction sent to Meta but DB delete failed",
+      "dbUpsertFailed": "Reaction sent to Meta but DB upsert failed"
+    },
+    "send": {
+      "idsRequired": "Either conversation_id or contact_id, plus message_type, are required",
+      "contactNotFound": "Contact not found",
+      "openConversationFailed": "Failed to open a conversation for this contact"
+    },
+    "templates": {
+      "invalidJsonBody": "Invalid JSON body.",
+      "authNotSupported": "AUTHENTICATION templates are not yet supported here — create them in Meta WhatsApp Manager and use \"Sync from Meta\".",
+      "validationFailed": "Validation failed.",
+      "headerUploadFailed": "Header media upload failed.",
+      "metaSubmitFailed": "Meta submit failed.",
+      "rateLimit": "Meta rate limit hit (100 template creates per hour). Try again later.",
+      "submittedSaveFailed": "Submitted to Meta but failed to save locally: {message}. Run \"Sync from Meta\" to recover.",
+      "submitFailed": "Failed to submit template.",
+      "metaApiStatus": "Meta API error: {status}",
+      "syncFailed": "Failed to sync templates",
+      "invalidId": "Invalid template id.",
+      "notFound": "Template not found.",
+      "neverSubmitted": "This template was never submitted to Meta — use New Template to submit it instead.",
+      "statusNotEditable": "Templates in status {status} cannot be edited. Allowed: APPROVED, REJECTED, PAUSED.",
+      "authNotEditable": "AUTHENTICATION templates are not editable here — manage them in Meta WhatsApp Manager.",
+      "metaEditFailed": "Meta edit failed.",
+      "editedSaveFailed": "Edited on Meta but failed to save locally: {message}. Run \"Sync from Meta\" to recover.",
+      "editFailed": "Failed to edit template.",
+      "notConfiguredDelete": "WhatsApp not configured — cannot delete on Meta.",
+      "metaDeleteFailed": "Meta delete failed.",
+      "deletedLocalFailed": "Deleted on Meta but failed to delete locally: {message}.",
+      "deleteFailed": "Failed to delete template."
+    }
+  },
+  "Agents": {
+    "title": "AI Agents",
+    "description": "Your bring-your-own-key AI agent — set it up, then test it in the playground before it replies to customers in the inbox.",
+    "tabPlayground": "Playground",
+    "tabSetup": "Setup",
+    "tabUsage": "Usage",
+    "playground": {
+      "notConfigured": "No agent configured yet — finish Setup first.",
+      "noReply": "Couldn't get a reply.",
+      "unreachable": "Couldn't reach the agent.",
+      "title": "Playground",
+      "subtitle": "— test replies as if you were a customer",
+      "reset": "Reset",
+      "emptyTitle": "Send a message to see how your agent would reply.",
+      "emptyDesc": "It uses your knowledge base and behaves exactly like the auto-reply bot — including handoff.",
+      "goToSetup": "Not set up yet? Go to Setup",
+      "handoff": "Would hand off to a human here",
+      "thinking": "Thinking…",
+      "placeholder": "Type a customer message…"
+    },
+    "usage": {
+      "loadFailed": "Failed to load usage",
+      "tokens": "Tokens",
+      "title": "Token usage",
+      "description": "Tokens spent on your provider key by drafts and the auto-reply bot. Counts only — no message content is stored here.",
+      "window": "Last {days} days",
+      "empty": "No AI usage in the last {days} days yet.",
+      "emptyHint": "This fills in as the assistant drafts and auto-replies.",
+      "totalTokens": "Total tokens",
+      "llmCalls": "LLM calls",
+      "autoReply": "Auto-reply",
+      "drafts": "Drafts",
+      "tokensPerDay": "Tokens per day",
+      "byModel": "By model",
+      "modelCalls": "{tokens} tok · {count, plural, =1 {# call} other {# calls}}",
+      "partialWindow": "Showing a partial window — usage is high enough that only the most recent records are summarized here."
+    }
+  },
+  "GatedButton": {
+    "reasons": {
+      "createAutomations": "create automations",
+      "createBroadcasts": "create broadcasts",
+      "addOrImportContacts": "add or import contacts",
+      "deleteContacts": "delete contacts",
+      "createFlows": "create flows",
+      "createPipelines": "create pipelines",
+      "createDeals": "create deals",
+      "sendMessages": "send messages"
+    },
+    "readOnly": "Read-only — your role can't {action}"
+  },
+  "Dashboard": {
+    "overview": {
+      "loadFailed": "Couldn't load the dashboard.",
+      "retry": "Try again",
+      "attention": {
+        "waiting": "Waiting for a reply",
+        "waitingMeta": "Oldest {wait} · {count} over target",
+        "waitingNone": "Everyone has a reply",
+        "unassigned": "Unassigned",
+        "onlineNow": "{count, plural, =0 {No teammates online} =1 {1 teammate online} other {# teammates online}}",
+        "closing": "Reply windows closing",
+        "closingMeta": "Free replies end within 2 hours",
+        "failed": "Failed messages",
+        "failedMeta": "Last 24 hours · see why"
+      },
+      "campaigns": {
+        "none": "—",
+        "title": "Campaigns and automations",
+        "description": "In this period",
+        "link": "Broadcasts",
+        "sentAt": "{date} · {count, plural, =1 {1 recipient} other {# recipients}}",
+        "delivered": "Delivered",
+        "read": "Read",
+        "replied": "Replied",
+        "failed": "Failed",
+        "noBroadcast": "No broadcasts sent yet.",
+        "automations": "{count, plural, =1 {Automations · 1 run} other {Automations · # runs}}",
+        "noRuns": "No runs",
+        "succeeded": "{percent} succeeded",
+        "flowNamed": "Flow “{name}”",
+        "flows": "Flows",
+        "flowFailed": "{count, plural, =1 {1 failed run} other {# failed runs}}",
+        "flowsOk": "No failed runs",
+        "aiReplies": "{count, plural, =1 {AI replies · 1} other {AI replies · #}}",
+        "aiMedian": "Median {time}",
+        "templates": "{count, plural, =1 {Templates · 1 approved} other {Templates · # approved}}",
+        "templatesRejected": "{count, plural, =1 {1 rejected} other {# rejected}}",
+        "templatesOk": "None rejected"
+      },
+      "failedDialog": {
+        "title": "Failed messages",
+        "description": "Messages WhatsApp didn't deliver in the last 24 hours.",
+        "empty": "No failed messages in the last 24 hours.",
+        "unknownContact": "Unknown contact",
+        "reasonWithCode": "{reason} (error {code})",
+        "unknownReason": "WhatsApp didn't give a reason.",
+        "showingLatest": "Showing the latest {shown} of {total}."
+      },
+      "kpi": {
+        "vsPrevious": {
+          "1": "vs yesterday",
+          "7": "vs previous 7 days",
+          "30": "vs previous 30 days",
+          "90": "vs previous 90 days"
+        },
+        "newConversations": "New conversations",
+        "newConversationsInfo": "Conversations started in this period.",
+        "medianReply": "Median first reply",
+        "medianReplyInfo": "Typical time from a customer's first unanswered message to a reply from a teammate. AI and automation replies aren't counted.",
+        "none": "—",
+        "resolved": "Resolved",
+        "resolvedInfo": "Conversations closed in this period.",
+        "dealsWon": "Deals won",
+        "dealsWonInfo": "Deals moved to won in this period, and their total value.",
+        "readRate": "Broadcast read rate",
+        "readRateInfo": "Read messages divided by delivered messages, for broadcasts sent in this period.",
+        "readOfDelivered": "{read} read of {delivered} delivered",
+        "noBroadcasts": "No broadcasts in this period",
+        "noComparison": "No change",
+        "new": "New",
+        "better": "Better than before",
+        "worse": "Worse than before",
+        "unchanged": "Unchanged",
+        "target": "Target {minutes} min",
+        "targetMax": "{minutes} min"
+      },
+      "volume": {
+        "incoming": "Incoming",
+        "outgoing": "Outgoing",
+        "averageIncoming": "Average incoming",
+        "none": "—",
+        "title": "Message volume",
+        "description": "Incoming and outgoing messages",
+        "hoursDescription": "Average incoming messages by hour of day",
+        "byHour": "By hour",
+        "byDay": "By day",
+        "busiestHours": "Busiest hours",
+        "empty": "No messages in this period",
+        "emptyHint": "Messages show up here as customers write to you.",
+        "perHour": "Incoming per hour",
+        "perDay": "Incoming per day",
+        "busiestHour": "Busiest hour",
+        "busiestDay": "Busiest day",
+        "peakHour": "Busiest hour",
+        "secondPeak": "Second busiest"
+      },
+      "header": {
+        "contextSetup": "Finish setup to start receiving WhatsApp messages here.",
+        "contextWaiting": "{count, plural, =1 {1 customer is waiting for a reply,} other {# customers are waiting for a reply,}} the oldest for {wait}.",
+        "contextClear": "Nobody is waiting for a reply right now.",
+        "greeting": {
+          "morning": "Good morning, {name}",
+          "afternoon": "Good afternoon, {name}",
+          "evening": "Good evening, {name}"
+        },
+        "greetingNoName": {
+          "morning": "Good morning",
+          "afternoon": "Good afternoon",
+          "evening": "Good evening"
+        },
+        "rangeLabel": "Date range",
+        "range": {
+          "1": "Today",
+          "7": "7 days",
+          "30": "30 days",
+          "90": "90 days"
+        },
+        "new": "New",
+        "newContact": "New contact",
+        "newDeal": "New deal",
+        "newBroadcast": "New broadcast",
+        "newAutomation": "New automation"
+      },
+      "pipeline": {
+        "title": "Pipeline",
+        "description": "Open deals by stage",
+        "choosePipeline": "Choose a pipeline",
+        "link": "Pipelines",
+        "empty": "No open deals",
+        "emptyHint": "Create deals in Pipelines to see them here.",
+        "deals": "{count, plural, =1 {1 deal} other {# deals}}",
+        "open": "Open",
+        "winRate": "Win rate",
+        "none": "—",
+        "avgToWin": "Average time to win",
+        "days": "{count, plural, =1 {1 day} other {# days}}",
+        "idle": "{count, plural, =1 {1 open deal has} other {# open deals have}} had no activity for 7+ days"
+      },
+      "queue": {
+        "title": "Reply queue",
+        "description": "Longest wait first",
+        "openInbox": "Open inbox",
+        "empty": "You're all caught up",
+        "emptyHint": "No customer is waiting for a reply.",
+        "unknownContact": "Unknown contact",
+        "noPreview": "No preview",
+        "windowLeft": "{time} left to reply for free",
+        "handedOff": "Handed over by AI",
+        "assigned": "Assigned",
+        "unassigned": "Unassigned"
+      },
+      "setup": {
+        "title": "Get set up",
+        "progress": "{done} of {total} done",
+        "steps": {
+          "whatsapp": {
+            "title": "Connect your WhatsApp number",
+            "description": "Link the number your customers message.",
+            "action": "Connect"
+          },
+          "contacts": {
+            "title": "Add your contacts",
+            "description": "Import a CSV, or contacts are added as people message you.",
+            "action": "Add contacts"
+          },
+          "template": {
+            "title": "Get a message template approved",
+            "description": "You need one to message people who haven't written to you in the last 24 hours.",
+            "action": "Create template"
+          },
+          "teammate": {
+            "title": "Invite a teammate",
+            "description": "Share the inbox and assign conversations.",
+            "action": "Invite"
+          }
+        },
+        "doneLabel": "(done)",
+        "todoLabel": "(to do)",
+        "previewTitle": "Your numbers will show up here",
+        "previewHint": "Once customers start messaging you, this page shows who is waiting, how fast your team replies, and how your deals and campaigns are doing.",
+        "previewAction": "Open inbox"
+      },
+      "team": {
+        "title": "Team",
+        "description": "Replies in this period",
+        "link": "Members",
+        "member": "Member",
+        "open": "Open",
+        "replies": "Replies",
+        "median": "Median reply",
+        "teammate": "Teammate",
+        "presence": {
+          "online": "Online",
+          "away": "Away",
+          "offline": "Offline"
+        },
+        "none": "—",
+        "ai": "AI agent"
+      },
+      "duration": {
+        "seconds": "{value} s",
+        "minutes": "{value} min",
+        "hours": "{value} h {remainder} min",
+        "hoursOnly": "{value} h",
+        "days": "{value} d {remainder} h",
+        "daysOnly": "{value} d"
+      },
+      "health": {
+        "unlimited": "No daily limit",
+        "perDay": "{count}/day",
+        "disconnected": "WhatsApp not connected",
+        "unavailable": "Couldn't check your number",
+        "quality": {
+          "GREEN": "Quality: high",
+          "YELLOW": "Quality: medium",
+          "RED": "Quality: low",
+          "UNKNOWN": "Quality: not rated"
+        },
+        "title": "WhatsApp number health"
+      }
+    },
+    "activityFeed": {
+      "title": "Recent Activity",
+      "viewAll": "View all →",
+      "noActivity": "No activity yet",
+      "noActivityHint": "Activity from messages, deals, broadcasts, and automations will appear here.",
+      "showingOf": "Showing {visible} of {totalLoaded}{plus}",
+      "show": "Show",
+      "timeS": "{sec}s ago",
+      "timeM": "{min}m ago",
+      "timeH": "{hr}h ago",
+      "timeD": "{day}d ago",
+      "items": {
+        "unknown": "Unknown",
+        "newMessages": "{who} sent {count} messages",
+        "newMessage": "New message from {who}",
+        "newContact": "New contact: {name}",
+        "dealInStage": "Deal \"{title}\" in {stage}",
+        "dealUpdated": "Deal \"{title}\" updated",
+        "broadcastStatusNames": {
+          "draft": "draft",
+          "scheduled": "scheduled",
+          "sending": "sending",
+          "sent": "sent",
+          "failed": "failed"
+        },
+        "broadcastSent": "Broadcast \"{name}\" sent to {count} contacts",
+        "broadcastStatus": "Broadcast \"{name}\" {status} ({count} recipients)",
+        "aContact": "a contact",
+        "automationFallback": "Automation",
+        "automationFailed": "Automation \"{name}\" failed for {who}",
+        "automationTriggered": "Automation \"{name}\" triggered for {who}"
+      }
+    },
+    "emptyState": {
+      "title": "Not enough data yet"
+    }
+  },
+  "Notifications": {
+    "markReadFailed": "Failed to mark notification as read",
+    "markAllFailed": "Failed to mark all as read",
+    "retry": "Retry",
+    "title": "Notifications",
+    "description": "Conversations other teammates assign to you show up here.",
+    "markAllRead": "Mark all as read",
+    "emptyTitle": "No notifications yet",
+    "emptyDesc": "You'll see an alert here when someone assigns you a conversation.",
+    "unread": "Unread"
+  },
+  "JoinPage": {
+    "conflictDefault": "You are already in another account. Sign in with a different email to join this one.",
+    "acceptFailed": "Failed to accept invitation",
+    "welcome": "Welcome to the team",
+    "serverUnreachable": "Could not reach the server",
+    "signOutFailed": "Could not sign out. Try refreshing the page.",
+    "verifying": "Verifying invitation…",
+    "fail": {
+      "notFoundTitle": "Invite not found",
+      "notFoundBody": "This link doesn't match a valid invitation. Double-check the URL or ask the person who invited you to send a new one.",
+      "usedTitle": "Invite already used",
+      "usedBody": "This invitation has already been accepted. If that wasn't you, ask the account admin to send a fresh link.",
+      "expiredTitle": "Invite expired",
+      "expiredBody": "This invitation has expired. Ask the account admin to send a new one — they take a few seconds to generate.",
+      "serverErrorTitle": "Something went wrong",
+      "serverErrorBody": "We couldn't verify this invitation right now. Try refreshing the page in a moment."
+    },
+    "tryAgain": "Try again",
+    "createNewAccount": "Create a new account instead",
+    "signIn": "Sign in",
+    "invitedTo": "You're invited to <account>{name}</account>",
+    "joinAs": "You'll join as <badge>{role}</badge>. Link valid until {date}.",
+    "accepting": "Accepting…",
+    "acceptInvitation": "Accept invitation",
+    "acceptNote": "Accepting moves your login into {name}. Your empty personal account from signup will be cleaned up.",
+    "conflictTitle": "Can't join {name} with this account",
+    "conflictBody": "To join <account>{name}</account>, sign out and sign up again with a different email address. The invite link stays valid as long as it hasn't expired.",
+    "staySignedIn": "Stay signed in",
+    "signingOut": "Signing out…",
+    "signOutSwitch": "Sign out & use a different email",
+    "createAndJoin": "Create account & join",
+    "haveAccount": "I already have an account"
+  },
+  "Flows": {
+    "editorState": {
+      "defaultYes": "Yes",
+      "defaultListButton": "View options",
+      "saveFailedStatus": "Save failed: {status}",
+      "statusUpdateFailedStatus": "Status update failed: {status}",
+      "deleteFailedStatus": "Delete failed: {status}",
+      "saved": "Saved.",
+      "fixIssues": "Fix the issues below before activating.",
+      "statusActivated": "Flow activated.",
+      "statusArchived": "Archived.",
+      "statusDraft": "Saved as draft.",
+      "deleteConfirm": "Delete \"{name}\"? Any active runs end immediately. This can't be undone.",
+      "saveFailed": "Save failed",
+      "statusUpdateFailed": "Status update failed",
+      "deleteFailed": "Delete failed"
+    },
+    "builder": {
+      "form": {
+        "optionN": "Option {n}"
+      }
+    }
+  },
+  "Interactive": {
+    "previewBody": "Message body…",
+    "previewButton": "Button",
+    "previewMenu": "Menu",
+    "replyButtons": "Reply buttons",
+    "list": "List",
+    "body": "Body",
+    "bodyPlaceholder": "What the customer reads above the options",
+    "header": "Header (optional)",
+    "footer": "Footer (optional)",
+    "showIds": "Show reply IDs (advanced)",
+    "preview": "Preview",
+    "buttonsCount": "Buttons ({count}/{max})",
+    "idPlaceholder": "id",
+    "buttonLabelPlaceholder": "Button label",
+    "addButton": "Add button",
+    "listButtonLabel": "List button label",
+    "rowsCount": "Rows ({count}/{max})",
+    "sectionTitlePlaceholder": "Section title (optional)",
+    "rowTitlePlaceholder": "Row title",
+    "rowDescriptionPlaceholder": "Description (optional)",
+    "addRow": "Add row",
+    "addSection": "Add section",
+    "defaultListButton": "Menu"
+  },
+  "Settings": {
+    "browserNotifications": {
+      "statusDenied": "Blocked in browser settings",
+      "deniedHint": "Allow notifications for this site in your browser's site settings (usually the lock icon next to the address bar), then reload the page.",
+      "permissionDeniedToast": "Your browser blocked notifications",
+      "testTitle": "Test notification",
+      "testBody": "Notifications are working. New customer messages will show up like this.",
+      "unsupported": "This browser doesn't support desktop notifications.",
+      "title": "Browser notifications",
+      "description": "Get a desktop alert for every new customer message, even while you're on another page. Saved to this device.",
+      "toggleLabel": "Notify me about new customer messages",
+      "toggleDesc": "Works only while the app is open in a browser tab.",
+      "sendTest": "Send test notification",
+      "labels": {
+        "fallbackTitle": "New message",
+        "image": "📷 Photo",
+        "audio": "🎤 Voice message",
+        "video": "🎬 Video",
+        "document": "📄 Document",
+        "location": "📍 Location",
+        "template": "📋 Template"
+      },
+      "statusGranted": "Allowed by your browser.",
+      "statusDefault": "Turning this on will ask your browser for permission."
+    },
+    "inbox": {
+      "loadFailed": "Couldn't load the reply time target",
+      "saveFailed": "Couldn't save the reply time target",
+      "saveSuccess": "Reply time target updated",
+      "title": "Inbox",
+      "description": "How the dashboard measures your team's reply times.",
+      "replyTarget": "Reply time target",
+      "replyTargetDesc": "The dashboard flags conversations that wait longer than this for a first reply, and compares your median reply time with it.",
+      "minutesLabel": "Minutes",
+      "invalid": "Enter a whole number from 1 to 1440.",
+      "hint": "A whole number from 1 to 1440 (24 hours).",
+      "adminOnlyHint": "Only account admins can change the reply time target.",
+      "saving": "Saving...",
+      "save": "Save"
+    },
+    "quickReplies": {
+      "nameRequired": "Give the quick reply a name.",
+      "saveError": "Couldn't save the quick reply.",
+      "updated": "Quick reply updated.",
+      "created": "Quick reply created.",
+      "deleteConfirm": "Delete this quick reply?",
+      "deleteError": "Couldn't delete the quick reply.",
+      "title": "Quick replies",
+      "description": "Reusable snippets — plain text or a saved interactive message — that agents can insert from the inbox composer.",
+      "new": "New quick reply",
+      "empty": "No quick replies yet. Create one to reuse it across conversations.",
+      "edit": "Edit quick reply",
+      "nameLabel": "Name",
+      "namePlaceholder": "e.g. Business hours",
+      "kindText": "Text",
+      "kindInteractive": "Interactive",
+      "textPlaceholder": "The message text to insert",
+      "cancel": "Cancel",
+      "save": "Save"
+    }
+  },
+  "UiPrimitives": {
+    "close": "Close"
+  },
+  "Broadcasts": {
+    "sending": {
+      "notSignedIn": "You are not signed in.",
+      "notLinkedToAccount": "Your profile is not linked to an account.",
+      "lookupCsvContactsFailed": "Failed to look up CSV contacts: {error}",
+      "createCsvContactsFailed": "Failed to create CSV contacts: {error}",
+      "noContactsForAudience": "No contacts found for this audience.",
+      "createBroadcastFailed": "Failed to create broadcast: {error}",
+      "unknownErrorLower": "unknown error",
+      "insertRecipientBatchFailed": "Failed to insert recipient batch {batch}: {error}",
+      "fetchRecipientsFailed": "Failed to fetch broadcast recipients",
+      "apiRequestFailed": "Broadcast API request failed",
+      "noPhoneOnContact": "No phone number on contact",
+      "unknownError": "Unknown error"
+    }
+  },
+  "LibErrors": {
+    "ai": {
+      "embeddingsMalformed": "Embeddings response was malformed.",
+      "embeddingsMissingIndices": "Embeddings response was missing result indices.",
+      "embeddingsMissingVector": "Embeddings response missing a vector.",
+      "emptyResponse": "{provider} returned an empty response.",
+      "compatBaseUrlRequired": "OpenAI-compatible API base URL is required.",
+      "compatBaseUrlInvalid": "OpenAI-compatible API base URL must be a valid URL.",
+      "compatBaseUrlProtocol": "OpenAI-compatible API base URL must use http:// or https://.",
+      "compatBaseUrlHttpsRequired": "OpenAI-compatible API base URL must use https:// unless its host is listed in {envVar}.",
+      "compatBaseUrlCredentials": "OpenAI-compatible API base URL must not contain embedded credentials.",
+      "compatBaseUrlQuery": "OpenAI-compatible API base URL must not contain a query string or fragment.",
+      "compatBlockedUrl": "OpenAI-compatible provider URL is blocked by the server outbound URL policy. For an operator-approved private host, add it to {envVar}.",
+      "timeout": "The AI provider took too long to respond.",
+      "unreachable": "Could not reach the AI provider: {message}",
+      "invalidKey": "{provider} rejected the API key",
+      "rateLimited": "{provider} rate limit reached",
+      "apiError": "{provider} API error ({status})"
+    },
+    "auth": {
+      "unauthorized": "Unauthorized",
+      "forbidden": "Forbidden",
+      "internal": "Internal server error",
+      "loadContext": "Could not load account context",
+      "notLinked": "Profile is not linked to an account",
+      "requiresRole": "This action requires the ''{min}'' role or higher",
+      "roleNames": {
+        "owner": "owner",
+        "admin": "admin",
+        "agent": "agent",
+        "viewer": "viewer"
+      }
+    },
+    "engine": {
+      "pausedWhileWaiting": "automation paused while waiting",
+      "stepRemovedWhileWaiting": "the step this run was waiting at was removed or moved out of its branch",
+      "pausedWhileWaitingForReply": "automation paused while waiting for reply",
+      "noReplyWithin24h": "no reply within 24h",
+      "scheduleWaitFailed": "could not schedule the wait: {message}",
+      "needsContact": "{step} needs a contact",
+      "parkForReplyFailed": "could not park for reply: {message}",
+      "emptyText": "send_message has empty text",
+      "needsTemplateName": "send_template needs template_name",
+      "needsContactAndTag": "{step} needs contact + tag_id",
+      "needsPipelineStage": "create_deal needs pipeline + stage",
+      "needsUrl": "send_webhook needs url",
+      "destinationNotAllowed": "send_webhook: destination not allowed",
+      "webhookStatus": "webhook returned {status}",
+      "conversationNotInAccount": "conversation does not belong to this account",
+      "noContactForConversation": "cannot resolve conversation: no contact",
+      "noConversation": "cannot send: contact has no existing conversation",
+      "tagAddedNoConversation": "tag_added automation cannot send: contact has no existing conversation"
+    },
+    "send": {
+      "contactNotFound": "contact not found for this account",
+      "noWhatsAppAddress": "contact has no usable WhatsApp address (phone: {phone})",
+      "none": "none",
+      "notConfigured": "WhatsApp not configured for this account",
+      "dbInsertFailed": "sent to Meta but DB insert failed: {message}",
+      "conversationLookupFailed": "conversation lookup failed: {message}",
+      "conversationNotFound": "conversation not found for this account"
+    },
+    "tags": {
+      "invalidContactId": "Contact id must be a UUID",
+      "invalidTagId": "Tag id must be a UUID",
+      "verifyFailed": "Could not verify contact tag ownership",
+      "contactNotFound": "Contact not found",
+      "tagNotFound": "Tag not found",
+      "addFailed": "Failed to add contact tag: {message}",
+      "removeFailed": "Failed to remove contact tag: {message}"
+    },
+    "media": {
+      "noAttachment": "This message has no attachment."
+    },
+    "rateLimitExceeded": "Rate limit exceeded",
+    "upload": {
+      "notSignedIn": "Not signed in.",
+      "accountUnresolved": "Could not resolve your account."
+    }
+  },
+  "StarterAutomations": {
+    "welcome_message": {
+      "name": "Welcome Message",
+      "description": "Auto-reply to first-time contacts with a greeting.",
+      "text": "Hi! 👋 Thanks for reaching out. We'll get back to you shortly."
+    },
+    "out_of_office": {
+      "name": "Out of Office",
+      "description": "Auto-reply during off-hours so nobody is left waiting.",
+      "text": "Thanks for your message! Our team is offline right now (9am–6pm) and will reply first thing tomorrow."
+    },
+    "lead_qualifier": {
+      "name": "Lead Qualifier",
+      "description": "Ask qualification questions to filter inbound leads.",
+      "text": "Great — happy to help with pricing! Quick question: roughly how many seats are you looking for?",
+      "keywords": "pricing,quote,buy"
+    },
+    "follow_up_reminder": {
+      "name": "Follow-up Reminder",
+      "description": "Send a nudge if a contact has not replied within 24 hours.",
+      "text": "Just circling back — did you have any other questions for us? Happy to help!"
+    }
+  },
+  "Validation": {
+    "automations": {
+      "needsStep": "active automations need at least one step",
+      "messageTextRequired": "message text is required",
+      "templateNameRequired": "template name is required",
+      "tagRequired": "tag is required",
+      "agentRequired": "agent is required when mode is \"specific\"",
+      "fieldNameRequired": "field name is required",
+      "fieldValueRequired": "field value is required",
+      "pipelineRequired": "pipeline is required",
+      "stageRequired": "stage is required",
+      "titleRequired": "title is required",
+      "waitAmountInvalid": "wait amount must be greater than 0",
+      "waitUnitInvalid": "wait unit must be minutes, hours, or days",
+      "conditionSubjectRequired": "condition subject is required",
+      "conditionOperandRequired": "condition operand is required",
+      "conditionValueRequired": "condition value is required",
+      "conditionTimezoneInvalid": "condition time zone is not a valid IANA time zone",
+      "webhookUrlRequired": "webhook URL is required",
+      "webhookUrlScheme": "webhook URL must use http or https",
+      "webhookUrlInvalid": "webhook URL is not a valid URL",
+      "unknownStepType": "unknown step type: {type}",
+      "keywordRequired": "at least one keyword is required",
+      "keywordsEmpty": "keywords cannot be empty strings",
+      "matchTypeInvalid": "match type must be \"exact\", \"contains\" or \"word\"",
+      "scheduleRequired": "schedule is required",
+      "replyIdRequired": "at least one reply id is required",
+      "replyIdsEmpty": "reply ids cannot be empty strings"
+    },
+    "flows": {
+      "nameRequired": "Flow name is required.",
+      "entryRequired": "Pick an entry node before activating.",
+      "needsNode": "A flow needs at least one node before activation.",
+      "entryMissing": "Entry node \"{id}\" doesn't exist.",
+      "duplicateNodeKey": "Duplicate node_key \"{key}\".",
+      "unreachable": "Node \"{key}\" is unreachable from the entry node.",
+      "autoAdvanceCycle": "Nodes {keys} loop back to each other without waiting for the customer, so the flow would keep sending messages. Add a buttons, list or question step to the loop, or break it.",
+      "keywordsRequired": "Keyword triggers need at least one keyword.",
+      "blankKeywords": "{count} {count, plural, =1 {keyword is} other {keywords are}} blank — they won't match anything.",
+      "startNeedsNext": "Start node must point to a next node.",
+      "startMissingNext": "Start points to non-existent node \"{key}\".",
+      "sendMessageNeedsText": "Send-message node needs a text body.",
+      "sendMessageNeedsNext": "Send-message node must point to a next node.",
+      "sendMessageMissingNext": "Send-message points to non-existent node \"{key}\".",
+      "sendMediaNeedsType": "Send-media node needs a media type (image, video, or document).",
+      "sendMediaNeedsFile": "Send-media node needs a file (upload one before activating).",
+      "captionTooLong": "Caption exceeds {max} chars (WhatsApp limit).",
+      "sendMediaNeedsNext": "Send-media node must point to a next node.",
+      "sendMediaMissingNext": "Send-media points to non-existent node \"{key}\".",
+      "sendButtonsNeedsText": "Send-buttons node needs a text body.",
+      "sendButtonsNeedsButton": "Send-buttons needs at least one button.",
+      "tooManyButtons": "WhatsApp allows at most {max} buttons per message.",
+      "buttonNeedsReplyId": "Button {n} needs a reply id.",
+      "duplicateButtonReplyId": "Duplicate button reply id \"{id}\".",
+      "buttonNeedsTitle": "Button {n} needs a title.",
+      "buttonTitleTooLong": "Button {n} title is over {max} chars (WhatsApp limit).",
+      "buttonNeedsNext": "Button {n} needs a next node.",
+      "buttonMissingNext": "Button {n} points to non-existent node \"{key}\".",
+      "sendListNeedsText": "Send-list node needs a text body.",
+      "sendListNeedsLabel": "Send-list needs a button label (the tap-to-expand text).",
+      "sendListNeedsRow": "Send-list needs at least one row.",
+      "tooManyRows": "Send-list allows at most {max} rows total across sections.",
+      "rowNeedsReplyId": "Row {row} in section {section} needs a reply id.",
+      "duplicateRowId": "Duplicate list row id \"{id}\".",
+      "rowNeedsTitle": "Row {n} needs a title.",
+      "rowTitleTooLong": "Row {n} title exceeds {max} chars.",
+      "rowDescriptionTooLong": "Row {n} description exceeds {max} chars.",
+      "rowNeedsNext": "Row {n} needs a next node.",
+      "rowMissingNext": "Row {n} points to non-existent node \"{key}\".",
+      "collectNeedsPrompt": "Collect-input needs a prompt to send the customer.",
+      "collectNeedsVarKey": "Collect-input needs a var_key to store the answer under.",
+      "invalidVarKey": "var_key \"{key}\" must be alphanumeric+underscore and start with a letter or underscore.",
+      "collectNeedsNext": "Collect-input must point to a next node.",
+      "collectMissingNext": "Collect-input points to non-existent node \"{key}\".",
+      "conditionNeedsSubject": "Condition needs a subject (var / tag / contact_field).",
+      "conditionNeedsSubjectKey": "Condition needs a subject_key (var name, tag id, or field name).",
+      "conditionNeedsOperator": "Condition needs an operator.",
+      "operatorNeedsValue": "Operator \"{operator}\" usually expects a comparison value — empty value will only match empty subjects.",
+      "conditionNeedsBranch": "Condition needs a node for the \"{branch}\" branch.",
+      "conditionMissingBranch": "Condition's \"{branch}\" points to non-existent node \"{key}\".",
+      "setTagNeedsMode": "Set-tag needs a mode (add or remove).",
+      "setTagNeedsTag": "Set-tag needs a tag to apply.",
+      "setTagNeedsNext": "Set-tag must point to a next node.",
+      "setTagMissingNext": "Set-tag points to non-existent node \"{key}\".",
+      "unknownNodeType": "Unknown node type \"{type}\"."
+    },
+    "interactive": {
+      "buttonCount": "Interactive button message requires 1-{max} buttons (got {got}).",
+      "buttonMissingId": "Interactive button missing id.",
+      "duplicateButtonId": "Interactive message has duplicate button id \"{id}\".",
+      "buttonMissingTitle": "Interactive button \"{id}\" missing title.",
+      "buttonTitleTooLong": "Interactive button title \"{title}\" exceeds {max} chars.",
+      "listRequiresButtonLabel": "Interactive list requires a buttonLabel.",
+      "listButtonLabelTooLong": "Interactive list buttonLabel \"{label}\" exceeds {max} chars.",
+      "listSectionCount": "Interactive list requires 1-{max} sections (got {got}).",
+      "listRowCount": "Interactive list requires 1-{max} rows total across all sections (got {got}).",
+      "listRowMissingId": "Interactive list row missing id.",
+      "duplicateRowId": "Interactive list has duplicate row id \"{id}\".",
+      "listRowMissingTitle": "Interactive list row \"{id}\" missing title.",
+      "listRowTitleTooLong": "Interactive list row title \"{title}\" exceeds {max} chars.",
+      "listRowDescriptionTooLong": "Interactive list row description for \"{id}\" exceeds {max} chars.",
+      "bodyRequired": "Interactive message requires bodyText.",
+      "bodyTooLong": "Interactive bodyText exceeds {max} chars.",
+      "headerTooLong": "Interactive headerText exceeds {max} chars.",
+      "footerTooLong": "Interactive footerText exceeds {max} chars."
+    },
+    "templates": {
+      "headerUrlUnreachable": "Could not fetch the header media URL. Make sure it is publicly reachable.",
+      "metaAppIdRequired": "Media-header templates need META_APP_ID set (used for Meta’s Resumable Upload). Add it to your environment, or remove the media header.",
+      "headerUrlStatus": "Header {kind} URL returned {status}. It must be publicly reachable.",
+      "headerWrongType": "Header {kind} must be {formats} (got {contentType}).",
+      "headerEmpty": "Header {kind} is empty.",
+      "headerTooLarge": "Header {kind} is {size} MB — Meta's limit is {max} MB.",
+      "headerTextValueRequired": "Header text variable {var} requires a value — pass headerText.",
+      "mediaHeaderSendSource": "{type} header requires a media link or id at send time — set header_media_url on the template or pass headerMediaUrl/headerMediaId.",
+      "bodyValuesMissing": "Body has {count} variable(s) but only {got} value(s) were supplied.",
+      "urlButtonParamRequired": "URL button #{n} uses {var} — requires a buttonParams[{index}] value.",
+      "nameRequired": "Template name is required.",
+      "nameInvalid": "Template name must use only lowercase letters, digits, and underscores (1-512 chars).",
+      "bodyNotContiguous": "Body variables must be contiguous starting at {first} — found {found}.",
+      "bodyRequired": "Body text is required.",
+      "bodyTooLong": "Body text exceeds {max} chars (got {got}).",
+      "footerTooLong": "Footer text exceeds {max} chars (got {got}).",
+      "footerNoVariables": "Footer text cannot contain {placeholder} variables (Meta rule).",
+      "headerTextRequired": "Text header requires header_content.",
+      "headerTextTooLong": "Header text exceeds {max} chars (got {got}).",
+      "headerTooManyVariables": "Text header supports at most one variable — found {count} (Meta rule).",
+      "headerVariableMustBeFirst": "Text header variable must be {var} (Meta rule).",
+      "mediaHeaderRequiresSource": "{type} header requires either a public sample URL (header_media_url) or a Resumable Upload handle (header_handle).",
+      "headerMediaUrlScheme": "header_media_url must use http(s) scheme.",
+      "headerMediaUrlInvalid": "header_media_url must be a valid URL.",
+      "tooManyButtons": "Templates can have at most {max} buttons (got {got}).",
+      "tooManyUrlButtons": "At most {max} URL buttons allowed (got {got}).",
+      "tooManyPhoneButtons": "At most {max} PHONE_NUMBER button allowed (got {got}).",
+      "tooManyCopyCodeButtons": "At most {max} COPY_CODE button allowed (got {got}).",
+      "quickReplyInterleaved": "QUICK_REPLY buttons cannot be interleaved with URL / PHONE_NUMBER / COPY_CODE buttons — group them at the start.",
+      "buttonMissingText": "Button #{n} ({type}) is missing text.",
+      "buttonTextTooLong": "Button #{n} text exceeds {max} chars.",
+      "urlButtonMissingUrl": "URL button #{n} is missing url.",
+      "urlButtonInvalidUrl": "URL button #{n} has an invalid url.",
+      "urlButtonTooManyVariables": "URL button #{n} can have at most one variable (Meta rule).",
+      "urlButtonVariableMustBeFirst": "URL button #{n} variable must be {var} (Meta rule).",
+      "urlButtonNeedsExample": "URL button #{n} uses {var} — Meta requires an example value.",
+      "phoneButtonMissingNumber": "PHONE_NUMBER button #{n} is missing phone_number.",
+      "copyCodeButtonMissingExample": "COPY_CODE button #{n} is missing example value.",
+      "bodySampleCountMismatch": "Body has {count} variable(s) — supply exactly {count} sample value(s) (got {got}).",
+      "headerSampleCountMismatch": "Header has {count} variable(s) — supply exactly {count} sample value(s) (got {got}).",
+      "bodySampleEmpty": "Body sample value #{n} is empty.",
+      "headerSampleEmpty": "Header sample value #{n} is empty.",
+      "languageRequired": "Language is required."
+    }
+  },
+  "Currency": {
+    "USD": "US Dollar",
+    "EUR": "Euro",
+    "GBP": "British Pound",
+    "INR": "Indian Rupee",
+    "AUD": "Australian Dollar",
+    "CAD": "Canadian Dollar",
+    "BRL": "Brazilian Real",
+    "JPY": "Japanese Yen",
+    "CNY": "Chinese Yuan",
+    "AED": "UAE Dirham",
+    "ZAR": "South African Rand",
+    "NGN": "Nigerian Naira",
+    "SGD": "Singapore Dollar",
+    "MXN": "Mexican Peso",
+    "COP": "Colombian Peso",
+    "KZT": "Kazakhstani Tenge"
+  },
+  "StarterFlows": {
+    "welcome_menu": {
+      "name": "Welcome menu",
+      "description": "Greet customers who type a keyword and route them to the right agent based on whether they're new or existing.",
+      "text": "Hi! 👋 Welcome to support. Are you an existing customer or new here?",
+      "footer": "Tap a button below to continue.",
+      "existingButton": "Existing customer",
+      "newButton": "New customer",
+      "existingNote": "Existing customer needs assistance — please check account history before replying.",
+      "newNote": "New customer — share pricing + onboarding link.",
+      "keywords": "support,help,hi"
+    },
+    "faq_bot": {
+      "name": "FAQ bot",
+      "description": "Answer common questions automatically. Customer picks a topic from a list; the bot replies with the answer and ends.",
+      "text": "What can I help you with?",
+      "buttonLabel": "View topics",
+      "commonSection": "Common questions",
+      "hoursRow": "Opening hours",
+      "pricingRow": "Pricing",
+      "refundsRow": "Refund policy",
+      "otherSection": "Other",
+      "humanRow": "Talk to a human",
+      "hoursAnswer": "We're open Mon–Fri, 9am–6pm local time. Weekend support is limited to urgent issues.",
+      "pricingAnswer": "Our pricing starts at $9/mo. Visit https://example.com/pricing for the full breakdown.",
+      "refundsAnswer": "Refunds are honored within 30 days of purchase. Reply with your order number and we'll process it.",
+      "humanNote": "Customer asked to talk to a human from the FAQ bot.",
+      "keywords": "faq,question,info"
+    },
+    "lead_capture": {
+      "name": "Lead capture",
+      "description": "Greet first-time inbounds, capture name + email + company, then hand off to sales with the answers in the note.",
+      "intro": "Welcome! 👋 I'll ask a few quick questions so we can get you to the right person.",
+      "askName": "What's your name?",
+      "askEmail": "Thanks {name}! What's your work email?",
+      "askCompany": "Almost done — what's your company name?",
+      "handoffNote": "New lead — name={name}, email={email}, company={company}."
+    }
+  },
+  "TemplateStatus": {
+    "DRAFT": "Draft",
+    "PENDING": "Pending",
+    "APPROVED": "Approved",
+    "REJECTED": "Rejected",
+    "PAUSED": "Paused",
+    "DISABLED": "Disabled",
+    "IN_APPEAL": "In Appeal",
+    "PENDING_DELETION": "Pending Deletion"
+  },
+  "Automations": {
+    "relative": {
+      "never": "never",
+      "justNow": "just now",
+      "minutesAgo": "{n}m ago",
+      "hoursAgo": "{n}h ago",
+      "daysAgo": "{n}d ago"
+    }
   }
 }

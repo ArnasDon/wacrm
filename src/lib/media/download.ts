@@ -1,6 +1,9 @@
 import type { Message } from "@/types";
 import { loadMediaBlob, MediaResponseError } from "./blob-cache";
 import { mediaFilename } from "./filename";
+import { getT } from "@/lib/i18n/translate";
+
+const t = getT("LibErrors");
 
 /**
  * Save a chat attachment to the agent's machine.
@@ -18,7 +21,7 @@ import { mediaFilename } from "./filename";
  */
 export async function downloadMediaMessage(message: Message): Promise<void> {
   const url = message.media_url;
-  if (!url) throw new Error("This message has no attachment.");
+  if (!url) throw new Error(t("media.noAttachment"));
 
   let blob: Blob;
   try {

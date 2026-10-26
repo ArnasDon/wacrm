@@ -84,6 +84,7 @@ export function NodeConfigForm({
             label={t("textSentToCustomer")}
             value={(cfg as { text?: string }).text ?? ""}
             onChange={(v) => onUpdateConfig({ text: v })}
+            rows={3}
           />
           <NextNodeRow
             value={(cfg as { next_node_key?: string }).next_node_key ?? ""}
@@ -248,7 +249,7 @@ function SendButtonsForm({
         ...buttons,
         {
           reply_id: `btn_${buttons.length + 1}`,
-          title: "Option",
+          title: t("defaultOptionTitle"),
           next_node_key: "",
         },
       ],
@@ -394,7 +395,7 @@ function SendListForm({
           rows: [
             {
               reply_id: `row_${totalRows + 1}`,
-              title: `Option ${totalRows + 1}`,
+              title: t("optionN", { n: totalRows + 1 }),
               next_node_key: "",
             },
           ],
@@ -431,7 +432,7 @@ function SendListForm({
                 ...s.rows,
                 {
                   reply_id: `row_${totalRows + 1}`,
-                  title: `Option ${totalRows + 1}`,
+                  title: t("optionN", { n: totalRows + 1 }),
                   next_node_key: "",
                 },
               ],

@@ -13,6 +13,7 @@ import {
   isUniqueViolation,
   type ExistingContact,
 } from '@/lib/contacts/dedupe';
+import { parseInternationalPhone } from '@/lib/whatsapp/phone-utils';
 import {
   Dialog,
   DialogContent,
@@ -131,6 +132,18 @@ export function ContactForm({
       return;
     }
 
+    // A number typed here must carry its country code (leading `+`):
+    // "4155551212" reads as a US number to the person typing it but is
+    // delivered to +41 (Switzerland) by Meta (issue #586). Only checked
+    // when the number actually changed — contacts created by the inbound
+    // webhook store Meta's digits-only form, and editing their name must
+    // not be blocked by a phone the user never touched.
+    const phoneChanged = !isEdit || phone.trim() !== (contact?.phone ?? '');
+    if (phoneChanged && !parseInternationalPhone(phone)) {
+      toast.error(t('phoneNeedsCountryCode'));
+      return;
+    }
+
     // Hard-block an exact duplicate on create (the DB unique index is
     // the real backstop; this avoids a round-trip + a raw error toast).
     if (!isEdit && dupMatch?.exact) {
@@ -145,8 +158,8 @@ export function ContactForm({
         data: { session },
       } = await supabase.auth.getSession();
       const user = session?.user;
-      if (!user) throw new Error('Not authenticated');
-      if (!accountId) throw new Error('Your profile is not linked to an account.');
+      if (!user) throw new Error(t('notAuthenticated'));
+      if (!accountId) throw new Error(t('notLinkedToAccount'));
 
       let contactId = contact?.id;
 

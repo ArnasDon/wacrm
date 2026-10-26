@@ -23,6 +23,9 @@ import {
   rateLimitResponse,
   RATE_LIMITS,
 } from "@/lib/rate-limit";
+import { getT } from "@/lib/i18n/translate";
+
+const t = getT("Api");
 
 export async function GET() {
   try {
@@ -59,7 +62,7 @@ export async function PATCH(request: Request) {
 
     if (typeof rawName !== "string") {
       return NextResponse.json(
-        { error: "'name' must be a string" },
+        { error: t('account.nameMustBeString') },
         { status: 400 },
       );
     }
@@ -67,13 +70,13 @@ export async function PATCH(request: Request) {
     const name = rawName.trim();
     if (name.length === 0) {
       return NextResponse.json(
-        { error: "Account name cannot be empty" },
+        { error: t('account.nameEmpty') },
         { status: 400 },
       );
     }
     if (name.length > MAX_NAME_LEN) {
       return NextResponse.json(
-        { error: `Account name must be ${MAX_NAME_LEN} characters or fewer` },
+        { error: t('account.nameTooLong', { max: MAX_NAME_LEN }) },
         { status: 400 },
       );
     }
@@ -91,7 +94,7 @@ export async function PATCH(request: Request) {
     if (error) {
       console.error("[PATCH /api/account] update error:", error);
       return NextResponse.json(
-        { error: "Failed to update account" },
+        { error: t('account.updateFailed') },
         { status: 500 },
       );
     }

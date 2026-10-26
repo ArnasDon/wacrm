@@ -8,6 +8,7 @@ import {
   matchesContactFilters,
   normalizeConversations,
 } from "@/lib/inbox/conversations";
+import { applyInboxFilter, type InboxFilter } from "@/lib/inbox/inbox-filters";
 import { cn } from "@/lib/utils";
 import type { Conversation, ConversationStatus, Tag } from "@/types";
 import { Search, ChevronDown, X } from "lucide-react";
@@ -34,6 +35,7 @@ interface ConversationListProps {
    * or the tab was throttled. Optional so existing callers keep working.
    */
   resyncToken?: number;
+  initialFilter?: InboxFilter;
 }
 
 const STATUS_COLORS: Record<ConversationStatus, string> = {
@@ -43,26 +45,35 @@ const STATUS_COLORS: Record<ConversationStatus, string> = {
 };
 
 
-type InboxFilter = ConversationStatus | "all" | "unread";
-
-const FILTER_KEYS: { labelKey: string; value: InboxFilter }[] = [
-  { labelKey: "allConversations", value: "all" },
-  { labelKey: "unread", value: "unread" },
-  { labelKey: "open", value: "open" },
-  { labelKey: "pending", value: "pending" },
-  { labelKey: "closed", value: "closed" },
-];
-
 export function ConversationList({
   activeConversationId,
   onSelect,
   conversations,
   onConversationsLoaded,
   resyncToken = 0,
+  initialFilter = "all",
 }: ConversationListProps) {
   const t = useTranslations("inbox");
+
+  const FILTER_OPTIONS: { label: string; value: InboxFilter }[] = useMemo(() => [
+    { label: t("allConversations"), value: "all" },
+    { label: t("unread"), value: "unread" },
+    { label: t("filterWaiting"), value: "waiting" },
+    { label: t("filterUnassigned"), value: "unassigned" },
+    { label: t("filterExpiring"), value: "expiring" },
+    { label: t("open"), value: "open" },
+    { label: t("pending"), value: "pending" },
+    { label: t("closed"), value: "closed" },
+  ], [t]);
+
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<InboxFilter>("all");
+  const [filter, setFilter] = useState<InboxFilter>(initialFilter);
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
   const [loading, setLoading] = useState(true);
   // Contact-based filters (issue #272). Tags use OR logic (a conversation
   // matches if its contact carries any selected tag), consistent with
@@ -157,13 +168,7 @@ export function ConversationList({
   }, [tags]);
 
   const filtered = useMemo(() => {
-    let result = conversations;
-
-    if (filter === "unread") {
-      result = result.filter((c) => c.unread_count > 0);
-    } else if (filter !== "all") {
-      result = result.filter((c) => c.status === filter);
-    }
+    let result = applyInboxFilter(conversations, filter, now);
 
     // Contact-based filters (tags via OR logic, exact company match).
     if (selectedTagIds.length > 0 || selectedCompany !== null) {
@@ -186,7 +191,7 @@ export function ConversationList({
     }
 
     return result;
-  }, [conversations, filter, search, selectedTagIds, selectedCompany]);
+  }, [conversations, filter, now, search, selectedTagIds, selectedCompany]);
 
   const toggleTag = useCallback((id: string) => {
     setSelectedTagIds((prev) =>
@@ -215,7 +220,7 @@ export function ConversationList({
     [onSelect]
   );
 
-  const activeFilter = FILTER_KEYS.find((o) => o.value === filter);
+  const activeFilter = FILTER_OPTIONS.find((o) => o.value === filter);
 
   return (
     // w-full on mobile so the list occupies the whole viewport when it's
@@ -237,14 +242,14 @@ export function ConversationList({
         <div className="flex flex-wrap items-center gap-1">
           <DropdownMenu>
             <DropdownMenuTrigger className="inline-flex items-center justify-center h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground rounded-md hover:bg-muted">
-                {activeFilter ? t(activeFilter.labelKey as never) : t("allConversations")}
+                {activeFilter ? activeFilter.label : t("allConversations")}
                 <ChevronDown className="h-3 w-3" />
             </DropdownMenuTrigger>
             <DropdownMenuContent
               align="start"
               className="border-border bg-popover"
             >
-              {FILTER_KEYS.map((opt) => (
+              {FILTER_OPTIONS.map((opt) => (
                 <DropdownMenuItem
                   key={opt.value}
                   onClick={() => setFilter(opt.value)}
@@ -255,7 +260,7 @@ export function ConversationList({
                       : "text-popover-foreground"
                   )}
                 >
-                  {t(opt.labelKey as never)}
+                  {opt.label}
                 </DropdownMenuItem>
               ))}
             </DropdownMenuContent>

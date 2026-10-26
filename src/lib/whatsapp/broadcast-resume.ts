@@ -19,6 +19,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { BroadcastError, type BroadcastPlan } from '@/lib/whatsapp/broadcast-core';
+import { chunk } from '@/lib/supabase/paged-query';
 import { decrypt } from '@/lib/whatsapp/encryption';
 import { resolveTemplateRow } from '@/lib/whatsapp/template-body';
 import { sanitizePhoneForMeta, isValidE164 } from '@/lib/whatsapp/phone-utils';
@@ -41,6 +42,8 @@ export const RESUME_SCOPES: readonly ResumeScope[] = [
  * per-request recipient cap.
  */
 export const RESUME_MAX_PER_REQUEST = 1000;
+
+export const RESUME_MAX_SCAN_PAGES = 25;
 
 /**
  * How long a `delivery_locked_at` stamp is honoured before it is read
@@ -156,46 +159,68 @@ export async function planBroadcastResume(
   }
 
   const statuses = scopeStatuses(scope);
-  const { data: rawRows, error: recError } = await db
-    .from('broadcast_recipients')
-    .select('id, template_params, contact:contacts(phone)')
-    .eq('broadcast_id', broadcastId)
-    .in('status', statuses)
-    // Oldest first, so repeated capped passes chew through the backlog
-    // in a stable order instead of re-picking the same slice.
-    .order('created_at', { ascending: true });
-
-  if (recError) {
-    console.error('[broadcast-resume] recipient load failed:', recError.message);
-    throw new BroadcastError('internal', 'Failed to load recipients', 500);
-  }
-
-  const rows = (rawRows ?? []) as RecipientRow[];
-
-  // A recipient whose contact has no usable phone can never send. Stamp
-  // it failed now: leaving it 'pending' would keep the broadcast in
-  // 'sending' forever, which is the very symptom being fixed.
   const sendable: RecipientRow[] = [];
   const unsendable: string[] = [];
-  for (const row of rows) {
-    const sanitized = sanitizePhoneForMeta(contactPhone(row) ?? '');
-    if (isValidE164(sanitized)) sendable.push(row);
-    else unsendable.push(row.id);
+  let inScopeCount: number | null = null;
+  let scanned = 0;
+
+  for (
+    let page = 0;
+    page < RESUME_MAX_SCAN_PAGES && sendable.length < RESUME_MAX_PER_REQUEST;
+    page++
+  ) {
+    const from = page * RESUME_MAX_PER_REQUEST;
+    const {
+      data: rawRows,
+      count,
+      error: recError,
+    } = await db
+      .from('broadcast_recipients')
+      .select('id, template_params, contact:contacts(phone)', { count: 'exact' })
+      .eq('broadcast_id', broadcastId)
+      .in('status', statuses)
+      // Oldest first, so repeated capped passes chew through the backlog
+      // in a stable order instead of re-picking the same slice.
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true })
+      .range(from, from + RESUME_MAX_PER_REQUEST - 1);
+
+    if (recError) {
+      console.error('[broadcast-resume] recipient load failed:', recError.message);
+      throw new BroadcastError('internal', 'Failed to load recipients', 500);
+    }
+
+    const rows = (rawRows ?? []) as RecipientRow[];
+    if (page === 0) inScopeCount = count ?? null;
+    scanned += rows.length;
+
+    // A recipient whose contact has no usable phone can never send. Stamp
+    // it failed now: leaving it 'pending' would keep the broadcast in
+    // 'sending' forever, which is the very symptom being fixed.
+    for (const row of rows) {
+      const sanitized = sanitizePhoneForMeta(contactPhone(row) ?? '');
+      if (isValidE164(sanitized)) sendable.push(row);
+      else unsendable.push(row.id);
+    }
+
+    if (rows.length < RESUME_MAX_PER_REQUEST) break;
   }
-  if (unsendable.length > 0) {
+
+  for (const ids of chunk(unsendable)) {
     await db
       .from('broadcast_recipients')
       .update({
         status: 'failed',
         error_message: 'No valid phone number on contact',
       })
-      .in('id', unsendable);
+      .in('id', ids);
   }
 
   const slice = sendable.slice(0, RESUME_MAX_PER_REQUEST);
-  const remaining = sendable.length - slice.length;
+  const unloaded = Math.max(0, (inScopeCount ?? scanned) - scanned);
+  const remaining = sendable.length - slice.length + unloaded;
 
-  if (slice.length === 0) {
+  if (slice.length === 0 && remaining === 0) {
     throw new BroadcastError(
       'nothing_to_resume',
       scope === 'failed'

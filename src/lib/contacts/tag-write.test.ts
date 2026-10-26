@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { addContactTagIfAbsent } from './tag-write';
+import { addContactTagIfAbsent, removeContactTag } from './tag-write';
 
 interface FakeOptions {
   contact?: { id: string } | null;
@@ -53,8 +53,8 @@ function fakeDb(options: FakeOptions = {}): SupabaseClient {
 
 const input = {
   accountId: 'account-1',
-  contactId: 'contact-1',
-  tagId: 'tag-1',
+  contactId: '11111111-1111-4111-8111-111111111111',
+  tagId: '22222222-2222-4222-8222-222222222222',
 };
 
 describe('addContactTagIfAbsent', () => {
@@ -83,6 +83,23 @@ describe('addContactTagIfAbsent', () => {
     await expect(
       addContactTagIfAbsent(fakeDb({ tag: null }), input)
     ).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('rejects a non-UUID contact or tag id with 400 before querying', async () => {
+    const db = {
+      from: () => {
+        throw new Error('should not query');
+      },
+    } as unknown as SupabaseClient;
+    await expect(
+      addContactTagIfAbsent(db, { ...input, tagId: 'not-a-uuid' })
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(
+      addContactTagIfAbsent(db, { ...input, contactId: 'contact-1' })
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(
+      removeContactTag(db, { ...input, tagId: "x'),(or" })
+    ).rejects.toMatchObject({ status: 400 });
   });
 
   it('surfaces non-duplicate insert failures', async () => {

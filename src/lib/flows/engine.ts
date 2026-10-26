@@ -42,6 +42,7 @@ import {
 import { decideFallback, resolveFallbackPolicy } from "./fallback";
 import { addContactTagAndDispatch } from "@/lib/contacts/tag-events";
 import { removeContactTag } from "@/lib/contacts/tag-write";
+import { checkRunTimeout, markRunTimedOut, type RunTimeoutCheck } from "./timeout";
 import {
   type CollectInputNodeConfig,
   type ConditionNodeConfig,
@@ -58,6 +59,7 @@ import {
   type SetTagNodeConfig,
   type StartNodeConfig,
   type KeywordTriggerConfig,
+  AUTO_ADVANCING_NODE_TYPES,
 } from "./types";
 
 // ============================================================
@@ -135,13 +137,36 @@ export function entryTriggerTexts(message: ParsedInbound): string[] {
 
 /** Nodes that advance to a next_node_key without waiting for input. */
 export function isAutoAdvancing(node_type: string): boolean {
-  return (
-    node_type === "start" ||
-    node_type === "send_message" ||
-    node_type === "send_media" ||
-    node_type === "condition" ||
-    node_type === "set_tag"
+  return AUTO_ADVANCING_NODE_TYPES.has(node_type);
+}
+
+export type ActiveRunClosure =
+  | { kind: "cancel"; reason: "flow_not_active" | "current_node_removed" }
+  | { kind: "fail"; reason: "active_run_missing_current_node" }
+  | { kind: "timeout"; check: RunTimeoutCheck };
+
+export function closureForActiveRun(args: {
+  run: Pick<FlowRunRow, "current_node_key" | "last_advanced_at">;
+  flow: Pick<FlowRow, "status" | "fallback_policy"> | null;
+  nodeKeys: ReadonlySet<string> | { has(key: string): boolean };
+  now: Date;
+}): ActiveRunClosure | null {
+  if (!args.flow || args.flow.status !== "active") {
+    return { kind: "cancel", reason: "flow_not_active" };
+  }
+  const check = checkRunTimeout(
+    args.run.last_advanced_at,
+    args.flow.fallback_policy,
+    args.now,
   );
+  if (check.timedOut) return { kind: "timeout", check };
+  if (!args.run.current_node_key) {
+    return { kind: "fail", reason: "active_run_missing_current_node" };
+  }
+  if (!args.nodeKeys.has(args.run.current_node_key)) {
+    return { kind: "cancel", reason: "current_node_removed" };
+  }
+  return null;
 }
 
 /** Nodes that send a prompt and suspend awaiting a customer reply. */
@@ -392,15 +417,25 @@ async function sendButtonsAndSuspend(
   node: FlowNodeRow,
 ): Promise<{ outcome: "advanced"; node_key: string }> {
   const cfg = node.config as unknown as SendButtonsNodeConfig;
+  // Every customer-visible string is interpolated against run.vars —
+  // same treatment send_message / collect_input already get (#553).
+  // `reply_id` is deliberately NOT interpolated: it is the routing key
+  // matchReplyId compares the tapped button against, so it must reach
+  // Meta byte-for-byte as authored. Interpolation can push a title past
+  // Meta's 20-char cap; meta-api's validator throws a descriptive error
+  // and the caller logs it — we never truncate silently.
   const { whatsapp_message_id } = await engineSendInteractiveButtons({
     accountId: run.account_id,
     userId: run.user_id,
     conversationId: run.conversation_id!,
     contactId: run.contact_id!,
-    bodyText: cfg.text,
-    headerText: cfg.header_text,
-    footerText: cfg.footer_text,
-    buttons: cfg.buttons.map((b) => ({ id: b.reply_id, title: b.title })),
+    bodyText: interpolateVars(cfg.text, run.vars),
+    headerText: interpolateOptionalVars(cfg.header_text, run.vars),
+    footerText: interpolateOptionalVars(cfg.footer_text, run.vars),
+    buttons: cfg.buttons.map((b) => ({
+      id: b.reply_id,
+      title: interpolateVars(b.title, run.vars),
+    })),
   });
   await logEvent(db, run.id, "message_sent", node.node_key, {
     node_type: "send_buttons",
@@ -428,21 +463,23 @@ async function sendListAndSuspend(
   node: FlowNodeRow,
 ): Promise<{ outcome: "advanced"; node_key: string }> {
   const cfg = node.config as unknown as SendListNodeConfig;
+  // See sendButtonsAndSuspend — interpolate every visible string,
+  // never the row `reply_id`.
   const { whatsapp_message_id } = await engineSendInteractiveList({
     accountId: run.account_id,
     userId: run.user_id,
     conversationId: run.conversation_id!,
     contactId: run.contact_id!,
-    bodyText: cfg.text,
-    buttonLabel: cfg.button_label,
-    headerText: cfg.header_text,
-    footerText: cfg.footer_text,
+    bodyText: interpolateVars(cfg.text, run.vars),
+    buttonLabel: interpolateVars(cfg.button_label, run.vars),
+    headerText: interpolateOptionalVars(cfg.header_text, run.vars),
+    footerText: interpolateOptionalVars(cfg.footer_text, run.vars),
     sections: cfg.sections.map((s) => ({
-      title: s.title,
+      title: interpolateOptionalVars(s.title, run.vars),
       rows: s.rows.map((r) => ({
         id: r.reply_id,
-        title: r.title,
-        description: r.description,
+        title: interpolateVars(r.title, run.vars),
+        description: interpolateOptionalVars(r.description, run.vars),
       })),
     })),
   });
@@ -555,10 +592,27 @@ function interpolateVars(template: string, vars: Record<string, unknown>): strin
   });
 }
 
+/**
+ * `interpolateVars` for optional config fields (header_text, footer_text,
+ * list section titles, row descriptions). An absent field stays absent
+ * — `interpolateVars(undefined)` would return "" and meta-api treats
+ * header/footer/description by truthiness, so "" is harmless there, but
+ * keeping `undefined` means the payload we log and send matches what
+ * the author configured rather than sprouting empty strings.
+ */
+function interpolateOptionalVars(
+  template: string | undefined,
+  vars: Record<string, unknown>,
+): string | undefined {
+  return template === undefined || template === null
+    ? undefined
+    : interpolateVars(template, vars);
+}
+
 async function endRun(
   db: AdminClient,
   runId: string,
-  status: "completed" | "handed_off" | "timed_out" | "failed",
+  status: "completed" | "handed_off" | "cancelled" | "failed",
   reason: string,
 ): Promise<void> {
   await db
@@ -568,7 +622,8 @@ async function endRun(
       ended_at: new Date().toISOString(),
       end_reason: reason,
     })
-    .eq("id", runId);
+    .eq("id", runId)
+    .eq("status", "active");
 }
 
 // ============================================================
@@ -578,6 +633,8 @@ async function endRun(
 // new current_node_key before returning.
 // ============================================================
 
+export const MAX_NODES_PER_ADVANCE = 25;
+
 async function advanceFromNodeKey(
   db: AdminClient,
   run: FlowRunRow,
@@ -585,9 +642,7 @@ async function advanceFromNodeKey(
   nodes: Map<string, FlowNodeRow>,
 ): Promise<{ outcome: "advanced" | "completed" | "handed_off" }> {
   let currentKey: string | null = startNodeKey;
-  // Defensive cap — if a flow has a cycle (which the validator
-  // SHOULD catch but doesn't yet in v1), we bail rather than loop.
-  for (let safety = 0; safety < 64; safety += 1) {
+  for (let safety = 0; safety < MAX_NODES_PER_ADVANCE; safety += 1) {
     if (!currentKey) {
       await logEvent(db, run.id, "error", null, {
         reason: "next_node_key was null mid-advance",
@@ -771,7 +826,23 @@ async function advanceFromNodeKey(
       continue;
     }
     if (node.node_type === "send_buttons") {
-      await sendButtonsAndSuspend(db, run, node);
+      // Same failure contract as send_message / send_media /
+      // collect_input above: log + fail the run. Previously an
+      // exception here (Meta error, or meta-api's length validation —
+      // now reachable via interpolation, see sendButtonsAndSuspend)
+      // escaped to dispatchInboundToFlows' catch, which only
+      // console.error'd and left the run active + stuck on the prior
+      // node with nothing in flow_run_events.
+      try {
+        await sendButtonsAndSuspend(db, run, node);
+      } catch (err) {
+        await logEvent(db, run.id, "error", node.node_key, {
+          reason: "send_buttons_failed",
+          detail: err instanceof Error ? err.message : String(err),
+        });
+        await endRun(db, run.id, "failed", "send_buttons_failed");
+        return { outcome: "completed" };
+      }
       // Persist the new current_node_key via optimistic UPDATE.
       const advanced = await advanceCurrentNodeKey(
         db,
@@ -787,7 +858,16 @@ async function advanceFromNodeKey(
       return { outcome: "advanced" };
     }
     if (node.node_type === "send_list") {
-      await sendListAndSuspend(db, run, node);
+      try {
+        await sendListAndSuspend(db, run, node);
+      } catch (err) {
+        await logEvent(db, run.id, "error", node.node_key, {
+          reason: "send_list_failed",
+          detail: err instanceof Error ? err.message : String(err),
+        });
+        await endRun(db, run.id, "failed", "send_list_failed");
+        return { outcome: "completed" };
+      }
       const advanced = await advanceCurrentNodeKey(
         db,
         run.id,
@@ -860,6 +940,58 @@ async function advanceCurrentNodeKey(
   return Array.isArray(data) && data.length > 0;
 }
 
+async function claimReplyTransition(
+  db: AdminClient,
+  run: FlowRunRow,
+  nextNodeKey: string,
+  extra: Record<string, unknown> = {},
+): Promise<boolean> {
+  const fromKey = run.current_node_key;
+  if (fromKey === null) return false;
+  const nextSeq = (run.transition_seq ?? 0) + 1;
+  const { data, error } = await db
+    .from("flow_runs")
+    .update({
+      ...extra,
+      current_node_key: nextNodeKey,
+      transition_seq: nextSeq,
+      reprompt_count: 0,
+      last_advanced_at: new Date().toISOString(),
+    })
+    .eq("id", run.id)
+    .eq("status", "active")
+    .eq("current_node_key", fromKey)
+    .eq("transition_seq", run.transition_seq ?? 0)
+    .select("id");
+  if (error) {
+    console.error("[flows] claimReplyTransition error:", error.message);
+    return false;
+  }
+  if (!Array.isArray(data) || data.length !== 1) return false;
+  run.current_node_key = nextNodeKey;
+  run.transition_seq = nextSeq;
+  run.reprompt_count = 0;
+  return true;
+}
+
+async function closeActiveRun(
+  db: AdminClient,
+  run: FlowRunRow,
+  closure: ActiveRunClosure,
+  now: Date,
+): Promise<void> {
+  if (closure.kind === "timeout") {
+    await markRunTimedOut(db, run.id, closure.check, "timed_out_on_reply", now);
+    return;
+  }
+  await endRun(
+    db,
+    run.id,
+    closure.kind === "cancel" ? "cancelled" : "failed",
+    closure.reason,
+  );
+}
+
 // ============================================================
 // Public entry point — the webhook calls this on every inbound.
 // ============================================================
@@ -894,8 +1026,27 @@ export async function dispatchInboundToFlows(
       }
       // One SELECT for the whole flow's nodes — advance loop is now
       // in-memory. See loadAllNodes.
-      const nodes = await loadAllNodes(db, activeRun.flow_id);
-      return handleReplyForActiveRun(db, activeRun, input.message, nodes);
+      const [runFlow, nodes] = await Promise.all([
+        loadFlow(db, activeRun.flow_id),
+        loadAllNodes(db, activeRun.flow_id),
+      ]);
+      const now = new Date();
+      const closure = closureForActiveRun({
+        run: activeRun,
+        flow: runFlow,
+        nodeKeys: nodes,
+        now,
+      });
+      if (!closure) {
+        return handleReplyForActiveRun(
+          db,
+          activeRun,
+          runFlow!,
+          input.message,
+          nodes,
+        );
+      }
+      await closeActiveRun(db, activeRun, closure, now);
     }
 
     // No active run → look for a flow whose entry trigger matches.
@@ -922,6 +1073,7 @@ export async function dispatchInboundToFlows(
 async function handleReplyForActiveRun(
   db: AdminClient,
   run: FlowRunRow,
+  flow: FlowRow,
   message: ParsedInbound,
   nodes: Map<string, FlowNodeRow>,
 ): Promise<DispatchInboundResult> {
@@ -939,22 +1091,7 @@ async function handleReplyForActiveRun(
     text_length: message.kind === "text" ? message.text.length : null,
   });
 
-  if (!run.current_node_key) {
-    // Defensive — a run with status='active' but no current node is
-    // malformed. Fail the run rather than spin.
-    await endRun(db, run.id, "failed", "active_run_missing_current_node");
-    return {
-      consumed: true,
-      flow_run_id: run.id,
-      outcome: "no_match",
-    };
-  }
-
-  const currentNode = nodes.get(run.current_node_key) ?? null;
-  if (!currentNode) {
-    await endRun(db, run.id, "failed", "current_node_not_found");
-    return { consumed: true, flow_run_id: run.id, outcome: "no_match" };
-  }
+  const currentNode = nodes.get(run.current_node_key!)!;
 
   // Two ways a reply can advance:
   //   1. Interactive button/list tap on a send_buttons/send_list node.
@@ -974,45 +1111,24 @@ async function handleReplyForActiveRun(
   ) {
     const cfg = currentNode.config as unknown as CollectInputNodeConfig;
     const captured = message.text.trim();
-    if (captured.length > 0 && cfg.var_key) {
-      // Persist captured value + reset reprompt count atomically.
+    if (captured.length > 0 && cfg.var_key && cfg.next_node_key) {
       const newVars = { ...run.vars, [cfg.var_key]: captured };
-      const { error: capErr } = await db
-        .from("flow_runs")
-        .update({
-          vars: newVars,
-          reprompt_count: 0,
-        })
-        .eq("id", run.id);
-      if (!capErr) {
-        // Mirror the UPDATE in-memory so downstream interpolation in
-        // the advance loop sees the captured var without us having to
-        // re-SELECT the whole row.
-        run.vars = newVars;
-        run.reprompt_count = 0;
-        await logEvent(db, run.id, "node_entered", currentNode.node_key, {
-          captured_key: cfg.var_key,
-          captured_length: captured.length,
-        });
-        matched = cfg.next_node_key;
+      if (!(await claimReplyTransition(db, run, cfg.next_node_key, { vars: newVars }))) {
+        return lostReplyRace(db, run, currentNode.node_key);
       }
+      run.vars = newVars;
+      await logEvent(db, run.id, "node_entered", currentNode.node_key, {
+        captured_key: cfg.var_key,
+        captured_length: captured.length,
+      });
+      const outcome = await advanceFromNodeKey(db, run, cfg.next_node_key, nodes);
+      return { consumed: true, flow_run_id: run.id, outcome: outcome.outcome };
     }
   }
 
   if (matched) {
-    // Reset reprompt count on a successful match. Skip the write when
-    // already 0 — the collect_input capture branch above already
-    // zeroed it, and interactive-reply matches against a fresh run
-    // (post-prior-reset) are also already 0. The previous re-read of
-    // the whole row was needed only because we weren't mirroring the
-    // capture UPDATE into the in-memory `run`; now that we do, the
-    // local copy is the source of truth.
-    if (run.reprompt_count !== 0) {
-      const { error } = await db
-        .from("flow_runs")
-        .update({ reprompt_count: 0 })
-        .eq("id", run.id);
-      if (!error) run.reprompt_count = 0;
+    if (!(await claimReplyTransition(db, run, matched))) {
+      return lostReplyRace(db, run, currentNode.node_key);
     }
     const outcome = await advanceFromNodeKey(db, run, matched, nodes);
     return {
@@ -1023,9 +1139,7 @@ async function handleReplyForActiveRun(
   }
 
   // No match → fallback. Apply the policy.
-  const policy = resolveFallbackPolicy(
-    (await loadFlow(db, run.flow_id))?.fallback_policy,
-  );
+  const policy = resolveFallbackPolicy(flow.fallback_policy);
   const newReprompts = run.reprompt_count + 1;
   await db
     .from("flow_runs")
@@ -1043,28 +1157,32 @@ async function handleReplyForActiveRun(
   }
   if (action.type === "reprompt") {
     // Re-send the same prompt. Same node, no current_node_key change.
-    if (currentNode.node_type === "send_buttons") {
-      await sendButtonsAndSuspend(db, run, currentNode);
-    } else if (currentNode.node_type === "send_list") {
-      await sendListAndSuspend(db, run, currentNode);
-    } else if (currentNode.node_type === "collect_input") {
-      // Customer typed something we couldn't accept (empty after trim,
-      // or var_key missing — rare). Re-send the prompt so they try again.
-      const cfg = currentNode.config as unknown as CollectInputNodeConfig;
-      try {
+    // The interactive helpers interpolate run.vars themselves, so a
+    // reprompt renders the same text the original prompt did. A send
+    // failure here is logged but does not end the run — the customer
+    // still has the original prompt on screen and can retry.
+    try {
+      if (currentNode.node_type === "send_buttons") {
+        await sendButtonsAndSuspend(db, run, currentNode);
+      } else if (currentNode.node_type === "send_list") {
+        await sendListAndSuspend(db, run, currentNode);
+      } else if (currentNode.node_type === "collect_input") {
+        // Customer typed something we couldn't accept (empty after trim,
+        // or var_key missing — rare). Re-send the prompt so they try again.
+        const cfg = currentNode.config as unknown as CollectInputNodeConfig;
         await engineSendText({
           accountId: run.account_id,
-    userId: run.user_id,
+          userId: run.user_id,
           conversationId: run.conversation_id!,
           contactId: run.contact_id!,
           text: interpolateVars(cfg.prompt_text, run.vars),
         });
-      } catch (err) {
-        await logEvent(db, run.id, "error", currentNode.node_key, {
-          reason: "reprompt_send_failed",
-          detail: err instanceof Error ? err.message : String(err),
-        });
       }
+    } catch (err) {
+      await logEvent(db, run.id, "error", currentNode.node_key, {
+        reason: "reprompt_send_failed",
+        detail: err instanceof Error ? err.message : String(err),
+      });
     }
     return { consumed: true, flow_run_id: run.id, outcome: "fallback_fired" };
   }
@@ -1084,6 +1202,21 @@ async function handleReplyForActiveRun(
   // action.type === 'end'
   await endRun(db, run.id, "completed", "fallback_exhausted_end");
   return { consumed: true, flow_run_id: run.id, outcome: "completed" };
+}
+
+async function lostReplyRace(
+  db: AdminClient,
+  run: FlowRunRow,
+  nodeKey: string,
+): Promise<DispatchInboundResult> {
+  await logEvent(db, run.id, "error", nodeKey, {
+    reason: "lost_race_during_reply",
+  });
+  return {
+    consumed: true,
+    flow_run_id: run.id,
+    outcome: "duplicate_inbound_ignored",
+  };
 }
 
 async function startNewRun(

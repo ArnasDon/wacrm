@@ -7,6 +7,7 @@ import {
   planBroadcastResume,
   releaseBroadcastDelivery,
   RESUME_MAX_PER_REQUEST,
+  RESUME_MAX_SCAN_PAGES,
 } from './broadcast-resume';
 
 vi.mock('@/lib/whatsapp/encryption', () => ({
@@ -115,6 +116,7 @@ describe('releaseBroadcastDelivery', () => {
 interface PlanFixture {
   broadcast?: Record<string, unknown> | null;
   recipients?: Record<string, unknown>[];
+  recipientCount?: number;
   config?: Record<string, unknown> | null;
   templates?: Record<string, unknown>[];
 }
@@ -122,19 +124,30 @@ interface PlanFixture {
 interface PlanWrites {
   statusFilter?: unknown;
   failedIds?: unknown;
+  failedIdBatches?: unknown[];
   failedUpdate?: Record<string, unknown>;
+  ranges?: [number, number][];
 }
 
 function planDb(fx: PlanFixture, writes: PlanWrites = {}): SupabaseClient {
   return {
     from(table: string) {
+      let range: [number, number] | null = null;
       const b: Record<string, unknown> = {
         select: () => b,
         eq: () => b,
         order: () => b,
+        range: (from: number, to: number) => {
+          range = [from, to];
+          writes.ranges = [...(writes.ranges ?? []), range];
+          return b;
+        },
         in: (col: string, vals: unknown) => {
           if (col === 'status') writes.statusFilter = vals;
-          if (col === 'id') writes.failedIds = vals;
+          if (col === 'id') {
+            writes.failedIds = vals;
+            writes.failedIdBatches = [...(writes.failedIdBatches ?? []), vals];
+          }
           return b;
         },
         update: (row: Record<string, unknown>) => {
@@ -149,9 +162,16 @@ function planDb(fx: PlanFixture, writes: PlanWrites = {}): SupabaseClient {
           data: fx.config === undefined ? null : fx.config,
           error: null,
         }),
-        then: (resolve: (r: { data: unknown[]; error: null }) => unknown) => {
+        then: (
+          resolve: (r: { data: unknown[]; count?: number; error: null }) => unknown,
+        ) => {
           if (table === 'broadcast_recipients') {
-            return resolve({ data: fx.recipients ?? [], error: null });
+            const all = fx.recipients ?? [];
+            return resolve({
+              data: range ? all.slice(range[0], range[1] + 1) : all,
+              count: fx.recipientCount ?? all.length,
+              error: null,
+            });
           }
           if (table === 'message_templates') {
             return resolve({ data: fx.templates ?? [], error: null });
@@ -318,6 +338,123 @@ describe('planBroadcastResume', () => {
     expect(plan.planned).toHaveLength(RESUME_MAX_PER_REQUEST);
     // Surfaced to the caller rather than silently dropped.
     expect(remaining).toBe(25);
+  });
+
+  it('counts the backlog the 1000-row page did not load', async () => {
+    const firstPage = Array.from({ length: RESUME_MAX_PER_REQUEST }, (_, i) =>
+      recipient(`r${i}`, '+1555000' + String(i).padStart(4, '0')),
+    );
+    const { plan, remaining } = await planBroadcastResume(
+      planDb({
+        broadcast: BROADCAST,
+        config: CONFIG,
+        recipients: firstPage,
+        recipientCount: 2812,
+      }),
+      'acct-1',
+      'bc-1',
+      'pending',
+    );
+    expect(plan.planned).toHaveLength(RESUME_MAX_PER_REQUEST);
+    expect(remaining).toBe(2812 - RESUME_MAX_PER_REQUEST);
+  });
+
+  it('reads past a first page filled with unsendable rows', async () => {
+    const writes: PlanWrites = {};
+    const rows = [
+      ...Array.from({ length: RESUME_MAX_PER_REQUEST }, (_, i) =>
+        recipient(`bad${i}`, null),
+      ),
+      recipient('ok1', '+15551234567'),
+      recipient('ok2', '+15559876543'),
+    ];
+    const { plan, remaining, unsendable } = await planBroadcastResume(
+      planDb({ broadcast: BROADCAST, config: CONFIG, recipients: rows }, writes),
+      'acct-1',
+      'bc-1',
+      'failed',
+    );
+    expect(plan.planned.map((p) => p.recipientRowId)).toEqual(['ok1', 'ok2']);
+    expect(remaining).toBe(0);
+    expect(unsendable).toBe(RESUME_MAX_PER_REQUEST);
+    expect(writes.ranges).toEqual([
+      [0, RESUME_MAX_PER_REQUEST - 1],
+      [RESUME_MAX_PER_REQUEST, 2 * RESUME_MAX_PER_REQUEST - 1],
+    ]);
+  });
+
+  it('fills the cap from later pages and counts what it left unread', async () => {
+    const rows = [
+      ...Array.from({ length: 600 }, (_, i) => recipient(`bad${i}`, null)),
+      ...Array.from({ length: RESUME_MAX_PER_REQUEST + 400 }, (_, i) =>
+        recipient(`ok${i}`, '+1555000' + String(i).padStart(4, '0')),
+      ),
+    ];
+    const { plan, remaining, unsendable } = await planBroadcastResume(
+      planDb({ broadcast: BROADCAST, config: CONFIG, recipients: rows }),
+      'acct-1',
+      'bc-1',
+      'pending',
+    );
+    expect(plan.planned).toHaveLength(RESUME_MAX_PER_REQUEST);
+    expect(plan.planned[0].recipientRowId).toBe('ok0');
+    expect(unsendable).toBe(600);
+    expect(remaining).toBe(400);
+  });
+
+  it('returns an empty plan with the remainder when the scan budget runs out', async () => {
+    const scanLimit = RESUME_MAX_SCAN_PAGES * RESUME_MAX_PER_REQUEST;
+    const rows = [
+      ...Array.from({ length: scanLimit }, (_, i) => recipient(`bad${i}`, null)),
+      recipient('ok', '+15551234567'),
+    ];
+    const { plan, remaining, unsendable } = await planBroadcastResume(
+      planDb({ broadcast: BROADCAST, config: CONFIG, recipients: rows }),
+      'acct-1',
+      'bc-1',
+      'all',
+    );
+    expect(plan.planned).toEqual([]);
+    expect(unsendable).toBe(scanLimit);
+    expect(remaining).toBe(1);
+  });
+
+  it('refuses when every outstanding row is unsendable', async () => {
+    const writes: PlanWrites = {};
+    await expect(
+      planBroadcastResume(
+        planDb(
+          {
+            broadcast: BROADCAST,
+            config: CONFIG,
+            recipients: [recipient('bad1', null), recipient('bad2', 'nonsense')],
+          },
+          writes,
+        ),
+        'acct-1',
+        'bc-1',
+        'failed',
+      ),
+    ).rejects.toMatchObject({ code: 'nothing_to_resume' });
+    expect(writes.failedIds).toEqual(['bad1', 'bad2']);
+  });
+
+  it('stamps many unsendable rows in URL-sized batches', async () => {
+    const writes: PlanWrites = {};
+    const rows = [
+      recipient('ok', '+15551234567'),
+      ...Array.from({ length: 250 }, (_, i) => recipient(`bad${i}`, null)),
+    ];
+    const { unsendable } = await planBroadcastResume(
+      planDb({ broadcast: BROADCAST, config: CONFIG, recipients: rows }, writes),
+      'acct-1',
+      'bc-1',
+      'pending',
+    );
+    expect(unsendable).toBe(250);
+    const batches = (writes.failedIdBatches ?? []) as string[][];
+    expect(batches.map((b) => b.length)).toEqual([100, 100, 50]);
+    expect(batches.flat()).toHaveLength(250);
   });
 
   it('404s a broadcast that is not on this account', async () => {

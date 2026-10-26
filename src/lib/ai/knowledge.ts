@@ -9,6 +9,11 @@ import { embedTexts, toVectorLiteral } from './embeddings'
 // lexical full-text search).
 // ============================================================
 
+export interface IngestResult {
+  keywordOnly: boolean
+  embedError: unknown
+}
+
 interface MatchRow {
   id: string
   content: string
@@ -19,10 +24,6 @@ interface MatchRow {
  * existing chunks, re-chunks the content, and — when the account has an
  * embeddings key — embeds each chunk. Runs under whatever client the
  * caller passes (service-role for ingest routes).
- *
- * Throws on embedding failure so the ingest route can report it; the
- * chunks are only written once embedding (if attempted) succeeds, so a
- * failed embed never leaves half-indexed rows.
  */
 export async function ingestDocument(
   db: SupabaseClient,
@@ -30,7 +31,7 @@ export async function ingestDocument(
   config: Pick<AiConfig, 'embeddingsApiKey'>,
   documentId: string,
   content: string,
-): Promise<void> {
+): Promise<IngestResult> {
   const chunks = chunkText(content)
 
   // Replace, don't append — re-ingest must be idempotent.
@@ -40,14 +41,11 @@ export async function ingestDocument(
     .eq('document_id', documentId)
   if (delErr) throw delErr
 
-  if (chunks.length === 0) return
+  if (chunks.length === 0) return { keywordOnly: false, embedError: null }
 
   // Embed if a key is set, but DON'T let an embedding failure stop the
   // chunks from being stored: a failed embed must still leave the
-  // document searchable lexically. We record the error and rethrow it
-  // AFTER inserting (embedding-less) rows, so the route can warn
-  // "semantic indexing failed" — which is now truthful, because lexical
-  // search really does still work.
+  // document searchable lexically.
   let embeddings: number[][] | null = null
   let embedError: unknown = null
   if (config.embeddingsApiKey) {
@@ -69,7 +67,7 @@ export async function ingestDocument(
   const { error: insErr } = await db.from('ai_knowledge_chunks').insert(rows)
   if (insErr) throw insErr
 
-  if (embedError) throw embedError
+  return { keywordOnly: embedError !== null, embedError }
 }
 
 /**

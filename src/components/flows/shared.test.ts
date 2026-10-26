@@ -11,7 +11,7 @@ const ALL_TYPES = Object.keys(NODE_META) as NodeType[];
 
 describe('node categories', () => {
   it('assigns every node type to a known category', () => {
-    const known = new Set(NODE_CATEGORIES.map((c) => c.id));
+    const known = new Set(NODE_CATEGORIES);
     for (const type of ALL_TYPES) {
       expect(known.has(NODE_META[type].category)).toBe(true);
     }

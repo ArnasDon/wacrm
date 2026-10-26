@@ -203,7 +203,7 @@ export function Sidebar({
           "lg:transition-[width] lg:duration-200 lg:ease-out",
           "lg:rail:w-16",
         )}
-        aria-label="Primary"
+        aria-label={t("sidebar.primaryNav")}
       >
         <div className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border px-4 lg:rail:justify-center lg:rail:px-0">
           <Link href="/dashboard" className="flex items-center gap-2">

@@ -9,6 +9,7 @@ import {
   type BuilderStep,
 } from "@/components/automations/automation-builder"
 import { AUTOMATION_TEMPLATES, type TemplateSlug } from "@/lib/automations/templates"
+import { browserTimeZone, withConditionTimezone } from "@/lib/automations/time-of-day"
 import type { AutomationStepType, AutomationTriggerType } from "@/types"
 
 // `useSearchParams` requires a Suspense boundary or the production build
@@ -33,7 +34,10 @@ function NewAutomationPageInner() {
         t.steps.map((seed, idx) => ({
           index: idx,
           step_type: seed.step_type,
-          step_config: seed.step_config as Record<string, unknown>,
+          step_config: withConditionTimezone(
+            seed.step_config as Record<string, unknown>,
+            browserTimeZone(),
+          ),
           branch: seed.branch ?? null,
           parent_index: seed.parent_index ?? null,
         })),

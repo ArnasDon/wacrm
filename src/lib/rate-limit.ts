@@ -21,6 +21,9 @@
  */
 
 import { NextResponse } from 'next/server';
+import { getT } from '@/lib/i18n/translate';
+
+const t = getT('LibErrors');
 
 export interface RateLimitOptions {
   /** Max requests allowed in `windowMs`. */
@@ -98,6 +101,21 @@ export function checkRateLimit(
  * Standard 429 response with the headers clients expect (RFC 6585 +
  * draft-ietf-httpapi-ratelimit-headers). Callers just `return` this.
  */
+export function getClientIp(request: Request): string {
+  const realIp = request.headers.get('x-real-ip')?.trim();
+  if (realIp) return realIp;
+  const forwardedFor = request.headers.get('x-forwarded-for');
+  if (forwardedFor) {
+    const hops = forwardedFor
+      .split(',')
+      .map((hop) => hop.trim())
+      .filter(Boolean);
+    const proxyAppended = hops[hops.length - 1];
+    if (proxyAppended) return proxyAppended;
+  }
+  return 'unknown';
+}
+
 export function rateLimitResponse(result: RateLimitResult): NextResponse {
   const retryAfterSec = Math.max(
     1,
@@ -105,7 +123,7 @@ export function rateLimitResponse(result: RateLimitResult): NextResponse {
   );
   return NextResponse.json(
     {
-      error: 'Rate limit exceeded',
+      error: t('rateLimitExceeded'),
       retry_after_seconds: retryAfterSec,
     },
     {
@@ -186,6 +204,10 @@ export const RATE_LIMITS = {
    *  use (record → review → send takes tens of seconds) while bounding
    *  CPU abuse from a scripted or compromised session. */
   voiceNote: { limit: 20, windowMs: 60_000 },
+  whatsappAdmin: { limit: 30, windowMs: 60_000 },
+  whatsappHealth: { limit: 30, windowMs: 60_000 },
+  whatsappMedia: { limit: 240, windowMs: 60_000 },
+  automationTrigger: { limit: 30, windowMs: 60_000 },
 } as const;
 
 /** Test-only helper. Clears the in-memory state so unit tests don't

@@ -63,11 +63,29 @@ const SECURITY_HEADERS = [
   },
 ] as const;
 
+// Catalogue for code that translates outside a request (`getT` in
+// src/lib/i18n/translate.ts — API errors, validators, currency labels).
+// Pages pick their locale per request from the URL; this one is fixed
+// at build time, and the fork's server-side strings stay English.
+const APP_LOCALE = ["en", "kk", "ru"].includes(process.env.NEXT_PUBLIC_APP_LOCALE ?? "")
+  ? (process.env.NEXT_PUBLIC_APP_LOCALE as string)
+  : "en";
+
 const nextConfig: NextConfig = {
+  turbopack: {
+    resolveAlias: {
+      "@app-messages": `./src/messages/${APP_LOCALE}.json`,
+    },
+  },
   // Emit a self-contained server bundle (.next/standalone) so the
   // Docker image can run without node_modules or the Next CLI.
   // Harmless outside Docker: `next start` keeps working as before.
   output: "standalone",
+  experimental: {
+    turbopackPluginRuntimeStrategy: "workerThreads",
+  },
+  // Stop `next dev` from overwriting the repo's hand-written AGENTS.md.
+  agentRules: false,
 
   /**
    * Cross-origin dev access (Next.js 16).
@@ -115,19 +133,6 @@ const nextConfig: NextConfig = {
    *     the correct production headers for hashed assets.
    *   - /api/*          — no-store. API responses are per-user and
    *     must never be shared across requests at the edge.
-   *   - Everything else — public, brief s-maxage + generous
-   *     stale-while-revalidate. The edge serves instantly from cache
-   *     for the first 5 min, then returns cached content while
-   *     refreshing in the background for up to 24 h. A deploy's
-   *     chunk-hash drift self-heals within ~5 min with no user-
-   *     visible latency.
-   *
-   *   Note: dynamic dashboard routes (/inbox, /contacts, /pipelines,
-   *   /broadcasts, etc.) are server-rendered per request — Next.js
-   *   and Supabase auth already prevent them from being served
-   *   from a shared cache. The s-maxage here is a ceiling; Next.js
-   *   and auth middleware still set `private` / `no-store` for
-   *   per-user responses.
    *
    * Security headers are appended via a separate catch-all rule
    * below — Next.js merges headers from every matching rule, so
@@ -145,8 +150,7 @@ const nextConfig: NextConfig = {
         headers: [
           {
             key: "Cache-Control",
-            value:
-              "public, max-age=0, s-maxage=300, stale-while-revalidate=86400",
+            value: "private, no-store",
           },
         ],
       },

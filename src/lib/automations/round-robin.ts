@@ -49,39 +49,19 @@ export function rotationPool(
 }
 
 /**
- * The next agent in the rotation: whoever currently holds the fewest live
- * conversations, ties broken by pool order.
+ * The agent whose turn it is: the step's `turn`-th assignment goes to
+ * `pool[turn % pool.length]`, so consecutive leads walk the pool in order.
  *
- * There is no cursor column to store "who got the last one", so the rotation
- * is derived from the assignments themselves. With an even starting point
- * that produces the same cycle a counter would, and unlike a counter it
- * self-corrects — an agent who goes on leave and gets unassigned catches
- * back up instead of being handed every other conversation regardless.
+ * This replaced a "fewest open conversations" pick, which was fair only
+ * on paper. Agents rarely close threads, so open counts are backlog, not
+ * workload — and the member with the smallest backlog took every lead
+ * until they caught up with the next one. In production one agent with
+ * 156 open threads received 40 leads in a row while colleagues sat on
+ * 197–792. A turn counter hands out leads strictly in order, whatever
+ * anyone's history.
  */
-export function nextAgent(
-  pool: string[],
-  openConversationsByAgent: Map<string, number>,
-): string | undefined {
-  let best: string | undefined;
-  let bestLoad = Infinity;
-  for (const agentId of pool) {
-    const load = openConversationsByAgent.get(agentId) ?? 0;
-    if (load < bestLoad) {
-      best = agentId;
-      bestLoad = load;
-    }
-  }
-  return best;
-}
-
-/** Tallies `assigned_agent_id` rows into the load map `nextAgent` expects. */
-export function tallyAssignments(
-  rows: { assigned_agent_id: string | null }[],
-): Map<string, number> {
-  const loads = new Map<string, number>();
-  for (const row of rows) {
-    if (!row.assigned_agent_id) continue;
-    loads.set(row.assigned_agent_id, (loads.get(row.assigned_agent_id) ?? 0) + 1);
-  }
-  return loads;
+export function agentForTurn(pool: string[], turn: number): string | undefined {
+  if (pool.length === 0) return undefined;
+  const index = ((Math.trunc(turn) % pool.length) + pool.length) % pool.length;
+  return pool[index];
 }

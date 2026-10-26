@@ -14,6 +14,7 @@ import { useTranslations } from "next-intl";
 import { cn } from "@/lib/utils";
 import type { Message } from "@/types";
 import { downloadMediaMessage } from "@/lib/media/download";
+import { shouldDownloadDocumentClick } from "@/lib/media/document-click";
 import { useMediaBlobUrl } from "@/hooks/use-media-blob-url";
 
 /**
@@ -260,6 +261,12 @@ export function MediaDocumentBubble({
         href={message.media_url}
         target="_blank"
         rel="noopener noreferrer"
+        onClick={(event) => {
+          if (!shouldDownloadDocumentClick(message.media_url, event)) return;
+          event.preventDefault();
+          void download();
+        }}
+        aria-busy={downloading || undefined}
         className="flex min-w-0 flex-1 items-center gap-2 rounded-lg bg-muted/50 px-3 py-2 text-sm hover:bg-muted"
       >
         <FileText className="h-5 w-5 shrink-0 text-muted-foreground" />

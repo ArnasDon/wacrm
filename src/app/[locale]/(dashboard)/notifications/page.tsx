@@ -1,15 +1,16 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
-import { useAuth } from '@/hooks/use-auth';
-import type { Notification } from '@/types';
-import { Bell, CheckCheck, Loader2, UserPlus } from 'lucide-react';
-import { formatDistanceToNow } from 'date-fns';
-import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
-import { toast } from 'sonner';
+import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/hooks/use-auth";
+import type { Notification } from "@/types";
+import { Bell, CheckCheck, Loader2, UserPlus } from "lucide-react";
+import { formatDistanceToNow } from "date-fns";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import { toast } from "sonner";
+import { useTranslations } from "next-intl";
 
 // Icon per notification type. Only one type exists today
 // (conversation_assigned) but this keeps future types a one-line add.
@@ -18,6 +19,7 @@ const TYPE_ICON: Record<Notification['type'], typeof Bell> = {
 };
 
 export default function NotificationsPage() {
+  const t = useTranslations("Notifications");
   const router = useRouter();
   const { accountId } = useAuth();
   const [notifications, setNotifications] = useState<Notification[] | null>(
@@ -105,11 +107,11 @@ export default function NotificationsPage() {
         .eq('id', id)
         .is('read_at', null);
       if (updateErr) {
-        toast.error('Failed to mark notification as read');
+        toast.error(t("markReadFailed"));
         load();
       }
     },
-    [load]
+    [load, t],
   );
 
   const handleClick = useCallback(
@@ -140,17 +142,17 @@ export default function NotificationsPage() {
       .is('read_at', null);
     setMarkingAll(false);
     if (updateErr) {
-      toast.error('Failed to mark all as read');
+      toast.error(t("markAllFailed"));
       load();
     }
-  }, [unreadIds.length, load]);
+  }, [unreadIds.length, load, t]);
 
   if (error) {
     return (
       <div className="flex h-64 flex-col items-center justify-center gap-2">
         <p className="text-destructive text-sm">{error}</p>
         <Button variant="outline" onClick={() => window.location.reload()}>
-          Retry
+          {t("retry")}
         </Button>
       </div>
     );
@@ -168,9 +170,9 @@ export default function NotificationsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-foreground text-2xl font-bold">Notifications</h1>
-          <p className="text-muted-foreground mt-1 text-sm">
-            Conversations other teammates assign to you show up here.
+          <h1 className="text-2xl font-bold text-foreground">{t("title")}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {t("description")}
           </p>
         </div>
         <Button
@@ -184,7 +186,7 @@ export default function NotificationsPage() {
           ) : (
             <CheckCheck className="h-4 w-4" />
           )}
-          Mark all as read
+          {t("markAllRead")}
         </Button>
       </div>
 
@@ -193,12 +195,11 @@ export default function NotificationsPage() {
           <div className="bg-primary/10 flex h-12 w-12 items-center justify-center rounded-xl">
             <Bell className="text-primary h-6 w-6" />
           </div>
-          <p className="text-foreground mt-3 text-sm font-medium">
-            No notifications yet
+          <p className="mt-3 text-sm font-medium text-foreground">
+            {t("emptyTitle")}
           </p>
-          <p className="text-muted-foreground mt-1 text-xs">
-            You&apos;ll see an alert here when someone assigns you a
-            conversation.
+          <p className="mt-1 text-xs text-muted-foreground">
+            {t("emptyDesc")}
           </p>
         </div>
       ) : (
@@ -244,8 +245,8 @@ export default function NotificationsPage() {
                       </span>
                       {isUnread && (
                         <span
-                          aria-label="Unread"
-                          className="bg-primary h-2 w-2 flex-shrink-0 rounded-full"
+                          aria-label={t("unread")}
+                          className="h-2 w-2 flex-shrink-0 rounded-full bg-primary"
                         />
                       )}
                     </div>

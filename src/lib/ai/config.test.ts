@@ -21,6 +21,7 @@ function dbReturning(row: Record<string, unknown> | null): SupabaseClient {
 const ROW = {
   provider: 'openai',
   model: 'gpt-x',
+  base_url: null,
   api_key: 'enc-key',
   system_prompt: null,
   is_active: false,
@@ -40,6 +41,7 @@ describe('loadAiConfig requireActive', () => {
     })
     expect(config).not.toBeNull()
     expect(config!.provider).toBe('openai')
+    expect(config!.baseUrl).toBeNull()
     expect(config!.apiKey).toBe('plain:enc-key')
   })
 

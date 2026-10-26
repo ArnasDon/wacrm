@@ -27,6 +27,9 @@ import {
   rateLimitResponse,
   RATE_LIMITS,
 } from "@/lib/rate-limit";
+import { getT } from "@/lib/i18n/translate";
+
+const t = getT("Api");
 
 function rpcErrorToResponse(err: PostgrestError): NextResponse {
   if (err.code === "42501") {
@@ -37,7 +40,7 @@ function rpcErrorToResponse(err: PostgrestError): NextResponse {
   }
   console.error("[transfer-ownership] unexpected RPC error:", err);
   return NextResponse.json(
-    { error: "Failed to transfer ownership" },
+    { error: t('account.transferFailed') },
     { status: 500 },
   );
 }
@@ -76,7 +79,7 @@ export async function POST(request: Request) {
 
     if (!looksLikeUuid(newOwnerUserId)) {
       return NextResponse.json(
-        { error: "'newOwnerUserId' must be a valid UUID" },
+        { error: t('account.newOwnerInvalid') },
         { status: 400 },
       );
     }

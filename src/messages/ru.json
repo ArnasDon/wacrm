@@ -93,7 +93,8 @@
     "defaultAvatar": "Avatar",
     "menuProfile": "Profile",
     "menuSettings": "Settings",
-    "menuSignOut": "Sign out"
+    "menuSignOut": "Sign out",
+    "primaryNav": "Основное меню"
   },
   "header": {
     "profile": "Профиль",
@@ -126,7 +127,9 @@
       "submit": "Войти",
       "submitLoading": "Вход...",
       "noAccount": "Нет аккаунта?",
-      "createAccount": "Создать аккаунт"
+      "createAccount": "Создать аккаунт",
+      "linkExpired": "Срок действия ссылки истёк. Для сброса пароля нажмите «Забыли пароль?» и запросите новую; если вы подтверждали почту — зарегистрируйтесь заново.",
+      "linkInvalid": "По этой ссылке не удалось войти. Если вы подтверждали почту, она, возможно, уже подтверждена — просто войдите ниже. Для сброса пароля запросите новую ссылку и откройте её в том же браузере, из которого запрашивали."
     },
     "signup": {
       "title": "Создать аккаунт",
@@ -365,7 +368,44 @@
       "deleteNode": "Удалить узел",
       "setAsEntry": "Назначить точкой входа",
       "entry": "Вход",
-      "noNodes": "Узлов пока нет."
+      "noNodes": "Узлов пока нет.",
+      "nodes": {
+        "start": {
+          "label": "Старт"
+        },
+        "send_message": {
+          "label": "Отправить сообщение"
+        },
+        "send_buttons": {
+          "label": "Отправить кнопки"
+        },
+        "send_list": {
+          "label": "Отправить список"
+        },
+        "send_media": {
+          "label": "Отправить медиа"
+        },
+        "collect_input": {
+          "label": "Собрать ответ"
+        },
+        "condition": {
+          "label": "Если / иначе"
+        },
+        "set_tag": {
+          "label": "Отметить контакт тегом"
+        },
+        "handoff": {
+          "label": "Передать оператору"
+        },
+        "end": {
+          "label": "Конец"
+        }
+      },
+      "categories": {
+        "messaging": "Сообщения",
+        "logic": "Логика и данные",
+        "flow": "Управление сценарием"
+      }
     },
     "trigger": {
       "title": "Триггер",
@@ -619,7 +659,9 @@
       "pickNextNode": "Выберите следующий узел…",
       "filenamePlaceholder": "invoice.pdf",
       "tagUuidPlaceholder": "Tag UUID",
-      "varKeyPlaceholder": "e.g. name, email, company"
+      "varKeyPlaceholder": "e.g. name, email, company",
+      "defaultOptionTitle": "Вариант",
+      "optionN": "Вариант {n}"
     },
     "list": {
       "title": "Flows",
@@ -731,7 +773,8 @@
     "triggerKeywordNone": "Triggers on keyword (none set)",
     "triggerKeyword": "Triggers on: {keywords}",
     "triggerFirstInbound": "Triggers on a contact's first-ever inbound message",
-    "triggerManual": "Manual trigger"
+    "triggerManual": "Manual trigger",
+    "cloneFailedStatus": "Не удалось клонировать: {status}"
   },
   "pipelines": {
     "title": "Воронки",
@@ -781,7 +824,8 @@
       "toastMoveOrDeleteDeals": "Move or delete deals in this stage first",
       "toastFailedDeleteStage": "Failed to delete stage",
       "toastFailedDeletePipeline": "Failed to delete pipeline",
-      "toastDeleted": "Pipeline deleted"
+      "toastDeleted": "Pipeline deleted",
+      "pickColor": "Выбрать цвет {color}"
     },
     "analytics": "Аналитика воронки",
     "totalDeals": "Всего сделок",
@@ -913,6 +957,14 @@
       "toastReopened": "Deal reopened",
       "toastFailedDelete": "Failed to delete deal",
       "toastDeleted": "Deal deleted"
+    },
+    "defaultPipelineName": "Воронка продаж",
+    "defaultStages": {
+      "newLead": "Новый лид",
+      "qualified": "Квалифицирован",
+      "proposalSent": "КП отправлено",
+      "negotiation": "Переговоры",
+      "won": "Выиграно"
     }
   },
   "contacts": {
@@ -1104,7 +1156,9 @@
       "toastCustomFieldsSaved": "Custom fields saved",
       "toastCustomFieldsFailed": "Failed to save custom fields",
       "toastTemplateSent": "Template \"{name}\" sent",
-      "toastTemplateFailed": "Failed to send template: {reason}"
+      "toastTemplateFailed": "Failed to send template: {reason}",
+      "toastPhoneNeedsCountryCode": "Укажите код страны — номер должен начинаться с + (например, +77011234567)",
+      "networkError": "ошибка сети"
     },
     "form": {
       "newContact": "Новый контакт",
@@ -1297,7 +1351,15 @@
       "description": "Upload a CSV with a required <phoneCode>phone</phoneCode> column. Optional: <nameCode>name</nameCode>, <emailCode>email</emailCode>, <companyCode>company</companyCode>, <tagsCode>tags</tagsCode> (comma-separated; quote multi-tag cells).",
       "selectFile": "Click to choose a CSV file",
       "dragDrop": ".csv up to your browser limit",
-      "importButton": "Import"
+      "importButton": "Import",
+      "notAuthenticated": "Вы не авторизованы",
+      "notLinkedToAccount": "Ваш профиль не привязан к аккаунту.",
+      "unknownReason": "Неизвестная ошибка",
+      "toastTagsSkippedMore": " (+ ещё {count})",
+      "toastInvalidPhone": "Контактов без пригодного номера: {count}",
+      "resultInvalidPhone": "Неверных номеров: {count}",
+      "invalidPhoneHint": "Номер телефона должен начинаться с + и кода страны (например, +77011234567). Номера без него ушли бы не в ту страну.",
+      "failedRowsHeading": "Строки с ошибками"
     },
     "subtitle": "Manage your contact list. {count} total contacts.",
     "subtitleZero": "Manage your contact list.",
@@ -1359,7 +1421,13 @@
     "dupSimilar": "A contact with a very similar number already exists.",
     "loadingTags": "Loading tags...",
     "noTagsAvailable": "No tags available. Create tags in Settings.",
-    "phoneRequired": "Phone number is required"
+    "phoneRequired": "Phone number is required",
+    "filterByTag": "Фильтр по «{name}»",
+    "removeTagFilter": "Убрать фильтр «{name}»",
+    "selectContact": "Выбрать {name}",
+    "phoneNeedsCountryCode": "Укажите код страны — номер должен начинаться с + (например, +77011234567)",
+    "notAuthenticated": "Вы не авторизованы",
+    "notLinkedToAccount": "Ваш профиль не привязан к аккаунту."
   },
   "inbox": {
     "title": "Входящие",
@@ -1466,7 +1534,21 @@
         "travel": "Путешествия и места",
         "objects": "Предметы",
         "symbols": "Символы"
-      }
+      },
+      "aiNotConfigured": "ИИ ещё не настроен — включите его в Настройки → ИИ-ассистент.",
+      "draftFailed": "Не удалось составить черновик ответа.",
+      "draftEmpty": "Ассистент не вернул ответ.",
+      "aiUnreachable": "Не удалось связаться с ИИ-ассистентом.",
+      "fileTooLarge": "Файл весит {size} МБ — лимит для «{kind}» {max} МБ.",
+      "mediaKind": {
+        "image": "изображение",
+        "video": "видео",
+        "document": "документ",
+        "audio": "аудио"
+      },
+      "uploadFailed": "Не удалось загрузить.",
+      "recordingTooLong": "Запись слишком длинная (больше 16 МБ).",
+      "recordingUnsupported": "Этот браузер не поддерживает запись голоса."
     },
     "sidebar": {
       "contactInfo": "Информация о контакте",
@@ -1506,7 +1588,10 @@
       "finalUrl": "Final URL: {url}",
       "back": "Back",
       "cancel": "Cancel",
-      "send": "Send template"
+      "send": "Send template",
+      "headerVarLabel": "Заголовок {var}",
+      "bodyVarLabel": "Текст {var}",
+      "urlButtonVarLabel": "Кнопка-ссылка «{text}» — значение для {var}"
     },
     "messageActions": {
       "reply": "Ответить",
@@ -1577,7 +1662,18 @@
       "yesterday": "Yesterday",
       "you": "You",
       "customer": "Customer",
-      "noTeammatesAvailable": "No teammates available"
+      "noTeammatesAvailable": "No teammates available",
+      "loadOlderFailed": "Не удалось загрузить более ранние сообщения.",
+      "sendFailed": "Не удалось отправить: {reason}",
+      "networkError": "ошибка сети",
+      "documentFallback": "Документ",
+      "sendTemplateFailed": "Не удалось отправить шаблон: {reason}",
+      "waitForSending": "Дождитесь окончания отправки сообщения",
+      "reactionFailed": "Не удалось поставить реакцию: {reason}",
+      "assignmentUpdateFailed": "Не удалось изменить назначение",
+      "loadingOlder": "Загрузка…",
+      "loadOlder": "Загрузить более ранние сообщения",
+      "unknown": "Неизвестно"
     },
     "sessionTimer": {
       "expired": "Expired",
@@ -1602,7 +1698,8 @@
       "viewImage": "Открыть в полном размере",
       "expandVideo": "Развернуть видео",
       "download": "Скачать",
-      "downloadFailed": "Не удалось скачать вложение"
+      "downloadFailed": "Не удалось скачать вложение",
+      "notDelivered": "Не доставлено"
     },
     "actions": {
       "reply": "Reply",
@@ -1639,7 +1736,10 @@
       "failed": "Это вложение больше недоступно",
       "imageAlt": "Изображение",
       "you": "Вы"
-    }
+    },
+    "filterWaiting": "Ждут ответа",
+    "filterUnassigned": "Не назначены",
+    "filterExpiring": "Окно ответа закрывается"
   },
   "broadcasts": {
     "title": "Рассылки",
@@ -1702,7 +1802,10 @@
       "next": "Далее",
       "errorCsvMissingPhone": "В CSV должен быть столбец «phone».",
       "errorCsvParse": "Не удалось разобрать CSV-файл.",
-      "csvContactsFound": "В CSV найдено контактов: {count}."
+      "csvContactsFound": "В CSV найдено контактов: {count}.",
+      "selectAudience": {
+        "csvInvalidPhones": "Пропущено строк: {count}. Номер телефона должен начинаться с + и кода страны (например, +77011234567)."
+      }
     },
     "step3": {
       "title": "Персонализация сообщения",
@@ -1732,7 +1835,12 @@
       "contactFieldEmail": "Электронная почта",
       "contactFieldCompany": "Компания",
       "back": "Назад",
-      "next": "Далее"
+      "next": "Далее",
+      "personalize": {
+        "sampleName": "Иван Иванов",
+        "sampleCompany": "ООО «Ромашка»",
+        "headerPreviewAlt": "Предпросмотр заголовка"
+      }
     },
     "step4": {
       "title": "Проверка и отправка",
@@ -1973,7 +2081,9 @@
         "progressDesc": "Processing {current} of {total} recipients...",
         "toastFailedPreview": "Failed to load preview data"
       }
-    }
+    },
+    "broadcastFailed": "Рассылка не удалась",
+    "broadcastInProgress": "Рассылка выполняется"
   },
   "automations": {
     "title": "Автоматизация",
@@ -2102,7 +2212,8 @@
       "toasts": {
         "saved": "Automation saved",
         "created": "Automation created",
-        "saveFailed": "Save failed"
+        "saveFailed": "Save failed",
+        "issueAt": "в {path}"
       },
       "tags": {
         "select": "Select a tag…",
@@ -2191,9 +2302,32 @@
         "matchExact": "Exact",
         "matchWord": "Целое слово",
         "matchWordHint": "Ключевое слово совпадает только как отдельное слово, поэтому \"k\" больше не срабатывает на \"thanks\". Лучше всего подходит для коротких ключевых слов в языках с пробелами; для языков без пробелов используйте режим \"Содержит\".",
-        "closeConversationHint": "Sets the conversation status to \"closed\". No configuration needed."
+        "closeConversationHint": "Sets the conversation status to \"closed\". No configuration needed.",
+        "timezoneLabel": "Часовой пояс",
+        "waitForReply": "Ждать ответа перед продолжением",
+        "waitForReplyHint": "Пауза до тех пор, пока клиент не нажмёт кнопку или не ответит (до 24 ч). Следующие шаги, включая «Если/Иначе» по тексту сообщения, используют его ответ."
       },
-      "delete": "Delete"
+      "delete": "Delete",
+      "schedulePlaceholder": "Cron-выражение или ЧЧ:мм",
+      "kindCondition": "Условие",
+      "kindWait": "Ожидание",
+      "kindAction": "Действие",
+      "moveUp": "Переместить вверх",
+      "moveDown": "Переместить вниз",
+      "preview": {
+        "noText": "текста пока нет",
+        "noBody": "текста пока нет",
+        "withWaitForReply": "{preview} · ждёт ответа",
+        "pickTemplate": "выберите шаблон",
+        "units": {
+          "minutes": "минут",
+          "hours": "часов",
+          "days": "дней"
+        },
+        "wait": "{amount} {unit}",
+        "when": "когда {subject}",
+        "noUrl": "нет URL"
+      }
     },
     "list": {
       "title": "Automations",
@@ -2273,7 +2407,10 @@
       "updateError": "Failed to update",
       "duplicateError": "Failed to duplicate",
       "deleteError": "Failed to delete"
-    }
+    },
+    "loadFailed": "Не удалось загрузить автоматизации",
+    "activeIndicator": "активна",
+    "openMenu": "Открыть меню"
   },
   "settings": {
     "title": "Настройки",
@@ -2393,7 +2530,10 @@
       "cancel": "Cancel",
       "signingOut": "Signing out…",
       "signOutEverywhere": "Sign out everywhere",
-      "signOutFailed": "Sign-out failed: {message}"
+      "signOutFailed": "Sign-out failed: {message}",
+      "unknownError": "Неизвестная ошибка",
+      "avatarAlt": "Аватар",
+      "fullNamePlaceholder": "Иван Иванов"
     },
     "password": {
       "title": "Изменить пароль",
@@ -2408,7 +2548,8 @@
       "tooShort": "Password must be at least {min} characters",
       "mismatch": "New password and confirmation do not match",
       "incorrectCurrent": "Current password is incorrect",
-      "noEmail": "Cannot change password without a current email"
+      "noEmail": "Cannot change password without a current email",
+      "unknownError": "Неизвестная ошибка"
     },
     "sessions": {
       "title": "Активные сессии",
@@ -2424,7 +2565,8 @@
       "cancel": "Cancel",
       "signOut": "Sign out everywhere",
       "signingOut": "Signing out…",
-      "signOutFailed": "Sign-out failed: {message}"
+      "signOutFailed": "Sign-out failed: {message}",
+      "unknownError": "Неизвестная ошибка"
     },
     "whatsapp": {
       "title": "Настройки WhatsApp",
@@ -2501,7 +2643,40 @@
       "step4_3": "Paste the <strong class=\"text-foreground\">Webhook Callback URL</strong> from above",
       "step4_4": "Enter the same <strong class=\"text-foreground\">Verify Token</strong> you set here",
       "step4_5": "Subscribe to \"messages\" webhook field",
-      "metaDocs": "Meta WhatsApp API Documentation"
+      "metaDocs": "Meta WhatsApp API Documentation",
+      "loadFailed": "Не удалось загрузить настройки WhatsApp",
+      "phoneNumberIdRequired": "Требуется Phone Number ID",
+      "phoneNumberIdNotNumeric": "Phone Number ID должен состоять только из цифр. Скопируйте числовой ID в Meta → WhatsApp → API Setup, а не сам номер телефона.",
+      "wabaIdNotNumeric": "WhatsApp Business Account ID должен состоять только из цифр. Скопируйте его в Meta → WhatsApp → API Setup.",
+      "accessTokenRequired": "Для первоначальной настройки нужен Access Token",
+      "reenterAccessToken": "Введите Access Token ещё раз, чтобы сохранить изменения",
+      "saveFailed": "Не удалось сохранить настройки",
+      "savedButRegistrationFailed": "Сохранено, но Meta не смогла зарегистрировать номер: {error}",
+      "savedRegistrationSkipped": "Данные сохранены и проверены. Регистрация входящих пропущена (нет PIN) — см. «Статус регистрации» ниже.",
+      "liveWithName": "Работает — {name} теперь получает события.",
+      "connectedGeneric": "WhatsApp подключён. События начнут поступать в течение минуты.",
+      "connectedTo": "Подключено к {name}",
+      "apiConnectionOk": "Подключение к API успешно",
+      "apiConnectionFailed": "Не удалось подключиться к API",
+      "connectionTestFailed": "Проверка подключения не удалась. Проверьте сеть и повторите.",
+      "fullyWired": "Номер полностью подключён — Meta доставляет события.",
+      "notFullyRegistered": "Номер зарегистрирован не полностью. Смотрите проверки ниже, чтобы понять, какой шаг не прошёл.",
+      "verifyEndpointUnreachable": "Не удалось связаться с адресом проверки.",
+      "resetConfirm": "Текущие настройки WhatsApp будут удалены, чтобы вы могли ввести их заново. Продолжить?",
+      "resetFailed": "Не удалось сбросить настройки",
+      "resetDone": "Настройки очищены. Теперь можно ввести данные заново.",
+      "webhookCopied": "URL вебхука скопирован в буфер обмена",
+      "metaErrorStep": "Шаг",
+      "metaErrorCode": "Код ошибки Meta",
+      "metaErrorTrace": "Trace ID",
+      "metaErrorMessage": "Ответ Meta",
+      "metaErrorDetailsHint": "Укажите эти данные при обращении в поддержку Meta.",
+      "lastSaveFailed": "Последнее сохранение не удалось",
+      "wabaNotSubscribed": "WhatsApp Business Account не подписан на это приложение, поэтому Meta не будет доставлять входящие вебхуки. Введите Access Token заново и сохраните, чтобы оформить подписку.",
+      "wabaSubscribed": "WhatsApp Business Account подписан на это приложение — входящие вебхуки могут доставляться.",
+      "phoneNumberIdPlaceholder": "например, 100234567890123",
+      "wabaIdPlaceholder": "например, 100234567890456",
+      "webhookVerifyTokenSaved": "Сохранено. Оставьте как есть или введите новое значение, чтобы сменить."
     },
     "templates": {
       "title": "Шаблоны сообщений",
@@ -2609,7 +2784,19 @@
       "toastInvalidImage": "Header image must be a JPEG or PNG.",
       "toastImageTooLarge": "Image is {size} MB — Meta's limit is 5 MB.",
       "toastUploadSuccess": "Image uploaded.",
-      "toastUploadFailed": "Upload failed."
+      "toastUploadFailed": "Upload failed.",
+      "categoryLabels": {
+        "Marketing": "Маркетинг",
+        "Utility": "Сервисные",
+        "Authentication": "Аутентификация"
+      },
+      "syncFailedHttp": "Ошибка синхронизации (HTTP {status})",
+      "syncMoreSuffix": ", + ещё {count}",
+      "deleteFailedHttp": "Ошибка удаления (HTTP {status})",
+      "toastMediaTooLarge": "Файл весит {size} МБ — лимит загрузки {max} МБ.",
+      "qualityScoreTitle": "Оценка качества Meta",
+      "headerTextLabel": "Текст заголовка",
+      "headerSampleAlt": "Пример заголовка"
     },
     "fieldsAndTags": {
       "fieldsTab": "Пользовательские поля",
@@ -2683,7 +2870,14 @@
       "removeDialogDesc": "Remove <bold>{name}</bold> from the account? They'll be signed out of this account and given a fresh personal account on their next sign-in. Their login isn't deleted.",
       "cancel": "Cancel",
       "removing": "Removing...",
-      "removeBtn": "Remove member"
+      "removeBtn": "Remove member",
+      "loadFailed": "Не удалось загрузить участников",
+      "loadInvitationsFailed": "Не удалось загрузить приглашения",
+      "networkError": "Не удалось связаться с сервером",
+      "updateRoleFailed": "Не удалось изменить роль",
+      "removeFailed": "Не удалось удалить участника",
+      "revokeFailed": "Не удалось отозвать приглашение",
+      "memberAlt": "Участник"
     },
     "invite": {
       "title": "Пригласить участника",
@@ -2718,7 +2912,10 @@
       "labelTooLong": "Label must be {max} characters or fewer",
       "copied": "Invite link copied",
       "clipboardBlocked": "Clipboard blocked — copy the link manually",
-      "whatsappMessage": "Join {accountName} on wacrm using this link (valid for {expiresInDays} days): {url}"
+      "whatsappMessage": "Join {accountName} on wacrm using this link (valid for {expiresInDays} days): {url}",
+      "createFailed": "Не удалось создать приглашение",
+      "fallbackAccountName": "наш аккаунт SharapatCRM",
+      "networkError": "Не удалось связаться с сервером. Повторить?"
     },
     "apiKeys": {
       "title": "API ключи",
@@ -2785,7 +2982,9 @@
       "useMode": "Use {mode} mode",
       "active": "Active",
       "accentColor": "Accent color",
-      "useTheme": "Use {name} theme"
+      "useTheme": "Use {name} theme",
+      "colorMode": "Цветовой режим",
+      "themeId": "ID темы: {id}"
     },
     "pageTitle": "Settings",
     "pageDesc": "Everything in one place — your account and your workspace. Pick a section to manage it.",
@@ -2872,7 +3071,11 @@
       "saveSuccess": "AI assistant saved.",
       "saveFailed": "Failed to save.",
       "removeSuccess": "AI configuration removed.",
-      "removeFailed": "Failed to remove."
+      "removeFailed": "Failed to remove.",
+      "missingBaseUrl": "Укажите Base URL для OpenAI-совместимого API.",
+      "providerOpenAiCompatible": "OpenAI-совместимый API",
+      "baseUrl": "Base URL",
+      "baseUrlHint": "Base URL для OpenAI-совместимого API, например https://api.groq.com/openai/v1. /chat/completions добавляется автоматически, если вы не указали этот путь сами."
     },
     "aiKnowledge": {
       "loadFailed": "Failed to load knowledge base",
@@ -2899,8 +3102,13 @@
       "addDoc": "Add document",
       "reindex": "Reindex",
       "reindexTooltip": "Re-embed all documents (e.g. after adding an embeddings key)",
-      "loading": "Loading…"
-    }
+      "loading": "Loading…",
+      "reindexWithFailures": "Переиндексировано {reindexed} из {total} документов. Не удалось: {failedCount} ({titles}). Нажмите «Переиндексировать», чтобы повторить.",
+      "reindexKeywordOnly": "Переиндексировано документов: {count}, но {keywordOnlyCount} ищутся только по ключевым словам (семантическая индексация не удалась). Нажмите «Переиндексировать», чтобы повторить.",
+      "editDoc": "Изменить",
+      "deleteDoc": "Удалить"
+    },
+    "sectionsNav": "Разделы настроек"
   },
   "modeToggle": {
     "toggleTheme": "Переключить тему",
@@ -2921,5 +3129,495 @@
     "errorTitle": "Не удалось загрузить ваши разрешения",
     "errorBody": "Роль вашего аккаунта не загрузилась, поэтому все действия считаются доступными только для чтения, и изменения не сохранятся. Проверьте соединение и попробуйте снова.",
     "retry": "Повторить"
+  },
+  "Agents": {
+    "title": "ИИ-агенты",
+    "description": "Ваш ИИ-агент на собственном ключе — настройте его, затем проверьте в песочнице, прежде чем он начнёт отвечать клиентам во входящих.",
+    "tabPlayground": "Песочница",
+    "tabSetup": "Настройка",
+    "tabUsage": "Использование",
+    "playground": {
+      "notConfigured": "Агент ещё не настроен — сначала завершите настройку.",
+      "noReply": "Не удалось получить ответ.",
+      "unreachable": "Не удалось связаться с агентом.",
+      "title": "Песочница",
+      "subtitle": "— проверьте ответы, как будто вы клиент",
+      "reset": "Сбросить",
+      "emptyTitle": "Отправьте сообщение, чтобы увидеть, как ответит агент.",
+      "emptyDesc": "Он использует вашу базу знаний и ведёт себя точно как бот автоответа — включая передачу оператору.",
+      "goToSetup": "Ещё не настроено? Перейти к настройке",
+      "handoff": "Здесь передал бы диалог человеку",
+      "thinking": "Думает…",
+      "placeholder": "Введите сообщение клиента…"
+    },
+    "usage": {
+      "loadFailed": "Не удалось загрузить статистику",
+      "tokens": "Токены",
+      "title": "Расход токенов",
+      "description": "Токены, потраченные с вашего ключа на черновики и бот автоответа. Только счётчики — содержимое сообщений здесь не хранится.",
+      "window": "Последние {days} дн.",
+      "empty": "За последние {days} дн. ИИ ещё не использовался.",
+      "emptyHint": "Данные появятся, когда ассистент начнёт писать черновики и автоответы.",
+      "totalTokens": "Всего токенов",
+      "llmCalls": "Вызовы LLM",
+      "autoReply": "Автоответ",
+      "drafts": "Черновики",
+      "tokensPerDay": "Токенов в день",
+      "byModel": "По моделям",
+      "modelCalls": "{tokens} ток. · {count, plural, one {# вызов} few {# вызова} many {# вызовов} other {# вызова}}",
+      "partialWindow": "Показан неполный период — использование настолько высокое, что здесь сведены только последние записи."
+    }
+  },
+  "GatedButton": {
+    "reasons": {
+      "createAutomations": "создавать автоматизации",
+      "createBroadcasts": "создавать рассылки",
+      "addOrImportContacts": "добавлять или импортировать контакты",
+      "deleteContacts": "удалять контакты",
+      "createFlows": "создавать сценарии",
+      "createPipelines": "создавать воронки",
+      "createDeals": "создавать сделки",
+      "sendMessages": "отправлять сообщения"
+    },
+    "readOnly": "Только просмотр — ваша роль не позволяет {action}"
+  },
+  "Dashboard": {
+    "overview": {
+      "loadFailed": "Не удалось загрузить панель.",
+      "retry": "Повторить",
+      "attention": {
+        "waiting": "Ждут ответа",
+        "waitingMeta": "Дольше всех {wait} · {count} сверх нормы",
+        "waitingNone": "Всем ответили",
+        "unassigned": "Не назначены",
+        "onlineNow": "{count, plural, =0 {Никого из команды нет в сети} one {# коллега в сети} few {# коллеги в сети} many {# коллег в сети} other {# коллеги в сети}}",
+        "closing": "Окна ответа закрываются",
+        "closingMeta": "Бесплатные ответы закончатся в течение 2 часов",
+        "failed": "Недоставленные сообщения",
+        "failedMeta": "За 24 часа · узнать причину"
+      },
+      "campaigns": {
+        "none": "—",
+        "title": "Кампании и автоматизации",
+        "description": "За этот период",
+        "link": "Рассылки",
+        "sentAt": "{date} · {count, plural, one {# получатель} few {# получателя} many {# получателей} other {# получателя}}",
+        "delivered": "Доставлено",
+        "read": "Прочитано",
+        "replied": "Ответили",
+        "failed": "Ошибки",
+        "noBroadcast": "Рассылок ещё не было.",
+        "automations": "{count, plural, one {Автоматизации · # запуск} few {Автоматизации · # запуска} many {Автоматизации · # запусков} other {Автоматизации · # запуска}}",
+        "noRuns": "Нет запусков",
+        "succeeded": "{percent} успешно",
+        "flowNamed": "Сценарий «{name}»",
+        "flows": "Сценарии",
+        "flowFailed": "{count, plural, one {# неудачный запуск} few {# неудачных запуска} many {# неудачных запусков} other {# неудачного запуска}}",
+        "flowsOk": "Неудачных запусков нет",
+        "aiReplies": "{count, plural, other {Ответы ИИ · #}}",
+        "aiMedian": "Медиана {time}",
+        "templates": "{count, plural, other {Шаблоны · одобрено: #}}",
+        "templatesRejected": "{count, plural, other {отклонено: #}}",
+        "templatesOk": "Отклонённых нет"
+      },
+      "failedDialog": {
+        "title": "Недоставленные сообщения",
+        "description": "Сообщения, которые WhatsApp не доставил за последние 24 часа.",
+        "empty": "За последние 24 часа недоставленных сообщений нет.",
+        "unknownContact": "Неизвестный контакт",
+        "reasonWithCode": "{reason} (ошибка {code})",
+        "unknownReason": "WhatsApp не указал причину.",
+        "showingLatest": "Показаны последние {shown} из {total}."
+      },
+      "kpi": {
+        "vsPrevious": {
+          "1": "по сравнению со вчера",
+          "7": "по сравнению с прошлыми 7 днями",
+          "30": "по сравнению с прошлыми 30 днями",
+          "90": "по сравнению с прошлыми 90 днями"
+        },
+        "newConversations": "Новые диалоги",
+        "newConversationsInfo": "Диалоги, начатые за этот период.",
+        "medianReply": "Медиана первого ответа",
+        "medianReplyInfo": "Типичное время от первого неотвеченного сообщения клиента до ответа сотрудника. Ответы ИИ и автоматизаций не учитываются.",
+        "none": "—",
+        "resolved": "Закрыто",
+        "resolvedInfo": "Диалоги, закрытые за этот период.",
+        "dealsWon": "Выигранные сделки",
+        "dealsWonInfo": "Сделки, переведённые в «выиграно» за этот период, и их общая сумма.",
+        "readRate": "Прочитываемость рассылок",
+        "readRateInfo": "Прочитанные сообщения, делённые на доставленные, для рассылок за этот период.",
+        "readOfDelivered": "прочитано {read} из {delivered} доставленных",
+        "noBroadcasts": "За этот период рассылок не было",
+        "noComparison": "Без изменений",
+        "new": "Новое",
+        "better": "Лучше, чем раньше",
+        "worse": "Хуже, чем раньше",
+        "unchanged": "Без изменений",
+        "target": "Цель {minutes} мин",
+        "targetMax": "{minutes} мин"
+      },
+      "volume": {
+        "incoming": "Входящие",
+        "outgoing": "Исходящие",
+        "averageIncoming": "В среднем входящих",
+        "none": "—",
+        "title": "Объём сообщений",
+        "description": "Входящие и исходящие сообщения",
+        "hoursDescription": "Среднее число входящих по часам суток",
+        "byHour": "По часам",
+        "byDay": "По дням",
+        "busiestHours": "Самые загруженные часы",
+        "empty": "За этот период сообщений нет",
+        "emptyHint": "Сообщения появятся здесь, когда клиенты начнут вам писать.",
+        "perHour": "Входящих в час",
+        "perDay": "Входящих в день",
+        "busiestHour": "Самый загруженный час",
+        "busiestDay": "Самый загруженный день",
+        "peakHour": "Самый загруженный час",
+        "secondPeak": "Второй по загрузке"
+      },
+      "header": {
+        "contextSetup": "Завершите настройку, чтобы получать сюда сообщения WhatsApp.",
+        "contextWaiting": "{count, plural, one {# клиент ждёт ответа,} few {# клиента ждут ответа,} many {# клиентов ждут ответа,} other {# клиента ждут ответа,}} дольше всех — {wait}.",
+        "contextClear": "Сейчас никто не ждёт ответа.",
+        "greeting": {
+          "morning": "Доброе утро, {name}",
+          "afternoon": "Добрый день, {name}",
+          "evening": "Добрый вечер, {name}"
+        },
+        "greetingNoName": {
+          "morning": "Доброе утро",
+          "afternoon": "Добрый день",
+          "evening": "Добрый вечер"
+        },
+        "rangeLabel": "Период",
+        "range": {
+          "1": "Сегодня",
+          "7": "7 дней",
+          "30": "30 дней",
+          "90": "90 дней"
+        },
+        "new": "Создать",
+        "newContact": "Новый контакт",
+        "newDeal": "Новая сделка",
+        "newBroadcast": "Новая рассылка",
+        "newAutomation": "Новая автоматизация"
+      },
+      "pipeline": {
+        "title": "Воронка",
+        "description": "Открытые сделки по этапам",
+        "choosePipeline": "Выберите воронку",
+        "link": "Воронки",
+        "empty": "Открытых сделок нет",
+        "emptyHint": "Создайте сделки в разделе «Воронки», чтобы увидеть их здесь.",
+        "deals": "{count, plural, one {# сделка} few {# сделки} many {# сделок} other {# сделки}}",
+        "open": "Открытые",
+        "winRate": "Доля выигрышей",
+        "none": "—",
+        "avgToWin": "Среднее время до выигрыша",
+        "days": "{count, plural, one {# день} few {# дня} many {# дней} other {# дня}}",
+        "idle": "{count, plural, one {# открытая сделка без активности} few {# открытые сделки без активности} many {# открытых сделок без активности} other {# открытой сделки без активности}} 7+ дней"
+      },
+      "queue": {
+        "title": "Очередь ответов",
+        "description": "Сначала самые долгие",
+        "openInbox": "Открыть входящие",
+        "empty": "Вы со всем справились",
+        "emptyHint": "Ни один клиент не ждёт ответа.",
+        "unknownContact": "Неизвестный контакт",
+        "noPreview": "Нет превью",
+        "windowLeft": "На бесплатный ответ осталось {time}",
+        "handedOff": "Передан ИИ",
+        "assigned": "Назначен",
+        "unassigned": "Не назначен"
+      },
+      "setup": {
+        "title": "Начало работы",
+        "progress": "Выполнено {done} из {total}",
+        "steps": {
+          "whatsapp": {
+            "title": "Подключите номер WhatsApp",
+            "description": "Привяжите номер, на который пишут клиенты.",
+            "action": "Подключить"
+          },
+          "contacts": {
+            "title": "Добавьте контакты",
+            "description": "Импортируйте CSV — или контакты добавятся сами, когда вам напишут.",
+            "action": "Добавить контакты"
+          },
+          "template": {
+            "title": "Получите одобрение шаблона сообщения",
+            "description": "Он нужен, чтобы писать тем, кто не писал вам последние 24 часа.",
+            "action": "Создать шаблон"
+          },
+          "teammate": {
+            "title": "Пригласите коллегу",
+            "description": "Работайте во входящих вместе и назначайте диалоги.",
+            "action": "Пригласить"
+          }
+        },
+        "doneLabel": "(готово)",
+        "todoLabel": "(нужно сделать)",
+        "previewTitle": "Здесь появятся ваши показатели",
+        "previewHint": "Когда клиенты начнут вам писать, эта страница покажет, кто ждёт ответа, как быстро отвечает команда и как идут сделки и кампании.",
+        "previewAction": "Открыть входящие"
+      },
+      "team": {
+        "title": "Команда",
+        "description": "Ответы за этот период",
+        "link": "Участники",
+        "member": "Участник",
+        "open": "Открытые",
+        "replies": "Ответы",
+        "median": "Медиана ответа",
+        "teammate": "Коллега",
+        "presence": {
+          "online": "В сети",
+          "away": "Отошёл",
+          "offline": "Не в сети"
+        },
+        "none": "—",
+        "ai": "ИИ-агент"
+      },
+      "duration": {
+        "seconds": "{value} с",
+        "minutes": "{value} мин",
+        "hours": "{value} ч {remainder} мин",
+        "hoursOnly": "{value} ч",
+        "days": "{value} д {remainder} ч",
+        "daysOnly": "{value} д"
+      },
+      "health": {
+        "unlimited": "Без дневного лимита",
+        "perDay": "{count}/день",
+        "disconnected": "WhatsApp не подключён",
+        "unavailable": "Не удалось проверить номер",
+        "quality": {
+          "GREEN": "Качество: высокое",
+          "YELLOW": "Качество: среднее",
+          "RED": "Качество: низкое",
+          "UNKNOWN": "Качество: без оценки"
+        },
+        "title": "Состояние номера WhatsApp"
+      }
+    },
+    "activityFeed": {
+      "title": "Последние события",
+      "viewAll": "Смотреть все →",
+      "noActivity": "Событий пока нет",
+      "noActivityHint": "Здесь появятся события по сообщениям, сделкам, рассылкам и автоматизациям.",
+      "showingOf": "Показано {visible} из {totalLoaded}{plus}",
+      "show": "Показать",
+      "timeS": "{sec} с назад",
+      "timeM": "{min} мин назад",
+      "timeH": "{hr} ч назад",
+      "timeD": "{day} дн. назад",
+      "items": {
+        "unknown": "Неизвестно",
+        "newMessages": "{who} отправил(а) сообщений: {count}",
+        "newMessage": "Новое сообщение от {who}",
+        "newContact": "Новый контакт: {name}",
+        "dealInStage": "Сделка «{title}» на этапе {stage}",
+        "dealUpdated": "Сделка «{title}» обновлена",
+        "broadcastStatusNames": {
+          "draft": "черновик",
+          "scheduled": "запланирована",
+          "sending": "отправляется",
+          "sent": "отправлена",
+          "failed": "не удалась"
+        },
+        "broadcastSent": "Рассылка «{name}» отправлена контактам: {count}",
+        "broadcastStatus": "Рассылка «{name}»: {status} (получателей: {count})",
+        "aContact": "контакт",
+        "automationFallback": "Автоматизация",
+        "automationFailed": "Автоматизация «{name}» не сработала для {who}",
+        "automationTriggered": "Автоматизация «{name}» сработала для {who}"
+      }
+    },
+    "emptyState": {
+      "title": "Пока недостаточно данных"
+    }
+  },
+  "Notifications": {
+    "markReadFailed": "Не удалось отметить уведомление как прочитанное",
+    "markAllFailed": "Не удалось отметить все как прочитанные",
+    "retry": "Повторить",
+    "title": "Уведомления",
+    "description": "Здесь появляются диалоги, которые вам назначают коллеги.",
+    "markAllRead": "Отметить все как прочитанные",
+    "emptyTitle": "Уведомлений пока нет",
+    "emptyDesc": "Здесь появится оповещение, когда вам назначат диалог.",
+    "unread": "Не прочитано"
+  },
+  "JoinPage": {
+    "conflictDefault": "Вы уже состоите в другом аккаунте. Войдите с другой почтой, чтобы присоединиться к этому.",
+    "acceptFailed": "Не удалось принять приглашение",
+    "welcome": "Добро пожаловать в команду",
+    "serverUnreachable": "Не удалось связаться с сервером",
+    "signOutFailed": "Не удалось выйти. Попробуйте обновить страницу.",
+    "verifying": "Проверяем приглашение…",
+    "fail": {
+      "notFoundTitle": "Приглашение не найдено",
+      "notFoundBody": "Эта ссылка не соответствует действующему приглашению. Проверьте адрес или попросите пригласившего отправить новое.",
+      "usedTitle": "Приглашение уже использовано",
+      "usedBody": "Это приглашение уже принято. Если это были не вы, попросите администратора аккаунта прислать новую ссылку.",
+      "expiredTitle": "Срок приглашения истёк",
+      "expiredBody": "Срок действия приглашения истёк. Попросите администратора аккаунта отправить новое — это занимает пару секунд.",
+      "serverErrorTitle": "Что-то пошло не так",
+      "serverErrorBody": "Сейчас не удаётся проверить приглашение. Попробуйте обновить страницу чуть позже."
+    },
+    "tryAgain": "Повторить",
+    "createNewAccount": "Создать новый аккаунт",
+    "signIn": "Войти",
+    "invitedTo": "Вас пригласили в <account>{name}</account>",
+    "joinAs": "Вы присоединитесь как <badge>{role}</badge>. Ссылка действует до {date}.",
+    "accepting": "Принимаем…",
+    "acceptInvitation": "Принять приглашение",
+    "acceptNote": "После принятия ваш вход перейдёт в {name}. Пустой личный аккаунт, созданный при регистрации, будет удалён.",
+    "conflictTitle": "С этим аккаунтом нельзя присоединиться к {name}",
+    "conflictBody": "Чтобы присоединиться к <account>{name}</account>, выйдите и зарегистрируйтесь заново с другой почтой. Ссылка-приглашение остаётся действительной, пока не истечёт.",
+    "staySignedIn": "Остаться в системе",
+    "signingOut": "Выходим…",
+    "signOutSwitch": "Выйти и использовать другую почту",
+    "createAndJoin": "Создать аккаунт и присоединиться",
+    "haveAccount": "У меня уже есть аккаунт"
+  },
+  "Flows": {
+    "editorState": {
+      "defaultYes": "Да",
+      "defaultListButton": "Посмотреть варианты",
+      "saveFailedStatus": "Не удалось сохранить: {status}",
+      "statusUpdateFailedStatus": "Не удалось обновить статус: {status}",
+      "deleteFailedStatus": "Не удалось удалить: {status}",
+      "saved": "Сохранено.",
+      "fixIssues": "Перед активацией исправьте проблемы ниже.",
+      "statusActivated": "Сценарий активирован.",
+      "statusArchived": "В архиве.",
+      "statusDraft": "Сохранено как черновик.",
+      "deleteConfirm": "Удалить «{name}»? Все активные запуски сразу завершатся. Это действие нельзя отменить.",
+      "saveFailed": "Не удалось сохранить",
+      "statusUpdateFailed": "Не удалось обновить статус",
+      "deleteFailed": "Не удалось удалить"
+    },
+    "builder": {
+      "form": {
+        "optionN": "Вариант {n}"
+      }
+    }
+  },
+  "Interactive": {
+    "previewBody": "Текст сообщения…",
+    "previewButton": "Кнопка",
+    "previewMenu": "Меню",
+    "replyButtons": "Кнопки ответа",
+    "list": "Список",
+    "body": "Текст",
+    "bodyPlaceholder": "Что клиент прочитает над вариантами",
+    "header": "Заголовок (необязательно)",
+    "footer": "Подпись (необязательно)",
+    "showIds": "Показать ID ответов (для опытных)",
+    "preview": "Предпросмотр",
+    "buttonsCount": "Кнопки ({count}/{max})",
+    "idPlaceholder": "id",
+    "buttonLabelPlaceholder": "Текст кнопки",
+    "addButton": "Добавить кнопку",
+    "listButtonLabel": "Текст кнопки списка",
+    "rowsCount": "Строки ({count}/{max})",
+    "sectionTitlePlaceholder": "Название раздела (необязательно)",
+    "rowTitlePlaceholder": "Название строки",
+    "rowDescriptionPlaceholder": "Описание (необязательно)",
+    "addRow": "Добавить строку",
+    "addSection": "Добавить раздел",
+    "defaultListButton": "Меню"
+  },
+  "Settings": {
+    "browserNotifications": {
+      "statusDenied": "Заблокировано в настройках браузера",
+      "deniedHint": "Разрешите уведомления для этого сайта в настройках браузера (обычно значок замка рядом с адресной строкой), затем обновите страницу.",
+      "permissionDeniedToast": "Браузер заблокировал уведомления",
+      "testTitle": "Тестовое уведомление",
+      "testBody": "Уведомления работают. Новые сообщения клиентов будут выглядеть так.",
+      "unsupported": "Этот браузер не поддерживает уведомления на рабочем столе.",
+      "title": "Уведомления в браузере",
+      "description": "Получайте оповещение о каждом новом сообщении клиента, даже находясь на другой странице. Сохраняется на этом устройстве.",
+      "toggleLabel": "Уведомлять о новых сообщениях клиентов",
+      "toggleDesc": "Работает, только пока приложение открыто во вкладке браузера.",
+      "sendTest": "Отправить тестовое уведомление",
+      "labels": {
+        "fallbackTitle": "Новое сообщение",
+        "image": "📷 Фото",
+        "audio": "🎤 Голосовое сообщение",
+        "video": "🎬 Видео",
+        "document": "📄 Документ",
+        "location": "📍 Геопозиция",
+        "template": "📋 Шаблон"
+      },
+      "statusGranted": "Разрешено браузером.",
+      "statusDefault": "При включении браузер запросит разрешение."
+    },
+    "inbox": {
+      "loadFailed": "Не удалось загрузить целевое время ответа",
+      "saveFailed": "Не удалось сохранить целевое время ответа",
+      "saveSuccess": "Целевое время ответа обновлено",
+      "title": "Входящие",
+      "description": "Как панель измеряет время ответа команды.",
+      "replyTarget": "Целевое время ответа",
+      "replyTargetDesc": "Панель отмечает диалоги, ждущие первого ответа дольше этого времени, и сравнивает с ним медиану вашего времени ответа.",
+      "minutesLabel": "Минуты",
+      "invalid": "Введите целое число от 1 до 1440.",
+      "hint": "Целое число от 1 до 1440 (24 часа).",
+      "adminOnlyHint": "Изменять целевое время ответа могут только администраторы аккаунта.",
+      "saving": "Сохранение...",
+      "save": "Сохранить"
+    },
+    "quickReplies": {
+      "nameRequired": "Дайте быстрому ответу название.",
+      "saveError": "Не удалось сохранить быстрый ответ.",
+      "updated": "Быстрый ответ обновлён.",
+      "created": "Быстрый ответ создан.",
+      "deleteConfirm": "Удалить этот быстрый ответ?",
+      "deleteError": "Не удалось удалить быстрый ответ.",
+      "title": "Быстрые ответы",
+      "description": "Готовые фрагменты — простой текст или сохранённое интерактивное сообщение, — которые сотрудники вставляют из поля ввода во входящих.",
+      "new": "Новый быстрый ответ",
+      "empty": "Быстрых ответов пока нет. Создайте один, чтобы использовать его в разных диалогах.",
+      "edit": "Изменить быстрый ответ",
+      "nameLabel": "Название",
+      "namePlaceholder": "например, Часы работы",
+      "kindText": "Текст",
+      "kindInteractive": "Интерактивное",
+      "textPlaceholder": "Текст сообщения для вставки",
+      "cancel": "Отмена",
+      "save": "Сохранить"
+    }
+  },
+  "UiPrimitives": {
+    "close": "Закрыть"
+  },
+  "Broadcasts": {
+    "sending": {
+      "notSignedIn": "Вы не вошли в систему.",
+      "notLinkedToAccount": "Ваш профиль не привязан к аккаунту.",
+      "lookupCsvContactsFailed": "Не удалось найти контакты из CSV: {error}",
+      "createCsvContactsFailed": "Не удалось создать контакты из CSV: {error}",
+      "noContactsForAudience": "Для этой аудитории контакты не найдены.",
+      "createBroadcastFailed": "Не удалось создать рассылку: {error}",
+      "unknownErrorLower": "неизвестная ошибка",
+      "insertRecipientBatchFailed": "Не удалось добавить пакет получателей {batch}: {error}",
+      "fetchRecipientsFailed": "Не удалось получить получателей рассылки",
+      "apiRequestFailed": "Запрос к API рассылки не удался",
+      "noPhoneOnContact": "У контакта нет номера телефона",
+      "unknownError": "Неизвестная ошибка"
+    }
+  },
+  "Automations": {
+    "relative": {
+      "never": "никогда",
+      "justNow": "только что",
+      "minutesAgo": "{n} мин назад",
+      "hoursAgo": "{n} ч назад",
+      "daysAgo": "{n} дн. назад"
+    }
   }
 }

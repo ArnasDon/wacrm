@@ -71,7 +71,7 @@ export function PasswordForm() {
       setConfirm('');
       toast.success(t('updated'));
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
+      const msg = err instanceof Error ? err.message : t('unknownError');
       toast.error(msg);
     } finally {
       setSaving(false);

@@ -23,18 +23,14 @@ import type { PostgrestError } from "@supabase/supabase-js";
 import { hashInviteToken } from "@/lib/auth/invitations";
 import {
   checkRateLimit,
+  getClientIp,
   rateLimitResponse,
   RATE_LIMITS,
 } from "@/lib/rate-limit";
 import { createClient } from "@/lib/supabase/server";
+import { getT } from "@/lib/i18n/translate";
 
-function getClientIp(request: Request): string {
-  const xff = request.headers.get("x-forwarded-for");
-  if (xff) return xff.split(",")[0].trim();
-  const xri = request.headers.get("x-real-ip");
-  if (xri) return xri.trim();
-  return "unknown";
-}
+const t = getT("Api");
 
 function rpcErrorToResponse(err: PostgrestError): NextResponse {
   if (err.code === "42501") {
@@ -48,7 +44,7 @@ function rpcErrorToResponse(err: PostgrestError): NextResponse {
   }
   console.error("[redeem] unexpected RPC error:", err);
   return NextResponse.json(
-    { error: "Failed to redeem invitation" },
+    { error: t('invitations.redeemFailed') },
     { status: 500 },
   );
 }
@@ -64,7 +60,7 @@ export async function POST(
   const { token } = await params;
   if (!token || typeof token !== "string") {
     return NextResponse.json(
-      { error: "Missing invitation token" },
+      { error: t('invitations.missingToken') },
       { status: 400 },
     );
   }
@@ -78,7 +74,7 @@ export async function POST(
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: t('common.unauthorized') }, { status: 401 });
   }
 
   const { data: accountId, error } = await supabase.rpc("redeem_invitation", {

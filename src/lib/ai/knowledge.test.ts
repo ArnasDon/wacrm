@@ -124,7 +124,8 @@ describe('retrieveKnowledge', () => {
 describe('ingestDocument', () => {
   it('embeds chunks when a key is present', async () => {
     const { db, state } = makeDb()
-    await ingestDocument(db, 'acct', { embeddingsApiKey: 'sk-x' }, 'doc-1', 'hello world')
+    const result = await ingestDocument(db, 'acct', { embeddingsApiKey: 'sk-x' }, 'doc-1', 'hello world')
+    expect(result).toEqual({ keywordOnly: false, embedError: null })
     expect(h.embedTexts).toHaveBeenCalledTimes(1)
     expect(state.deletedFor).toBe('doc-1')
     expect(state.inserted).toHaveLength(1)
@@ -147,12 +148,12 @@ describe('ingestDocument', () => {
     expect(h.embedTexts).not.toHaveBeenCalled()
   })
 
-  it('still stores lexical chunks when embedding fails, then rethrows', async () => {
+  it('reports keyword-only success when embedding fails', async () => {
     const { db, state } = makeDb()
-    h.embedTexts.mockRejectedValueOnce(new Error('rate limited'))
-    await expect(
-      ingestDocument(db, 'acct', { embeddingsApiKey: 'sk-x' }, 'doc-1', 'hello world'),
-    ).rejects.toThrow('rate limited')
+    const embedError = new Error('rate limited')
+    h.embedTexts.mockRejectedValueOnce(embedError)
+    const result = await ingestDocument(db, 'acct', { embeddingsApiKey: 'sk-x' }, 'doc-1', 'hello world')
+    expect(result).toEqual({ keywordOnly: true, embedError })
     // Chunks were inserted (lexical search works) despite the embed failure…
     expect(state.inserted).toHaveLength(1)
     expect(state.inserted![0].embedding).toBeNull()

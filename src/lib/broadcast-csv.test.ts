@@ -12,6 +12,7 @@ describe('parseBroadcastCsv', () => {
     expect(result).toEqual({
       ok: true,
       duplicates: 0,
+      invalid: 0,
       contacts: [
         { phone: '+15551230000', name: 'Ada' },
         { phone: '+15559990000', name: 'Grace' },
@@ -24,6 +25,7 @@ describe('parseBroadcastCsv', () => {
     expect(result).toEqual({
       ok: true,
       duplicates: 0,
+      invalid: 0,
       contacts: [{ phone: '+15551230000' }],
     });
   });
@@ -36,6 +38,7 @@ describe('parseBroadcastCsv', () => {
     expect(result).toEqual({
       ok: true,
       duplicates: 0,
+      invalid: 0,
       contacts: [{ phone: '+15551230000', name: 'Ada' }],
     });
   });
@@ -45,6 +48,7 @@ describe('parseBroadcastCsv', () => {
     expect(result).toEqual({
       ok: true,
       duplicates: 0,
+      invalid: 0,
       contacts: [{ phone: '+15551230000', name: 'Ada' }],
     });
   });
@@ -57,13 +61,43 @@ describe('parseBroadcastCsv', () => {
     const result = parseBroadcastCsv(
       `phone,name
 +1 (555) 123-0000,Ada
-15551230000,Ada Again`
++1-555-123-0000,Ada Again`
     );
 
     expect(result).toEqual({
       ok: true,
       duplicates: 1,
+      invalid: 0,
       contacts: [{ phone: '+1 (555) 123-0000', name: 'Ada' }],
+    });
+  });
+
+  // A national-format number has no country code, so Meta reads its
+  // leading digits as one: "4155551212" (US) is delivered to +41
+  // (Switzerland). Rows without a leading `+` are refused and counted,
+  // not silently dropped, so a whole-file export from a spreadsheet that
+  // stripped the `+` is visible to the user before anything is sent
+  // (issue #586).
+  it('rejects rows without a leading + and reports them as invalid', () => {
+    const result = parseBroadcastCsv(
+      `phone,name
+4155551212,National US
++14155551212,Ada
+9876543210,National IN`
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      duplicates: 0,
+      invalid: 2,
+      contacts: [{ phone: '+14155551212', name: 'Ada' }],
+    });
+  });
+
+  it('reports no_valid_rows when every number lacks a country code', () => {
+    expect(parseBroadcastCsv(`phone,name\n4155551212,Ada`)).toEqual({
+      ok: false,
+      error: 'no_valid_rows',
     });
   });
 
@@ -93,6 +127,7 @@ describe('parseBroadcastCsv', () => {
     expect(result).toEqual({
       ok: true,
       duplicates: 0,
+      invalid: 0,
       contacts: [
         { phone: '+15551230000', name: 'Ada' },
         { phone: '+15559990000', name: 'Grace' },

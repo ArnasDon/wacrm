@@ -169,3 +169,24 @@ export function templateContentText(
   if (!row?.body_text) return null;
   return renderTemplateBody(row.body_text, params);
 }
+
+export function templateHeaderMediaUrl(
+  row: MessageTemplate | null,
+  templateMessageParams?: unknown
+): string | null {
+  if (!row?.header_type || row.header_type === 'text') return null;
+  const params =
+    templateMessageParams && typeof templateMessageParams === 'object'
+      ? (templateMessageParams as {
+          headerMediaUrl?: unknown;
+          headerMediaId?: unknown;
+        })
+      : {};
+  if (typeof params.headerMediaUrl === 'string' && params.headerMediaUrl) {
+    return params.headerMediaUrl;
+  }
+  if (typeof params.headerMediaId === 'string' && params.headerMediaId) {
+    return null;
+  }
+  return row.header_media_url || null;
+}

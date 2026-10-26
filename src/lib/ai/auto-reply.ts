@@ -7,7 +7,11 @@ import { buildSystemPrompt } from './defaults'
 import { buildHandoffSummary } from './handoff'
 import { logAiUsage } from './usage'
 import { latestUserMessage } from './query'
-import { engineSendText } from '@/lib/flows/meta-send'
+import {
+  engineSendText,
+  loadAccountMetaCredentials,
+} from '@/lib/flows/meta-send'
+import { sendTypingIndicator } from '@/lib/whatsapp/meta-api'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 
 interface DispatchArgs {
@@ -18,6 +22,10 @@ interface DispatchArgs {
   /** The account's WhatsApp config owner, used for the outbound send's
    *  audit columns (mirrors how the flow runner passes it through). */
   configOwnerUserId: string
+  /** Meta's wamid of the customer message we're replying to. When set,
+   *  a typing indicator (which also marks it read) is shown while the
+   *  reply is generated. Optional so older callers keep working. */
+  inboundMessageId?: string
 }
 
 /**
@@ -42,7 +50,13 @@ interface DispatchArgs {
 export async function dispatchInboundToAiReply(
   args: DispatchArgs,
 ): Promise<void> {
-  const { accountId, conversationId, contactId, configOwnerUserId } = args
+  const {
+    accountId,
+    conversationId,
+    contactId,
+    configOwnerUserId,
+    inboundMessageId,
+  } = args
 
   try {
     const db = supabaseAdmin()
@@ -96,6 +110,16 @@ export async function dispatchInboundToAiReply(
         `[ai auto-reply] account ${accountId} hit the per-account rate limit — skipping this inbound.`,
       )
       return
+    }
+
+    // Every gate has passed — we're committed to attempting a reply, so
+    // show the customer "typing…" (and mark their message read) while the
+    // retrieval + LLM round trips run. Meta clears the indicator after
+    // 25 s or when our reply lands, whichever is first, so there's
+    // nothing to undo on the handoff / no-text path. Strictly
+    // best-effort: a failed indicator must never cost us the reply.
+    if (inboundMessageId) {
+      await showTypingIndicator(db, accountId, inboundMessageId)
     }
 
     // Ground the reply in the account's knowledge base (best-effort).
@@ -157,6 +181,13 @@ export async function dispatchInboundToAiReply(
       return
     }
 
+    if (
+      inboundMessageId &&
+      (await hasNewerInbound(db, conversationId, inboundMessageId))
+    ) {
+      return
+    }
+
     // Atomically claim a reply slot: the cap check + increment happen in
     // one UPDATE, so concurrent inbounds can never overshoot the cap. If
     // another inbound just took the last slot, `claimed` is false and we
@@ -177,7 +208,7 @@ export async function dispatchInboundToAiReply(
       console.error('[ai auto-reply] claim_ai_reply_slot failed:', claimErr)
       return
     }
-    if (claimed !== true) return // lost the per-conversation cap race
+    if (claimed !== true) return
 
     await engineSendText({
       accountId,
@@ -189,5 +220,46 @@ export async function dispatchInboundToAiReply(
     })
   } catch (err) {
     console.error('[ai auto-reply] dispatch failed:', err)
+  }
+}
+
+async function hasNewerInbound(
+  db: ReturnType<typeof supabaseAdmin>,
+  conversationId: string,
+  inboundMessageId: string,
+): Promise<boolean> {
+  const { data, error } = await db
+    .from('messages')
+    .select('message_id')
+    .eq('conversation_id', conversationId)
+    .eq('sender_type', 'customer')
+    .order('created_at', { ascending: false })
+    .limit(1)
+  if (error || !data || data.length === 0) return false
+  return data[0].message_id !== inboundMessageId
+}
+
+/**
+ * Best-effort "typing…" for the inbound we're about to answer. Swallows
+ * every failure (no WhatsApp config, bad token, Meta 4xx) with a warning
+ * — the indicator is cosmetic, the reply is not.
+ */
+async function showTypingIndicator(
+  db: ReturnType<typeof supabaseAdmin>,
+  accountId: string,
+  inboundMessageId: string,
+): Promise<void> {
+  try {
+    const { phoneNumberId, accessToken } = await loadAccountMetaCredentials(
+      db,
+      accountId,
+    )
+    await sendTypingIndicator({
+      phoneNumberId,
+      accessToken,
+      messageId: inboundMessageId,
+    })
+  } catch (err) {
+    console.warn('[ai auto-reply] typing indicator failed (continuing):', err)
   }
 }

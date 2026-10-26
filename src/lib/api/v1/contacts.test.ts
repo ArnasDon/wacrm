@@ -1,10 +1,24 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
+
+// Mock the two collaborators `setContactTags` writes through so the
+// tests can assert exactly which joins it adds and removes.
+const resolveImportTagIds = vi.fn();
+vi.mock('@/lib/contacts/resolve-import-tags', () => ({
+  resolveImportTagIds: (...args: unknown[]) => resolveImportTagIds(...args),
+}));
+const addContactTagAndDispatch = vi.fn();
+vi.mock('@/lib/contacts/tag-events', () => ({
+  addContactTagAndDispatch: (...args: unknown[]) =>
+    addContactTagAndDispatch(...args),
+}));
 
 import {
   serializeContact,
   findOrCreateContact,
+  setContactTags,
   ContactError,
+  contactSearchFilter,
 } from './contacts';
 
 describe('serializeContact', () => {
@@ -61,5 +75,130 @@ describe('findOrCreateContact', () => {
     await expect(
       findOrCreateContact(noopDb, 'acc', 'user', { phone: 'not-a-number' })
     ).rejects.toBeInstanceOf(ContactError);
+  });
+
+  it('rejects a number without a leading + before any DB call (#586)', async () => {
+    // "4155551212" is a US national number to the integrator but Meta
+    // would deliver it to +41 (Switzerland); persisting it would repeat
+    // that on every later send. Digits with a country code but no `+`
+    // are refused too — the API can't tell the two apart.
+    for (const phone of ['4155551212', '14155551212', '+1234567']) {
+      await expect(
+        findOrCreateContact(noopDb, 'acc', 'user', { phone })
+      ).rejects.toMatchObject({ status: 400 });
+    }
+  });
+});
+
+describe('setContactTags', () => {
+  /**
+   * Fake just enough of the Supabase query builder for the two
+   * `contact_tags` calls `setContactTags` makes: the current-joins read
+   * and the diff delete. Records which tag ids were removed.
+   */
+  function fakeContactTagsDb(currentTagIds: string[]) {
+    const removed: string[] = [];
+    const builder = {
+      select: () => ({
+        eq: async () => ({
+          data: currentTagIds.map((tag_id) => ({ tag_id })),
+          error: null,
+        }),
+      }),
+      delete: () => ({
+        eq: () => ({
+          in: async (_col: string, ids: string[]) => {
+            removed.push(...ids);
+            return { error: null };
+          },
+        }),
+      }),
+    };
+    const db = {
+      from: (table: string) => {
+        expect(table).toBe('contact_tags');
+        return builder;
+      },
+    } as unknown as SupabaseClient;
+    return { db, removed };
+  }
+
+  // `resolveImportTagIds` returns EVERY tag in the account (it loads them
+  // all for case-insensitive matching), not just the requested names.
+  const allAccountTags = new Map([
+    ['a', 'tag-a'],
+    ['b', 'tag-b'],
+    ['c', 'tag-c'],
+  ]);
+
+  beforeEach(() => {
+    resolveImportTagIds.mockReset();
+    addContactTagAndDispatch.mockReset();
+    resolveImportTagIds.mockResolvedValue({
+      tagIdByKey: allAccountTags,
+      skippedNames: [],
+    });
+    addContactTagAndDispatch.mockResolvedValue({
+      added: true,
+      dispatched: false,
+    });
+  });
+
+  it('only attaches the requested tags and removes unrelated ones (#560)', async () => {
+    // Contact currently has c; account also has a and b; request is ["a"].
+    const { db, removed } = fakeContactTagsDb(['tag-c']);
+
+    await setContactTags(db, 'acc', 'user', 'c1', ['a']);
+
+    const added = addContactTagAndDispatch.mock.calls.map(
+      ([input]) => (input as { tagId: string }).tagId
+    );
+    expect(added).toEqual(['tag-a']);
+    expect(removed).toEqual(['tag-c']);
+  });
+
+  it('normalizes requested names like resolveImportTagIds (trim, case, empty, dupes)', async () => {
+    const { db, removed } = fakeContactTagsDb([]);
+
+    await setContactTags(db, 'acc', 'user', 'c1', [' A ', 'a', 'B', '', '  ']);
+
+    const added = addContactTagAndDispatch.mock.calls.map(
+      ([input]) => (input as { tagId: string }).tagId
+    );
+    expect(added.sort()).toEqual(['tag-a', 'tag-b']);
+    expect(removed).toEqual([]);
+  });
+
+  it('clears every tag when passed an empty list', async () => {
+    const { db, removed } = fakeContactTagsDb(['tag-a', 'tag-c']);
+
+    await setContactTags(db, 'acc', 'user', 'c1', []);
+
+    expect(addContactTagAndDispatch).not.toHaveBeenCalled();
+    expect(removed.sort()).toEqual(['tag-a', 'tag-c']);
+  });
+});
+
+describe('contactSearchFilter', () => {
+  it('searches the phone column by digits only so a +E.164 query matches', () => {
+    expect(contactSearchFilter('+1 (415) 555-1234')).toBe(
+      'name.ilike.*+1 415 555-1234*,phone.ilike.*14155551234*'
+    );
+  });
+
+  it('skips the phone condition when the search has no digits', () => {
+    expect(contactSearchFilter('Jane')).toBe('name.ilike.*Jane*');
+  });
+
+  it('returns null for a search that sanitizes to nothing', () => {
+    expect(contactSearchFilter('  ,()*%  ')).toBeNull();
+  });
+
+  it('strips PostgREST delimiters and ilike wildcards from the term', () => {
+    expect(contactSearchFilter('a,b)c(d*e%f')).toBe('name.ilike.*abcdef*');
+  });
+
+  it('escapes the single-character ilike wildcard', () => {
+    expect(contactSearchFilter('jane_doe')).toBe('name.ilike.*jane\\_doe*');
   });
 });

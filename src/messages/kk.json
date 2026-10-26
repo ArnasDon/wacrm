@@ -93,7 +93,8 @@
     "defaultAvatar": "Avatar",
     "menuProfile": "Profile",
     "menuSettings": "Settings",
-    "menuSignOut": "Sign out"
+    "menuSignOut": "Sign out",
+    "primaryNav": "Негізгі мәзір"
   },
   "header": {
     "profile": "Профиль",
@@ -126,7 +127,9 @@
       "submit": "Кіру",
       "submitLoading": "Кіруде...",
       "noAccount": "Тіркелгіңіз жоқ па?",
-      "createAccount": "Тіркелгі жасау"
+      "createAccount": "Тіркелгі жасау",
+      "linkExpired": "Сілтеменің мерзімі бітті. Құпиясөзді қалпына келтіру үшін «Құпиясөзді ұмыттыңыз ба?» арқылы жаңасын сұратыңыз; егер поштаны растаған болсаңыз — қайта тіркеліңіз.",
+      "linkInvalid": "Бұл сілтеме арқылы кіру мүмкін болмады. Егер поштаны растаған болсаңыз, ол бәлкім расталып қойған — төменде кіре беріңіз. Құпиясөзді қалпына келтіру үшін жаңа сілтеме сұратып, оны сұраған браузерде ашыңыз."
     },
     "signup": {
       "title": "Тіркелгі жасау",
@@ -365,7 +368,44 @@
       "deleteNode": "Түйінді жою",
       "setAsEntry": "Кіру ретінде орнату",
       "entry": "Кіру",
-      "noNodes": "Әлі түйіндер жоқ."
+      "noNodes": "Әлі түйіндер жоқ.",
+      "nodes": {
+        "start": {
+          "label": "Бастау"
+        },
+        "send_message": {
+          "label": "Хабарлама жіберу"
+        },
+        "send_buttons": {
+          "label": "Батырмалар жіберу"
+        },
+        "send_list": {
+          "label": "Тізім жіберу"
+        },
+        "send_media": {
+          "label": "Медиа жіберу"
+        },
+        "collect_input": {
+          "label": "Жауап жинау"
+        },
+        "condition": {
+          "label": "Егер / әйтпесе"
+        },
+        "set_tag": {
+          "label": "Контактіге тег қою"
+        },
+        "handoff": {
+          "label": "Операторға беру"
+        },
+        "end": {
+          "label": "Соңы"
+        }
+      },
+      "categories": {
+        "messaging": "Хабарламалар",
+        "logic": "Логика және деректер",
+        "flow": "Сценарийді басқару"
+      }
     },
     "trigger": {
       "title": "Триггер",
@@ -619,7 +659,9 @@
       "pickNextNode": "Келесі түйінді таңдаңыз…",
       "filenamePlaceholder": "invoice.pdf",
       "tagUuidPlaceholder": "Tag UUID",
-      "varKeyPlaceholder": "e.g. name, email, company"
+      "varKeyPlaceholder": "e.g. name, email, company",
+      "defaultOptionTitle": "Нұсқа",
+      "optionN": "{n}-нұсқа"
     },
     "list": {
       "title": "Flows",
@@ -731,7 +773,8 @@
     "triggerKeywordNone": "Triggers on keyword (none set)",
     "triggerKeyword": "Triggers on: {keywords}",
     "triggerFirstInbound": "Triggers on a contact's first-ever inbound message",
-    "triggerManual": "Manual trigger"
+    "triggerManual": "Manual trigger",
+    "cloneFailedStatus": "Көшірме жасау сәтсіз: {status}"
   },
   "pipelines": {
     "title": "Каналдар",
@@ -781,7 +824,8 @@
       "toastMoveOrDeleteDeals": "Move or delete deals in this stage first",
       "toastFailedDeleteStage": "Failed to delete stage",
       "toastFailedDeletePipeline": "Failed to delete pipeline",
-      "toastDeleted": "Pipeline deleted"
+      "toastDeleted": "Pipeline deleted",
+      "pickColor": "{color} түсін таңдау"
     },
     "analytics": "Канал аналитикасы",
     "totalDeals": "Барлық мәмілелер",
@@ -913,6 +957,14 @@
       "toastReopened": "Deal reopened",
       "toastFailedDelete": "Failed to delete deal",
       "toastDeleted": "Deal deleted"
+    },
+    "defaultPipelineName": "Сату воронкасы",
+    "defaultStages": {
+      "newLead": "Жаңа лид",
+      "qualified": "Іріктелген",
+      "proposalSent": "Ұсыныс жіберілді",
+      "negotiation": "Келіссөздер",
+      "won": "Жеңілді"
     }
   },
   "contacts": {
@@ -1104,7 +1156,9 @@
       "toastCustomFieldsSaved": "Custom fields saved",
       "toastCustomFieldsFailed": "Failed to save custom fields",
       "toastTemplateSent": "Template \"{name}\" sent",
-      "toastTemplateFailed": "Failed to send template: {reason}"
+      "toastTemplateFailed": "Failed to send template: {reason}",
+      "toastPhoneNeedsCountryCode": "Ел кодын көрсетіңіз — нөмір + белгісінен басталуы керек (мысалы, +77011234567)",
+      "networkError": "желі қатесі"
     },
     "form": {
       "newContact": "Жаңа контакт",
@@ -1297,7 +1351,15 @@
       "description": "Upload a CSV with a required <phoneCode>phone</phoneCode> column. Optional: <nameCode>name</nameCode>, <emailCode>email</emailCode>, <companyCode>company</companyCode>, <tagsCode>tags</tagsCode> (comma-separated; quote multi-tag cells).",
       "selectFile": "Click to choose a CSV file",
       "dragDrop": ".csv up to your browser limit",
-      "importButton": "Import"
+      "importButton": "Import",
+      "notAuthenticated": "Сіз авторизацияланбағансыз",
+      "notLinkedToAccount": "Профиліңіз аккаунтқа байланбаған.",
+      "unknownReason": "Белгісіз қате",
+      "toastTagsSkippedMore": " (+ тағы {count})",
+      "toastInvalidPhone": "Жарамды нөмірі жоқ контактілер: {count}",
+      "resultInvalidPhone": "Қате нөмірлер: {count}",
+      "invalidPhoneHint": "Телефон нөмірі + белгісі мен ел кодынан басталуы керек (мысалы, +77011234567). Онсыз нөмірлер басқа елге жіберілер еді.",
+      "failedRowsHeading": "Қате жолдар"
     },
     "subtitle": "Manage your contact list. {count} total contacts.",
     "subtitleZero": "Manage your contact list.",
@@ -1359,7 +1421,13 @@
     "dupSimilar": "A contact with a very similar number already exists.",
     "loadingTags": "Loading tags...",
     "noTagsAvailable": "No tags available. Create tags in Settings.",
-    "phoneRequired": "Phone number is required"
+    "phoneRequired": "Phone number is required",
+    "filterByTag": "«{name}» бойынша сүзу",
+    "removeTagFilter": "«{name}» сүзгісін алып тастау",
+    "selectContact": "{name} таңдау",
+    "phoneNeedsCountryCode": "Ел кодын көрсетіңіз — нөмір + белгісінен басталуы керек (мысалы, +77011234567)",
+    "notAuthenticated": "Сіз авторизацияланбағансыз",
+    "notLinkedToAccount": "Профиліңіз аккаунтқа байланбаған."
   },
   "inbox": {
     "title": "Кіріс",
@@ -1466,7 +1534,21 @@
         "travel": "Саяхат және орындар",
         "objects": "Заттар",
         "symbols": "Таңбалар"
-      }
+      },
+      "aiNotConfigured": "ЖИ әлі бапталмаған — оны Баптаулар → ЖИ көмекшісі бөлімінде қосыңыз.",
+      "draftFailed": "Жоба жауапты құрастыру мүмкін болмады.",
+      "draftEmpty": "Көмекші жауап қайтармады.",
+      "aiUnreachable": "ЖИ көмекшісімен байланысу мүмкін болмады.",
+      "fileTooLarge": "Файл көлемі {size} МБ — «{kind}» үшін шек {max} МБ.",
+      "mediaKind": {
+        "image": "сурет",
+        "video": "бейне",
+        "document": "құжат",
+        "audio": "аудио"
+      },
+      "uploadFailed": "Жүктеп салу сәтсіз.",
+      "recordingTooLong": "Жазба тым ұзын (16 МБ-тан артық).",
+      "recordingUnsupported": "Бұл браузер дауыс жазуды қолдамайды."
     },
     "sidebar": {
       "contactInfo": "Контакт ақпараты",
@@ -1506,7 +1588,10 @@
       "finalUrl": "Final URL: {url}",
       "back": "Back",
       "cancel": "Cancel",
-      "send": "Send template"
+      "send": "Send template",
+      "headerVarLabel": "Тақырып {var}",
+      "bodyVarLabel": "Мәтін {var}",
+      "urlButtonVarLabel": "«{text}» сілтеме батырмасы — {var} мәні"
     },
     "messageActions": {
       "reply": "Жауап беру",
@@ -1577,7 +1662,18 @@
       "yesterday": "Yesterday",
       "you": "You",
       "customer": "Customer",
-      "noTeammatesAvailable": "No teammates available"
+      "noTeammatesAvailable": "No teammates available",
+      "loadOlderFailed": "Ертерек хабарламаларды жүктеу мүмкін болмады.",
+      "sendFailed": "Жіберу сәтсіз: {reason}",
+      "networkError": "желі қатесі",
+      "documentFallback": "Құжат",
+      "sendTemplateFailed": "Үлгіні жіберу сәтсіз: {reason}",
+      "waitForSending": "Хабарлама жіберілгенше күтіңіз",
+      "reactionFailed": "Реакция қою сәтсіз: {reason}",
+      "assignmentUpdateFailed": "Тағайындауды жаңарту мүмкін болмады",
+      "loadingOlder": "Жүктелуде…",
+      "loadOlder": "Ертерек хабарламаларды жүктеу",
+      "unknown": "Белгісіз"
     },
     "sessionTimer": {
       "expired": "Expired",
@@ -1602,7 +1698,8 @@
       "viewImage": "Толық өлшемде ашу",
       "expandVideo": "Бейнені жаю",
       "download": "Жүктеп алу",
-      "downloadFailed": "Тіркемені жүктеп алу мүмкін болмады"
+      "downloadFailed": "Тіркемені жүктеп алу мүмкін болмады",
+      "notDelivered": "Жеткізілмеді"
     },
     "actions": {
       "reply": "Reply",
@@ -1639,7 +1736,10 @@
       "failed": "Бұл тіркеме енді қолжетімсіз",
       "imageAlt": "Сурет",
       "you": "Сіз"
-    }
+    },
+    "filterWaiting": "Жауап күтуде",
+    "filterUnassigned": "Тағайындалмаған",
+    "filterExpiring": "Жауап терезесі жабылуда"
   },
   "broadcasts": {
     "title": "Хабарламалар",
@@ -1702,7 +1802,10 @@
       "next": "Келесі",
       "errorCsvMissingPhone": "CSV файлында «phone» бағаны болуы керек.",
       "errorCsvParse": "CSV файлын оқу мүмкін болмады.",
-      "csvContactsFound": "CSV ішінен {count} контакт табылды."
+      "csvContactsFound": "CSV ішінен {count} контакт табылды.",
+      "selectAudience": {
+        "csvInvalidPhones": "{count} жол өткізіп жіберілді: телефон нөмірі + белгісі мен ел кодынан басталуы керек (мысалы, +77011234567)."
+      }
     },
     "step3": {
       "title": "Хабарламаны реттеу",
@@ -1732,7 +1835,12 @@
       "contactFieldEmail": "Электрондық пошта",
       "contactFieldCompany": "Компания",
       "back": "Артқа",
-      "next": "Келесі"
+      "next": "Келесі",
+      "personalize": {
+        "sampleName": "Асан Асанов",
+        "sampleCompany": "«Алатау» ЖШС",
+        "headerPreviewAlt": "Тақырып алдын ала көрінісі"
+      }
     },
     "step4": {
       "title": "Тексеру және жіберу",
@@ -1973,7 +2081,9 @@
         "progressDesc": "Processing {current} of {total} recipients...",
         "toastFailedPreview": "Failed to load preview data"
       }
-    }
+    },
+    "broadcastFailed": "Тарату сәтсіз аяқталды",
+    "broadcastInProgress": "Тарату жүріп жатыр"
   },
   "automations": {
     "title": "Автоматтандыру",
@@ -2102,7 +2212,8 @@
       "toasts": {
         "saved": "Automation saved",
         "created": "Automation created",
-        "saveFailed": "Save failed"
+        "saveFailed": "Save failed",
+        "issueAt": "{path} ішінде"
       },
       "tags": {
         "select": "Select a tag…",
@@ -2191,9 +2302,32 @@
         "matchExact": "Exact",
         "matchWord": "Толық сөз",
         "matchWordHint": "Кілт сөз тек жеке сөз ретінде сәйкес келеді, сондықтан \"k\" енді \"thanks\" сөзінде іске қосылмайды. Бос орындары бар тілдерде қысқа кілт сөздер үшін ыңғайлы; бос орынсыз жазылатын тілдерде \"Қамтиды\" режимін қолданыңыз.",
-        "closeConversationHint": "Sets the conversation status to \"closed\". No configuration needed."
+        "closeConversationHint": "Sets the conversation status to \"closed\". No configuration needed.",
+        "timezoneLabel": "Уақыт белдеуі",
+        "waitForReply": "Жалғастыру алдында жауап күту",
+        "waitForReplyHint": "Клиент батырманы баспайынша немесе жауап бермейінше осында тоқтайды (24 сағатқа дейін). Келесі қадамдар, соның ішінде хабарлама мәтіні бойынша «Егер/Әйтпесе», оның жауабын пайдаланады."
       },
-      "delete": "Delete"
+      "delete": "Delete",
+      "schedulePlaceholder": "Cron өрнегі немесе СС:мм",
+      "kindCondition": "Шарт",
+      "kindWait": "Күту",
+      "kindAction": "Әрекет",
+      "moveUp": "Жоғары жылжыту",
+      "moveDown": "Төмен жылжыту",
+      "preview": {
+        "noText": "мәтін әлі жоқ",
+        "noBody": "мәтін әлі жоқ",
+        "withWaitForReply": "{preview} · жауап күтеді",
+        "pickTemplate": "үлгіні таңдаңыз",
+        "units": {
+          "minutes": "минут",
+          "hours": "сағат",
+          "days": "күн"
+        },
+        "wait": "{amount} {unit}",
+        "when": "{subject} кезде",
+        "noUrl": "URL жоқ"
+      }
     },
     "list": {
       "title": "Automations",
@@ -2273,7 +2407,10 @@
       "updateError": "Failed to update",
       "duplicateError": "Failed to duplicate",
       "deleteError": "Failed to delete"
-    }
+    },
+    "loadFailed": "Автоматтандыруларды жүктеу мүмкін болмады",
+    "activeIndicator": "белсенді",
+    "openMenu": "Мәзірді ашу"
   },
   "settings": {
     "title": "Баптаулар",
@@ -2393,7 +2530,10 @@
       "cancel": "Cancel",
       "signingOut": "Signing out…",
       "signOutEverywhere": "Sign out everywhere",
-      "signOutFailed": "Sign-out failed: {message}"
+      "signOutFailed": "Sign-out failed: {message}",
+      "unknownError": "Белгісіз қате",
+      "avatarAlt": "Аватар",
+      "fullNamePlaceholder": "Асан Асанов"
     },
     "password": {
       "title": "Құпия сөзді өзгерту",
@@ -2408,7 +2548,8 @@
       "tooShort": "Password must be at least {min} characters",
       "mismatch": "New password and confirmation do not match",
       "incorrectCurrent": "Current password is incorrect",
-      "noEmail": "Cannot change password without a current email"
+      "noEmail": "Cannot change password without a current email",
+      "unknownError": "Белгісіз қате"
     },
     "sessions": {
       "title": "Белсенді сессиялар",
@@ -2424,7 +2565,8 @@
       "cancel": "Cancel",
       "signOut": "Sign out everywhere",
       "signingOut": "Signing out…",
-      "signOutFailed": "Sign-out failed: {message}"
+      "signOutFailed": "Sign-out failed: {message}",
+      "unknownError": "Белгісіз қате"
     },
     "whatsapp": {
       "title": "WhatsApp конфигурациясы",
@@ -2501,7 +2643,40 @@
       "step4_3": "Paste the <strong class=\"text-foreground\">Webhook Callback URL</strong> from above",
       "step4_4": "Enter the same <strong class=\"text-foreground\">Verify Token</strong> you set here",
       "step4_5": "Subscribe to \"messages\" webhook field",
-      "metaDocs": "Meta WhatsApp API Documentation"
+      "metaDocs": "Meta WhatsApp API Documentation",
+      "loadFailed": "WhatsApp баптауларын жүктеу мүмкін болмады",
+      "phoneNumberIdRequired": "Phone Number ID міндетті",
+      "phoneNumberIdNotNumeric": "Phone Number ID тек сандардан тұруы керек. Телефон нөмірінің өзін емес, Meta → WhatsApp → API Setup бөліміндегі сандық ID-ны көшіріңіз.",
+      "wabaIdNotNumeric": "WhatsApp Business Account ID тек сандардан тұруы керек. Оны Meta → WhatsApp → API Setup бөлімінен көшіріңіз.",
+      "accessTokenRequired": "Алғашқы баптау үшін Access Token қажет",
+      "reenterAccessToken": "Өзгерістерді сақтау үшін Access Token-ді қайта енгізіңіз",
+      "saveFailed": "Баптауларды сақтау мүмкін болмады",
+      "savedButRegistrationFailed": "Сақталды, бірақ Meta нөмірді тіркей алмады: {error}",
+      "savedRegistrationSkipped": "Деректер сақталып, тексерілді. Кіріс тіркеуі өткізіп жіберілді (PIN жоқ) — төмендегі «Тіркеу күйін» қараңыз.",
+      "liveWithName": "Іске қосылды — {name} енді оқиғаларды алады.",
+      "connectedGeneric": "WhatsApp қосылды. Оқиғалар бір минут ішінде келе бастайды.",
+      "connectedTo": "{name} аккаунтына қосылған",
+      "apiConnectionOk": "API-ға қосылу сәтті",
+      "apiConnectionFailed": "API-ға қосылу сәтсіз",
+      "connectionTestFailed": "Қосылымды тексеру сәтсіз. Желіні тексеріп, қайталаңыз.",
+      "fullyWired": "Нөмір толық қосылған — Meta оқиғаларды жеткізуде.",
+      "notFullyRegistered": "Нөмір толық тіркелмеген. Қай қадам сәтсіз болғанын төмендегі тексерулерден қараңыз.",
+      "verifyEndpointUnreachable": "Тексеру мекенжайына қосылу мүмкін болмады.",
+      "resetConfirm": "Қазіргі WhatsApp баптаулары жойылады, сонда оларды қайта енгізе аласыз. Жалғастыру керек пе?",
+      "resetFailed": "Баптауларды тастау мүмкін болмады",
+      "resetDone": "Баптаулар тазартылды. Енді деректерді қайта енгізуге болады.",
+      "webhookCopied": "Вебхук URL алмасу буферіне көшірілді",
+      "metaErrorStep": "Қадам",
+      "metaErrorCode": "Meta қате коды",
+      "metaErrorTrace": "Trace ID",
+      "metaErrorMessage": "Meta жауабы",
+      "metaErrorDetailsHint": "Meta қолдау қызметіне жүгінгенде осы деректерді көрсетіңіз.",
+      "lastSaveFailed": "Соңғы сақтау сәтсіз болды",
+      "wabaNotSubscribed": "WhatsApp Business Account бұл қолданбаға жазылмаған, сондықтан Meta кіріс вебхуктарды жеткізбейді. Жазылу үшін Access Token-ді қайта енгізіп, сақтаңыз.",
+      "wabaSubscribed": "WhatsApp Business Account бұл қолданбаға жазылған — кіріс вебхуктар жеткізілуі мүмкін.",
+      "phoneNumberIdPlaceholder": "мысалы, 100234567890123",
+      "wabaIdPlaceholder": "мысалы, 100234567890456",
+      "webhookVerifyTokenSaved": "Сақталды. Сол күйінде қалдырыңыз немесе ауыстыру үшін жаңа мән енгізіңіз."
     },
     "templates": {
       "title": "Хабарлама үлгілері",
@@ -2609,7 +2784,19 @@
       "toastInvalidImage": "Header image must be a JPEG or PNG.",
       "toastImageTooLarge": "Image is {size} MB — Meta's limit is 5 MB.",
       "toastUploadSuccess": "Image uploaded.",
-      "toastUploadFailed": "Upload failed."
+      "toastUploadFailed": "Upload failed.",
+      "categoryLabels": {
+        "Marketing": "Маркетинг",
+        "Utility": "Қызметтік",
+        "Authentication": "Аутентификация"
+      },
+      "syncFailedHttp": "Синхрондау қатесі (HTTP {status})",
+      "syncMoreSuffix": ", + тағы {count}",
+      "deleteFailedHttp": "Жою қатесі (HTTP {status})",
+      "toastMediaTooLarge": "Файл көлемі {size} МБ — жүктеу шегі {max} МБ.",
+      "qualityScoreTitle": "Meta сапа бағасы",
+      "headerTextLabel": "Тақырып мәтіні",
+      "headerSampleAlt": "Тақырып үлгісі"
     },
     "fieldsAndTags": {
       "fieldsTab": "Реттелмелі өрістер",
@@ -2683,7 +2870,14 @@
       "removeDialogDesc": "Remove <bold>{name}</bold> from the account? They'll be signed out of this account and given a fresh personal account on their next sign-in. Their login isn't deleted.",
       "cancel": "Cancel",
       "removing": "Removing...",
-      "removeBtn": "Remove member"
+      "removeBtn": "Remove member",
+      "loadFailed": "Қатысушыларды жүктеу мүмкін болмады",
+      "loadInvitationsFailed": "Шақыруларды жүктеу мүмкін болмады",
+      "networkError": "Серверге қосылу мүмкін болмады",
+      "updateRoleFailed": "Рөлді өзгерту мүмкін болмады",
+      "removeFailed": "Қатысушыны жою мүмкін болмады",
+      "revokeFailed": "Шақыруды қайтарып алу мүмкін болмады",
+      "memberAlt": "Қатысушы"
     },
     "invite": {
       "title": "Мүшені шақыру",
@@ -2718,7 +2912,10 @@
       "labelTooLong": "Label must be {max} characters or fewer",
       "copied": "Invite link copied",
       "clipboardBlocked": "Clipboard blocked — copy the link manually",
-      "whatsappMessage": "Join {accountName} on wacrm using this link (valid for {expiresInDays} days): {url}"
+      "whatsappMessage": "Join {accountName} on wacrm using this link (valid for {expiresInDays} days): {url}",
+      "createFailed": "Шақыру жасау мүмкін болмады",
+      "fallbackAccountName": "біздің SharapatCRM аккаунтымыз",
+      "networkError": "Серверге қосылу мүмкін болмады. Қайталау керек пе?"
     },
     "apiKeys": {
       "title": "API кілттері",
@@ -2785,7 +2982,9 @@
       "useMode": "Use {mode} mode",
       "active": "Active",
       "accentColor": "Accent color",
-      "useTheme": "Use {name} theme"
+      "useTheme": "Use {name} theme",
+      "colorMode": "Түс режимі",
+      "themeId": "Тақырып ID: {id}"
     },
     "pageTitle": "Settings",
     "pageDesc": "Everything in one place — your account and your workspace. Pick a section to manage it.",
@@ -2872,7 +3071,11 @@
       "saveSuccess": "AI assistant saved.",
       "saveFailed": "Failed to save.",
       "removeSuccess": "AI configuration removed.",
-      "removeFailed": "Failed to remove."
+      "removeFailed": "Failed to remove.",
+      "missingBaseUrl": "OpenAI-үйлесімді API үшін Base URL енгізіңіз.",
+      "providerOpenAiCompatible": "OpenAI-үйлесімді API",
+      "baseUrl": "Base URL",
+      "baseUrlHint": "OpenAI-үйлесімді API үшін Base URL, мысалы https://api.groq.com/openai/v1. Бұл жолды өзіңіз көрсетпесеңіз, /chat/completions автоматты түрде қосылады."
     },
     "aiKnowledge": {
       "loadFailed": "Failed to load knowledge base",
@@ -2899,8 +3102,13 @@
       "addDoc": "Add document",
       "reindex": "Reindex",
       "reindexTooltip": "Re-embed all documents (e.g. after adding an embeddings key)",
-      "loading": "Loading…"
-    }
+      "loading": "Loading…",
+      "reindexWithFailures": "{total} құжаттың {reindexed} қайта индекстелді. Сәтсіз: {failedCount} ({titles}). Қайталау үшін «Қайта индекстеу» батырмасын басыңыз.",
+      "reindexKeywordOnly": "{count} құжат қайта индекстелді, бірақ {keywordOnlyCount} тек кілт сөздер бойынша ізделеді (семантикалық индекстеу сәтсіз). Қайталау үшін «Қайта индекстеу» батырмасын басыңыз.",
+      "editDoc": "Өзгерту",
+      "deleteDoc": "Жою"
+    },
+    "sectionsNav": "Баптау бөлімдері"
   },
   "modeToggle": {
     "toggleTheme": "Тақырыпты ауыстыру",
@@ -2921,5 +3129,495 @@
     "errorTitle": "Рұқсаттарыңыз жүктелмеді",
     "errorBody": "Аккаунт рөліңіз жүктелмеді, сондықтан барлық әрекет тек оқуға арналған ретінде саналады және өзгерістер сақталмайды. Байланысты тексеріп, қайта көріңіз.",
     "retry": "Қайталау"
+  },
+  "Agents": {
+    "title": "ЖИ агенттері",
+    "description": "Өз кілтіңіздегі ЖИ агенті — оны баптаңыз, содан кейін кіріс хаттардағы клиенттерге жауап бермес бұрын құмсалғышта тексеріңіз.",
+    "tabPlayground": "Құмсалғыш",
+    "tabSetup": "Баптау",
+    "tabUsage": "Пайдалану",
+    "playground": {
+      "notConfigured": "Агент әлі бапталмаған — алдымен баптауды аяқтаңыз.",
+      "noReply": "Жауап алу мүмкін болмады.",
+      "unreachable": "Агентпен байланысу мүмкін болмады.",
+      "title": "Құмсалғыш",
+      "subtitle": "— өзіңізді клиент ретінде жауаптарды тексеріңіз",
+      "reset": "Тазарту",
+      "emptyTitle": "Агенттің қалай жауап беретінін көру үшін хабарлама жіберіңіз.",
+      "emptyDesc": "Ол сіздің білім қорыңызды пайдаланады және автожауап ботымен бірдей әрекет етеді — операторға беруді қоса алғанда.",
+      "goToSetup": "Әлі бапталмаған ба? Баптауға өту",
+      "handoff": "Осы жерде диалогты адамға берер еді",
+      "thinking": "Ойлануда…",
+      "placeholder": "Клиент хабарламасын енгізіңіз…"
+    },
+    "usage": {
+      "loadFailed": "Пайдалану деректерін жүктеу мүмкін болмады",
+      "tokens": "Токендер",
+      "title": "Токен шығыны",
+      "description": "Жоба жауаптар мен автожауап боты сіздің кілтіңізден жұмсаған токендер. Тек санауыштар — хабарлама мазмұны мұнда сақталмайды.",
+      "window": "Соңғы {days} күн",
+      "empty": "Соңғы {days} күнде ЖИ әлі пайдаланылмаған.",
+      "emptyHint": "Ассистент жоба жауаптар мен автожауаптар жаза бастағанда деректер пайда болады.",
+      "totalTokens": "Барлық токен",
+      "llmCalls": "LLM шақырулары",
+      "autoReply": "Автожауап",
+      "drafts": "Жоба жауаптар",
+      "tokensPerDay": "Күніне токен",
+      "byModel": "Модельдер бойынша",
+      "modelCalls": "{tokens} ток. · {count, plural, other {# шақыру}}",
+      "partialWindow": "Толық емес кезең көрсетілген — пайдалану өте жоғары болғандықтан, мұнда тек соңғы жазбалар жинақталған."
+    }
+  },
+  "GatedButton": {
+    "reasons": {
+      "createAutomations": "автоматтандыру жасау",
+      "createBroadcasts": "тарату жасау",
+      "addOrImportContacts": "контактілерді қосу немесе импорттау",
+      "deleteContacts": "контактілерді жою",
+      "createFlows": "сценарийлер жасау",
+      "createPipelines": "воронкалар жасау",
+      "createDeals": "мәмілелер жасау",
+      "sendMessages": "хабарлама жіберу"
+    },
+    "readOnly": "Тек көру — сіздің рөліңіз {action} мүмкіндік бермейді"
+  },
+  "Dashboard": {
+    "overview": {
+      "loadFailed": "Басқару тақтасын жүктеу мүмкін болмады.",
+      "retry": "Қайталау",
+      "attention": {
+        "waiting": "Жауап күтуде",
+        "waitingMeta": "Ең ұзағы {wait} · {count} нормадан асқан",
+        "waitingNone": "Барлығына жауап берілді",
+        "unassigned": "Тағайындалмаған",
+        "onlineNow": "{count, plural, =0 {Желіде ешкім жоқ} other {Желіде # әріптес}}",
+        "closing": "Жауап терезелері жабылуда",
+        "closingMeta": "Тегін жауаптар 2 сағат ішінде аяқталады",
+        "failed": "Жеткізілмеген хабарламалар",
+        "failedMeta": "Соңғы 24 сағат · себебін көру"
+      },
+      "campaigns": {
+        "none": "—",
+        "title": "Науқандар және автоматтандырулар",
+        "description": "Осы кезеңде",
+        "link": "Таратулар",
+        "sentAt": "{date} · {count, plural, other {# алушы}}",
+        "delivered": "Жеткізілді",
+        "read": "Оқылды",
+        "replied": "Жауап берді",
+        "failed": "Қателер",
+        "noBroadcast": "Әзірге тарату жіберілмеген.",
+        "automations": "{count, plural, other {Автоматтандырулар · # іске қосу}}",
+        "noRuns": "Іске қосу жоқ",
+        "succeeded": "{percent} сәтті",
+        "flowNamed": "«{name}» сценарийі",
+        "flows": "Сценарийлер",
+        "flowFailed": "{count, plural, other {# сәтсіз іске қосу}}",
+        "flowsOk": "Сәтсіз іске қосу жоқ",
+        "aiReplies": "{count, plural, other {ЖИ жауаптары · #}}",
+        "aiMedian": "Медиана {time}",
+        "templates": "{count, plural, other {Үлгілер · мақұлданды: #}}",
+        "templatesRejected": "{count, plural, other {қабылданбады: #}}",
+        "templatesOk": "Қабылданбағаны жоқ"
+      },
+      "failedDialog": {
+        "title": "Жеткізілмеген хабарламалар",
+        "description": "WhatsApp соңғы 24 сағатта жеткізбеген хабарламалар.",
+        "empty": "Соңғы 24 сағатта жеткізілмеген хабарлама жоқ.",
+        "unknownContact": "Белгісіз контакт",
+        "reasonWithCode": "{reason} (қате {code})",
+        "unknownReason": "WhatsApp себебін көрсетпеді.",
+        "showingLatest": "{total} ішінен соңғы {shown} көрсетілген."
+      },
+      "kpi": {
+        "vsPrevious": {
+          "1": "кешемен салыстырғанда",
+          "7": "алдыңғы 7 күнмен салыстырғанда",
+          "30": "алдыңғы 30 күнмен салыстырғанда",
+          "90": "алдыңғы 90 күнмен салыстырғанда"
+        },
+        "newConversations": "Жаңа диалогтар",
+        "newConversationsInfo": "Осы кезеңде басталған диалогтар.",
+        "medianReply": "Алғашқы жауаптың медианасы",
+        "medianReplyInfo": "Клиенттің алғашқы жауапсыз хабарламасынан қызметкердің жауабына дейінгі әдеттегі уақыт. ЖИ мен автоматтандыру жауаптары есептелмейді.",
+        "none": "—",
+        "resolved": "Жабылды",
+        "resolvedInfo": "Осы кезеңде жабылған диалогтар.",
+        "dealsWon": "Жеңген мәмілелер",
+        "dealsWonInfo": "Осы кезеңде «жеңілді» кезеңіне өткен мәмілелер және олардың жалпы сомасы.",
+        "readRate": "Таратулардың оқылуы",
+        "readRateInfo": "Осы кезеңдегі таратулар үшін оқылған хабарламалардың жеткізілгендерге қатынасы.",
+        "readOfDelivered": "жеткізілген {delivered} ішінен {read} оқылды",
+        "noBroadcasts": "Осы кезеңде тарату болмады",
+        "noComparison": "Өзгеріс жоқ",
+        "new": "Жаңа",
+        "better": "Бұрынғыдан жақсы",
+        "worse": "Бұрынғыдан нашар",
+        "unchanged": "Өзгеріссіз",
+        "target": "Мақсат {minutes} мин",
+        "targetMax": "{minutes} мин"
+      },
+      "volume": {
+        "incoming": "Кіріс",
+        "outgoing": "Шығыс",
+        "averageIncoming": "Орташа кіріс",
+        "none": "—",
+        "title": "Хабарламалар көлемі",
+        "description": "Кіріс және шығыс хабарламалар",
+        "hoursDescription": "Тәулік сағаттары бойынша орташа кіріс хабарламалар",
+        "byHour": "Сағат бойынша",
+        "byDay": "Күн бойынша",
+        "busiestHours": "Ең қарбалас сағаттар",
+        "empty": "Осы кезеңде хабарлама жоқ",
+        "emptyHint": "Клиенттер жаза бастағанда хабарламалар осында көрсетіледі.",
+        "perHour": "Сағатына кіріс",
+        "perDay": "Күніне кіріс",
+        "busiestHour": "Ең қарбалас сағат",
+        "busiestDay": "Ең қарбалас күн",
+        "peakHour": "Ең қарбалас сағат",
+        "secondPeak": "Екінші қарбалас"
+      },
+      "header": {
+        "contextSetup": "WhatsApp хабарламаларын осында алу үшін баптауды аяқтаңыз.",
+        "contextWaiting": "{count, plural, other {# клиент жауап күтуде,}} ең ұзағы — {wait}.",
+        "contextClear": "Қазір ешкім жауап күтіп тұрған жоқ.",
+        "greeting": {
+          "morning": "Қайырлы таң, {name}",
+          "afternoon": "Қайырлы күн, {name}",
+          "evening": "Қайырлы кеш, {name}"
+        },
+        "greetingNoName": {
+          "morning": "Қайырлы таң",
+          "afternoon": "Қайырлы күн",
+          "evening": "Қайырлы кеш"
+        },
+        "rangeLabel": "Кезең",
+        "range": {
+          "1": "Бүгін",
+          "7": "7 күн",
+          "30": "30 күн",
+          "90": "90 күн"
+        },
+        "new": "Жасау",
+        "newContact": "Жаңа контакт",
+        "newDeal": "Жаңа мәміле",
+        "newBroadcast": "Жаңа тарату",
+        "newAutomation": "Жаңа автоматтандыру"
+      },
+      "pipeline": {
+        "title": "Воронка",
+        "description": "Кезеңдер бойынша ашық мәмілелер",
+        "choosePipeline": "Воронканы таңдаңыз",
+        "link": "Воронкалар",
+        "empty": "Ашық мәміле жоқ",
+        "emptyHint": "Мәмілелерді осында көру үшін «Воронкалар» бөлімінде жасаңыз.",
+        "deals": "{count, plural, other {# мәміле}}",
+        "open": "Ашық",
+        "winRate": "Жеңіс үлесі",
+        "none": "—",
+        "avgToWin": "Жеңіске дейінгі орташа уақыт",
+        "days": "{count, plural, other {# күн}}",
+        "idle": "{count, plural, other {# ашық мәміледе}} 7+ күн бойы белсенділік жоқ"
+      },
+      "queue": {
+        "title": "Жауап кезегі",
+        "description": "Алдымен ең ұзақ күткендер",
+        "openInbox": "Кіріс хаттарды ашу",
+        "empty": "Барлығы өңделді",
+        "emptyHint": "Ешбір клиент жауап күтпейді.",
+        "unknownContact": "Белгісіз контакт",
+        "noPreview": "Алдын ала көрініс жоқ",
+        "windowLeft": "Тегін жауапқа {time} қалды",
+        "handedOff": "ЖИ тапсырды",
+        "assigned": "Тағайындалған",
+        "unassigned": "Тағайындалмаған"
+      },
+      "setup": {
+        "title": "Жұмысты бастау",
+        "progress": "{total} ішінен {done} орындалды",
+        "steps": {
+          "whatsapp": {
+            "title": "WhatsApp нөміріңізді қосыңыз",
+            "description": "Клиенттер жазатын нөмірді байланыстырыңыз.",
+            "action": "Қосу"
+          },
+          "contacts": {
+            "title": "Контактілерді қосыңыз",
+            "description": "CSV импорттаңыз — немесе контактілер сізге жазғанда өздігінен қосылады.",
+            "action": "Контакт қосу"
+          },
+          "template": {
+            "title": "Хабарлама үлгісін мақұлдатыңыз",
+            "description": "Соңғы 24 сағатта сізге жазбағандарға жазу үшін қажет.",
+            "action": "Үлгі жасау"
+          },
+          "teammate": {
+            "title": "Әріптесті шақырыңыз",
+            "description": "Кіріс хаттармен бірге жұмыс істеп, диалогтарды тағайындаңыз.",
+            "action": "Шақыру"
+          }
+        },
+        "doneLabel": "(дайын)",
+        "todoLabel": "(орындау керек)",
+        "previewTitle": "Көрсеткіштеріңіз осында пайда болады",
+        "previewHint": "Клиенттер жаза бастағанда, бұл бет кім жауап күтіп тұрғанын, команда қаншалықты жылдам жауап беретінін және мәмілелер мен науқандардың жағдайын көрсетеді.",
+        "previewAction": "Кіріс хаттарды ашу"
+      },
+      "team": {
+        "title": "Команда",
+        "description": "Осы кезеңдегі жауаптар",
+        "link": "Қатысушылар",
+        "member": "Қатысушы",
+        "open": "Ашық",
+        "replies": "Жауаптар",
+        "median": "Жауап медианасы",
+        "teammate": "Әріптес",
+        "presence": {
+          "online": "Желіде",
+          "away": "Уақытша жоқ",
+          "offline": "Желіде емес"
+        },
+        "none": "—",
+        "ai": "ЖИ агенті"
+      },
+      "duration": {
+        "seconds": "{value} с",
+        "minutes": "{value} мин",
+        "hours": "{value} сағ {remainder} мин",
+        "hoursOnly": "{value} сағ",
+        "days": "{value} күн {remainder} сағ",
+        "daysOnly": "{value} күн"
+      },
+      "health": {
+        "unlimited": "Күндік лимитсіз",
+        "perDay": "{count}/күн",
+        "disconnected": "WhatsApp қосылмаған",
+        "unavailable": "Нөмірді тексеру мүмкін болмады",
+        "quality": {
+          "GREEN": "Сапа: жоғары",
+          "YELLOW": "Сапа: орташа",
+          "RED": "Сапа: төмен",
+          "UNKNOWN": "Сапа: бағаланбаған"
+        },
+        "title": "WhatsApp нөмірінің күйі"
+      }
+    },
+    "activityFeed": {
+      "title": "Соңғы оқиғалар",
+      "viewAll": "Барлығын көру →",
+      "noActivity": "Әзірге оқиға жоқ",
+      "noActivityHint": "Хабарламалар, мәмілелер, таратулар және автоматтандырулар бойынша оқиғалар осында көрсетіледі.",
+      "showingOf": "{totalLoaded}{plus} ішінен {visible} көрсетілген",
+      "show": "Көрсету",
+      "timeS": "{sec} с бұрын",
+      "timeM": "{min} мин бұрын",
+      "timeH": "{hr} сағ бұрын",
+      "timeD": "{day} күн бұрын",
+      "items": {
+        "unknown": "Белгісіз",
+        "newMessages": "{who} {count} хабарлама жіберді",
+        "newMessage": "{who} жаңа хабарлама жіберді",
+        "newContact": "Жаңа контакт: {name}",
+        "dealInStage": "«{title}» мәмілесі {stage} кезеңінде",
+        "dealUpdated": "«{title}» мәмілесі жаңартылды",
+        "broadcastStatusNames": {
+          "draft": "жоба",
+          "scheduled": "жоспарланған",
+          "sending": "жіберілуде",
+          "sent": "жіберілді",
+          "failed": "сәтсіз"
+        },
+        "broadcastSent": "«{name}» таратуы {count} контактіге жіберілді",
+        "broadcastStatus": "«{name}» таратуы: {status} ({count} алушы)",
+        "aContact": "контакт",
+        "automationFallback": "Автоматтандыру",
+        "automationFailed": "«{name}» автоматтандыруы {who} үшін сәтсіз болды",
+        "automationTriggered": "«{name}» автоматтандыруы {who} үшін іске қосылды"
+      }
+    },
+    "emptyState": {
+      "title": "Әзірге дерек жеткіліксіз"
+    }
+  },
+  "Notifications": {
+    "markReadFailed": "Хабарландыруды оқылды деп белгілеу мүмкін болмады",
+    "markAllFailed": "Барлығын оқылды деп белгілеу мүмкін болмады",
+    "retry": "Қайталау",
+    "title": "Хабарландырулар",
+    "description": "Әріптестер сізге тағайындаған диалогтар осында көрсетіледі.",
+    "markAllRead": "Барлығын оқылды деп белгілеу",
+    "emptyTitle": "Әзірге хабарландыру жоқ",
+    "emptyDesc": "Сізге диалог тағайындалғанда осында хабарлама шығады.",
+    "unread": "Оқылмаған"
+  },
+  "JoinPage": {
+    "conflictDefault": "Сіз басқа аккаунттың мүшесісіз. Осы аккаунтқа қосылу үшін басқа поштамен кіріңіз.",
+    "acceptFailed": "Шақыруды қабылдау мүмкін болмады",
+    "welcome": "Командаға қош келдіңіз",
+    "serverUnreachable": "Серверге қосылу мүмкін болмады",
+    "signOutFailed": "Шығу мүмкін болмады. Бетті жаңартып көріңіз.",
+    "verifying": "Шақыру тексерілуде…",
+    "fail": {
+      "notFoundTitle": "Шақыру табылмады",
+      "notFoundBody": "Бұл сілтеме жарамды шақыруға сәйкес келмейді. Мекенжайды тексеріңіз немесе шақырған адамнан жаңасын жіберуді сұраңыз.",
+      "usedTitle": "Шақыру қолданылып қойған",
+      "usedBody": "Бұл шақыру қабылданып қойған. Егер бұл сіз болмасаңыз, аккаунт әкімшісінен жаңа сілтеме жіберуді сұраңыз.",
+      "expiredTitle": "Шақырудың мерзімі бітті",
+      "expiredBody": "Бұл шақырудың мерзімі бітті. Аккаунт әкімшісінен жаңасын жіберуді сұраңыз — бұл бірнеше секунд алады.",
+      "serverErrorTitle": "Бірдеңе дұрыс болмады",
+      "serverErrorBody": "Қазір шақыруды тексеру мүмкін емес. Бетті сәлден соң жаңартып көріңіз."
+    },
+    "tryAgain": "Қайталау",
+    "createNewAccount": "Жаңа аккаунт жасау",
+    "signIn": "Кіру",
+    "invitedTo": "Сізді <account>{name}</account> аккаунтына шақырды",
+    "joinAs": "Сіз <badge>{role}</badge> ретінде қосыласыз. Сілтеме {date} дейін жарамды.",
+    "accepting": "Қабылдануда…",
+    "acceptInvitation": "Шақыруды қабылдау",
+    "acceptNote": "Қабылдаған соң сіздің кіруіңіз {name} аккаунтына ауысады. Тіркелу кезінде жасалған бос жеке аккаунт жойылады.",
+    "conflictTitle": "Бұл аккаунтпен {name} аккаунтына қосылу мүмкін емес",
+    "conflictBody": "<account>{name}</account> аккаунтына қосылу үшін шығып, басқа поштамен қайта тіркеліңіз. Шақыру сілтемесі мерзімі біткенге дейін жарамды.",
+    "staySignedIn": "Жүйеде қалу",
+    "signingOut": "Шығуда…",
+    "signOutSwitch": "Шығып, басқа поштаны қолдану",
+    "createAndJoin": "Аккаунт жасап, қосылу",
+    "haveAccount": "Менде аккаунт бар"
+  },
+  "Flows": {
+    "editorState": {
+      "defaultYes": "Иә",
+      "defaultListButton": "Нұсқаларды көру",
+      "saveFailedStatus": "Сақтау сәтсіз: {status}",
+      "statusUpdateFailedStatus": "Күйді жаңарту сәтсіз: {status}",
+      "deleteFailedStatus": "Жою сәтсіз: {status}",
+      "saved": "Сақталды.",
+      "fixIssues": "Белсендірмес бұрын төмендегі мәселелерді түзетіңіз.",
+      "statusActivated": "Сценарий белсендірілді.",
+      "statusArchived": "Мұрағатқа жіберілді.",
+      "statusDraft": "Жоба ретінде сақталды.",
+      "deleteConfirm": "«{name}» жою керек пе? Барлық белсенді іске қосулар бірден тоқтайды. Бұл әрекетті болдырмау мүмкін емес.",
+      "saveFailed": "Сақтау сәтсіз",
+      "statusUpdateFailed": "Күйді жаңарту сәтсіз",
+      "deleteFailed": "Жою сәтсіз"
+    },
+    "builder": {
+      "form": {
+        "optionN": "{n}-нұсқа"
+      }
+    }
+  },
+  "Interactive": {
+    "previewBody": "Хабарлама мәтіні…",
+    "previewButton": "Батырма",
+    "previewMenu": "Мәзір",
+    "replyButtons": "Жауап батырмалары",
+    "list": "Тізім",
+    "body": "Мәтін",
+    "bodyPlaceholder": "Клиент нұсқалардың үстінен оқитын мәтін",
+    "header": "Тақырып (міндетті емес)",
+    "footer": "Төменгі мәтін (міндетті емес)",
+    "showIds": "Жауап ID-ларын көрсету (тәжірибелілерге)",
+    "preview": "Алдын ала көру",
+    "buttonsCount": "Батырмалар ({count}/{max})",
+    "idPlaceholder": "id",
+    "buttonLabelPlaceholder": "Батырма мәтіні",
+    "addButton": "Батырма қосу",
+    "listButtonLabel": "Тізім батырмасының мәтіні",
+    "rowsCount": "Жолдар ({count}/{max})",
+    "sectionTitlePlaceholder": "Бөлім атауы (міндетті емес)",
+    "rowTitlePlaceholder": "Жол атауы",
+    "rowDescriptionPlaceholder": "Сипаттама (міндетті емес)",
+    "addRow": "Жол қосу",
+    "addSection": "Бөлім қосу",
+    "defaultListButton": "Мәзір"
+  },
+  "Settings": {
+    "browserNotifications": {
+      "statusDenied": "Браузер баптауларында бұғатталған",
+      "deniedHint": "Браузердің сайт баптауларында осы сайтқа хабарландыруларға рұқсат беріңіз (әдетте мекенжай жолағының жанындағы құлып белгісі), содан кейін бетті жаңартыңыз.",
+      "permissionDeniedToast": "Браузер хабарландыруларды бұғаттады",
+      "testTitle": "Сынақ хабарландыруы",
+      "testBody": "Хабарландырулар жұмыс істейді. Клиенттердің жаңа хабарламалары осылай көрінеді.",
+      "unsupported": "Бұл браузер жұмыс үстеліндегі хабарландыруларды қолдамайды.",
+      "title": "Браузер хабарландырулары",
+      "description": "Басқа бетте болсаңыз да, клиенттің әрбір жаңа хабарламасы туралы хабарлама алыңыз. Осы құрылғыда сақталады.",
+      "toggleLabel": "Клиенттердің жаңа хабарламалары туралы хабарлау",
+      "toggleDesc": "Қолданба браузер қойындысында ашық тұрғанда ғана жұмыс істейді.",
+      "sendTest": "Сынақ хабарландыруын жіберу",
+      "labels": {
+        "fallbackTitle": "Жаңа хабарлама",
+        "image": "📷 Фото",
+        "audio": "🎤 Дауыстық хабарлама",
+        "video": "🎬 Бейне",
+        "document": "📄 Құжат",
+        "location": "📍 Орналасқан жер",
+        "template": "📋 Үлгі"
+      },
+      "statusGranted": "Браузер рұқсат берген.",
+      "statusDefault": "Қосқан кезде браузер рұқсат сұрайды."
+    },
+    "inbox": {
+      "loadFailed": "Мақсатты жауап уақытын жүктеу мүмкін болмады",
+      "saveFailed": "Мақсатты жауап уақытын сақтау мүмкін болмады",
+      "saveSuccess": "Мақсатты жауап уақыты жаңартылды",
+      "title": "Кіріс хаттар",
+      "description": "Басқару тақтасы команданың жауап уақытын қалай өлшейді.",
+      "replyTarget": "Мақсатты жауап уақыты",
+      "replyTargetDesc": "Басқару тақтасы алғашқы жауапты осы уақыттан ұзақ күткен диалогтарды белгілейді және жауап уақытыңыздың медианасын онымен салыстырады.",
+      "minutesLabel": "Минут",
+      "invalid": "1-ден 1440-қа дейінгі бүтін сан енгізіңіз.",
+      "hint": "1-ден 1440-қа дейінгі бүтін сан (24 сағат).",
+      "adminOnlyHint": "Мақсатты жауап уақытын тек аккаунт әкімшілері өзгерте алады.",
+      "saving": "Сақталуда...",
+      "save": "Сақтау"
+    },
+    "quickReplies": {
+      "nameRequired": "Жылдам жауапқа атау беріңіз.",
+      "saveError": "Жылдам жауапты сақтау мүмкін болмады.",
+      "updated": "Жылдам жауап жаңартылды.",
+      "created": "Жылдам жауап жасалды.",
+      "deleteConfirm": "Бұл жылдам жауапты жою керек пе?",
+      "deleteError": "Жылдам жауапты жою мүмкін болмады.",
+      "title": "Жылдам жауаптар",
+      "description": "Қайта қолданылатын үзінділер — қарапайым мәтін немесе сақталған интерактивті хабарлама, — қызметкерлер оларды кіріс хаттардағы енгізу өрісінен қоя алады.",
+      "new": "Жаңа жылдам жауап",
+      "empty": "Әзірге жылдам жауап жоқ. Түрлі диалогтарда қолдану үшін біреуін жасаңыз.",
+      "edit": "Жылдам жауапты өзгерту",
+      "nameLabel": "Атауы",
+      "namePlaceholder": "мысалы, Жұмыс уақыты",
+      "kindText": "Мәтін",
+      "kindInteractive": "Интерактивті",
+      "textPlaceholder": "Қойылатын хабарлама мәтіні",
+      "cancel": "Болдырмау",
+      "save": "Сақтау"
+    }
+  },
+  "UiPrimitives": {
+    "close": "Жабу"
+  },
+  "Broadcasts": {
+    "sending": {
+      "notSignedIn": "Сіз жүйеге кірмегенсіз.",
+      "notLinkedToAccount": "Профиліңіз аккаунтқа байланбаған.",
+      "lookupCsvContactsFailed": "CSV контактілерін табу мүмкін болмады: {error}",
+      "createCsvContactsFailed": "CSV контактілерін жасау мүмкін болмады: {error}",
+      "noContactsForAudience": "Бұл аудитория үшін контакт табылмады.",
+      "createBroadcastFailed": "Тарату жасау мүмкін болмады: {error}",
+      "unknownErrorLower": "белгісіз қате",
+      "insertRecipientBatchFailed": "{batch} алушылар топтамасын қосу мүмкін болмады: {error}",
+      "fetchRecipientsFailed": "Тарату алушыларын алу мүмкін болмады",
+      "apiRequestFailed": "Тарату API сұрауы сәтсіз",
+      "noPhoneOnContact": "Контактіде телефон нөмірі жоқ",
+      "unknownError": "Белгісіз қате"
+    }
+  },
+  "Automations": {
+    "relative": {
+      "never": "ешқашан",
+      "justNow": "жаңа ғана",
+      "minutesAgo": "{n} мин бұрын",
+      "hoursAgo": "{n} сағ бұрын",
+      "daysAgo": "{n} күн бұрын"
+    }
   }
 }

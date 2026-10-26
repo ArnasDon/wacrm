@@ -92,3 +92,49 @@ export function getRecipientStatus(status: string): StatusDisplay {
     recipientStatusConfig.pending
   );
 }
+
+export const RECIPIENT_STATUSES: readonly RecipientStatus[] = [
+  "pending",
+  "sent",
+  "delivered",
+  "read",
+  "replied",
+  "failed",
+];
+
+const RECIPIENT_SUCCESS_LADDER: readonly RecipientStatus[] = [
+  "pending",
+  "sent",
+  "delivered",
+  "read",
+  "replied",
+];
+
+const RECIPIENT_STATUSES_THAT_CAN_FAIL: readonly RecipientStatus[] = [
+  "pending",
+  "sent",
+];
+
+export function isRecipientStatus(value: string): value is RecipientStatus {
+  return (RECIPIENT_STATUSES as readonly string[]).includes(value);
+}
+
+export function isValidRecipientTransition(
+  current: RecipientStatus,
+  incoming: RecipientStatus
+): boolean {
+  if (incoming === "failed") {
+    return RECIPIENT_STATUSES_THAT_CAN_FAIL.includes(current);
+  }
+  if (current === "failed") return false;
+  return (
+    RECIPIENT_SUCCESS_LADDER.indexOf(incoming) >
+    RECIPIENT_SUCCESS_LADDER.indexOf(current)
+  );
+}
+
+export function allowedPredecessors(next: RecipientStatus): RecipientStatus[] {
+  return RECIPIENT_STATUSES.filter((current) =>
+    isValidRecipientTransition(current, next)
+  );
+}

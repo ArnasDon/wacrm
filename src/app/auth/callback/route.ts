@@ -1,51 +1,80 @@
-import { NextResponse, type NextRequest } from 'next/server';
+// ============================================================
+// GET /auth/callback — where every link Supabase emails on our behalf
+// lands (email confirmation after sign-up, password reset, invite,
+// magic link).
+//
+// Before this route existed, the password-reset email pointed here
+// and 404'd (issue #592) — anyone who forgot their password was locked
+// out. Sign-up relied on Supabase's default redirect (the Site URL),
+// which on a mis-configured or self-hosted instance is
+// `http://localhost:3000` (issue #595), and even when correct dropped
+// the user on `/` with an unexchanged `?code=` that the root redirect
+// discarded — so they had to sign in again after verifying.
+//
+// Flow:
+//   1. `?error=...`         → Supabase already rejected the link
+//                             (expired / used). Send to /login with a
+//                             reason it can explain.
+//   2. `?code=...`          → PKCE exchange (default email templates).
+//      `?token_hash=&type=` → verifyOtp (templates using {{ .TokenHash }}).
+//   3. success              → 303 to the validated `next` path
+//                             (/dashboard, /reset-password, /join/<t>).
+//      failure              → 303 to /login?error=link_invalid.
+//
+// The session cookies are written by `@supabase/ssr` through the
+// server client's cookie adapter, so the redirected-to page (and the
+// middleware in front of it) sees the user signed in.
+//
+// `Location` is emitted as a relative path on purpose — see
+// `relativeRedirect` for the reverse-proxy reasoning.
+// ============================================================
+
 import { createClient } from '@/lib/supabase/server';
-import { defaultLocale } from '@/i18n/config';
+import {
+  loginFailurePath,
+  parseEmailLink,
+  parseSupabaseError,
+  relativeRedirect,
+  safeNextPath,
+} from '@/lib/auth/callback';
 
-// Supabase auth callback handler (PKCE code exchange).
-//
-// Email confirmation, magic-link, and password-recovery emails send the user
-// to a URL carrying a one-time `?code=...` (and, for recovery, a `type`).
-// The browser Supabase client that started the flow stored a PKCE verifier in
-// a cookie; here on the server we trade the code for a real session and set
-// the session cookies before redirecting the user into the app.
-//
-// This route lives OUTSIDE the [locale] segment on purpose: the confirmation
-// link's base URL is the Supabase project "Site URL", which has no locale
-// prefix. The middleware bypasses next-intl for `/auth/*` so this handler runs
-// directly (see src/middleware.ts).
-export async function GET(request: NextRequest) {
-  const { searchParams, origin } = request.nextUrl;
-  const code = searchParams.get('code');
+// Session exchange is per-request by definition; never prerender.
+export const dynamic = 'force-dynamic';
 
-  // Where to send the user after a successful exchange. `next` is an
-  // app-relative path (e.g. /reset-password); we sanitize it to avoid open
-  // redirects and always prefix the default locale.
-  const rawNext = searchParams.get('next');
-  const safeNext =
-    rawNext && rawNext.startsWith('/') && !rawNext.startsWith('//')
-      ? rawNext
-      : '/dashboard';
-  const destination = `/${defaultLocale}${safeNext}`;
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const next = safeNextPath(searchParams.get('next'));
 
-  if (!code) {
-    // No code to exchange — bounce to login with an error flag.
-    return NextResponse.redirect(
-      new URL(`/${defaultLocale}/login?error=missing_code`, origin)
-    );
+  const upstreamError = parseSupabaseError(searchParams);
+  if (upstreamError) {
+    return relativeRedirect(loginFailurePath(upstreamError));
+  }
+
+  const link = parseEmailLink(searchParams);
+  if (!link) {
+    return relativeRedirect(loginFailurePath('link_invalid'));
   }
 
   const supabase = await createClient();
-  const { error } = await supabase.auth.exchangeCodeForSession(code);
+  const { error } =
+    link.kind === 'code'
+      ? await supabase.auth.exchangeCodeForSession(link.code)
+      : await supabase.auth.verifyOtp({
+          type: link.type,
+          token_hash: link.tokenHash,
+        });
 
   if (error) {
-    return NextResponse.redirect(
-      new URL(
-        `/${defaultLocale}/login?error=${encodeURIComponent(error.message)}`,
-        origin
-      )
-    );
+    // Most common cause in practice: the PKCE code verifier cookie is
+    // missing because the link was opened in a different browser than
+    // the one that requested it. The email itself was still verified
+    // by Supabase, so /login's message tells the user to just sign in.
+    console.warn('[GET /auth/callback] session exchange failed:', {
+      kind: link.kind,
+      message: error.message,
+    });
+    return relativeRedirect(loginFailurePath('link_invalid'));
   }
 
-  return NextResponse.redirect(new URL(destination, origin));
+  return relativeRedirect(next);
 }

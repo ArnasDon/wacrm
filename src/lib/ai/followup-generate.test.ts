@@ -193,4 +193,104 @@ describe('generateFollowupSuggestions', () => {
     expect(inserted).toHaveLength(1);
     expect(inserted[0].contact_id).toBe('c1');
   });
+
+  it('aborts safely without scoring if the pending suggestions check returns a database error', async () => {
+    const errorDb = {
+      from: (table: string) => {
+        if (table === 'deals') {
+          return {
+            select: () => ({
+              eq: () => ({ eq: () => Promise.resolve({ data: [deal({ contact_id: 'c1' })], error: null }) }),
+            }),
+          };
+        }
+        if (table === 'ai_suggestions') {
+          return {
+            select: () => ({
+              eq: () => ({
+                eq: () => ({
+                  eq: () => ({
+                    in: () => Promise.resolve({ data: null, error: new Error('PostgREST 414 URI Too Long') }),
+                  }),
+                }),
+              }),
+            }),
+          };
+        }
+        return { select: () => ({ in: () => Promise.resolve({ data: [], error: null }) }) };
+      },
+    } as unknown as SupabaseClient;
+
+    const result = await generateFollowupSuggestions(errorDb, 'account-1');
+    expect(result).toEqual({ created: 0, scored: 0 });
+    expect(mocks.generateOpenAi).not.toHaveBeenCalled();
+  });
+
+  it('deduplicates multiple deals for the same contact so it is only scored once', async () => {
+    const { db, inserted } = fakeDb({
+      deals: [
+        deal({ id: 'deal-1', contact_id: 'c1' }),
+        deal({ id: 'deal-2', contact_id: 'c1' }),
+      ],
+      pendingContactIds: [],
+    });
+    mocks.generateOpenAi.mockResolvedValue(
+      scoreResponse({ should_suggest: true, reason: 'r1', score: 85 }),
+    );
+
+    const result = await generateFollowupSuggestions(db, 'account-1');
+    expect(result).toEqual({ created: 1, scored: 1 });
+    expect(inserted).toHaveLength(1);
+    expect(mocks.generateOpenAi).toHaveBeenCalledTimes(1);
+  });
+
+  it('chunks candidate contacts in slices of 50 to avoid URL overflow', async () => {
+    // Generate 65 distinct contacts
+    const deals = Array.from({ length: 65 }, (_, i) => deal({ id: `deal-${i}`, contact_id: `contact-${i}` }));
+    const queriedChunks: string[][] = [];
+
+    const chunkDb = {
+      from: (table: string) => {
+        if (table === 'deals') {
+          return {
+            select: () => ({
+              eq: () => ({ eq: () => Promise.resolve({ data: deals, error: null }) }),
+            }),
+          };
+        }
+        if (table === 'ai_suggestions') {
+          return {
+            select: () => ({
+              eq: () => ({
+                eq: () => ({
+                  eq: () => ({
+                    in: (_col: string, chunk: string[]) => {
+                      queriedChunks.push(chunk);
+                      return Promise.resolve({ data: [], error: null });
+                    },
+                  }),
+                }),
+              }),
+            }),
+            insert: () => Promise.resolve({ data: null, error: null }),
+          };
+        }
+        if (table === 'pipeline_stages') {
+          return { select: () => ({ in: () => Promise.resolve({ data: [{ id: 'stage-1', name: 'Qualificação' }], error: null }) }) };
+        }
+        if (table === 'lead_intelligence') {
+          return { select: () => ({ in: () => Promise.resolve({ data: [], error: null }) }) };
+        }
+        return { select: () => ({ in: () => Promise.resolve({ data: [], error: null }) }) };
+      },
+    } as unknown as SupabaseClient;
+
+    mocks.generateOpenAi.mockResolvedValue(scoreResponse({ should_suggest: false }));
+
+    const result = await generateFollowupSuggestions(chunkDb, 'account-1');
+    // First chunk has 50 contacts, which already satisfies FOLLOWUP_MAX_CANDIDATES_PER_RUN (25)
+    expect(queriedChunks.length).toBe(1);
+    expect(queriedChunks[0].length).toBe(50);
+    expect(result.scored).toBe(25);
+  });
 });

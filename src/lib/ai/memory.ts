@@ -338,8 +338,10 @@ export async function retrieveScopedMemories(
       .eq('account_id', accountId)
       .eq('scope', 'global')
       .in('status', ['active', 'candidate'])
+      .order('status', { ascending: true })
+      .order('occurrence_count', { ascending: false })
       .order('created_at', { ascending: false })
-      .limit(40),
+      .limit(20),
     ctx.propertyId
       ? db
           .from('ai_memories')
@@ -348,8 +350,10 @@ export async function retrieveScopedMemories(
           .eq('scope', 'property')
           .eq('property_id', ctx.propertyId)
           .in('status', ['active', 'candidate'])
+          .order('status', { ascending: true })
+          .order('occurrence_count', { ascending: false })
           .order('created_at', { ascending: false })
-          .limit(30)
+          .limit(12)
       : Promise.resolve({ data: [] as MemoryDbRow[], error: null }),
     ctx.adId
       ? db
@@ -359,8 +363,10 @@ export async function retrieveScopedMemories(
           .eq('scope', 'ad')
           .eq('ad_id', ctx.adId)
           .in('status', ['active', 'candidate'])
+          .order('status', { ascending: true })
+          .order('occurrence_count', { ascending: false })
           .order('created_at', { ascending: false })
-          .limit(15)
+          .limit(6)
       : Promise.resolve({ data: [] as MemoryDbRow[], error: null }),
     ctx.conversationId
       ? db
@@ -370,8 +376,10 @@ export async function retrieveScopedMemories(
           .eq('scope', 'conversation')
           .eq('conversation_id', ctx.conversationId)
           .in('status', ['active', 'candidate'])
+          .order('status', { ascending: true })
+          .order('occurrence_count', { ascending: false })
           .order('created_at', { ascending: false })
-          .limit(15)
+          .limit(6)
       : Promise.resolve({ data: [] as MemoryDbRow[], error: null }),
   ])
 

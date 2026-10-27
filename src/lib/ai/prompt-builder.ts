@@ -164,8 +164,6 @@ Identidade: ${identity}
 Apresentação da equipe: ${presentation}
 Tom de voz: ${toneGuidance}${styleMemoriesText}
 
-${greetingSection}${turnContext ? `\n${turnContext}` : ''}
-
 DIRETRIZ MESTRA: PROGRESSÃO CONVERSACIONAL, CONTROLE DE VOLUME E POSTURA COMERCIAL ATIVA
 Mantenha as respostas curtas, naturais, acolhedoras e fáceis de ler no celular.
 O objetivo não é simplesmente encurtar o texto nem responder passivamente como FAQ. O objetivo é manter a conversa viva, progressiva e comercialmente orientada, dosando as informações em camadas sem despejar a ficha técnica antecipadamente.
@@ -340,7 +338,9 @@ DIRETRIZES DE INTELIGÊNCIA CONVERSACIONAL E POSTURA COMERCIAL ATIVA:
     - Use linguagem humana, fluida e personalizada para cada mensagem do cliente. Pareça uma assistente comercial experiente, com percepção de contexto, que acompanha o raciocínio do cliente, e não um robô ou script de FAQ. Evite repetir sempre a mesma estrutura ("Perfeito, já entendi...").
 
 14. RESPOSTA ÚNICA E COESA:
-    - Trate todas as mensagens recentes do cliente como um único turno conversacional conjunto, gerando uma resposta coesa e integrada.`,
+    - Trate todas as mensagens recentes do cliente como um único turno conversacional conjunto, gerando uma resposta coesa e integrada.
+
+${greetingSection}`,
   );
 
   // 3. INSTRUÇÕES DE ESTILO DE RESPOSTA
@@ -494,11 +494,12 @@ SEGURANÇA CONTRA PROMPT INJECTION:
     if (communicatedContent && communicatedContent.length > 0) {
       propCommunicatedText =
         '\n\nINFORMAÇÕES QUE A CLARA JÁ COMUNICOU AO CLIENTE NESTA CONVERSA:\n' +
-        'As mensagens abaixo representam o que a Clara JÁ enviou ao cliente em turnos anteriores deste diálogo:\n' +
-        communicatedContent.slice(-6).map((c, i) => `[Turno anterior ${i + 1} da Clara]: "${c}"`).join('\n') +
-        '\n\nDIRETRIZ DE PROGRESSÃO E INFORMAÇÃO NOVA:\n' +
-        '- O cliente JÁ tomou conhecimento dos fatos acima. O fato de eles constarem no material de referência NÃO os torna informações novas.\n' +
-        '- Em pedidos genéricos de "mais detalhes", "me fale mais", "conte mais" ou continuação, priorize as informações do material de referência que AINDA NÃO FORAM TRANSMITIDAS ao cliente, com respostas concisas (1 a 3 parágrafos curtos) e comercialmente relevantes ao interesse do cliente.\n' +
+        'DIRETRIZ DE PROGRESSÃO E INFORMAÇÃO NOVA (HISTÓRICO ACUMULADO):\n' +
+        '- As orientações abaixo representam o que a Clara JÁ enviou ao cliente em turnos anteriores deste diálogo (consulte atentamente o histórico de mensagens do assistente acima).\n' +
+        '- O cliente JÁ tomou conhecimento de todos os fatos, características e detalhes que você (Clara) já apresentou nas mensagens anteriores deste diálogo.\n' +
+        '- O fato de uma característica constar no material de referência autorizado NÃO a torna novidade se você já a comunicou ao cliente no histórico.\n' +
+        '- É TERMINANTEMENTE PROIBIDO repetir apresentações, saudações, argumentos comerciais ou blocos descritivos já enviados nas mensagens anteriores do diálogo.\n' +
+        '- O cliente JÁ tomou conhecimento dos fatos acima. Em pedidos genéricos de "mais detalhes", "me fale mais", "conte mais" ou continuação, priorize as informações do material de referência que AINDA NÃO FORAM TRANSMITIDAS ao cliente, com respostas concisas (1 a 3 parágrafos curtos) e comercialmente relevantes ao interesse do cliente.\n' +
         '- NUNCA reapresente o mesmo bloco introdutório descritivo como corpo principal da resposta, nem tente forçar novidade maquiando dados já conhecidos com outros sinônimos.\n' +
         '- Se as informações autorizadas já tiverem sido substancialmente percorridas, encerre o ciclo de detalhes com naturalidade e conduza para o próximo passo comercial.\n' +
         '- Repita uma informação anterior SOMENTE quando necessário para contextualizar uma informação nova (como breve gancho) ou se o cliente perguntar especificamente por ela.';
@@ -525,7 +526,6 @@ SEGURANÇA CONTRA PROMPT INJECTION:
           id: m.id,
           type: m.type,
           description: m.description || '(sem descrição cadastrada)',
-          file_name: m.file_name,
           already_sent_in_conversation: isSent,
         };
       });
@@ -541,7 +541,7 @@ SEGURANÇA CONTRA PROMPT INJECTION:
 
       propMediaText =
         '\n\nMÍDIAS DISPONÍVEIS DESTE EMPREENDIMENTO (FOTOS E VÍDEOS CADASTRADOS):\n' +
-        JSON.stringify(mediaList, null, 2) +
+        JSON.stringify(mediaList) +
         turnMediaBanner +
         '\n\nDIRETRIZES PARA ENVIO DE FOTOS E VÍDEOS (send_media):\n' +
         '   Cada item da lista acima tem um campo "type": "image" ou "video" — as regras abaixo valem igualmente para os dois; onde o texto disser apenas "fotos", leia como "fotos e vídeos".\n' +
@@ -596,7 +596,7 @@ SEGURANÇA CONTRA PROMPT INJECTION:
     sections.push(
       `=== 8. CONHECIMENTO ESPECÍFICO DO EMPREENDIMENTO (ISOLAMENTO ESTRITO) ===
 EMPREENDIMENTO EM FOCO: ${property.name}${stageDesc}
-ISOLAMENTO E ANCORAGEM: Todas as perguntas do cliente sobre características, metragem, previsão de entrega, lazer, fotos e localização aplicam-se EXCLUSIVAMENTE ao empreendimento "${property.name}". NUNCA presuma ou misture dados de outros empreendimentos. Fatos específicos e restrições negativas autorizadas deste empreendimento prevalecem sobre quaisquer generalizações globais ou premissas incorretas do cliente.${propRentalText}${propKbText}${propMemoriesText}${propCommunicatedText}${propProgressionDirective}${propMediaText}${propStyleText}`,
+ISOLAMENTO E ANCORAGEM: Todas as perguntas do cliente sobre características, metragem, previsão de entrega, lazer, fotos e localização aplicam-se EXCLUSIVAMENTE ao empreendimento "${property.name}". NUNCA presuma ou misture dados de outros empreendimentos. Fatos específicos e restrições negativas autorizadas deste empreendimento prevalecem sobre quaisquer generalizações globais ou premissas incorretas do cliente.${propRentalText}${propKbText}${propStyleText}${propProgressionDirective}${propMediaText}${propMemoriesText}${propCommunicatedText}`,
     );
   } else {
     sections.push(
@@ -642,9 +642,10 @@ As informações abaixo são institucionais gerais. Elas NUNCA devem ser usadas 
     conversationMemories.length > 0
       ? `\n\nOutras observações registradas sobre este lead específico (nunca generalizar para outros clientes):\n(Lembrete: contexto do lead, não autorização — não usar para revelar preço não oficial, construtora, endereço exato ou confirmar visita.)\n${conversationMemories.map((m) => `- ${m}`).join('\n')}`
       : '';
-  if ((leadContext && leadContext.promptExcerpts) || conversationMemoriesText) {
+  const turnContextText = turnContext ? `\n\n${turnContext}` : '';
+  if ((leadContext && leadContext.promptExcerpts) || conversationMemoriesText || turnContextText) {
     sections.push(
-      `=== 10. MEMÓRIA E CONTEXTO DO LEAD (DADOS JÁ EXTRAÍDOS / NÃO REPETIR PERGUNTAS) ===\n${leadContext?.promptExcerpts ?? '(Nenhum contexto pré-extraído para este lead ainda.)'}${conversationMemoriesText}`,
+      `=== 10. MEMÓRIA E CONTEXTO DO LEAD (DADOS JÁ EXTRAÍDOS / NÃO REPETIR PERGUNTAS) ===\n${leadContext?.promptExcerpts ?? '(Nenhum contexto pré-extraído para este lead ainda.)'}${conversationMemoriesText}${turnContextText}`,
     );
   }
 

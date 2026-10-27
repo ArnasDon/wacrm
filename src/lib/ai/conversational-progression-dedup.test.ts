@@ -76,13 +76,30 @@ const mockDb = {
       };
     }
     if (table === 'ai_knowledge_chunks') {
+      const q: Record<string, unknown> = {
+        data: [],
+        error: null,
+        count: 1,
+      };
+      q.eq = vi.fn().mockReturnValue(q);
+      q.in = vi.fn().mockResolvedValue({ data: [], error: null });
+      q.then = (resolve: (val: unknown) => void) => Promise.resolve({ data: [], error: null }).then(resolve);
       return {
-        select: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue({
-            count: 1,
-            error: null,
-          }),
-        }),
+        select: vi.fn().mockReturnValue(q),
+      };
+    }
+    if (table === 'ai_memories') {
+      const q: Record<string, unknown> = {
+        data: [],
+        error: null,
+      };
+      q.eq = vi.fn().mockReturnValue(q);
+      q.in = vi.fn().mockReturnValue(q);
+      q.order = vi.fn().mockReturnValue(q);
+      q.limit = vi.fn().mockReturnValue(q);
+      q.then = (resolve: (val: unknown) => void) => Promise.resolve({ data: [], error: null }).then(resolve);
+      return {
+        select: vi.fn().mockReturnValue(q),
       };
     }
     if (table === 'property_images') {
@@ -380,7 +397,9 @@ describe('CLARA — Conversational Progression, Information Deduplication and Be
     expect(prompt).toContain('DISTINÇÃO FUNDAMENTAL ENTRE CONHECIMENTO DISPONÍVEL E INFORMAÇÃO JÁ COMUNICADA');
     expect(prompt).toContain('O fato de uma característica (ex: metragem, quantidade de quartos, mobília, localização) constar no material de referência autorizado NÃO significa que ela seja novidade para o cliente');
     expect(prompt).toContain('INFORMAÇÕES QUE A CLARA JÁ COMUNICOU AO CLIENTE NESTA CONVERSA');
-    expect(prompt).toContain(communicated[0]);
+    // Verifies elimination of duplicate assistant messages: the directive instructs the model
+    // to reference native message history directly, without duplicating message text into the system prompt.
+    expect(prompt).not.toContain(communicated[0]);
   });
 
   // ============================================================
@@ -500,11 +519,13 @@ describe('CLARA — Conversational Progression, Information Deduplication and Be
 
     global.fetch = originalFetch;
 
-    // Must track all 4 assistant messages in communicatedContent
+    // Progression directive is present and instructs the model to reference native chat history
     expect(result.systemPrompt).toContain('INFORMAÇÕES QUE A CLARA JÁ COMUNICOU AO CLIENTE NESTA CONVERSA');
-    expect(result.systemPrompt).toContain('Temos o Puerto Ventura, com 45 m² e 1 quarto mobiliado.');
-    expect(result.systemPrompt).toContain('Sim, o prédio conta com elevadores modernos e portaria 24 horas.');
-    expect(result.systemPrompt).toContain('Fica na Avenida Cabo Branco, exatamente em frente à praia.');
+    expect(result.systemPrompt).toContain('DIRETRIZ DE PROGRESSÃO E INFORMAÇÃO NOVA');
+    // Assistant messages are preserved in native chat history, NOT duplicated verbatim into the system prompt
+    expect(result.systemPrompt).not.toContain('Temos o Puerto Ventura, com 45 m² e 1 quarto mobiliado.');
+    expect(result.systemPrompt).not.toContain('Sim, o prédio conta com elevadores modernos e portaria 24 horas.');
+    expect(result.systemPrompt).not.toContain('Fica na Avenida Cabo Branco, exatamente em frente à praia.');
 
     // Response should bring fresh information
     expect(result.decision.response_text).toContain('posição sul');
@@ -586,10 +607,10 @@ describe('CLARA — Conversational Progression, Information Deduplication and Be
 
     global.fetch = originalFetch;
 
-    // 1. O prompt acumulou todos os 3 turnos anteriores da Clara
+    // 1. O prompt acumulou o contexto e as diretrizes de progressão, eliminando a duplicação verbatim das mensagens anteriores da Clara
     expect(result.systemPrompt).toContain('INFORMAÇÕES QUE A CLARA JÁ COMUNICOU AO CLIENTE NESTA CONVERSA');
-    expect(result.systemPrompt).toContain(turn1Assistant);
-    expect(result.systemPrompt).toContain(turn2Assistant);
+    expect(result.systemPrompt).not.toContain(turn1Assistant);
+    expect(result.systemPrompt).not.toContain(turn2Assistant);
 
     // 2. Diretriz explícita de encerramento do ciclo sem forçar novidades artificiais
     expect(result.systemPrompt).toContain('Se as informações autorizadas já tiverem sido substancialmente percorridas');

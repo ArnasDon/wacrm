@@ -74,19 +74,57 @@ export async function generateFollowupSuggestions(
   // Exclude contacts that already have a pending follow-up — a fresh
   // suggestion for the same lead only happens after the old one is
   // resolved (done/ignored), never piled on top of it.
-  const contactIds = candidates.map((d) => d.contact_id as string)
-  const { data: pendingRows } = await db
-    .from('ai_suggestions')
-    .select('contact_id')
-    .eq('account_id', accountId)
-    .eq('category', 'followup')
-    .eq('status', 'pending')
-    .in('contact_id', contactIds)
-  const alreadyPending = new Set((pendingRows ?? []).map((r) => r.contact_id as string))
+  //
+  // Batch the check in chunks of 50 to prevent PostgREST URL overflow
+  // (HTTP 414 / HeadersOverflowError) when an account has hundreds of
+  // stale candidates. Explicitly check errors so a DB failure never
+  // looks like "zero pending", and early-exit as soon as enough un-pending
+  // candidates are gathered for this run (FOLLOWUP_MAX_CANDIDATES_PER_RUN).
+  const CHUNK_SIZE = 50
+  const uniqueCandidateContacts = Array.from(
+    new Set(candidates.map((d) => d.contact_id as string)),
+  )
 
-  const toScore = candidates
-    .filter((d) => !alreadyPending.has(d.contact_id as string))
-    .slice(0, FOLLOWUP_MAX_CANDIDATES_PER_RUN)
+  const alreadyPending = new Set<string>()
+  const toScore: CandidateDeal[] = []
+  const seenInToScore = new Set<string>()
+
+  for (let i = 0; i < uniqueCandidateContacts.length; i += CHUNK_SIZE) {
+    const chunk = uniqueCandidateContacts.slice(i, i + CHUNK_SIZE)
+    const { data: pendingRows, error: pendingErr } = await db
+      .from('ai_suggestions')
+      .select('contact_id')
+      .eq('account_id', accountId)
+      .eq('category', 'followup')
+      .eq('status', 'pending')
+      .in('contact_id', chunk)
+
+    if (pendingErr) {
+      console.error('[followup generate] failed to check pending suggestions:', pendingErr)
+      return { created: 0, scored: 0 }
+    }
+
+    for (const r of pendingRows ?? []) {
+      if (r.contact_id) alreadyPending.add(r.contact_id as string)
+    }
+
+    // Populate toScore with candidates from this chunk that aren't pending
+    for (const d of candidates) {
+      const cid = d.contact_id as string
+      if (chunk.includes(cid) && !alreadyPending.has(cid) && !seenInToScore.has(cid)) {
+        seenInToScore.add(cid)
+        toScore.push(d)
+        if (toScore.length >= FOLLOWUP_MAX_CANDIDATES_PER_RUN) {
+          break
+        }
+      }
+    }
+
+    if (toScore.length >= FOLLOWUP_MAX_CANDIDATES_PER_RUN) {
+      break
+    }
+  }
+
   if (toScore.length === 0) return { created: 0, scored: 0 }
 
   const stageIds = [...new Set(toScore.map((d) => d.stage_id))]

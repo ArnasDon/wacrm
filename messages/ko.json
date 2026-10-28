@@ -1758,6 +1758,7 @@
       "category": "카테고리",
       "language": "언어",
       "langFixed": "템플릿이 Meta에 존재하면 언어가 고정됩니다.",
+      "categoryFixed": "승인된 템플릿의 카테고리는 변경할 수 없습니다.",
       "langHint": "Meta의 정확한 코드와 일치해야 합니다 — <code>en_US</code>와 <code>en</code>은 다른 코드입니다.",
       "header": "헤더",
       "headerNone": "없음",
@@ -2909,6 +2910,7 @@
       "neverSubmitted": "이 템플릿은 Meta에 제출된 적이 없습니다 — 새 템플릿을 사용해 제출하세요.",
       "statusNotEditable": "{status} 상태의 템플릿은 수정할 수 없습니다. 허용: APPROVED, REJECTED, PAUSED.",
       "authNotEditable": "AUTHENTICATION 템플릿은 여기서 수정할 수 없습니다 — Meta WhatsApp 관리자에서 관리하세요.",
+      "categoryLockedApproved": "Meta는 승인된 템플릿의 카테고리 변경을 허용하지 않습니다. 대신 새 템플릿을 만드세요.",
       "validationFailed": "유효성 검사에 실패했습니다.",
       "headerUploadFailed": "헤더 미디어 업로드에 실패했습니다.",
       "metaEditFailed": "Meta에서 수정하지 못했습니다.",
@@ -2922,6 +2924,7 @@
       "metaSubmitFailed": "Meta에 제출하지 못했습니다.",
       "rateLimit": "Meta 요청 한도에 도달했습니다(시간당 템플릿 생성 100개). 나중에 다시 시도하세요.",
       "submittedSaveFailed": "Meta에 제출되었지만 로컬에 저장하지 못했습니다: {message}. 복구하려면 \"Meta에서 동기화\"를 실행하세요.",
+      "alreadyExists": "이 계정에 {name} ({language}) 템플릿이 이미 있습니다. 새로 만들지 말고 기존 템플릿을 수정하거나 다시 제출하세요.",
       "submitFailed": "템플릿을 제출하지 못했습니다.",
       "metaApiStatus": "Meta API 오류: {status}",
       "syncFailed": "템플릿을 동기화하지 못했습니다"

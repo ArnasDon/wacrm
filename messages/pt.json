@@ -1758,6 +1758,7 @@
       "category": "Categoria",
       "language": "Idioma",
       "langFixed": "O idioma é fixo depois que o modelo existe na Meta.",
+      "categoryFixed": "A categoria de um modelo aprovado não pode ser alterada.",
       "langHint": "Deve corresponder exatamente ao código na Meta — <code>en_US</code> e <code>en</code> são diferentes.",
       "header": "Cabeçalho",
       "headerNone": "Nenhum",
@@ -2909,6 +2910,7 @@
       "neverSubmitted": "Este modelo nunca foi enviado à Meta — use Novo modelo para enviá-lo.",
       "statusNotEditable": "Modelos com status {status} não podem ser editados. Permitidos: APPROVED, REJECTED, PAUSED.",
       "authNotEditable": "Modelos de AUTENTICAÇÃO não podem ser editados aqui — gerencie-os no Gerenciador do WhatsApp da Meta.",
+      "categoryLockedApproved": "A Meta não permite alterar a categoria de um modelo aprovado. Crie um novo modelo.",
       "validationFailed": "Falha na validação.",
       "headerUploadFailed": "Falha ao enviar a mídia do cabeçalho.",
       "metaEditFailed": "Falha ao editar na Meta.",
@@ -2922,6 +2924,7 @@
       "metaSubmitFailed": "Falha ao enviar à Meta.",
       "rateLimit": "Limite de requisições da Meta atingido (100 criações de modelo por hora). Tente novamente mais tarde.",
       "submittedSaveFailed": "Enviado à Meta, mas falhou ao salvar localmente: {message}. Use \"Sincronizar da Meta\" para recuperar.",
+      "alreadyExists": "Já existe um modelo chamado {name} ({language}) nesta conta. Edite ou reenvie esse modelo em vez de criar um novo.",
       "submitFailed": "Falha ao enviar o modelo.",
       "metaApiStatus": "Erro da API da Meta: {status}",
       "syncFailed": "Falha ao sincronizar os modelos"

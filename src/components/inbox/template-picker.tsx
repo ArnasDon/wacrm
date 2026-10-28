@@ -21,7 +21,10 @@ import {
   LayoutTemplate,
   Loader2,
 } from "lucide-react";
-import { extractVariableIndices } from "@/lib/whatsapp/template-validators";
+import {
+  extractTemplateVariables,
+  extractVariableIndices,
+} from "@/lib/whatsapp/template-validators";
 import { useTranslations } from "next-intl";
 
 export interface TemplateSendValues {
@@ -37,10 +40,10 @@ interface TemplatePickerProps {
 }
 
 function renderBodyPreview(body: string, params: string[]): string {
-  return body.replace(/\{\{(\d+)\}\}/g, (_, raw) => {
-    const idx = Number(raw) - 1;
-    const value = params[idx];
-    return value && value.trim().length > 0 ? value : `{{${raw}}}`;
+  const keys = extractTemplateVariables(body);
+  return body.replace(/\{\{([A-Za-z0-9_]+)\}\}/g, (match, key: string) => {
+    const value = params[keys.indexOf(key)];
+    return value && value.trim().length > 0 ? value : match;
   });
 }
 
@@ -56,22 +59,25 @@ interface UrlButtonSlot {
  * send-message path doesn't 400 on missing parameters.
  */
 function collectVariableSlots(template: MessageTemplate): {
-  bodyVars: number[];
-  headerVarCount: number;
+  bodyVars: string[];
+  headerVar: string | null;
   urlButtonSlots: UrlButtonSlot[];
 } {
-  const bodyVars = extractVariableIndices(template.body_text);
-  const headerVarCount =
+  // Positional ({{1}}) or named ({{customer_name}}) — see
+  // extractTemplateVariables. Missing a named variable here means the
+  // send goes out with no parameters and Meta rejects it (#132000).
+  const bodyVars = extractTemplateVariables(template.body_text);
+  const headerVar =
     template.header_type === "text" && template.header_content
-      ? extractVariableIndices(template.header_content).length
-      : 0;
+      ? (extractTemplateVariables(template.header_content)[0] ?? null)
+      : null;
   const urlButtonSlots: UrlButtonSlot[] = [];
   (template.buttons ?? []).forEach((b, i) => {
     if (b.type === "URL" && extractVariableIndices(b.url).length > 0) {
       urlButtonSlots.push({ index: i, text: b.text, url: b.url });
     }
   });
-  return { bodyVars, headerVarCount, urlButtonSlots };
+  return { bodyVars, headerVar, urlButtonSlots };
 }
 
 export function TemplatePicker({
@@ -148,7 +154,7 @@ export function TemplatePicker({
     const slots = collectVariableSlots(template);
     const noInputsNeeded =
       slots.bodyVars.length === 0 &&
-      slots.headerVarCount === 0 &&
+      slots.headerVar === null &&
       slots.urlButtonSlots.length === 0;
     if (noInputsNeeded) {
       onSelect(template, { body: [] });
@@ -182,7 +188,7 @@ export function TemplatePicker({
     !!selected &&
     !!slots &&
     slots.bodyVars.every((_, i) => (params[i] ?? "").trim().length > 0) &&
-    (slots.headerVarCount === 0 || headerText.trim().length > 0) &&
+    (slots.headerVar === null || headerText.trim().length > 0) &&
     slots.urlButtonSlots.every(
       (s) => (buttonParams[s.index] ?? "").trim().length > 0,
     );
@@ -261,10 +267,10 @@ export function TemplatePicker({
                 </p>
               )}
             </div>
-            {slots && slots.headerVarCount > 0 && (
+            {slots?.headerVar && (
               <div className="space-y-1">
                 <Label className="text-xs text-popover-foreground">
-                  {t("headerVarLabel", { var: "{{1}}" })}
+                  {t("headerVarLabel", { var: `{{${slots.headerVar}}}` })}
                 </Label>
                 <Input
                   value={headerText}

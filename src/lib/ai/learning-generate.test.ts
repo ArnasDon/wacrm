@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   logAiUsage: vi.fn(),
   generateOpenAi: vi.fn(),
   generateAnthropic: vi.fn(),
+  generateDeepSeek: vi.fn(),
   applyPropertySubjectiveLearning: vi.fn(),
   resolvePropertyIdentity: vi.fn(),
   findConversationEvidence: vi.fn(),
@@ -17,6 +18,7 @@ vi.mock('./config', () => ({ loadAiConfig: mocks.loadAiConfig }));
 vi.mock('./usage', () => ({ logAiUsage: mocks.logAiUsage }));
 vi.mock('./providers/openai', () => ({ generateOpenAi: mocks.generateOpenAi }));
 vi.mock('./providers/anthropic', () => ({ generateAnthropic: mocks.generateAnthropic }));
+vi.mock('./providers/deepseek', () => ({ generateDeepSeek: mocks.generateDeepSeek }));
 vi.mock('./property-learning-apply', async () => {
   const actual = await vi.importActual<typeof import('./property-learning-apply')>('./property-learning-apply');
   return { ...actual, applyPropertySubjectiveLearning: mocks.applyPropertySubjectiveLearning };
@@ -185,6 +187,7 @@ beforeEach(() => {
   mocks.logAiUsage.mockReset().mockResolvedValue(undefined);
   mocks.generateOpenAi.mockReset();
   mocks.generateAnthropic.mockReset();
+  mocks.generateDeepSeek.mockReset();
   mocks.applyPropertySubjectiveLearning.mockReset();
   mocks.resolvePropertyIdentity.mockReset().mockResolvedValue({ kind: 'no_match' });
   mocks.findConversationEvidence.mockReset().mockReturnValue({ mentioned: new Set(), withContext: new Set() });
@@ -225,6 +228,30 @@ describe('generateLearningSuggestions', () => {
     expect(result).toEqual({ created: 0, touched: 0 });
     expect(updated.some((u) => u.table === 'ai_configs')).toBe(true);
     expect(mocks.generateOpenAi).not.toHaveBeenCalled();
+  });
+
+  it('dispatches to generateDeepSeek when provider is deepseek', async () => {
+    mocks.loadAiConfig.mockResolvedValue({
+      ...CONFIG,
+      provider: 'deepseek',
+      model: 'deepseek-flash',
+      deepseekApiKey: 'sk-ds-test',
+    });
+    mocks.generateDeepSeek.mockResolvedValue({
+      text: JSON.stringify({ learnings: [] }),
+      usage: null,
+    });
+    const { db } = fakeDb({ messages: BASE_MESSAGES });
+    await generateLearningSuggestions(db, 'account-1');
+    expect(mocks.generateDeepSeek).toHaveBeenCalledTimes(1);
+    expect(mocks.generateDeepSeek).toHaveBeenCalledWith(
+      expect.objectContaining({
+        apiKey: 'sk-ds-test',
+        model: 'deepseek-flash',
+      }),
+    );
+    expect(mocks.generateOpenAi).not.toHaveBeenCalled();
+    expect(mocks.generateAnthropic).not.toHaveBeenCalled();
   });
 
   it('creates a suggestion for a recurring, non-isolated, confident pattern', async () => {

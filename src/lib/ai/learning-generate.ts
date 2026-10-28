@@ -215,8 +215,12 @@ export async function generateLearningSuggestions(
 
   const systemPrompt = buildLearningScanSystemPrompt()
   const userPrompt = buildLearningScanUserPrompt({ messages: scanMessages, knownTitles })
+  const activeKey =
+    config.provider === 'deepseek'
+      ? (config.deepseekApiKey || config.apiKey)
+      : config.apiKey
   const providerArgs = {
-    apiKey: config.apiKey,
+    apiKey: activeKey,
     model: config.model,
     systemPrompt,
     messages: [{ role: 'user' as const, content: userPrompt }],
@@ -237,7 +241,11 @@ export async function generateLearningSuggestions(
   let candidates: LearningCandidate[] | null = null
   try {
     const { text, usage } =
-      config.provider === 'openai' ? await generateOpenAi(providerArgs) : await generateAnthropic(providerArgs)
+      config.provider === 'openai'
+        ? await generateOpenAi(providerArgs)
+        : config.provider === 'deepseek'
+          ? await generateDeepSeek(providerArgs)
+          : await generateAnthropic(providerArgs)
     void logAiUsage(db, {
       accountId,
       conversationId: null,

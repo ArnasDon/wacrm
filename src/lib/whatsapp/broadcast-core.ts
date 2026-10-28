@@ -73,6 +73,10 @@ export interface BroadcastPlan {
   rejected: number;
 }
 
+export interface CreatedBroadcastPlan extends BroadcastPlan {
+  duplicates: number;
+}
+
 const MAX_RECIPIENTS = 1000;
 
 /**
@@ -86,7 +90,7 @@ export async function createBroadcast(
   accountId: string,
   auditUserId: string,
   params: CreateBroadcastParams
-): Promise<BroadcastPlan> {
+): Promise<CreatedBroadcastPlan> {
   const { name, templateName, recipients } = params;
 
   if (!templateName) {
@@ -242,6 +246,7 @@ export async function createBroadcast(
     templateRow,
     planned,
     rejected,
+    duplicates: resolved.length - deduped.length,
   };
 }
 

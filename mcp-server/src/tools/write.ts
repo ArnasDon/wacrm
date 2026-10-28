@@ -62,13 +62,13 @@ export function registerWriteTools(server: McpServer, client: WacrmClient): void
     {
       title: 'Create contact',
       description:
-        'Create a contact by phone number (E.164, required). Find-or-create: if a contact with that phone already exists it is returned unchanged. Optional: name, email, company, and tags (tag names, created if missing).',
+        'Create a contact by phone number (E.164, required). Find-or-create: if a contact with that phone already exists, its name, email and company are left unchanged and any tags you pass are added to the tags it already has (none are removed). Optional: name, email, company, and tags (tag names, created if missing).',
       inputSchema: {
         phone: z.string().describe('Phone number in E.164 format, e.g. +14155550123.'),
         name: z.string().optional(),
         email: z.string().email().optional(),
         company: z.string().optional(),
-        tags: z.array(z.string()).optional().describe('Tag names; created if they do not exist.'),
+        tags: z.array(z.string()).optional().describe('Tag names; created if they do not exist. Added to an existing contact’s tags, never replacing them.'),
       },
       annotations: { title: 'Create contact', readOnlyHint: false, openWorldHint: true },
     },

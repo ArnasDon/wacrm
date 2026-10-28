@@ -19,7 +19,7 @@ import { WacrmClient } from './client.js';
 import { registerTools } from './tools/index.js';
 
 // package.json version, kept in sync manually with the manifest.
-const VERSION = '0.1.0';
+const VERSION = '0.1.1';
 
 async function main(): Promise<void> {
   const config = loadConfig();

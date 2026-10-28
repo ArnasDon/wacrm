@@ -267,19 +267,4 @@ export async function getContactById(
   return serializeContact(data as Record<string, unknown>);
 }
 
-// PostgREST filter values are comma/paren-delimited; strip anything
-// that could break the `.or()` grammar before interpolating a search
-// term. Leaves the characters a phone or name legitimately contains.
-function sanitizeSearch(raw: string): string {
-  return raw.replace(/[^\p{L}\p{N} +@.\-_]/gu, '').trim();
-}
-
-export function contactSearchFilter(rawSearch: string): string | null {
-  const search = sanitizeSearch(rawSearch);
-  if (!search) return null;
-  const namePattern = search.replace(/_/g, '\\_');
-  const conditions = [`name.ilike.*${namePattern}*`];
-  const phoneDigits = search.replace(/\D/g, '');
-  if (phoneDigits) conditions.push(`phone.ilike.*${phoneDigits}*`);
-  return conditions.join(',');
-}
+export { contactSearchFilter } from '@/lib/contacts/search-filter';

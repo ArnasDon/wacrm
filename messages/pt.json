@@ -797,6 +797,7 @@
       "titlePlaceholder": "Título do negócio",
       "contact": "Contato",
       "selectContact": "Selecione um contato",
+      "searchContacts": "Buscar contatos por nome ou telefone",
       "linkToConversation": "Vincular a uma conversa",
       "value": "Valor",
       "currency": "Moeda",

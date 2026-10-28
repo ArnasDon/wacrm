@@ -383,6 +383,7 @@
       "waitForSending": "Wait for the message to finish sending",
       "reactionFailed": "Reaction failed: {reason}",
       "assignmentUpdateFailed": "Failed to update assignment",
+      "assigneeNoLongerMember": "That teammate is no longer a member of this account",
       "networkError": "network error",
       "documentFallback": "Document",
       "you": "You"
@@ -2286,6 +2287,8 @@
       "usedBody": "This invitation has already been accepted. If that wasn't you, ask the account admin to send a fresh link.",
       "expiredTitle": "Invite expired",
       "expiredBody": "This invitation has expired. Ask the account admin to send a new one — they take a few seconds to generate.",
+      "rateLimitedTitle": "Too many attempts",
+      "rateLimitedBody": "You've checked this invitation too many times in a short period. Wait a minute, then try again.",
       "serverErrorTitle": "Something went wrong",
       "serverErrorBody": "We couldn't verify this invitation right now. Try refreshing the page in a moment."
     },

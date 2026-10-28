@@ -383,6 +383,7 @@
       "waitForSending": "Espera a que el mensaje termine de enviarse",
       "reactionFailed": "Error en la reacción: {reason}",
       "assignmentUpdateFailed": "Error al actualizar la asignación",
+      "assigneeNoLongerMember": "Ese compañero ya no es miembro de esta cuenta",
       "networkError": "error de red",
       "documentFallback": "Documento",
       "you": "Tú"
@@ -2286,6 +2287,8 @@
       "usedBody": "Esta invitación ya fue aceptada. Si no fuiste tú, pide al administrador de la cuenta que envíe un enlace nuevo.",
       "expiredTitle": "Invitación expirada",
       "expiredBody": "Esta invitación expiró. Pide al administrador de la cuenta que envíe una nueva; generarla toma solo unos segundos.",
+      "rateLimitedTitle": "Demasiados intentos",
+      "rateLimitedBody": "Has comprobado esta invitación demasiadas veces en poco tiempo. Espera un minuto y vuelve a intentarlo.",
       "serverErrorTitle": "Algo salió mal",
       "serverErrorBody": "No pudimos verificar esta invitación en este momento. Intenta recargar la página en un momento."
     },

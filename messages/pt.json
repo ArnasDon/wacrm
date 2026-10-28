@@ -383,6 +383,7 @@
       "waitForSending": "Aguarde a mensagem terminar de ser enviada",
       "reactionFailed": "Falha na reação: {reason}",
       "assignmentUpdateFailed": "Falha ao atualizar a atribuição",
+      "assigneeNoLongerMember": "Esse colega não é mais membro desta conta",
       "networkError": "erro de rede",
       "documentFallback": "Documento",
       "you": "Você"
@@ -796,6 +797,7 @@
       "titlePlaceholder": "Título do negócio",
       "contact": "Contato",
       "selectContact": "Selecione um contato",
+      "searchContacts": "Buscar contatos por nome ou telefone",
       "linkToConversation": "Vincular a uma conversa",
       "value": "Valor",
       "currency": "Moeda",
@@ -968,7 +970,9 @@
       "toastNotLinked": "Seu perfil não está vinculado a uma conta.",
       "toastFailedDraft": "Falha ao salvar o rascunho: {error}",
       "toastDraftSaved": "Rascunho salvo",
-      "broadcastFailed": "Falha no disparo"
+      "broadcastFailed": "Falha no disparo",
+      "toastSendTakenOver": "Outro envio assumiu esta transmissão, então esta aba parou de enviar. Abra a transmissão para acompanhar o progresso.",
+      "toastSendInterrupted": "O envio parou porque a conexão com o servidor caiu. Abra a transmissão e use Retomar envio para enviar aos destinatários restantes. O botão aparece em até 5 minutos."
     },
     "wizard": {
       "next": "Avançar",
@@ -1757,6 +1761,7 @@
       "category": "Categoria",
       "language": "Idioma",
       "langFixed": "O idioma é fixo depois que o modelo existe na Meta.",
+      "categoryFixed": "A categoria de um modelo aprovado não pode ser alterada.",
       "langHint": "Deve corresponder exatamente ao código na Meta — <code>en_US</code> e <code>en</code> são diferentes.",
       "header": "Cabeçalho",
       "headerNone": "Nenhum",
@@ -2294,6 +2299,8 @@
       "usedBody": "Este convite já foi aceito. Se não foi você, peça ao administrador da conta para enviar um novo link.",
       "expiredTitle": "Convite expirado",
       "expiredBody": "Este convite expirou. Peça ao administrador da conta para enviar um novo — leva apenas alguns segundos para gerar.",
+      "rateLimitedTitle": "Muitas tentativas",
+      "rateLimitedBody": "Você verificou este convite muitas vezes em pouco tempo. Aguarde um minuto e tente novamente.",
       "serverErrorTitle": "Algo deu errado",
       "serverErrorBody": "Não conseguimos verificar este convite agora. Tente recarregar a página em instantes."
     },
@@ -2593,6 +2600,7 @@
       "duplicateNodeKey": "node_key duplicado: \"{key}\".",
       "unreachable": "O nó \"{key}\" não pode ser alcançado a partir do nó de entrada.",
       "autoAdvanceCycle": "Os nós {keys} voltam uns para os outros sem esperar pelo cliente, então o fluxo continuaria enviando mensagens. Adicione uma etapa de botões, lista ou pergunta ao loop, ou interrompa-o.",
+      "autoAdvanceChainTooLong": "O nó \"{key}\" inicia {count} etapas seguidas que rodam sem esperar pelo cliente. Um fluxo pode executar no máximo {max} etapas assim antes de esperar; adicione uma etapa de botões, lista ou pergunta para dividir a sequência.",
       "keywordsRequired": "Gatilhos por palavra-chave precisam de pelo menos uma palavra-chave.",
       "blankKeywords": "{count} {count, plural, =1 {palavra-chave está em branco} other {palavras-chave estão em branco}} — elas não vão corresponder a nada.",
       "startNeedsNext": "O nó Início precisa apontar para um próximo nó.",
@@ -2850,6 +2858,7 @@
       "statusInvalid": "O status deve ser 'draft', 'active' ou 'archived'",
       "cannotActivate": "Não é possível ativar o fluxo — corrija os problemas abaixo primeiro.",
       "cannotSaveActive": "Este fluxo está ativo, então não pode ser salvo com estes problemas. Corrija-os ou pause o fluxo primeiro.",
+      "timeoutHoursInvalid": "on_timeout_hours deve ser um número maior que 0 e no máximo {max}.",
       "nameEmpty": "O nome não pode ficar vazio",
       "unknownTemplate": "Modelo de fluxo desconhecido \"{slug}\"",
       "insertFailed": "falha ao criar o fluxo",
@@ -2914,6 +2923,7 @@
       "neverSubmitted": "Este modelo nunca foi enviado à Meta — use Novo modelo para enviá-lo.",
       "statusNotEditable": "Modelos com status {status} não podem ser editados. Permitidos: APPROVED, REJECTED, PAUSED.",
       "authNotEditable": "Modelos de AUTENTICAÇÃO não podem ser editados aqui — gerencie-os no Gerenciador do WhatsApp da Meta.",
+      "categoryLockedApproved": "A Meta não permite alterar a categoria de um modelo aprovado. Crie um novo modelo.",
       "validationFailed": "Falha na validação.",
       "headerUploadFailed": "Falha ao enviar a mídia do cabeçalho.",
       "metaEditFailed": "Falha ao editar na Meta.",
@@ -2927,6 +2937,7 @@
       "metaSubmitFailed": "Falha ao enviar à Meta.",
       "rateLimit": "Limite de requisições da Meta atingido (100 criações de modelo por hora). Tente novamente mais tarde.",
       "submittedSaveFailed": "Enviado à Meta, mas falhou ao salvar localmente: {message}. Use \"Sincronizar da Meta\" para recuperar.",
+      "alreadyExists": "Já existe um modelo chamado {name} ({language}) nesta conta. Edite ou reenvie esse modelo em vez de criar um novo.",
       "submitFailed": "Falha ao enviar o modelo.",
       "metaApiStatus": "Erro da API da Meta: {status}",
       "syncFailed": "Falha ao sincronizar os modelos"

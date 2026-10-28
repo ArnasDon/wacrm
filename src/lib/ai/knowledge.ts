@@ -14,16 +14,17 @@ export interface IngestResult {
   embedError: unknown
 }
 
+const CHUNK_DELETE_BATCH = 100
+
 interface MatchRow {
   id: string
   content: string
 }
 
 /**
- * (Re)build the chunks for one document. Deletes the document's
- * existing chunks, re-chunks the content, and — when the account has an
- * embeddings key — embeds each chunk. Runs under whatever client the
- * caller passes (service-role for ingest routes).
+ * (Re)build the chunks for one document. Re-chunks the content and —
+ * when the account has an embeddings key — embeds each chunk. Runs under
+ * whatever client the caller passes (service-role for ingest routes).
  */
 export async function ingestDocument(
   db: SupabaseClient,
@@ -34,21 +35,12 @@ export async function ingestDocument(
 ): Promise<IngestResult> {
   const chunks = chunkText(content)
 
-  // Replace, don't append — re-ingest must be idempotent.
-  const { error: delErr } = await db
-    .from('ai_knowledge_chunks')
-    .delete()
-    .eq('document_id', documentId)
-  if (delErr) throw delErr
-
-  if (chunks.length === 0) return { keywordOnly: false, embedError: null }
-
   // Embed if a key is set, but DON'T let an embedding failure stop the
   // chunks from being stored: a failed embed must still leave the
   // document searchable lexically.
   let embeddings: number[][] | null = null
   let embedError: unknown = null
-  if (config.embeddingsApiKey) {
+  if (config.embeddingsApiKey && chunks.length > 0) {
     try {
       embeddings = await embedTexts(config.embeddingsApiKey, chunks)
     } catch (err) {
@@ -56,16 +48,32 @@ export async function ingestDocument(
     }
   }
 
-  const rows = chunks.map((content, i) => ({
-    document_id: documentId,
-    account_id: accountId,
-    chunk_index: i,
-    content,
-    embedding: embeddings ? toVectorLiteral(embeddings[i]) : null,
-  }))
+  const { data: previousChunks, error: listErr } = await db
+    .from('ai_knowledge_chunks')
+    .select('id')
+    .eq('document_id', documentId)
+  if (listErr) throw listErr
 
-  const { error: insErr } = await db.from('ai_knowledge_chunks').insert(rows)
-  if (insErr) throw insErr
+  if (chunks.length > 0) {
+    const rows = chunks.map((content, i) => ({
+      document_id: documentId,
+      account_id: accountId,
+      chunk_index: i,
+      content,
+      embedding: embeddings ? toVectorLiteral(embeddings[i]) : null,
+    }))
+    const { error: insErr } = await db.from('ai_knowledge_chunks').insert(rows)
+    if (insErr) throw insErr
+  }
+
+  const previousIds = (previousChunks ?? []).map((row: { id: string }) => row.id)
+  for (let i = 0; i < previousIds.length; i += CHUNK_DELETE_BATCH) {
+    const { error: delErr } = await db
+      .from('ai_knowledge_chunks')
+      .delete()
+      .in('id', previousIds.slice(i, i + CHUNK_DELETE_BATCH))
+    if (delErr) throw delErr
+  }
 
   return { keywordOnly: embedError !== null, embedError }
 }

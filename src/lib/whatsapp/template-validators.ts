@@ -73,6 +73,33 @@ export function extractVariableIndices(text: string): number[] {
 }
 
 /**
+ * Variable keys a template text needs values for, in the order send-time
+ * values are matched to them. Handles both of Meta's parameter formats:
+ *
+ *   - POSITIONAL `{{1}}`, `{{2}}` → `["1", "2"]` (numeric order)
+ *   - NAMED `{{customer_name}}` → `["customer_name"]`. Meta's template
+ *     editor creates these by default now. Sorted by name, matching how
+ *     broadcasts and automations order their per-key values; Meta pairs
+ *     named values by `parameter_name`, not position.
+ *
+ * A template uses one format or the other, never both.
+ */
+export function extractTemplateVariables(text: string): string[] {
+  const keys = new Set<string>();
+  for (const m of text.matchAll(/\{\{([A-Za-z0-9_]+)\}\}/g)) keys.add(m[1]);
+  const all = [...keys];
+  if (all.length > 0 && all.every((k) => /^\d+$/.test(k))) {
+    return extractVariableIndices(text).map(String);
+  }
+  return all.filter((k) => isNamedVariable(k)).sort((a, b) => a.localeCompare(b));
+}
+
+/** True for a NAMED template variable key (`customer_name`, not `1`). */
+export function isNamedVariable(key: string): boolean {
+  return !/^\d+$/.test(key);
+}
+
+/**
  * Meta requires contiguous, 1-indexed variables. `{{1}} {{3}}` is
  * invalid — it must be `{{1}} {{2}}`.
  */

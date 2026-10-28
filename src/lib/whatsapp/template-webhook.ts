@@ -366,7 +366,7 @@ async function createStubForUnknownTemplate(p: StubParams): Promise<void> {
   }
 
   // Unique violation: either a concurrent sync/webhook just created the
-  // row, or the account already has a local (user_id, name, language)
+  // row, or the account already has a local
   // row that isn't linked to this meta_template_id. Retry the original
   // UPDATE once — it covers the first case; the second still needs a
   // sync and is logged as such.

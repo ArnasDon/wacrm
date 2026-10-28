@@ -60,6 +60,7 @@ import {
   type StartNodeConfig,
   type KeywordTriggerConfig,
   AUTO_ADVANCING_NODE_TYPES,
+  MAX_NODES_PER_ADVANCE,
 } from "./types";
 
 // ============================================================
@@ -258,10 +259,7 @@ async function loadFlow(
     .select("*")
     .eq("id", flowId)
     .maybeSingle();
-  if (error) {
-    console.error("[flows] loadFlow error:", error.message);
-    return null;
-  }
+  if (error) throw new Error(`loadFlow failed: ${error.message}`);
   return (data as FlowRow | null) ?? null;
 }
 
@@ -269,10 +267,6 @@ async function loadFlow(
  * Load every node of a flow in one round trip and key them by
  * `node_key`. The advance loop is then in-memory — a 5-node
  * auto-advancing chain costs one SELECT, not five.
- *
- * Returns an empty map on error so the caller can still dispatch
- * cleanly (every subsequent .get() returns undefined → the run
- * fails with node_not_found, same as the old per-node lookup).
  */
 async function loadAllNodes(
   db: AdminClient,
@@ -282,10 +276,7 @@ async function loadAllNodes(
     .from("flow_nodes")
     .select("*")
     .eq("flow_id", flowId);
-  if (error) {
-    console.error("[flows] loadAllNodes error:", error.message);
-    return new Map();
-  }
+  if (error) throw new Error(`loadAllNodes failed: ${error.message}`);
   const map = new Map<string, FlowNodeRow>();
   for (const row of (data ?? []) as FlowNodeRow[]) {
     map.set(row.node_key, row);
@@ -632,8 +623,6 @@ async function endRun(
 // terminates (handoff/end). Each suspending node persists the
 // new current_node_key before returning.
 // ============================================================
-
-export const MAX_NODES_PER_ADVANCE = 25;
 
 async function advanceFromNodeKey(
   db: AdminClient,
@@ -1000,6 +989,7 @@ export async function dispatchInboundToFlows(
   input: DispatchInboundInput & { isFirstInboundMessage: boolean },
 ): Promise<DispatchInboundResult> {
   const db = supabaseAdmin();
+  let ownedRunId: string | null = null;
   try {
     const activeRun = await loadActiveRunForContact(
       db,
@@ -1011,6 +1001,7 @@ export async function dispatchInboundToFlows(
     // contact. For new runs, the partial unique index catches duplicate
     // starts at INSERT time.
     if (activeRun) {
+      ownedRunId = activeRun.id;
       const dupe = await isDuplicateInbound(
         db,
         input.accountId,
@@ -1047,6 +1038,7 @@ export async function dispatchInboundToFlows(
         );
       }
       await closeActiveRun(db, activeRun, closure, now);
+      ownedRunId = null;
     }
 
     // No active run → look for a flow whose entry trigger matches.
@@ -1066,6 +1058,9 @@ export async function dispatchInboundToFlows(
       "[flows] dispatchInboundToFlows threw:",
       err instanceof Error ? err.message : err,
     );
+    if (ownedRunId) {
+      return { consumed: true, flow_run_id: ownedRunId, outcome: "run_error" };
+    }
     return { consumed: false, outcome: "no_match" };
   }
 }
@@ -1141,20 +1136,35 @@ async function handleReplyForActiveRun(
   // No match → fallback. Apply the policy.
   const policy = resolveFallbackPolicy(flow.fallback_policy);
   const newReprompts = run.reprompt_count + 1;
-  await db
-    .from("flow_runs")
-    .update({ reprompt_count: newReprompts })
-    .eq("id", run.id);
-
   const action = decideFallback({ policy, reprompt_count: newReprompts });
-  await logEvent(db, run.id, "fallback_fired", run.current_node_key, {
-    action: action.type,
-    reprompt_count: newReprompts,
-  });
   if (action.type === "ignore") {
+    await logEvent(db, run.id, "fallback_fired", run.current_node_key, {
+      action: action.type,
+      reprompt_count: newReprompts,
+    });
     // Don't consume — let automations have a shot at it.
     return { consumed: false, flow_run_id: run.id, outcome: "no_match" };
   }
+
+  const fallbackClaim: Record<string, unknown> =
+    action.type === "reprompt"
+      ? { reprompt_count: newReprompts }
+      : {
+          reprompt_count: newReprompts,
+          status: action.type === "handoff" ? "handed_off" : "completed",
+          ended_at: new Date().toISOString(),
+          end_reason:
+            action.type === "handoff"
+              ? "fallback_exhausted"
+              : "fallback_exhausted_end",
+        };
+  if (!(await claimFallbackTransition(db, run, fallbackClaim))) {
+    return lostReplyRace(db, run, currentNode.node_key);
+  }
+  await logEvent(db, run.id, "fallback_fired", currentNode.node_key, {
+    action: action.type,
+    reprompt_count: newReprompts,
+  });
   if (action.type === "reprompt") {
     // Re-send the same prompt. Same node, no current_node_key change.
     // The interactive helpers interpolate run.vars themselves, so a
@@ -1196,12 +1206,35 @@ async function handleReplyForActiveRun(
     await logEvent(db, run.id, "handoff", run.current_node_key, {
       reason: "fallback_exhausted",
     });
-    await endRun(db, run.id, "handed_off", "fallback_exhausted");
     return { consumed: true, flow_run_id: run.id, outcome: "handed_off" };
   }
-  // action.type === 'end'
-  await endRun(db, run.id, "completed", "fallback_exhausted_end");
   return { consumed: true, flow_run_id: run.id, outcome: "completed" };
+}
+
+async function claimFallbackTransition(
+  db: AdminClient,
+  run: FlowRunRow,
+  update: Record<string, unknown>,
+): Promise<boolean> {
+  const fromKey = run.current_node_key;
+  if (fromKey === null) return false;
+  const nextSeq = (run.transition_seq ?? 0) + 1;
+  const { data, error } = await db
+    .from("flow_runs")
+    .update({ ...update, transition_seq: nextSeq })
+    .eq("id", run.id)
+    .eq("status", "active")
+    .eq("current_node_key", fromKey)
+    .eq("transition_seq", run.transition_seq ?? 0)
+    .select("id");
+  if (error) {
+    console.error("[flows] claimFallbackTransition error:", error.message);
+    return false;
+  }
+  if (!Array.isArray(data) || data.length !== 1) return false;
+  run.transition_seq = nextSeq;
+  run.reprompt_count = update.reprompt_count as number;
+  return true;
 }
 
 async function lostReplyRace(

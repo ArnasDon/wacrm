@@ -275,3 +275,41 @@ describe('buildSendComponents — end-to-end mix', () => {
     expect((components[2] as { index: string }).index).toBe('1');
   });
 });
+
+describe('buildSendComponents — named variables', () => {
+  it('sends body values with parameter_name, in sorted-name order', () => {
+    const components = buildSendComponents(
+      row({ body_text: 'Hi {{name}}, your slot is {{date}}.' }),
+      { body: ['Monday', 'Sam'] },
+    );
+    expect(components).toEqual([
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', parameter_name: 'date', text: 'Monday' },
+          { type: 'text', parameter_name: 'name', text: 'Sam' },
+        ],
+      },
+    ]);
+  });
+
+  it('throws instead of sending zero params for a named body variable', () => {
+    expect(() =>
+      buildSendComponents(
+        row({ body_text: 'We will contact you on {{service_details}}.' }),
+        { body: [] },
+      ),
+    ).toThrow();
+  });
+
+  it('sends a named TEXT header variable with parameter_name', () => {
+    const components = buildSendComponents(
+      row({ header_type: 'text', header_content: 'Hello {{first_name}}' }),
+      { headerText: 'Sam' },
+    );
+    expect(components[0]).toEqual({
+      type: 'header',
+      parameters: [{ type: 'text', parameter_name: 'first_name', text: 'Sam' }],
+    });
+  });
+});

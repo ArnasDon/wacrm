@@ -120,9 +120,13 @@ export async function POST(request: Request) {
       sampleValue: sampleBody[index - 1]?.trim() || null,
     }))
 
+    const activeKey =
+      config.provider === 'deepseek'
+        ? (config.deepseekApiKey || config.apiKey)
+        : config.apiKey
     const { result, usage } = await generateTemplateFill({
       provider: config.provider,
-      apiKey: config.apiKey,
+      apiKey: activeKey,
       model: config.model,
       expectedIndices: variableIndices,
       contactName: contact?.name || null,

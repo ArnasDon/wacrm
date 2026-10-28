@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 import { generateOpenAi } from './providers/openai'
 import { generateAnthropic } from './providers/anthropic'
+import { generateDeepSeek } from './providers/deepseek'
 import { replacePropertySubjectiveKnowledge } from './knowledge'
 import { aiRequestTimeoutMs } from './defaults'
 import {
@@ -172,19 +173,27 @@ Reescreva o texto completo incorporando a nova observação de forma natural e i
  * semantic search quality over time.
  */
 export async function fusePropertySubjectiveKnowledge(
-  config: Pick<AiConfig, 'provider' | 'apiKey' | 'model'>,
+  config: Pick<AiConfig, 'provider' | 'apiKey' | 'model' | 'deepseekApiKey'>,
   prevKnowledge: string | null,
   newInfo: string,
 ): Promise<string> {
+  const activeKey =
+    config.provider === 'deepseek'
+      ? (config.deepseekApiKey || config.apiKey)
+      : config.apiKey
   const providerArgs = {
-    apiKey: config.apiKey,
+    apiKey: activeKey,
     model: config.model,
     systemPrompt: FUSION_SYSTEM_PROMPT,
     messages: [{ role: 'user' as const, content: buildFusionUserPrompt(prevKnowledge, newInfo) }],
     timeoutMs: aiRequestTimeoutMs(),
   }
   const { text } =
-    config.provider === 'openai' ? await generateOpenAi(providerArgs) : await generateAnthropic(providerArgs)
+    config.provider === 'openai'
+      ? await generateOpenAi(providerArgs)
+      : config.provider === 'deepseek'
+        ? await generateDeepSeek(providerArgs)
+        : await generateAnthropic(providerArgs)
   const fused = text.trim()
   return fused || newInfo
 }

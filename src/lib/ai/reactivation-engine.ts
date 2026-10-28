@@ -3,6 +3,7 @@ import { loadAiConfig } from './config'
 import { logAiUsage } from './usage'
 import { generateOpenAi } from './providers/openai'
 import { generateAnthropic } from './providers/anthropic'
+import { generateDeepSeek } from './providers/deepseek'
 import { aiRequestTimeoutMs } from './defaults'
 import { buildConversationContext } from './context'
 import { engineSendText } from '@/lib/flows/meta-send'
@@ -434,8 +435,12 @@ interface ConversationLookupRow {
   let usage: AiUsage | null = null
 
   try {
+    const activeKey =
+      config.provider === 'deepseek'
+        ? (config.deepseekApiKey || config.apiKey)
+        : config.apiKey
     const providerArgs = {
-      apiKey: config.apiKey,
+      apiKey: activeKey,
       model: config.model,
       systemPrompt,
       messages: [{ role: 'user' as const, content: userPrompt }],
@@ -445,7 +450,9 @@ interface ConversationLookupRow {
     const response =
       config.provider === 'openai'
         ? await generateOpenAi(providerArgs)
-        : await generateAnthropic(providerArgs)
+        : config.provider === 'deepseek'
+          ? await generateDeepSeek(providerArgs)
+          : await generateAnthropic(providerArgs)
 
     rawLlmOutput = response.text.trim()
     usage = response.usage

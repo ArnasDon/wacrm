@@ -6,7 +6,10 @@
 // whether the account is on OpenAI or Anthropic.
 // ============================================================
 
-export type AiProvider = 'openai' | 'anthropic'
+export type AiProvider = 'openai' | 'anthropic' | 'deepseek'
+
+export const DEEPSEEK_MODELS = ['deepseek-chat', 'deepseek-reasoner'] as const
+export type DeepSeekModel = (typeof DEEPSEEK_MODELS)[number]
 
 /**
  * Account AI setup, decrypted and ready to use. Produced by
@@ -17,6 +20,7 @@ export interface AiConfig {
   provider: AiProvider
   model: string
   apiKey: string
+  deepseekApiKey?: string | null
   systemPrompt: string | null
   isActive: boolean
   autoReplyEnabled: boolean
@@ -104,6 +108,7 @@ export interface AiUsage {
   promptTokens: number
   completionTokens: number
   totalTokens: number
+  cachedTokens?: number
 }
 
 /** Raw text + usage a provider adapter returns before handoff parsing. */

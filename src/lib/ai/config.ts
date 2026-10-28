@@ -1,11 +1,12 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { decrypt } from '@/lib/whatsapp/encryption'
-import type { AiConfig } from './types'
+import type { AiConfig, AiProvider } from './types'
 
 interface AiConfigRow {
-  provider: 'openai' | 'anthropic'
+  provider: AiProvider
   model: string
   api_key: string
+  deepseek_api_key?: string | null
   system_prompt: string | null
   is_active: boolean
   auto_reply_enabled: boolean
@@ -31,7 +32,7 @@ interface AiConfigRow {
 // via that route) while still reaching the AI itself (which reads via
 // loadAiConfig below). One list, used by both paths.
 export const CONFIG_COLUMNS =
-  'provider, model, api_key, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, embeddings_api_key, identity_name, tone_style, team_presentation, global_never_rules, response_style_instructions, business_hours_start, business_hours_end, business_days, off_hours_instructions, safety_message_limit'
+  'provider, model, api_key, deepseek_api_key, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, embeddings_api_key, identity_name, tone_style, team_presentation, global_never_rules, response_style_instructions, business_hours_start, business_hours_end, business_days, off_hours_instructions, safety_message_limit'
 
 /**
  * Load and decrypt the account's AI config for *use* (draft or
@@ -63,10 +64,20 @@ export async function loadAiConfig(
   // The Playground passes requireActive:false so an admin can test the
   // agent before flipping the master switch on.
   if (requireActive && !row.is_active) return null
-  // Defensive: the column is NOT NULL, but a partial write / manual DB
-  // edit could leave it empty. Treat a missing key as "not configured"
-  // rather than letting decrypt() throw on null.
-  if (!row.api_key) return null
+  // Defensive: treat a missing key as "not configured"
+  if (!row.api_key && !row.deepseek_api_key) return null
+
+  let deepseekApiKey: string | null = null
+  if (row.deepseek_api_key) {
+    try {
+      deepseekApiKey = decrypt(row.deepseek_api_key)
+    } catch {
+      console.error(
+        `[ai config] deepseek key for account ${accountId} could not be decrypted — check ENCRYPTION_KEY.`,
+      )
+      deepseekApiKey = null
+    }
+  }
 
   // The embeddings key is optional and independent of the chat key —
   // a corrupt/undecryptable one should downgrade to lexical KB, not
@@ -85,10 +96,20 @@ export async function loadAiConfig(
     }
   }
 
+  let apiKey = ''
+  if (row.api_key) {
+    try {
+      apiKey = decrypt(row.api_key)
+    } catch (err) {
+      if (row.provider !== 'deepseek') throw err
+    }
+  }
+
   return {
     provider: row.provider,
     model: row.model,
-    apiKey: decrypt(row.api_key),
+    apiKey: apiKey || (deepseekApiKey ?? ''),
+    deepseekApiKey,
     systemPrompt: row.system_prompt,
     isActive: row.is_active,
     autoReplyEnabled: row.auto_reply_enabled,

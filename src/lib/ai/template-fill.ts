@@ -5,8 +5,9 @@
 
 import { generateOpenAi } from './providers/openai';
 import { generateAnthropic } from './providers/anthropic';
+import { generateDeepSeek } from './providers/deepseek';
 import { aiRequestTimeoutMs } from './defaults';
-import type { AiUsage } from './types';
+import type { AiProvider, AiUsage } from './types';
 import {
   buildTemplateFillSystemPrompt,
   buildTemplateFillUserPrompt,
@@ -15,7 +16,7 @@ import {
 import { parseTemplateFillResult, type TemplateFillResult } from './template-fill-types';
 
 export interface GenerateTemplateFillArgs extends TemplateFillPromptArgs {
-  provider: 'openai' | 'anthropic';
+  provider: AiProvider;
   apiKey: string;
   model: string;
   /** The exact variable numbers the response must (only) contain. */
@@ -39,7 +40,9 @@ export async function generateTemplateFill(
   const { text, usage } =
     args.provider === 'openai'
       ? await generateOpenAi(providerArgs)
-      : await generateAnthropic(providerArgs);
+      : args.provider === 'deepseek'
+        ? await generateDeepSeek(providerArgs)
+        : await generateAnthropic(providerArgs);
 
   return { result: parseTemplateFillResult(text, args.expectedIndices), usage };
 }

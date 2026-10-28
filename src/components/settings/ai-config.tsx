@@ -40,12 +40,20 @@ const HANDOFF_QUEUE = '__queue__';
 
 const PROVIDER_LABEL: Record<AiProvider, string> = {
   openai: 'OpenAI',
+  deepseek: 'DeepSeek',
   anthropic: 'Anthropic (Claude)',
 };
 
 const KEY_PLACEHOLDER: Record<AiProvider, string> = {
   openai: 'sk-...',
+  deepseek: 'sk-...',
   anthropic: 'sk-ant-...',
+};
+
+const SUGGESTED_MODELS: Record<AiProvider, string[]> = {
+  openai: ['gpt-5.4-mini', 'gpt-4o-mini', 'gpt-4o'],
+  deepseek: ['deepseek-chat', 'deepseek-reasoner'],
+  anthropic: ['claude-3-5-haiku-latest', 'claude-3-5-sonnet-latest'],
 };
 
 export function AiConfig() {
@@ -68,6 +76,10 @@ export function AiConfig() {
   const [embeddingsKey, setEmbeddingsKey] = useState('');
   const [embeddingsKeyEdited, setEmbeddingsKeyEdited] = useState(false);
   const [hasStoredEmbeddingsKey, setHasStoredEmbeddingsKey] = useState(false);
+  const [deepseekKey, setDeepseekKey] = useState('');
+  const [deepseekKeyEdited, setDeepseekKeyEdited] = useState(false);
+  const [hasStoredDeepseekKey, setHasStoredDeepseekKey] = useState(false);
+  const [showDeepseekKey, setShowDeepseekKey] = useState(false);
   const [systemPrompt, setSystemPrompt] = useState('');
   const [isActive, setIsActive] = useState(false);
   const [autoReplyEnabled, setAutoReplyEnabled] = useState(false);
@@ -106,6 +118,9 @@ export function AiConfig() {
         setHasStoredEmbeddingsKey(Boolean(data.has_embeddings_key));
         setEmbeddingsKey(data.has_embeddings_key ? MASKED_KEY : '');
         setEmbeddingsKeyEdited(false);
+        setHasStoredDeepseekKey(Boolean(data.has_deepseek_key));
+        setDeepseekKey(data.has_deepseek_key ? MASKED_KEY : '');
+        setDeepseekKeyEdited(false);
       }
     } catch {
       toast.error(t('loadFailed'));
@@ -130,6 +145,7 @@ export function AiConfig() {
     setProvider(next);
     const isDefaultModel =
       model === AI_PROVIDER_DEFAULT_MODEL.openai ||
+      model === AI_PROVIDER_DEFAULT_MODEL.deepseek ||
       model === AI_PROVIDER_DEFAULT_MODEL.anthropic ||
       model.trim() === '';
     if (isDefaultModel) setModel(AI_PROVIDER_DEFAULT_MODEL[next]);
@@ -141,10 +157,14 @@ export function AiConfig() {
   const embeddingsKeyPayload = () =>
     embeddingsKeyEdited ? embeddingsKey.trim() || null : undefined;
 
+  const deepseekKeyPayload = () =>
+    deepseekKeyEdited ? deepseekKey.trim() || null : undefined;
+
   const buildBody = () => ({
     provider,
     model: model.trim(),
-    api_key: keyPayload(),
+    api_key: provider === 'deepseek' ? undefined : keyPayload(),
+    deepseek_api_key: provider === 'deepseek' ? (keyPayload() ?? deepseekKeyPayload()) : deepseekKeyPayload(),
     embeddings_api_key: embeddingsKeyPayload(),
     system_prompt: systemPrompt.trim() || null,
     is_active: isActive,
@@ -156,13 +176,14 @@ export function AiConfig() {
   const handleTest = async () => {
     setTesting(true);
     try {
+      const activeKey = provider === 'deepseek' ? (keyPayload() ?? deepseekKeyPayload()) : keyPayload();
       const res = await fetch('/api/ai/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           provider,
           model: model.trim(),
-          api_key: keyPayload(),
+          api_key: activeKey,
         }),
       });
       const data = await res.json();
@@ -278,6 +299,7 @@ export function AiConfig() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="openai">{PROVIDER_LABEL.openai}</SelectItem>
+                    <SelectItem value="deepseek">{PROVIDER_LABEL.deepseek}</SelectItem>
                     <SelectItem value="anthropic">
                       {PROVIDER_LABEL.anthropic}
                     </SelectItem>
@@ -294,6 +316,23 @@ export function AiConfig() {
                   placeholder={AI_PROVIDER_DEFAULT_MODEL[provider]}
                   disabled={disabled}
                 />
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {SUGGESTED_MODELS[provider]?.map((sm) => (
+                    <button
+                      key={sm}
+                      type="button"
+                      disabled={disabled}
+                      onClick={() => setModel(sm)}
+                      className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${
+                        model === sm
+                          ? 'bg-primary/10 border-primary text-primary font-medium'
+                          : 'bg-muted/30 border-border text-muted-foreground hover:bg-muted'
+                      }`}
+                    >
+                      {sm}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 

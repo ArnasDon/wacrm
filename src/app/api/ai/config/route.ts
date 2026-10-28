@@ -45,11 +45,12 @@ export async function GET() {
     if (!data) return NextResponse.json({ configured: false })
     // The keys are selected only to derive the has_* flags; neither is
     // returned to the client.
-    const { api_key, embeddings_api_key, ...safe } = data
+    const { api_key, embeddings_api_key, deepseek_api_key, ...safe } = data
     return NextResponse.json({
       configured: true,
       has_key: !!api_key,
       has_embeddings_key: !!embeddings_api_key,
+      has_deepseek_key: !!deepseek_api_key,
       ...safe,
     })
   } catch (err) {
@@ -83,14 +84,14 @@ export async function POST(request: Request) {
     // credentials from scratch.
     const { data: existing } = await supabase
       .from('ai_configs')
-      .select('id, provider, model, api_key')
+      .select('id, provider, model, api_key, deepseek_api_key')
       .eq('account_id', accountId)
       .maybeSingle()
 
     const rawProvider = typeof body.provider === 'string' ? body.provider : ''
     const provider = (rawProvider || existing?.provider) as AiProvider
-    if (provider !== 'openai' && provider !== 'anthropic') {
-      return bad('provider must be "openai" or "anthropic"')
+    if (provider !== 'openai' && provider !== 'anthropic' && provider !== 'deepseek') {
+      return bad('provider must be "openai", "anthropic", or "deepseek"')
     }
     const rawModel = typeof body.model === 'string' ? body.model.trim() : ''
     const model = rawModel || existing?.model || ''
@@ -127,6 +128,11 @@ export async function POST(request: Request) {
     }
 
     const rawKey = typeof body.api_key === 'string' ? body.api_key.trim() : ''
+    const rawDeepseekKey =
+      typeof body.deepseek_api_key === 'string'
+        ? body.deepseek_api_key.trim()
+        : ''
+    const clearDeepseekKey = body.deepseek_api_key === null
 
     // Embeddings key (optional, for semantic KB search): a non-empty
     // string sets/replaces it; an explicit null clears it; absent leaves
@@ -137,35 +143,52 @@ export async function POST(request: Request) {
         : ''
     const clearEmbeddingsKey = body.embeddings_api_key === null
 
-    let apiKeyPlain: string
+    let apiKeyPlain = ''
     if (rawKey) {
       apiKeyPlain = rawKey
     } else if (existing?.api_key) {
       try {
         apiKeyPlain = decrypt(existing.api_key)
       } catch {
-        return bad('Stored API key could not be decrypted — re-enter your key.')
+        if (provider !== 'deepseek') {
+          return bad('Stored API key could not be decrypted — re-enter your key.')
+        }
       }
-    } else {
+    } else if (provider !== 'deepseek') {
       return bad('api_key is required')
     }
 
-    // Only spend a provider round-trip when the credentials that affect
-    // reachability actually changed. A save that just flips a toggle or
-    // edits the system prompt on an existing, already-validated config
-    // skips the call — no wasted token/latency on the account's key.
+    let deepseekKeyPlain: string | null = null
+    if (rawDeepseekKey) {
+      deepseekKeyPlain = rawDeepseekKey
+    } else if (existing?.deepseek_api_key) {
+      try {
+        deepseekKeyPlain = decrypt(existing.deepseek_api_key)
+      } catch {
+        if (provider === 'deepseek') {
+          return bad('Stored DeepSeek API key could not be decrypted — re-enter your DeepSeek key.')
+        }
+      }
+    }
+
+    if (provider === 'deepseek' && !deepseekKeyPlain) {
+      return bad('A valid DeepSeek API key is required when DeepSeek is selected as provider.')
+    }
+
+    const activeKeyToValidate = provider === 'deepseek' ? deepseekKeyPlain! : apiKeyPlain
     const credentialsChanged =
       !existing ||
-      rawKey !== '' ||
+      (provider === 'deepseek' ? rawDeepseekKey !== '' : rawKey !== '') ||
       provider !== existing.provider ||
       model !== existing.model
 
-    if (credentialsChanged) {
+    if (credentialsChanged && activeKeyToValidate) {
       try {
         await validateAiCredentials({
           provider,
           model,
-          apiKey: apiKeyPlain,
+          apiKey: activeKeyToValidate,
+          deepseekApiKey: provider === 'deepseek' ? activeKeyToValidate : null,
           systemPrompt,
           isActive,
           autoReplyEnabled,
@@ -181,7 +204,33 @@ export async function POST(request: Request) {
           )
         }
         console.error('[ai/config POST] validation error:', err)
-        return bad('Could not validate the API key with the provider.')
+        return bad(`Could not validate the API key with ${provider}.`)
+      }
+    }
+
+    // If a new DeepSeek key was provided while on another provider, validate it standalone
+    if (rawDeepseekKey && provider !== 'deepseek') {
+      try {
+        await validateAiCredentials({
+          provider: 'deepseek',
+          model: 'deepseek-chat',
+          apiKey: rawDeepseekKey,
+          deepseekApiKey: rawDeepseekKey,
+          systemPrompt: 'You are a connectivity check. Reply with the single word: OK.',
+          isActive: true,
+          autoReplyEnabled: false,
+          autoReplyMaxPerConversation: 1,
+          handoffAgentId: null,
+          embeddingsApiKey: null,
+        })
+      } catch (err) {
+        if (err instanceof AiError) {
+          return NextResponse.json(
+            { error: `DeepSeek key: ${err.message}`, code: err.code },
+            { status: 400 },
+          )
+        }
+        return bad('Could not validate the DeepSeek API key.')
       }
     }
 
@@ -210,6 +259,15 @@ export async function POST(request: Request) {
       is_active: isActive,
       auto_reply_enabled: autoReplyEnabled,
       auto_reply_max_per_conversation: maxPer,
+    }
+
+    if (rawDeepseekKey) {
+      shared.deepseek_api_key = encrypt(rawDeepseekKey)
+    } else if (clearDeepseekKey) {
+      if (provider === 'deepseek') {
+        return bad('Cannot remove DeepSeek API key while DeepSeek is the active provider.')
+      }
+      shared.deepseek_api_key = null
     }
 
     if ('identity_name' in body) shared.identity_name = typeof body.identity_name === 'string' ? body.identity_name.trim() : null
@@ -257,7 +315,7 @@ export async function POST(request: Request) {
       const { error: insErr } = await supabase.from('ai_configs').insert({
         account_id: accountId,
         created_by: userId,
-        api_key: encryptedKey, // guaranteed non-null: rawKey required when no existing row
+        api_key: encryptedKey ?? (rawDeepseekKey ? encrypt(rawDeepseekKey) : ''),
         ...shared,
       })
       if (insErr) {

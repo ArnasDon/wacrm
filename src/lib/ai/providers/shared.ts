@@ -30,17 +30,24 @@ export function normalizeUsage(raw: {
   prompt?: unknown
   completion?: unknown
   total?: unknown
+  cached?: unknown
 }): AiUsage | null {
   const num = (v: unknown): number =>
     typeof v === 'number' && Number.isFinite(v) && v >= 0 ? Math.floor(v) : 0
   const promptTokens = num(raw.prompt)
   const completionTokens = num(raw.completion)
   const total = num(raw.total)
+  const cachedTokens = num(raw.cached)
   const totalTokens = total > 0 ? total : promptTokens + completionTokens
   if (promptTokens === 0 && completionTokens === 0 && totalTokens === 0) {
     return null
   }
-  return { promptTokens, completionTokens, totalTokens }
+  return {
+    promptTokens,
+    completionTokens,
+    totalTokens,
+    ...(cachedTokens > 0 ? { cachedTokens } : {}),
+  }
 }
 
 /** Map a fetch rejection (timeout / DNS / offline) to a typed AiError. */

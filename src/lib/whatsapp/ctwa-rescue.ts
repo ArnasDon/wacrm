@@ -26,6 +26,7 @@ import { loadAiConfig } from '@/lib/ai/config'
 import { logAiUsage } from '@/lib/ai/usage'
 import { generateOpenAi } from '@/lib/ai/providers/openai'
 import { generateAnthropic } from '@/lib/ai/providers/anthropic'
+import { generateDeepSeek } from '@/lib/ai/providers/deepseek'
 import { aiRequestTimeoutMs } from '@/lib/ai/defaults'
 import type { AiConfig, AiUsage } from '@/lib/ai/types'
 import { engineSendText } from '@/lib/flows/meta-send'
@@ -104,8 +105,12 @@ async function generateRescueMessage(args: {
   customerMessage: string
   contactName: string
 }): Promise<{ text: string; usage: AiUsage | null }> {
+  const activeKey =
+    args.config.provider === 'deepseek'
+      ? (args.config.deepseekApiKey || args.config.apiKey)
+      : args.config.apiKey
   const providerArgs = {
-    apiKey: args.config.apiKey,
+    apiKey: activeKey,
     model: args.config.model,
     systemPrompt: buildRescueSystemPrompt(),
     messages: [
@@ -116,7 +121,9 @@ async function generateRescueMessage(args: {
   const { text, usage } =
     args.config.provider === 'openai'
       ? await generateOpenAi(providerArgs)
-      : await generateAnthropic(providerArgs)
+      : args.config.provider === 'deepseek'
+        ? await generateDeepSeek(providerArgs)
+        : await generateAnthropic(providerArgs)
   return { text: text.trim(), usage }
 }
 

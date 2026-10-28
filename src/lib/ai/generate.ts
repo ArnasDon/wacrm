@@ -8,6 +8,7 @@ import {
 import { HANDOFF_SENTINEL, aiRequestTimeoutMs } from './defaults'
 import { generateOpenAi } from './providers/openai'
 import { generateAnthropic } from './providers/anthropic'
+import { generateDeepSeek } from './providers/deepseek'
 
 export interface GenerateArgs {
   config: AiConfig
@@ -41,6 +42,20 @@ export async function generateReply(args: GenerateArgs): Promise<GenerateResult>
     case 'anthropic':
       result = await generateAnthropic(providerArgs)
       break
+    case 'deepseek': {
+      const apiKey = config.deepseekApiKey || config.apiKey
+      if (!apiKey) {
+        throw new AiError('DeepSeek API key is not configured.', {
+          code: 'missing_key',
+          status: 400,
+        })
+      }
+      result = await generateDeepSeek({
+        ...providerArgs,
+        apiKey,
+      })
+      break
+    }
     default:
       throw new AiError(`Unsupported AI provider: ${config.provider}`, {
         code: 'unsupported_provider',

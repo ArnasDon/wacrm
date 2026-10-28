@@ -12,6 +12,7 @@ import {
 import { HANDOFF_SENTINEL, aiRequestTimeoutMs } from './defaults';
 import { generateOpenAi } from './providers/openai';
 import { generateAnthropic } from './providers/anthropic';
+import { generateDeepSeek } from './providers/deepseek';
 import { retrievePropertyKnowledge } from './knowledge';
 import { latestUserMessage } from './query';
 import { getLeadContext, type FormattedLeadContext } from './lead-context';
@@ -864,18 +865,26 @@ export async function executeConversationalTurn(
 
   // 7. Invoke Provider
   const timeoutMs = aiRequestTimeoutMs();
+  const activeKey =
+    config.provider === 'deepseek'
+      ? (config.deepseekApiKey || config.apiKey)
+      : config.apiKey;
   const providerArgs = {
-    apiKey: config.apiKey,
+    apiKey: activeKey,
     model: config.model,
     systemPrompt,
     messages,
     timeoutMs,
   };
 
-  const rawResult =
-    config.provider === 'openai'
-      ? await generateOpenAi(providerArgs)
-      : await generateAnthropic(providerArgs);
+  let rawResult;
+  if (config.provider === 'openai') {
+    rawResult = await generateOpenAi(providerArgs);
+  } else if (config.provider === 'deepseek') {
+    rawResult = await generateDeepSeek(providerArgs);
+  } else {
+    rawResult = await generateAnthropic(providerArgs);
+  }
 
   // 8. Parse Decision
   const decision = parseStructuredDecision(rawResult.text);

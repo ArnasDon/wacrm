@@ -52,8 +52,28 @@ function deal(overrides: Partial<Deal> & { contact_id: string }): Deal {
   };
 }
 
-function fakeDb(opts: { deals: Deal[]; pendingContactIds: string[] }) {
+function fakeDb(opts: {
+  deals: Deal[];
+  pendingContactIds: string[];
+  rpcError?: { message: string } | null;
+  pendingQueryError?: { message: string } | null;
+}) {
   const inserted: Record<string, unknown>[] = [];
+  const rpc = (fnName: string, args: Record<string, unknown>) => {
+    if (opts.rpcError) {
+      return Promise.resolve({ data: null, error: opts.rpcError });
+    }
+    if (fnName === 'get_pending_followup_contact_ids') {
+      const contactIds = (args.p_contact_ids as string[]) || [];
+      const pendingSet = new Set(opts.pendingContactIds);
+      const matches = contactIds
+        .filter((id) => pendingSet.has(id))
+        .map((id) => ({ contact_id: id }));
+      return Promise.resolve({ data: matches, error: null });
+    }
+    return Promise.resolve({ data: [], error: null });
+  };
+
   const from = (table: string) => {
     if (table === 'deals') {
       return {
@@ -68,11 +88,15 @@ function fakeDb(opts: { deals: Deal[]; pendingContactIds: string[] }) {
           eq: () => ({
             eq: () => ({
               eq: () => ({
-                in: () =>
-                  Promise.resolve({
+                in: () => {
+                  if (opts.pendingQueryError) {
+                    return Promise.resolve({ data: null, error: opts.pendingQueryError });
+                  }
+                  return Promise.resolve({
                     data: opts.pendingContactIds.map((id) => ({ contact_id: id })),
                     error: null,
-                  }),
+                  });
+                },
               }),
             }),
           }),
@@ -91,7 +115,7 @@ function fakeDb(opts: { deals: Deal[]; pendingContactIds: string[] }) {
     }
     throw new Error(`unexpected table in test: ${table}`);
   };
-  return { db: { from } as unknown as SupabaseClient, inserted };
+  return { db: { from, rpc } as unknown as SupabaseClient, inserted };
 }
 
 function scoreResponse(json: unknown) {
@@ -292,5 +316,95 @@ describe('generateFollowupSuggestions', () => {
     expect(queriedChunks.length).toBe(1);
     expect(queriedChunks[0].length).toBe(50);
     expect(result.scored).toBe(25);
+  });
+
+  it('RPC get_pending_followup_contact_ids safely handles >1,000 historical duplicate rows by returning DISTINCT contacts without truncation', async () => {
+    // 15 candidate deals for 15 distinct contacts
+    const candidateDeals = Array.from({ length: 15 }, (_, i) => deal({ id: `deal-${i}`, contact_id: `contact-${i}` }));
+
+    // Simulate contacts 0 through 9 having over 2,000 historical duplicate rows combined
+    const pendingContacts = Array.from({ length: 10 }, (_, i) => `contact-${i}`);
+
+    const { db, inserted } = fakeDb({
+      deals: candidateDeals,
+      pendingContactIds: pendingContacts,
+    });
+
+    mocks.generateOpenAi.mockResolvedValue(scoreResponse({ should_suggest: true, reason: 'Followup needed', score: 85 }));
+
+    const result = await generateFollowupSuggestions(db, 'account-1');
+
+    // Only contacts 10 through 14 (5 contacts) should be scored and created
+    expect(result).toEqual({ created: 5, scored: 5 });
+    expect(inserted).toHaveLength(5);
+    for (const ins of inserted) {
+      expect(pendingContacts).not.toContain(ins.contact_id);
+    }
+  });
+
+  it('allows fresh follow-up creation when previous suggestion was resolved (done or ignored)', async () => {
+    // Contact had a resolved suggestion in the past (so pendingContactIds is empty)
+    const { db, inserted } = fakeDb({
+      deals: [deal({ id: 'deal-resolved', contact_id: 'contact-resolved' })],
+      pendingContactIds: [], // None currently pending
+    });
+
+    mocks.generateOpenAi.mockResolvedValue(scoreResponse({ should_suggest: true, reason: 'Lead cold after previous resolution', score: 88 }));
+
+    const result = await generateFollowupSuggestions(db, 'account-1');
+    expect(result).toEqual({ created: 1, scored: 1 });
+    expect(inserted).toHaveLength(1);
+    expect(inserted[0].contact_id).toBe('contact-resolved');
+  });
+
+  it('aborts safely with { created: 0, scored: 0 } when pending check fails on database', async () => {
+    const { db, inserted } = fakeDb({
+      deals: [deal({ id: 'deal-1', contact_id: 'c1' })],
+      pendingContactIds: [],
+      rpcError: { message: 'RPC function error' },
+      pendingQueryError: { message: 'Database connection timeout' },
+    });
+
+    mocks.generateOpenAi.mockResolvedValue(scoreResponse({ should_suggest: true }));
+
+    const result = await generateFollowupSuggestions(db, 'account-1');
+    expect(result).toEqual({ created: 0, scored: 0 });
+    expect(inserted).toHaveLength(0);
+    expect(mocks.generateOpenAi).not.toHaveBeenCalled();
+  });
+
+  it('prevents duplicate generation when contact is already pending (idempotency)', async () => {
+    const { db, inserted } = fakeDb({
+      deals: [deal({ id: 'deal-c1', contact_id: 'c1' })],
+      pendingContactIds: ['c1'],
+    });
+
+    mocks.generateOpenAi.mockResolvedValue(scoreResponse({ should_suggest: true }));
+
+    const result = await generateFollowupSuggestions(db, 'account-1');
+    expect(result).toEqual({ created: 0, scored: 0 });
+    expect(inserted).toHaveLength(0);
+    expect(mocks.generateOpenAi).not.toHaveBeenCalled();
+  });
+
+  it('does not block follow-up generation when contact only has pending suggestions in OTHER categories (pipeline_move, learning)', async () => {
+    // Contact 'c-learning' has a learning suggestion pending, but NO followup suggestion
+    const { db, inserted } = fakeDb({
+      deals: [deal({ id: 'deal-c-learning', contact_id: 'c-learning' })],
+      pendingContactIds: [], // no followup pending
+    });
+
+    mocks.generateOpenAi.mockResolvedValue(scoreResponse({
+      should_suggest: true,
+      reason: 'Lead parado há dias',
+      approach_summary: 'Apresentar novas condições',
+      score: 90,
+    }));
+
+    const result = await generateFollowupSuggestions(db, 'account-1');
+    expect(result).toEqual({ created: 1, scored: 1 });
+    expect(inserted).toHaveLength(1);
+    expect(inserted[0].contact_id).toBe('c-learning');
+    expect(inserted[0].category).toBe('followup');
   });
 });

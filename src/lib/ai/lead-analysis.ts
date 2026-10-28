@@ -5,9 +5,10 @@ import { loadAiConfig } from './config'
 import { logAiUsage } from './usage'
 import { generateOpenAi } from './providers/openai'
 import { generateAnthropic } from './providers/anthropic'
+import { generateDeepSeek } from './providers/deepseek'
 import { aiRequestTimeoutMs } from './defaults'
 import { effectiveMessageText } from './message-text'
-import type { AiUsage, ChatMessage } from './types'
+import type { AiProvider, AiUsage, ChatMessage } from './types'
 import {
   buildLeadAnalysisSystemPrompt,
   buildLeadAnalysisUserPrompt,
@@ -313,7 +314,7 @@ async function applyStageSuggestion(args: ApplyLeadAnalysisArgs): Promise<void> 
 // ============================================================
 
 interface ExtractArgs {
-  provider: 'openai' | 'anthropic'
+  provider: AiProvider
   apiKey: string
   model: string
   contactName: string
@@ -350,7 +351,9 @@ async function extractLeadIntelligence(
   const { text, usage } =
     args.provider === 'openai'
       ? await generateOpenAi(providerArgs)
-      : await generateAnthropic(providerArgs)
+      : args.provider === 'deepseek'
+        ? await generateDeepSeek(providerArgs)
+        : await generateAnthropic(providerArgs)
 
   return { result: parseLeadAnalysisResult(text), usage }
 }
@@ -500,9 +503,13 @@ export async function dispatchInboundToLeadAnalysis(args: DispatchArgs): Promise
 
     let extraction: { result: LeadAnalysisResult | null; usage: AiUsage | null }
     try {
+      const activeKey =
+        config.provider === 'deepseek'
+          ? (config.deepseekApiKey || config.apiKey)
+          : config.apiKey
       extraction = await extractLeadIntelligence({
         provider: config.provider,
-        apiKey: config.apiKey,
+        apiKey: activeKey,
         model: config.model,
         contactName,
         previousSummary,

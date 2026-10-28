@@ -27,9 +27,9 @@ export async function POST(request: Request) {
     }
 
     const provider = body.provider as AiProvider
-    if (provider !== 'openai' && provider !== 'anthropic') {
+    if (provider !== 'openai' && provider !== 'anthropic' && provider !== 'deepseek') {
       return NextResponse.json(
-        { error: 'provider must be "openai" or "anthropic"' },
+        { error: 'provider must be "openai", "anthropic", or "deepseek"' },
         { status: 400 },
       )
     }
@@ -43,17 +43,18 @@ export async function POST(request: Request) {
     if (!apiKeyPlain) {
       const { data: existing } = await supabase
         .from('ai_configs')
-        .select('api_key')
+        .select('api_key, deepseek_api_key')
         .eq('account_id', accountId)
         .maybeSingle()
-      if (!existing?.api_key) {
+      const storedCipher = provider === 'deepseek' ? (existing?.deepseek_api_key || existing?.api_key) : existing?.api_key
+      if (!storedCipher) {
         return NextResponse.json(
           { error: 'Enter an API key to test.' },
           { status: 400 },
         )
       }
       try {
-        apiKeyPlain = decrypt(existing.api_key)
+        apiKeyPlain = decrypt(storedCipher)
       } catch {
         return NextResponse.json(
           { error: 'Stored API key could not be decrypted — re-enter your key.' },
@@ -67,6 +68,7 @@ export async function POST(request: Request) {
         provider,
         model,
         apiKey: apiKeyPlain,
+        deepseekApiKey: provider === 'deepseek' ? apiKeyPlain : null,
         systemPrompt: null,
         isActive: true,
         autoReplyEnabled: false,

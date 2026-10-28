@@ -4,6 +4,7 @@ import { loadAiConfig } from './config'
 import { logAiUsage } from './usage'
 import { generateOpenAi } from './providers/openai'
 import { generateAnthropic } from './providers/anthropic'
+import { generateDeepSeek } from './providers/deepseek'
 import { aiRequestTimeoutMs } from './defaults'
 import {
   buildFollowupScoreSystemPrompt,
@@ -77,9 +78,11 @@ export async function generateFollowupSuggestions(
   //
   // Batch the check in chunks of 50 to prevent PostgREST URL overflow
   // (HTTP 414 / HeadersOverflowError) when an account has hundreds of
-  // stale candidates. Explicitly check errors so a DB failure never
-  // looks like "zero pending", and early-exit as soon as enough un-pending
-  // candidates are gathered for this run (FOLLOWUP_MAX_CANDIDATES_PER_RUN).
+  // stale candidates. Uses the get_pending_followup_contact_ids RPC
+  // with SELECT DISTINCT to avoid row truncation (PostgREST 1000-row limit)
+  // caused by historical duplicate backlogs. Explicitly checks errors so a DB
+  // failure never looks like "zero pending", and early-exits as soon as enough
+  // un-pending candidates are gathered for this run (FOLLOWUP_MAX_CANDIDATES_PER_RUN).
   const CHUNK_SIZE = 50
   const uniqueCandidateContacts = Array.from(
     new Set(candidates.map((d) => d.contact_id as string)),
@@ -91,21 +94,38 @@ export async function generateFollowupSuggestions(
 
   for (let i = 0; i < uniqueCandidateContacts.length; i += CHUNK_SIZE) {
     const chunk = uniqueCandidateContacts.slice(i, i + CHUNK_SIZE)
-    const { data: pendingRows, error: pendingErr } = await db
-      .from('ai_suggestions')
-      .select('contact_id')
-      .eq('account_id', accountId)
-      .eq('category', 'followup')
-      .eq('status', 'pending')
-      .in('contact_id', chunk)
 
-    if (pendingErr) {
-      console.error('[followup generate] failed to check pending suggestions:', pendingErr)
-      return { created: 0, scored: 0 }
-    }
+    // Primary: use RPC with DISTINCT to avoid 1000-row PostgREST ceiling
+    const hasRpc = typeof db.rpc === 'function'
+    const { data: rpcRows, error: rpcErr } = hasRpc
+      ? await db.rpc('get_pending_followup_contact_ids', {
+          p_account_id: accountId,
+          p_contact_ids: chunk,
+        })
+      : { data: null, error: { message: 'rpc not available' } }
 
-    for (const r of pendingRows ?? []) {
-      if (r.contact_id) alreadyPending.add(r.contact_id as string)
+    if (rpcErr) {
+      // Fallback if RPC is not yet registered: direct query with error check
+      const { data: pendingRows, error: pendingErr } = await db
+        .from('ai_suggestions')
+        .select('contact_id')
+        .eq('account_id', accountId)
+        .eq('category', 'followup')
+        .eq('status', 'pending')
+        .in('contact_id', chunk)
+
+      if (pendingErr) {
+        console.error('[followup generate] failed to check pending suggestions:', pendingErr)
+        return { created: 0, scored: 0 }
+      }
+
+      for (const r of pendingRows ?? []) {
+        if (r.contact_id) alreadyPending.add(r.contact_id as string)
+      }
+    } else {
+      for (const r of (rpcRows as { contact_id: string }[] | null) ?? []) {
+        if (r.contact_id) alreadyPending.add(r.contact_id)
+      }
     }
 
     // Populate toScore with candidates from this chunk that aren't pending
@@ -167,8 +187,12 @@ export async function generateFollowupSuggestions(
       summary: summaryByContact.get(contactId) ?? null,
     })
 
+    const activeKey =
+      config.provider === 'deepseek'
+        ? (config.deepseekApiKey || config.apiKey)
+        : config.apiKey
     const providerArgs = {
-      apiKey: config.apiKey,
+      apiKey: activeKey,
       model: config.model,
       systemPrompt,
       messages: [{ role: 'user' as const, content: userPrompt }],
@@ -179,7 +203,9 @@ export async function generateFollowupSuggestions(
       const { text, usage } =
         config.provider === 'openai'
           ? await generateOpenAi(providerArgs)
-          : await generateAnthropic(providerArgs)
+          : config.provider === 'deepseek'
+            ? await generateDeepSeek(providerArgs)
+            : await generateAnthropic(providerArgs)
       scored++
 
       void logAiUsage(db, {

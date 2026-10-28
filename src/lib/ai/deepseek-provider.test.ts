@@ -9,7 +9,7 @@ import { AI_PROVIDER_DEFAULT_MODEL, MAX_OUTPUT_TOKENS } from './defaults'
 function mockConfig(overrides: Partial<AiConfig> = {}): AiConfig {
   return {
     provider: 'deepseek',
-    model: 'deepseek-chat',
+    model: 'deepseek-flash',
     apiKey: 'sk-deepseek-test-key',
     deepseekApiKey: 'sk-deepseek-test-key',
     systemPrompt: 'You are Clara.',
@@ -22,12 +22,17 @@ function mockConfig(overrides: Partial<AiConfig> = {}): AiConfig {
   }
 }
 
-function okDeepSeekResponse(content: string, usageOverrides = {}): Response {
+function okDeepSeekResponse(content: string | null, usageOverrides = {}, reasoningContent?: string): Response {
   return {
     ok: true,
     status: 200,
     json: async () => ({
-      choices: [{ message: { content } }],
+      choices: [{
+        message: {
+          content,
+          reasoning_content: reasoningContent,
+        },
+      }],
       usage: {
         prompt_tokens: 150,
         completion_tokens: 45,
@@ -72,11 +77,11 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('DeepSeek Provider Integration', () => {
+describe('DeepSeek Provider Integration (DeepSeek V4.1 Flash-1017)', () => {
   describe('Provider Defaults and Constants', () => {
-    it('preserves OpenAI as the default provider and model in the system', () => {
+    it('preserves OpenAI as the active default provider while configuring deepseek-flash as official DeepSeek model', () => {
       expect(AI_PROVIDER_DEFAULT_MODEL.openai).toBe('gpt-5.4-mini')
-      expect(AI_PROVIDER_DEFAULT_MODEL.deepseek).toBe('deepseek-chat')
+      expect(AI_PROVIDER_DEFAULT_MODEL.deepseek).toBe('deepseek-flash')
     })
   })
 
@@ -85,7 +90,7 @@ describe('DeepSeek Provider Integration', () => {
       await expect(
         generateDeepSeek({
           apiKey: '',
-          model: 'deepseek-chat',
+          model: 'deepseek-flash',
           systemPrompt: 'sys',
           messages: [{ role: 'user', content: 'oi' }],
           timeoutMs: 5000,
@@ -97,7 +102,7 @@ describe('DeepSeek Provider Integration', () => {
       await expect(
         generateDeepSeek({
           apiKey: '   ',
-          model: 'deepseek-chat',
+          model: 'deepseek-flash',
           systemPrompt: 'sys',
           messages: [{ role: 'user', content: 'oi' }],
           timeoutMs: 5000,
@@ -107,13 +112,13 @@ describe('DeepSeek Provider Integration', () => {
       })
     })
 
-    it('sends request with Bearer authorization and max_tokens', async () => {
+    it('sends request with Bearer authorization and deepseek-flash model', async () => {
       const fetchMock = vi.fn().mockResolvedValue(okDeepSeekResponse('Olá! Tudo bem?'))
       vi.stubGlobal('fetch', fetchMock)
 
       const result = await generateDeepSeek({
         apiKey: 'sk-secret-deepseek-123',
-        model: 'deepseek-chat',
+        model: 'deepseek-flash',
         systemPrompt: 'Você é um assistente.',
         messages: [{ role: 'user', content: 'Olá' }],
         timeoutMs: 10000,
@@ -126,7 +131,7 @@ describe('DeepSeek Provider Integration', () => {
       expect(init.headers['Content-Type']).toBe('application/json')
 
       const body = JSON.parse(init.body)
-      expect(body.model).toBe('deepseek-chat')
+      expect(body.model).toBe('deepseek-flash')
       expect(body.max_tokens).toBe(MAX_OUTPUT_TOKENS)
       expect(body.messages[0]).toEqual({ role: 'system', content: 'Você é um assistente.' })
       expect(body.messages[1]).toEqual({ role: 'user', content: 'Olá' })
@@ -140,6 +145,23 @@ describe('DeepSeek Provider Integration', () => {
       })
     })
 
+    it('falls back to reasoning_content if content is null or empty in reasoning mode', async () => {
+      const fetchMock = vi.fn().mockResolvedValue(
+        okDeepSeekResponse(null, {}, '{"response_text":"Resposta raciocinada","transfer_required":false}'),
+      )
+      vi.stubGlobal('fetch', fetchMock)
+
+      const result = await generateDeepSeek({
+        apiKey: 'sk-deepseek',
+        model: 'deepseek-flash',
+        systemPrompt: 'sys',
+        messages: [{ role: 'user', content: 'teste' }],
+        timeoutMs: 5000,
+      })
+
+      expect(result.text).toBe('{"response_text":"Resposta raciocinada","transfer_required":false}')
+    })
+
     it('adds response_format { type: json_object } when structuredOutputRequired is true', async () => {
       const fetchMock = vi.fn().mockResolvedValue(
         okDeepSeekResponse('{"response_text":"Perfeito","transfer_required":false}'),
@@ -148,7 +170,7 @@ describe('DeepSeek Provider Integration', () => {
 
       await generateDeepSeek({
         apiKey: 'sk-deepseek',
-        model: 'deepseek-chat',
+        model: 'deepseek-flash',
         systemPrompt: 'Responda em json.',
         messages: [{ role: 'user', content: 'teste' }],
         timeoutMs: 5000,
@@ -169,7 +191,7 @@ describe('DeepSeek Provider Integration', () => {
       try {
         await generateDeepSeek({
           apiKey: 'sk-secret-deepseek-123',
-          model: 'deepseek-chat',
+          model: 'deepseek-flash',
           systemPrompt: 'sys',
           messages: [{ role: 'user', content: 'oi' }],
           timeoutMs: 5000,
@@ -192,7 +214,7 @@ describe('DeepSeek Provider Integration', () => {
       vi.stubGlobal('fetch', fetchMock)
 
       const result = await generateReply({
-        config: mockConfig({ provider: 'deepseek', model: 'deepseek-chat' }),
+        config: mockConfig({ provider: 'deepseek', model: 'deepseek-flash' }),
         systemPrompt: 'Sys',
         messages: [{ role: 'user', content: 'Quero falar com humano' }],
       })
@@ -234,7 +256,7 @@ describe('DeepSeek Provider Integration', () => {
       const engineResult = await executeConversationalTurn({
         db,
         accountId: 'acc-1',
-        config: mockConfig({ provider: 'deepseek', model: 'deepseek-chat' }),
+        config: mockConfig({ provider: 'deepseek', model: 'deepseek-flash' }),
         messages: [{ role: 'user', content: 'Quais opções no Puerto Ventura?' }],
       })
 

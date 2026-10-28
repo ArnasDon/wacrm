@@ -50,10 +50,24 @@ const KEY_PLACEHOLDER: Record<AiProvider, string> = {
   anthropic: 'sk-ant-...',
 };
 
-const SUGGESTED_MODELS: Record<AiProvider, string[]> = {
-  openai: ['gpt-5.4-mini', 'gpt-4o-mini', 'gpt-4o'],
-  deepseek: ['deepseek-chat', 'deepseek-reasoner'],
-  anthropic: ['claude-3-5-haiku-latest', 'claude-3-5-sonnet-latest'],
+interface ModelOption {
+  id: string;
+  label: string;
+}
+
+const SUGGESTED_MODELS: Record<AiProvider, ModelOption[]> = {
+  openai: [
+    { id: 'gpt-5.4-mini', label: 'gpt-5.4-mini' },
+    { id: 'gpt-4o-mini', label: 'gpt-4o-mini' },
+    { id: 'gpt-4o', label: 'gpt-4o' },
+  ],
+  deepseek: [
+    { id: 'deepseek-flash', label: 'DeepSeek V4.1 Flash-1017' },
+  ],
+  anthropic: [
+    { id: 'claude-3-5-haiku-latest', label: 'claude-3-5-haiku-latest' },
+    { id: 'claude-3-5-sonnet-latest', label: 'claude-3-5-sonnet-latest' },
+  ],
 };
 
 export function AiConfig() {
@@ -319,20 +333,25 @@ export function AiConfig() {
                 <div className="flex flex-wrap gap-1.5 pt-1">
                   {SUGGESTED_MODELS[provider]?.map((sm) => (
                     <button
-                      key={sm}
+                      key={sm.id}
                       type="button"
                       disabled={disabled}
-                      onClick={() => setModel(sm)}
+                      onClick={() => setModel(sm.id)}
                       className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${
-                        model === sm
+                        model === sm.id
                           ? 'bg-primary/10 border-primary text-primary font-medium'
                           : 'bg-muted/30 border-border text-muted-foreground hover:bg-muted'
                       }`}
                     >
-                      {sm}
+                      {sm.label}
                     </button>
                   ))}
                 </div>
+                {provider === 'deepseek' && (
+                  <p className="text-xs text-muted-foreground pt-0.5">
+                    Modelo comercial: <strong className="text-foreground">DeepSeek V4.1 Flash-1017</strong> (Identificador API: <code className="bg-muted px-1 py-0.5 rounded text-[11px]">deepseek-flash</code>)
+                  </p>
+                )}
               </div>
             </div>
 

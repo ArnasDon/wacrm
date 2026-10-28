@@ -11,7 +11,12 @@ import {
 const DEEPSEEK_URL = 'https://api.deepseek.com/chat/completions'
 
 interface DeepSeekResponse {
-  choices?: { message?: { content?: string } }[]
+  choices?: {
+    message?: {
+      content?: string | null
+      reasoning_content?: string | null
+    }
+  }[]
   usage?: {
     prompt_tokens?: number
     completion_tokens?: number
@@ -23,9 +28,13 @@ interface DeepSeekResponse {
 
 /**
  * Call DeepSeek's OpenAI-compatible Chat Completions endpoint with the caller's key.
- * Supports official models: 'deepseek-chat' and 'deepseek-reasoner'.
- * Parses prompt caching statistics (prompt_cache_hit_tokens) and enforces valid JSON
- * when structured output is required.
+ * Commercial model: DeepSeek-V4.1-Flash-1017
+ * Official API model identifier: 'deepseek-flash'
+ * Endpoint: https://api.deepseek.com/chat/completions
+ *
+ * Supports structured outputs (response_format: { type: 'json_object' }) and reasoning modes
+ * (extracting content with reasoning_content fallback).
+ * Parses prompt caching statistics (prompt_cache_hit_tokens) and token usage.
  */
 export async function generateDeepSeek(args: ProviderArgs): Promise<ProviderResult> {
   const { apiKey, model, systemPrompt, messages, timeoutMs, structuredOutputRequired, maxOutputTokens } = args
@@ -46,7 +55,7 @@ export async function generateDeepSeek(args: ProviderArgs): Promise<ProviderResu
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: model || 'deepseek-chat',
+        model: model || 'deepseek-flash',
         messages: [
           { role: 'system', content: systemPrompt },
           ...mergeConsecutive(messages),
@@ -65,7 +74,8 @@ export async function generateDeepSeek(args: ProviderArgs): Promise<ProviderResu
   }
 
   const data = (await res.json().catch(() => null)) as DeepSeekResponse | null
-  const text = data?.choices?.[0]?.message?.content
+  const choice = data?.choices?.[0]?.message
+  const text = choice?.content || choice?.reasoning_content
   if (!text || typeof text !== 'string' || !text.trim()) {
     throw new AiError('DeepSeek returned an empty response.', {
       code: 'empty_response',

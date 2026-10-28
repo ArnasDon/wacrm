@@ -213,7 +213,7 @@ export async function POST(request: Request) {
       try {
         await validateAiCredentials({
           provider: 'deepseek',
-          model: 'deepseek-chat',
+          model: 'deepseek-flash',
           apiKey: rawDeepseekKey,
           deepseekApiKey: rawDeepseekKey,
           systemPrompt: 'You are a connectivity check. Reply with the single word: OK.',

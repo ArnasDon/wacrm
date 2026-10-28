@@ -8,7 +8,7 @@
 
 export type AiProvider = 'openai' | 'anthropic' | 'deepseek'
 
-export const DEEPSEEK_MODELS = ['deepseek-chat', 'deepseek-reasoner'] as const
+export const DEEPSEEK_MODELS = ['deepseek-flash'] as const
 export type DeepSeekModel = (typeof DEEPSEEK_MODELS)[number]
 
 /**

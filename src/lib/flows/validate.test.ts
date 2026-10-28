@@ -3,7 +3,9 @@ import {
   validateFlowForActivation,
   reachableFromEntry,
   findAutoAdvancingCycles,
+  longestAutoAdvancingChain,
 } from "./validate";
+import { MAX_AUTO_ADVANCING_CHAIN } from "./types";
 
 const validFlow = {
   name: "Welcome",
@@ -624,5 +626,45 @@ describe("auto-advancing cycles", () => {
 
   it("finds no cycle in the well-formed flow", () => {
     expect(findAutoAdvancingCycles(validNodes)).toEqual([]);
+  });
+});
+
+describe("auto-advancing chain length", () => {
+  function linearFlow(messageCount: number) {
+    const nodes: { node_key: string; node_type: string; config: Record<string, unknown> }[] = [
+      { node_key: "start", node_type: "start", config: { next_node_key: "m0" } },
+    ];
+    for (let i = 0; i < messageCount; i += 1) {
+      nodes.push({
+        node_key: `m${i}`,
+        node_type: "send_message",
+        config: { text: `Step ${i}`, next_node_key: i + 1 < messageCount ? `m${i + 1}` : "done" },
+      });
+    }
+    nodes.push({ node_key: "done", node_type: "end", config: {} });
+    return nodes;
+  }
+  const flow = { ...validFlow, entry_node_id: "start" };
+
+  it("measures the longest run of nodes that do not wait for the customer", () => {
+    expect(longestAutoAdvancingChain(linearFlow(3))).toEqual({ start: "start", length: 4 });
+    expect(longestAutoAdvancingChain(validNodes)).toEqual({ start: "start", length: 1 });
+  });
+
+  it("accepts the longest chain the engine can run in one advance", () => {
+    const issues = validateFlowForActivation(flow, linearFlow(MAX_AUTO_ADVANCING_CHAIN - 1));
+    expect(issues.filter((i) => i.severity === "error")).toEqual([]);
+  });
+
+  it("rejects a chain longer than the engine can run in one advance", () => {
+    const issues = validateFlowForActivation(flow, linearFlow(MAX_AUTO_ADVANCING_CHAIN));
+    expect(issues).toEqual([
+      expect.objectContaining({
+        severity: "error",
+        scope: "node",
+        node_key: "start",
+        message: expect.stringContaining(String(MAX_AUTO_ADVANCING_CHAIN + 1)),
+      }),
+    ]);
   });
 });

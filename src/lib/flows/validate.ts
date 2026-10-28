@@ -25,7 +25,7 @@
 
 import { INTERACTIVE_LIMITS } from "@/lib/whatsapp/meta-api";
 import { getT } from "@/lib/i18n/translate";
-import { AUTO_ADVANCING_NODE_TYPES } from "./types";
+import { AUTO_ADVANCING_NODE_TYPES, MAX_AUTO_ADVANCING_CHAIN } from "./types";
 
 const t = getT("Validation.flows");
 
@@ -145,7 +145,54 @@ export function validateFlowForActivation(
     });
   }
 
+  const longestChain = longestAutoAdvancingChain(nodes);
+  if (longestChain && longestChain.length > MAX_AUTO_ADVANCING_CHAIN) {
+    issues.push({
+      severity: "error",
+      scope: "node",
+      node_key: longestChain.start,
+      message: t("autoAdvanceChainTooLong", {
+        key: longestChain.start,
+        count: longestChain.length,
+        max: MAX_AUTO_ADVANCING_CHAIN,
+      }),
+    });
+  }
+
   return issues;
+}
+
+export function longestAutoAdvancingChain(
+  nodes: NodeInput[],
+): { start: string; length: number } | null {
+  const autoNodes = new Map<string, NodeInput>();
+  for (const n of nodes) {
+    if (AUTO_ADVANCING_NODE_TYPES.has(n.node_type) && !autoNodes.has(n.node_key)) {
+      autoNodes.set(n.node_key, n);
+    }
+  }
+  const chainLength = new Map<string, number>();
+  const inProgress = new Set<string>();
+  const lengthFrom = (key: string): number => {
+    const known = chainLength.get(key);
+    if (known !== undefined) return known;
+    if (inProgress.has(key)) return 0;
+    inProgress.add(key);
+    let longestNext = 0;
+    for (const next of outgoingEdges(autoNodes.get(key)!)) {
+      if (autoNodes.has(next)) longestNext = Math.max(longestNext, lengthFrom(next));
+    }
+    inProgress.delete(key);
+    chainLength.set(key, longestNext + 1);
+    return longestNext + 1;
+  };
+
+  let longest: { start: string; length: number } | null = null;
+  for (const key of autoNodes.keys()) {
+    const length = lengthFrom(key);
+    if (!longest || length > longest.length) longest = { start: key, length };
+  }
+  return longest;
 }
 
 export function findAutoAdvancingCycles(nodes: NodeInput[]): string[][] {

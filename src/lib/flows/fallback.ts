@@ -13,6 +13,7 @@
 
 import {
   DEFAULT_FALLBACK_POLICY,
+  MAX_FLOW_TIMEOUT_HOURS,
   type FlowFallbackPolicy,
 } from "./types";
 
@@ -50,7 +51,7 @@ export function resolveFallbackPolicy(
         : DEFAULT_FALLBACK_POLICY.max_reprompts,
     on_timeout_hours:
       typeof r.on_timeout_hours === "number" && r.on_timeout_hours > 0
-        ? r.on_timeout_hours
+        ? Math.min(r.on_timeout_hours, MAX_FLOW_TIMEOUT_HOURS)
         : DEFAULT_FALLBACK_POLICY.on_timeout_hours,
     on_exhaust:
       r.on_exhaust === "handoff" || r.on_exhaust === "end"

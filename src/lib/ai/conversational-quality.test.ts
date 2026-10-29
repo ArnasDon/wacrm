@@ -287,4 +287,61 @@ describe('FASE 3 — Qualidade Conversacional e Refinamento de Comportamento', (
 
     global.fetch = originalFetch;
   });
+
+  it('7. prompt builder enforces anti-bobinha, anti-bajulacao, and conciseness rules', () => {
+    const prompt = buildConversationalSystemPrompt({
+      config: BASE_CONFIG,
+      mode: 'auto_reply',
+      isInitialContact: true,
+      property: { id: 'mahal-id', name: 'Mahal Resort' },
+      styleMemories: [
+        'Usa tom promocional com emoji',
+        'Fala com clareza sobre o bairro',
+      ],
+      globalMemories: [
+        'Atendente inclui emoji na abertura',
+        'Imóveis na praia têm boa liquidez',
+      ],
+    });
+
+    // Enforces mature, non-sycophantic tone
+    expect(prompt).toContain('ANTI-BOBINHA E ANTI-BAJULAÇÃO');
+    expect(prompt).toContain('CONCISÃO OBRIGATÓRIA E ANTI-TEXTÃO');
+    expect(prompt).toContain('1 a 3 frases concisas');
+    expect(prompt).not.toContain('Que bom falar com você!');
+    expect(prompt).not.toContain('😊');
+
+    // Filters out poisoned memories mentioning emoji or promocional
+    expect(prompt).not.toContain('Usa tom promocional com emoji');
+    expect(prompt).not.toContain('Atendente inclui emoji na abertura');
+    expect(prompt).toContain('Fala com clareza sobre o bairro');
+    expect(prompt).toContain('Imóveis na praia têm boa liquidez');
+  });
+
+  it('8. prompt builder incorporates malemolencia, measured validation, flexible commercial direction, and lead preservation', () => {
+    const prompt = buildConversationalSystemPrompt({
+      config: BASE_CONFIG,
+      mode: 'auto_reply',
+      property: { id: 'mahal-id', name: 'Mahal Resort' },
+    });
+
+    // Malemolência & spoken Brazilian language
+    expect(prompt).toContain('MALEMOLÊNCIA E LINGUAGEM FALADA');
+    expect(prompt).toContain('O Mahal funciona muito como um resort e já tem uma estrutura pronta pra quem quer alugar por temporada');
+    expect(prompt).toContain('Fala de igual pra igual, com calma e naturalidade brasileira');
+
+    // Measured validation without sycophancy or degradê
+    expect(prompt).toContain('ACOLHIMENTO E VALIDAÇÃO DOSADA (SEM PUXA-SAQUISMO OU "DEGRADÊ")');
+    expect(prompt).toContain('Boa escolha de região');
+    expect(prompt).toContain('NUNCA crie um "degradê" de elogios');
+
+    // Flexible commercial direction (~80% questions, ~20% confident affirmations/handoff)
+    expect(prompt).toContain('DIRECIONAMENTO COMERCIAL FLEXÍVEL');
+    expect(prompt).toContain('aproximadamente 80% das respostas');
+    expect(prompt).toContain('Não torne a pergunta uma obrigação mecânica de 100%');
+
+    // Lead preservation
+    expect(prompt).toContain('NUNCA PERCA UM LEAD');
+    expect(prompt).toContain('SEMPRE acione transfer_required = true');
+  });
 });

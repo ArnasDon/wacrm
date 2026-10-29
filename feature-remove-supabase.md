@@ -191,3 +191,7 @@ Ruling: broadcasts deliver server-side and the UI polls campaign status rather t
 Ruling: when BSUID and phone identify different contacts, preserve the known BSUID thread and leave its phone blank rather than silently merge customer records � avoids losing an inbound message; manual deduplication may be needed.
 
 Resume: read this checkpoint first, then latest later entries. Do not repeat role bootstrap, change applied migrations 001�006, reset the database, or touch the hosted project. Current branch feature-remove-supabase; changes are not agent-committed.
+
+## Documentation update - 2026-10-29
+
+The current architecture and module-by-module guide is now in [technical document.md](technical%20document.md) at the repository root. It supersedes the pre-migration technical report for implementation details and explains Meta application authorization, development versus production/customer onboarding, credentials, Graph API endpoints, webhooks and unimplemented Embedded Signup/order-API response features. Documentation-only update; no credentials included and no Meta settings changed. Historical test evidence is dated explicitly in the document.

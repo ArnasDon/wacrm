@@ -14,6 +14,7 @@ Open http://localhost:3000, sign up for a new local account, then run npm run jo
 
 ## Documentation
 
+- [Current technical document: architecture, modules and Meta setup](technical%20document.md)
 - [Connection/bootstrap/migrations](database/README.md)
 - [Migration status and resume instructions](MIGRATION_RESUME.md)
 - [Branch change record](feature-remove-supabase.md)

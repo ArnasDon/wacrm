@@ -158,32 +158,32 @@ describe('GLOBAL CONVERSATIONAL INTELLIGENCE — Clara Conduction & Progressive 
     });
 
     // 1. Princípio Central: Conduzir, Não Apenas Responder
-    expect(promptInitial).toContain('CONDUZIR, NUNCA APENAS RESPONDER E PARAR');
-    expect(promptInitial).toContain('PROIBIÇÃO DA PARALISAÇÃO PASSIVA');
-    expect(promptInitial).toContain('CLIENTE PERGUNTA → CLARA RESPONDE → CLARA INTERPRETA O CONTEXTO → CLARA CONDUZ A CONVERSA');
+    expect(promptInitial).toContain('DIRETRIZES DE CONVERSA E ENCAMINHAMENTO');
+    expect(promptInitial).toContain('Uma resposta suficiente pode terminar sem pergunta ou oferta');
+    expect(promptInitial).toContain('DIRETRIZES DE CONVERSA E ENCAMINHAMENTO');
 
     // 2. O Princípio do "Próximo Passo"
-    expect(promptInitial).toContain('O PRINCÍPIO DO "PRÓXIMO PASSO"');
-    expect(promptInitial).toContain('O que ele provavelmente quer descobrir por trás dessa pergunta?');
+    expect(promptInitial).toContain('DIRETRIZES DE CONVERSA E ENCAMINHAMENTO');
+    expect(promptInitial).toContain('Use o contexto já dado');
 
     // 3. Perguntas Contextuais vs Estereotipadas
-    expect(promptInitial).toContain('PERGUNTAS CONTEXTUAIS, NUNCA ESTEREOTIPADAS OU DE FORMULÁRIO');
-    expect(promptInitial).toContain('Você pretende investir ou morar?');
-    expect(promptInitial).toContain('Qual é o seu orçamento?');
+    expect(promptInitial).toContain('DIRETRIZES DE CONVERSA E ENCAMINHAMENTO');
+    expect(promptInitial).toContain('Para imóvel de locação, considere moradia como finalidade');
+    expect(promptInitial).toContain('Faça uma pergunta por vez apenas quando a resposta ajudar');
 
     // 4. Não Interrogar
-    expect(promptInitial).toContain('NÃO INTERROGAR O CLIENTE (HUMANIZAÇÃO E EQUILÍBRIO)');
+    expect(promptInitial).toContain('DIRETRIZES DE CONVERSA E ENCAMINHAMENTO');
 
     // 5. Princípio de Progressão e Sinais
-    expect(promptInitial).toContain('PRINCÍPIO DE PROGRESSÃO DA CONVERSA E RECONHECIMENTO DE SINAIS');
+    expect(promptInitial).toContain('Observe sinais de interesse');
 
     // 6. Tendência Progressiva a partir da 3ª Mensagem
-    expect(promptInitial).toContain('NOVA REGRA: TENDÊNCIA PROGRESSIVA DE ENCAMINHAMENTO A PARTIR DA 3ª MENSAGEM');
-    expect(promptInitial).toContain('ISTO NÃO É UM GATILHO MECÂNICO');
-    expect(promptInitial).toContain('A terceira mensagem funciona como um MARCO DE MUDANÇA DE PROBABILIDADE E POSTURA');
+    expect(promptInitial).toContain('A partir da terceira mensagem');
+    expect(promptInitial).toContain('sem transferir só pela contagem');
+    expect(promptInitial).toContain('considere com mais atenção se a equipe agrega valor');
 
     // 7. Não Repetir Encaminhamentos Clichês
-    expect(promptInitial).toContain('O ENCAMINHAMENTO NÃO DEVE SER REPETITIVO OU ARTIFICIAL');
+    expect(promptInitial).toContain('Transfira quando a solicitação exigir decisão humana');
 
     // Turn context: na 1ª mensagem
     expect(promptInitial).toContain('ESTÁGIO ATUAL DA CONVERSA: 1ª mensagem do cliente neste diálogo');
@@ -220,7 +220,7 @@ describe('GLOBAL CONVERSATIONAL INTELLIGENCE — Clara Conduction & Progressive 
     expect(result.handoff).toBe(false);
     expect(result.decision.transfer_required).toBe(false);
     expect(result.responseText).toContain('academia');
-    expect(result.systemPrompt).toContain('CONDUZIR, NUNCA APENAS RESPONDER E PARAR');
+    expect(result.systemPrompt).toContain('DIRETRIZES DE CONVERSA E ENCAMINHAMENTO');
 
     global.fetch = originalFetch;
   });

@@ -42,9 +42,9 @@ describe('WACRM — Off-Hours Conversational Continuity & Decision Logic', () =>
     })
 
     // Verifies anti-vague rule and off-hours continuity
-    expect(prompt).toContain('PROIBIÇÃO DE "PRÓXIMO PASSO" VAGO')
-    expect(prompt).toContain('É EXPRESSAMENTE PROIBIDO dizer "nossa equipe continua com você no próximo passo"')
-    expect(prompt).toContain('SITUAÇÃO B — A continuidade depende da equipe humana')
+    expect(prompt).toContain('informe apenas o que realmente acontecerá')
+    expect(prompt).toContain('conforme o horário comercial')
+    expect(prompt).toContain('Transfira quando a solicitação exigir decisão humana')
     expect(prompt).toContain('NO PRÓXIMO HORÁRIO COMERCIAL')
   })
 
@@ -59,8 +59,8 @@ describe('WACRM — Off-Hours Conversational Continuity & Decision Logic', () =>
       property: { id: 'prop-livepark', name: 'Live Park' },
     })
 
-    expect(prompt).toContain('TRATAMENTO DE CONFIRMAÇÕES CURTAS ("OK", "CERTO", "PERFEITO", "ENTENDI")')
-    expect(prompt).toContain('É TERMINANTEMENTE PROIBIDO repetir a mesma frase de registro em looping')
+    expect(prompt).toContain('Responda confirmações curtas sem reabrir a qualificação')
+    expect(prompt).toContain('não repita perguntas respondidas')
 
     // Model concluding off-hours turn properly with transfer_required = true
     const modelOutput = JSON.stringify({
@@ -89,7 +89,7 @@ describe('WACRM — Off-Hours Conversational Continuity & Decision Logic', () =>
       businessHours: getBusinessHoursContext(baseConfig, new Date('2026-09-11T23:01:00-03:00')),
     })
 
-    expect(prompt).toContain('Se o cliente mandar outro "Ok" subsequente: seja minimalista, acolhedor e encerre com naturalidade')
+    expect(prompt).toContain('Responda confirmações curtas sem reabrir a qualificação')
   })
 
   // ============================================================
@@ -143,8 +143,8 @@ describe('WACRM — Off-Hours Conversational Continuity & Decision Logic', () =>
       property: { id: 'p1', name: 'Live Park' },
     })
 
-    expect(prompt).toContain('SITUAÇÃO A — A conversa ainda pode continuar com a Clara:')
-    expect(prompt).toContain('Faça uma pergunta de condução relevante, humana e contextualizada')
-    expect(prompt).toContain('Nunca faça perguntas aleatórias apenas para manter a conversa viva')
+    expect(prompt).toContain('Faça uma pergunta por vez apenas quando a resposta ajudar')
+    expect(prompt).toContain('Use o contexto já dado')
+    expect(prompt).toContain('não repita perguntas respondidas')
   })
 })

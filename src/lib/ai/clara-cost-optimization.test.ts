@@ -146,9 +146,9 @@ describe('Clara Cost Optimization & Prompt Caching Verification Suite', () => {
     });
 
     // The explicit progression directive is present
-    expect(prompt).toContain('INFORMAÇÕES QUE A CLARA JÁ COMUNICOU AO CLIENTE NESTA CONVERSA');
-    expect(prompt).toContain('DIRETRIZ DE PROGRESSÃO E INFORMAÇÃO NOVA');
-    expect(prompt).toContain('É TERMINANTEMENTE PROIBIDO repetir apresentações, saudações, argumentos comerciais ou blocos descritivos');
+    expect(prompt).toContain('INFORMAÇÕES JÁ COMUNICADAS AO CLIENTE');
+    expect(prompt).toContain('Considere o histórico recente');
+    expect(prompt).toContain('não reapresente informações como novidade nem repita blocos');
 
     // Verbatim text of previous messages is NOT duplicated in the system prompt (saving hundreds of tokens)
     expect(prompt).not.toContain('Msg 1: Primeira resposta longa da Clara sobre o condomínio');

@@ -77,6 +77,20 @@ const mockDb = {
 } as unknown as SupabaseClient;
 
 describe('FASE 3 — Qualidade Conversacional e Refinamento de Comportamento', () => {
+  it('limits style memories to the five highest-priority patterns in the prompt', () => {
+    const prompt = buildConversationalSystemPrompt({
+      config: BASE_CONFIG,
+      mode: 'auto_reply',
+      styleMemories: Array.from({ length: 8 }, (_, index) => `STYLE-PATTERN-${index + 1}`),
+    });
+
+    for (let index = 1; index <= 5; index += 1) {
+      expect(prompt).toContain(`STYLE-PATTERN-${index}`);
+    }
+    expect(prompt).not.toContain('STYLE-PATTERN-6');
+    expect(prompt).not.toContain('STYLE-PATTERN-7');
+    expect(prompt).not.toContain('STYLE-PATTERN-8');
+  });
   // 1. Verificação das Diretrizes no System Prompt
   it('1. prompt builder includes anti-looping, optional question, and free territory autonomy rules', () => {
     const prompt = buildConversationalSystemPrompt({
@@ -86,12 +100,12 @@ describe('FASE 3 — Qualidade Conversacional e Refinamento de Comportamento', (
       propertyKnowledge: ['Live Park no Bessa, studios de 19 a 39 m², entrega junho de 2030.'],
     });
 
-    expect(prompt).toContain('REGRA ANTI-LOOPING');
-    expect(prompt).toContain('PERGUNTA FINAL NÃO É OBRIGATÓRIA (CONDUZIR ≠ PERGUNTAR SEMPRE)');
-    expect(prompt).toContain('AUTONOMIA NO TERRITÓRIO LIVRE (ATENDER ≠ TRANSFERIR SEMPRE)');
-    expect(prompt).toContain('VARIAÇÃO NATURAL DE LINGUAGEM (SEM TEMPLATES)');
-    expect(prompt).toContain('RESPONDER PRIMEIRO');
-    expect(prompt).toContain('NUNCA repita nem reformule por sinônimos perguntas cujas respostas o cliente já informou');
+    expect(prompt).toContain('não repita perguntas respondidas');
+    expect(prompt).toContain('Uma resposta suficiente pode terminar sem pergunta ou oferta');
+    expect(prompt).toContain('Transfira quando a solicitação exigir decisão humana');
+    expect(prompt).toContain('Fale de forma calorosa, atenta, simples e natural');
+    expect(prompt).toContain('Responda primeiro ao pedido');
+    expect(prompt).toContain('não repita perguntas respondidas');
   });
 
   // 2. Fronteiras Rígidas Preservadas

@@ -150,7 +150,7 @@ export function ResponseStyleInstructionsEditor({
     ? (propertyName
         ? `Ex.: No empreendimento ${propertyName}, destaque os diferenciais de lazer com mais detalhes.`
         : 'Ex.: Neste empreendimento, explique os diferenciais de lazer com mais detalhes.')
-    : 'Ex.: Responda de forma concisa e cordial, mantendo mensagens de até 3 frases.';
+    : 'Ex.: Responda com cordialidade e naturalidade, desenvolvendo só o necessário para atender ao pedido.';
 
   const defaultEmptyLabel = isExceptionsMode
     ? 'Nenhuma exceção de comportamento configurada.'

@@ -71,8 +71,8 @@ describe('CONTEXTUAL REACTIVATION (Reativação de Conversas Interrompidas)', ()
     expect(sysPrompt).toContain('NÃO JOGAR O CLIENTE EM UM CATÁLOGO')
     expect(sysPrompt).toContain('FRONTEIRA ESTRITA DE DOMÍNIO IMOBILIÁRIO')
     expect(sysPrompt).toContain('É TERMINANTEMENTE PROIBIDO absorver, adotar ou inventar tópicos de outros mercados')
-    expect(sysPrompt).toContain('REGRA DE CONTENÇÃO OBRIGATÓRIA')
-    expect(sysPrompt).toContain('me conta o que posso fazer para te ajudar')
+    expect(sysPrompt).toContain('CONTENÇÃO')
+    expect(sysPrompt).toContain('não force uma frase de encerramento')
     expect(sysPrompt).toContain('Oi, você ainda está por aí?')
     expect(sysPrompt).toContain('Ficou alguma dúvida?')
 
@@ -676,15 +676,15 @@ describe('CONTEXTUAL REACTIVATION (Reativação de Conversas Interrompidas)', ()
       expect(tracker.updatedPayload?.ai_reactivation_status).toBe('skipped')
     })
 
-    // CENÁRIO N: Contato sem anúncio e sem imóvel vinculado -> Regra de contenção terminando com 'me conta o que posso fazer para te ajudar'
-    it('CENÁRIO N: Lead without property/ad context gets contained global message ending with "me conta o que posso fazer para te ajudar"', async () => {
+    // CENÁRIO N: Contato sem contexto recebe uma abertura natural sem frase final obrigatória
+    it('CENÁRIO N: Lead without property/ad context gets a natural global opening without a forced ending', async () => {
       mocks.generateOpenAi.mockResolvedValueOnce({
         text: JSON.stringify({
           should_reactivate: true,
           reactivation_type: 'global',
           detected_need_or_clue: null,
           reason: 'Contato inicial genérico sem anúncio vinculado, aplicando regra de contenção.',
-          message_text: 'Oi, Juliana! 😊 Passando por aqui. Me conta o que posso fazer para te ajudar.',
+          message_text: 'Oi, Juliana! Tudo bem? Se quiser retomar sua busca por um imóvel, posso ajudar.',
         }),
         usage: { promptTokens: 110, completionTokens: 30, totalTokens: 140 },
       })
@@ -725,7 +725,7 @@ describe('CONTEXTUAL REACTIVATION (Reativação de Conversas Interrompidas)', ()
 
       expect(res.outcome).toBe('sent')
       expect(res.decision?.reactivation_type).toBe('global')
-      expect(res.messageText?.toLowerCase()).toContain('me conta o que posso fazer para te ajudar')
+      expect(res.messageText).toContain('Se quiser retomar sua busca por um imóvel, posso ajudar.')
       expect(res.messageText).not.toContain('área da estética')
       expect(res.messageText).not.toContain('posso te orientar')
       expect(mocks.engineSendText).toHaveBeenCalledTimes(1)

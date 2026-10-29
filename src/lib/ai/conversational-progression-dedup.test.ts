@@ -230,11 +230,11 @@ describe('CLARA — Conversational Progression, Information Deduplication and Be
     global.fetch = originalFetch;
 
     // System prompt must contain communicated context and strict progression directives
-    expect(result.systemPrompt).toContain('INFORMAÇÕES QUE A CLARA JÁ COMUNICOU AO CLIENTE NESTA CONVERSA');
-    expect(result.systemPrompt).toContain('representam o que a Clara JÁ enviou ao cliente');
-    expect(result.systemPrompt).toContain('O QUE SIGNIFICA "MAIS DETALHES"');
-    expect(result.systemPrompt).toContain('NUNCA significa "repita o resumo que você acabou de me enviar"');
-    expect(result.systemPrompt).toContain('Evitar categoricamente repetir blocos inteiros já enviados');
+    expect(result.systemPrompt).toContain('INFORMAÇÕES JÁ COMUNICADAS AO CLIENTE');
+    expect(result.systemPrompt).toContain('Considere o histórico recente');
+    expect(result.systemPrompt).toContain('Em pedidos de mais detalhes');
+    expect(result.systemPrompt).toContain('não reapresente informações como novidade nem repita blocos');
+    expect(result.systemPrompt).toContain('não reapresente informações como novidade nem repita blocos');
 
     // Response must progress and not simply re-introduce the whole block
     const resp = result.decision.response_text;
@@ -264,9 +264,9 @@ describe('CLARA — Conversational Progression, Information Deduplication and Be
     });
 
     expect(prompt).toContain('Posição sul e vista lateral, com ótima ventilação natural');
-    expect(prompt).toContain('DIRETRIZ DE PROGRESSÃO E INFORMAÇÃO NOVA');
-    expect(prompt).toContain('priorize as informações do material de referência que AINDA NÃO FORAM TRANSMITIDAS');
-    expect(prompt).toContain('NUNCA reapresente o mesmo bloco introdutório descritivo como corpo principal da resposta');
+    expect(prompt).toContain('Em pedidos de mais detalhes');
+    expect(prompt).toContain('selecione fatos autorizados ainda não compartilhados e relevantes ao pedido');
+    expect(prompt).toContain('não reapresente informações como novidade nem repita blocos');
   });
 
   // ============================================================
@@ -308,8 +308,8 @@ describe('CLARA — Conversational Progression, Information Deduplication and Be
 
     global.fetch = originalFetch;
 
-    expect(result.systemPrompt).toContain('QUANDO A REPETIÇÃO É PERMITIDA E ADEQUADA');
-    expect(result.systemPrompt).toContain('O lead perguntar especificamente sobre ela (ex: "Quantos metros quadrados?"');
+    expect(result.systemPrompt).toContain('Repita um fato apenas se a pessoa perguntar');
+    expect(result.systemPrompt).toContain('a pessoa perguntar');
     expect(result.decision.response_text).toContain('45 m²');
     expect(result.handoff).toBe(false);
   });
@@ -330,9 +330,9 @@ describe('CLARA — Conversational Progression, Information Deduplication and Be
       userMessageCount: 2,
     });
 
-    expect(prompt).toContain('Repetir uma informação anterior SOMENTE quando isso for necessário para contextualizar uma informação nova');
-    expect(prompt).toContain('Além dessa configuração de 1 quarto que comentei...');
-    expect(prompt).toContain('Servir de breve contexto ou ponte para uma informação nova');
+    expect(prompt).toContain('Repita um fato apenas se a pessoa perguntar');
+    expect(prompt).toContain('a pessoa perguntar');
+    expect(prompt).toContain('ou se ele for necessário para esclarecer a resposta');
   });
 
   // ============================================================
@@ -368,8 +368,8 @@ describe('CLARA — Conversational Progression, Information Deduplication and Be
 
     global.fetch = originalFetch;
 
-    expect(result.systemPrompt).toContain('NUNCA inventar informações');
-    expect(result.systemPrompt).toContain('reconheça com naturalidade que o panorama essencial');
+    expect(result.systemPrompt).toContain('sem inventar nem forçar uma próxima etapa');
+    expect(result.systemPrompt).toContain('responda com naturalidade sem inventar nem forçar uma próxima etapa');
     expect(result.decision.response_text).not.toContain('cinema privativo'); // no hallucination
     expect(result.decision.response_text).toContain('principais características');
   });
@@ -394,9 +394,9 @@ describe('CLARA — Conversational Progression, Information Deduplication and Be
 
     // The system prompt explicitly informs the model that the fact of being in the reference material
     // does NOT make it new if it has already been transmitted in previous turns.
-    expect(prompt).toContain('DISTINÇÃO FUNDAMENTAL ENTRE CONHECIMENTO DISPONÍVEL E INFORMAÇÃO JÁ COMUNICADA');
-    expect(prompt).toContain('O fato de uma característica (ex: metragem, quantidade de quartos, mobília, localização) constar no material de referência autorizado NÃO significa que ela seja novidade para o cliente');
-    expect(prompt).toContain('INFORMAÇÕES QUE A CLARA JÁ COMUNICOU AO CLIENTE NESTA CONVERSA');
+    expect(prompt).toContain('Considere o histórico recente');
+    expect(prompt).toContain('não reapresente informações como novidade nem repita blocos');
+    expect(prompt).toContain('INFORMAÇÕES JÁ COMUNICADAS AO CLIENTE');
     // Verifies elimination of duplicate assistant messages: the directive instructs the model
     // to reference native message history directly, without duplicating message text into the system prompt.
     expect(prompt).not.toContain(communicated[0]);
@@ -416,10 +416,10 @@ describe('CLARA — Conversational Progression, Information Deduplication and Be
       userMessageCount: 2,
     });
 
-    expect(prompt).toContain('CONDUZIR, NUNCA APENAS RESPONDER E PARAR');
-    expect(prompt).toContain('PROIBIÇÃO DA PARALISAÇÃO PASSIVA');
-    expect(prompt).toContain('DESTINOS CLAROS AO FINAL DE CADA RESPOSTA (A CLARA NUNCA DEIXA O CLIENTE SOLTO)');
-    expect(prompt).toContain('RESPONDER PRIMEIRO, CONDUZIR DEPOIS');
+    expect(prompt).toContain('DIRETRIZES DE CONVERSA E ENCAMINHAMENTO');
+    expect(prompt).toContain('uma resposta completa e suficiente pode terminar ali');
+    expect(prompt).toContain('resposta suficiente pode terminar sem pergunta ou oferta');
+    expect(prompt).toContain('Responda primeiro ao pedido');
   });
 
   // ============================================================
@@ -520,8 +520,8 @@ describe('CLARA — Conversational Progression, Information Deduplication and Be
     global.fetch = originalFetch;
 
     // Progression directive is present and instructs the model to reference native chat history
-    expect(result.systemPrompt).toContain('INFORMAÇÕES QUE A CLARA JÁ COMUNICOU AO CLIENTE NESTA CONVERSA');
-    expect(result.systemPrompt).toContain('DIRETRIZ DE PROGRESSÃO E INFORMAÇÃO NOVA');
+    expect(result.systemPrompt).toContain('INFORMAÇÕES JÁ COMUNICADAS AO CLIENTE');
+    expect(result.systemPrompt).toContain('Em pedidos de mais detalhes');
     // Assistant messages are preserved in native chat history, NOT duplicated verbatim into the system prompt
     expect(result.systemPrompt).not.toContain('Temos o Puerto Ventura, com 45 m² e 1 quarto mobiliado.');
     expect(result.systemPrompt).not.toContain('Sim, o prédio conta com elevadores modernos e portaria 24 horas.');
@@ -608,13 +608,13 @@ describe('CLARA — Conversational Progression, Information Deduplication and Be
     global.fetch = originalFetch;
 
     // 1. O prompt acumulou o contexto e as diretrizes de progressão, eliminando a duplicação verbatim das mensagens anteriores da Clara
-    expect(result.systemPrompt).toContain('INFORMAÇÕES QUE A CLARA JÁ COMUNICOU AO CLIENTE NESTA CONVERSA');
+    expect(result.systemPrompt).toContain('INFORMAÇÕES JÁ COMUNICADAS AO CLIENTE');
     expect(result.systemPrompt).not.toContain(turn1Assistant);
     expect(result.systemPrompt).not.toContain(turn2Assistant);
 
     // 2. Diretriz explícita de encerramento do ciclo sem forçar novidades artificiais
-    expect(result.systemPrompt).toContain('Se as informações autorizadas já tiverem sido substancialmente percorridas');
-    expect(result.systemPrompt).toContain('NUNCA inventar informações, nem forçar novidade transformando pequenas variações');
+    expect(result.systemPrompt).toContain('Se não houver novidade útil, responda com naturalidade');
+    expect(result.systemPrompt).toContain('sem inventar nem forçar uma próxima etapa');
 
     // 3. A resposta do turno 3 não repete blocos velhos (45 m², posição sul, rooftop)
     const resp = result.decision.response_text;

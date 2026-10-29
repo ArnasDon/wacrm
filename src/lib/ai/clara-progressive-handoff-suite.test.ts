@@ -63,8 +63,8 @@ describe('CLARA — 9 Mandatory Tests & Real Cases A and B Suite', () => {
     expect(prompt).toContain('TRATAMENTO DE SOLICITAÇÃO EXPLORATÓRIA (ANTI-CATÁLOGO E TETO DE ABERTURA)');
     expect(prompt).toContain('Uma solicitação genérica NÃO É autorização para despejar a ficha técnica');
     expect(prompt).toContain('É TERMINANTEMENTE PROIBIDO despejar simultaneamente: quartos + banheiros + metragem + posição/ventilação + elevador + piscina + área gourmet + garagem + controle de acesso');
-    expect(prompt).toContain('DIRETRIZ PERMANENTE DE PROGRESSÃO EM CAMADAS E TETO DE ATRIBUTOS (ANTI-DUMP)');
-    expect(prompt).toContain('Apresente no máximo 1 ou 2 ganchos essenciais');
+    expect(prompt).toContain('RESPOSTA PROPORCIONAL E USO DA FICHA');
+    expect(prompt).toContain('Use o conhecimento do empreendimento para responder ao que foi pedido, sem listar a ficha inteira em perguntas genéricas');
 
     // Model following the prompt correctly
     const validOpeningResponse = {
@@ -103,7 +103,7 @@ describe('CLARA — 9 Mandatory Tests & Real Cases A and B Suite', () => {
       ],
     });
 
-    expect(prompt).toContain('PERGUNTAS PONTUAIS DO CLIENTE ("quantos quartos?", "tem vaga?"): responda estritamente ao ponto perguntado');
+    expect(prompt).toContain('perguntas pontuais, vá direto ao ponto');
 
     const modelResponse = {
       response_text:
@@ -140,8 +140,8 @@ describe('CLARA — 9 Mandatory Tests & Real Cases A and B Suite', () => {
       ],
     });
 
-    expect(prompt).toContain('TURNOS SUBSEQUENTES E PEDIDOS ABERTOS ("me fale mais", "conte mais", "o que mais tem?")');
-    expect(prompt).toContain('Priorize informações do material de referência que AINDA NÃO FORAM TRANSMITIDAS ao cliente');
+    expect(prompt).toContain('Em pedidos abertos, escolha detalhes novos e relevantes');
+    expect(prompt).toContain('selecione fatos autorizados ainda não compartilhados e relevantes ao pedido');
 
     const modelResponse = {
       response_text:
@@ -176,9 +176,9 @@ describe('CLARA — 9 Mandatory Tests & Real Cases A and B Suite', () => {
       ],
     });
 
-    expect(prompt).toContain('INFORMAÇÕES QUE A CLARA JÁ COMUNICOU AO CLIENTE NESTA CONVERSA:');
-    expect(prompt).toContain('O cliente JÁ tomou conhecimento dos fatos acima');
-    expect(prompt).toContain('NUNCA reapresente o mesmo bloco introdutório descritivo como corpo principal da resposta');
+    expect(prompt).toContain('INFORMAÇÕES JÁ COMUNICADAS AO CLIENTE:');
+    expect(prompt).toContain('não reapresente informações como novidade');
+    expect(prompt).toContain('não reapresente informações como novidade nem repita blocos');
   });
 
   // ============================================================
@@ -324,9 +324,9 @@ describe('CLARA — 9 Mandatory Tests & Real Cases A and B Suite', () => {
       communicatedContent: [],
     });
 
-    expect(prompt).toContain('PROIBIÇÃO ABSOLUTA DE META-LINGUAGEM');
-    expect(prompt).toContain('É TERMINANTEMENTE PROIBIDO avisar, explicar ou sugerir ao cliente o envio "de forma gradual"');
-    expect(prompt).toContain('A dosagem em camadas é uma disciplina operacional ESTRITAMENTE INTERNA E INVISÍVEL');
+    expect(prompt).toContain('Não imponha quantidade fixa de frases, linhas ou atributos nem explique ao cliente como dosa informações');
+    expect(prompt).toContain('nem explique ao cliente como dosa informações');
+    expect(prompt).toContain('nem explique ao cliente como dosa informações');
   });
 });
 

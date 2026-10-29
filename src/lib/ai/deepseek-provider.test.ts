@@ -53,8 +53,19 @@ function errResponse(status: number, json: unknown): Response {
   } as unknown as Response
 }
 
+type FluentDbChain = {
+  select: () => FluentDbChain
+  eq: () => FluentDbChain
+  in: () => FluentDbChain
+  is: () => FluentDbChain
+  order: () => FluentDbChain
+  limit: () => FluentDbChain
+  maybeSingle: () => Promise<{ data: null; error: null }>
+  single: () => Promise<{ data: null; error: null }>
+}
+
 function makeFluentDb(): SupabaseClient {
-  const chain: any = {
+  const chain: FluentDbChain = {
     select: () => chain,
     eq: () => chain,
     in: () => chain,

@@ -642,6 +642,39 @@ export function AiPlayground({ onGoToSetup }: AiPlaygroundProps = {}) {
             )}
           </div>
 
+          {/* Handoff Status Alert Banner */}
+          {(() => {
+            const lastAssistantTurn = [...turns].reverse().find((t) => t.role === 'assistant');
+            if (lastAssistantTurn?.handoff) {
+              const bType = lastAssistantTurn.diagnostic?.decision?.boundary_type;
+              const bLabel = bType ? BOUNDARY_LABELS[bType] || bType : 'Fronteira Comercial';
+              return (
+                <div className="mx-4 my-2 p-3 rounded-xl border border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-200 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 shadow-2xs">
+                  <div className="flex items-start sm:items-center gap-2.5">
+                    <ShieldAlert className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5 sm:mt-0" />
+                    <div>
+                      <p className="font-semibold text-foreground">
+                        🚨 Atendimento Transferido para a Equipe Humana (Handoff Ativo)
+                      </p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
+                        Fronteira: <strong>{bLabel}</strong>. No WhatsApp real, a IA é desativada e o corretor é notificado para assumir a conversa no Inbox.
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleReset}
+                    className="h-7 text-xs border-amber-500/30 hover:bg-amber-500/20 text-foreground shrink-0 self-end sm:self-auto"
+                  >
+                    <RotateCcw className="mr-1 h-3 w-3" /> Reiniciar Simulação
+                  </Button>
+                </div>
+              );
+            }
+            return null;
+          })()}
+
           {/* Composer */}
           <div className="flex items-center gap-2 border-t border-border p-3 bg-muted/10">
             <textarea

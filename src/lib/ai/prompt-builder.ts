@@ -522,6 +522,9 @@ Você deve responder OBRIGATORIAMENTE em formato JSON válido conforme a estrutu
 }
 \`\`\`
 IMPORTANTE: Retorne APENAS o JSON válido. Se não houver fotos a enviar nesta mensagem, omita o campo "send_media" ou passe null.
+COERÊNCIA OBRIGATÓRIA ENTRE TEXTO E METADADOS:
+- Se no "response_text" você declarar, avisar ou sugerir que está direcionando, transferindo ou deixando o atendimento com a equipe/corretores (ex: "já vou direcionar", "já deixei direcionado", "nossa equipe dará sequência", "vou transferir", "deixo com a nossa equipe"), o campo "transfer_required" DEVE SER OBRIGATORIAMENTE true e "boundary_type" NUNCA PODE SER null. É estritamente proibido dizer no texto que vai transferir e marcar transfer_required: false.
+- Da mesma forma, se "transfer_required" for true, forneça no "response_text" a mensagem natural e acolhedora de transição para o cliente.
 DIRETRIZ CRÍTICA PARA "response_text":
 - Em solicitações de continuidade ("mais detalhes", "me conte mais", "o que mais tem?", etc.), assegure que o "response_text" apresente informações novas do material de referência ainda não transmitidas nas mensagens anteriores, sem repetir blocos inteiros já comunicados.
 - Se o lead fizer uma pergunta específica sobre um dado já informado (ex: "Quantos m²?", "Quantos quartos mesmo?"), confirme e esclareça diretamente a dúvida pontual.`,

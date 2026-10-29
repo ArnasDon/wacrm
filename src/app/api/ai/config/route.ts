@@ -259,6 +259,7 @@ export async function POST(request: Request) {
       is_active: isActive,
       auto_reply_enabled: autoReplyEnabled,
       auto_reply_max_per_conversation: maxPer,
+      safety_message_limit: maxPer,
     }
 
     if (rawDeepseekKey) {

@@ -79,7 +79,10 @@ export async function dispatchInboundToAiReply(
       return // Handoff waiting for human response
     }
 
-    const maxReplies = config.safetyMessageLimit ?? config.autoReplyMaxPerConversation ?? 8
+    const limitA = typeof config.safetyMessageLimit === 'number' && config.safetyMessageLimit > 0 ? config.safetyMessageLimit : Infinity
+    const limitB = typeof config.autoReplyMaxPerConversation === 'number' && config.autoReplyMaxPerConversation > 0 ? config.autoReplyMaxPerConversation : Infinity
+    const effectiveLimit = Math.min(limitA, limitB)
+    const maxReplies = Number.isFinite(effectiveLimit) ? effectiveLimit : 8
     if ((initialConv.ai_reply_count ?? 0) >= maxReplies) return
 
     const inboundArrivedAt = new Date().toISOString()

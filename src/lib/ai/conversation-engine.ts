@@ -89,6 +89,97 @@ function normalizeBoundaryType(val: unknown, transferRequired: boolean): Boundar
   return transferRequired ? 'commercial_decision' : null;
 }
 
+const HANDOFF_TEXT_PATTERNS: RegExp[] = [
+  /(?:vou\s+(?:j[aá]\s+)?(?:te\s+)?(?:direcionar|transferir|conectar|passar|chamar|pedir|encaminhar))/i,
+  /(?:j[aá]\s+(?:deixei|vou\s+deixar|estou\s+deixando)\s+(?:(?:o|a|nosso|nossa|seu)\s+)?(?:conversa|atendimento)?\s*(?:direcionad[oa]|registrad[oa]|anotad[oa]|com\s+a\s+nossa\s+equipe))/i,
+  /(?:deixei\s+seu\s+atendimento\s+direcionado)/i,
+  /(?:vou\s+direcionar\s+seu\s+atendimento)/i,
+  /(?:nossa\s+equipe\s+(?:vai|dar[aá]|j[aá]\s+(?:assume|d[aá]))\s+(?:sequ[eê]ncia|seguimento|continuidade|te\s+atender|te\s+detalhar|te\s+passar|te\s+explicar))/i,
+  /(?:(?:para|pra)\s+eles\s+(?:darem|seguirem|dar|seguir)\s+(?:seguimento|sequ[eê]ncia|por\s+aqui))/i,
+  /(?:eles\s+(?:darem\s+seguimento|darem\s+sequ[eê]ncia|seguirem\s+por\s+aqui))/i,
+  /(?:deixo\s+(?:essa\s+parte|isso|valores)?\s*(?:com|para)\s+a?\s*nossa\s+equipe)/i,
+  /(?:vale\s+nossa\s+equipe\s+te\s+detalhar)/i,
+  /(?:nossa\s+equipe\s+vai\s+te\s+detalhar)/i,
+  /(?:transferir\s+nossa\s+conversa)/i,
+  /(?:conectar\s+voc[eê]\s+com\s+nossa\s+equipe)/i,
+  /(?:passar\s+seu\s+atendimento)/i,
+  /(?:passar\s+para\s+o\s+corretor)/i,
+  /(?:passar\s+para\s+a\s+nossa\s+equipe)/i,
+  /(?:passar\s+pra\s+nossa\s+equipe)/i,
+  /(?:(?:especialista|corretor|equipe)\s+vai\s+(?:falar\s+com\s+voc[eê]|entrar\s+em\s+contato|te\s+atender|dar\s+sequ[eê]ncia|dar\s+seguimento))/i,
+  /(?:(?:j[aá]\s+vou\s+chamar|vou\s+chamar)\s+(?:o|a|um|uma|nossa)\s+(?:equipe|corretor|especialista))/i,
+  /(?:vou\s+pedir\s+pra\s+nossa\s+equipe|vou\s+pedir\s+para\s+a\s+equipe)/i,
+  /(?:vou\s+direcionar\s+pra\s+nossa\s+equipe)/i,
+  /(?:nossa\s+equipe\s+(?:pode|vai)\s+te\s+passar\s+essas\s+informa[cç][oõ]es)/i,
+  /(?:nossa\s+equipe\s+já\s+vai\s+te\s+atender)/i,
+  /(?:nossa\s+equipe\s+já\s+assume)/i,
+];
+
+/**
+ * Detects if the assistant's response text declared that it is transferring,
+ * delegating or routing the conversation to a human / the team / the broker.
+ */
+export function isHandoffDeclaredInText(text: string): boolean {
+  if (!text || typeof text !== 'string') return false;
+  return HANDOFF_TEXT_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+/**
+ * Infers the boundary type from the generated response text or user message.
+ */
+export function inferBoundaryTypeFromText(responseText: string, userMessage?: string): BoundaryType {
+  const combined = `${userMessage || ''} ${responseText || ''}`.toLowerCase();
+
+  if (/pre[çc]o|valor|quanto\s+custa|tabela|investimento|desconto/i.test(combined)) {
+    return 'price';
+  }
+  if (/parcel|fluxo|financiament|entrada|condi[çc][oõ]es?\s+de\s+pagamento|fgts|banco/i.test(combined)) {
+    return 'payment_terms';
+  }
+  if (/visita|agend|conhecer\s+pessoalmente|decorado/i.test(combined)) {
+    return 'visit_request';
+  }
+  if (/disponib|tem\s+unidade|resta|sobrou|vendeu\s+tudo/i.test(combined)) {
+    return 'availability_check';
+  }
+  if (/humano|falar\s+com\s+(?:algu[eé]m|atendente|corretor|pessoa)/i.test(combined)) {
+    return 'human_requested';
+  }
+  if (/construtora|quem\s+constr[oó]i|quem\s+construiu|quem\s+t[aá]\s+construindo/i.test(combined)) {
+    return 'custom_never_rule';
+  }
+  return 'commercial_decision';
+}
+
+/**
+ * Checks whether the user asked a question on a rigid boundary topic
+ * (e.g. price or builder) that requires mandatory handoff.
+ */
+export function isRigidBoundaryInquiry(userMsg: string): { matches: boolean; boundary: BoundaryType } {
+  if (!userMsg || typeof userMsg !== 'string') return { matches: false, boundary: 'commercial_decision' };
+  const msg = userMsg.toLowerCase().trim();
+
+  // Price inquiry
+  if (
+    /(?:qual\s+(?:[eé]\s+)?(?:o\s+)?valor|quanto\s+custa|qual\s+(?:[eé]\s+)?(?:o\s+)?pre[çc]o|tem\s+pre[çc]o|tabela\s+de\s+pre[çc]os?|qual\s+(?:o\s+)?desconto|condi[çc][oõ]es?\s+de\s+pagamento)/i.test(
+      msg,
+    )
+  ) {
+    return { matches: true, boundary: 'price' };
+  }
+
+  // Builder inquiry
+  if (
+    /(?:qual\s+(?:[eé]\s+)?(?:a\s+)?construtora|quem\s+(?:[eé]\s+)?(?:a\s+)?construtora|quem\s+constr[oó]i|quem\s+construiu|quem\s+t[aá]\s+construindo)/i.test(
+      msg,
+    )
+  ) {
+    return { matches: true, boundary: 'custom_never_rule' };
+  }
+
+  return { matches: false, boundary: 'commercial_decision' };
+}
+
 /**
  * Parses the raw output from the model, supporting JSON structured decision
  * or graceful fallback to plaintext and [[HANDOFF]] sentinel.
@@ -143,22 +234,33 @@ export function parseStructuredDecision(rawText: string): AiDecision {
                         ? rec.texto.trim()
                         : '';
 
-      const transfer_required =
+      let transfer_required =
         rec.transfer_required === true ||
         rec.transferRequired === true ||
         rec.transfer === true ||
         rec.handoff === true ||
         (typeof rec.boundary_type === 'string' && rec.boundary_type.length > 0 && rec.boundary_type !== 'none');
 
+      // ARCHITECTURAL BACKSTOP: If the response text declared a handoff,
+      // force transfer_required to true to prevent false handoffs ("saying it transfers without transferring").
+      if (!transfer_required && isHandoffDeclaredInText(response_text)) {
+        transfer_required = true;
+      }
+
       const rawVal = rec.boundary_type ?? rec.boundaryType;
-      const boundary_type = normalizeBoundaryType(rawVal, transfer_required);
+      let boundary_type = normalizeBoundaryType(rawVal, transfer_required);
+      if (transfer_required && !rawVal) {
+        boundary_type = inferBoundaryTypeFromText(response_text);
+      }
 
       const reason =
-        typeof rec.reason === 'string'
+        typeof rec.reason === 'string' && rec.reason.trim().length > 0
           ? rec.reason.trim()
-          : typeof rec.motivo === 'string'
+          : typeof rec.motivo === 'string' && rec.motivo.trim().length > 0
             ? rec.motivo.trim()
-            : null;
+            : transfer_required
+              ? 'Transferência para equipe humana indicada no atendimento'
+              : null;
 
       const context_summary =
         typeof rec.context_summary === 'string'
@@ -251,15 +353,18 @@ export function parseStructuredDecision(rawText: string): AiDecision {
   }
 
   const hasSentinel = rawText.includes(HANDOFF_SENTINEL);
+  const textDeclaredHandoff = isHandoffDeclaredInText(rawText);
+  const isTransfer = hasSentinel || textDeclaredHandoff;
   const cleanText = rawText.split(HANDOFF_SENTINEL).join('').trim();
+  const inferredBoundary = isTransfer ? inferBoundaryTypeFromText(cleanText) : null;
 
   return {
     response_text: cleanText,
-    transfer_required: hasSentinel,
-    boundary_type: hasSentinel ? 'commercial_decision' : null,
-    reason: hasSentinel ? 'Limite comercial identificado na conversa' : null,
+    transfer_required: isTransfer,
+    boundary_type: inferredBoundary,
+    reason: isTransfer ? 'Limite ou transferência identificada no atendimento' : null,
     context_summary: null,
-    suggested_next_action: hasSentinel ? 'Atendimento humano para continuidade' : null,
+    suggested_next_action: isTransfer ? 'Atendimento humano para continuidade' : null,
   };
 }
 
@@ -652,7 +757,10 @@ export async function executeConversationalTurn(
     effectiveDate = new Date('2026-09-09T22:30:00-03:00');
   }
 
-  const safetyLimit = config.safetyMessageLimit || 8;
+  const limitA = typeof config.safetyMessageLimit === 'number' && config.safetyMessageLimit > 0 ? config.safetyMessageLimit : Infinity;
+  const limitB = typeof config.autoReplyMaxPerConversation === 'number' && config.autoReplyMaxPerConversation > 0 ? config.autoReplyMaxPerConversation : Infinity;
+  const effectiveLimit = Math.min(limitA, limitB);
+  const safetyLimit = Number.isFinite(effectiveLimit) ? effectiveLimit : 8;
   const businessHours: BusinessHoursContext = getBusinessHoursContext(config, effectiveDate);
 
   // 1. Check Safety Message Limit threshold
@@ -888,6 +996,16 @@ export async function executeConversationalTurn(
 
   // 8. Parse Decision
   const decision = parseStructuredDecision(rawResult.text);
+
+  // Deterministic Coherence Backstop:
+  // If the assistant declared in text that it is transferring / delegating to the team,
+  // force transfer_required = true and infer boundary if missing.
+  const currentTurnUserMsg = lastUserMsg || ([...messages].reverse().find((m) => m.role === 'user')?.content ?? '');
+  if (!decision.transfer_required && isHandoffDeclaredInText(decision.response_text)) {
+    decision.transfer_required = true;
+    decision.boundary_type = inferBoundaryTypeFromText(decision.response_text, currentTurnUserMsg);
+    decision.reason = 'Handoff declarado no texto da assistente';
+  }
 
   // Defensive Post-Processing: Strip accidental greeting formula on ongoing conversations
   if (!isInitialContact && decision.response_text) {

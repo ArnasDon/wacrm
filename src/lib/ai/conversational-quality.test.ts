@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { executeConversationalTurn } from './conversation-engine';
+import {
+  executeConversationalTurn,
+  parseStructuredDecision,
+  isHandoffDeclaredInText,
+} from './conversation-engine';
 import { buildConversationalSystemPrompt } from './prompt-builder';
 import type { AiConfig } from './types';
 
@@ -343,5 +347,121 @@ describe('FASE 3 — Qualidade Conversacional e Refinamento de Comportamento', (
     // Lead preservation
     expect(prompt).toContain('NUNCA PERCA UM LEAD');
     expect(prompt).toContain('SEMPRE acione transfer_required = true');
+  });
+
+  // 9. Correção Crítica: Handoff Falso (Clara diz no texto que vai transferir mas JSON traz transfer_required: false)
+  it('9. parseStructuredDecision forces transfer_required = true when response text declares handoff even if model output transfer_required: false', () => {
+    const rawModelJson = JSON.stringify({
+      response_text:
+        'O Mahal funciona muito como um resort e já tem uma estrutura pronta pra quem quer alugar por temporada. Sobre valores e condições de pagamento, já vou direcionar seu atendimento pra nossa equipe dar seguimento por aqui, tá bom?',
+      transfer_required: false,
+      boundary_type: null,
+      reason: null,
+      context_summary: null,
+      suggested_next_action: null,
+    });
+
+    const decision = parseStructuredDecision(rawModelJson);
+    expect(decision.transfer_required).toBe(true);
+    expect(decision.boundary_type).toBe('price');
+    expect(decision.response_text).toContain('já vou direcionar seu atendimento');
+  });
+
+  it('10. isHandoffDeclaredInText detects common Brazilian handoff phrases', () => {
+    expect(
+      isHandoffDeclaredInText(
+        'já deixei seu atendimento direcionado pra eles seguirem por aqui',
+      ),
+    ).toBe(true);
+    expect(
+      isHandoffDeclaredInText(
+        'vou transferir nossa conversa para a nossa equipe',
+      ),
+    ).toBe(true);
+    expect(
+      isHandoffDeclaredInText(
+        'essa parte de valores eu deixo com a nossa equipe',
+      ),
+    ).toBe(true);
+    expect(
+      isHandoffDeclaredInText(
+        'nossa equipe dará sequência ao seu atendimento por aqui',
+      ),
+    ).toBe(true);
+    expect(
+      isHandoffDeclaredInText(
+        'O condomínio tem piscina, academia e portaria 24 horas.',
+      ),
+    ).toBe(false);
+  });
+
+  // 11. Handoff rígido em pergunta sobre valores e construtora
+  it('11. executeConversationalTurn catches price inquiry and forces handoff even if LLM forgot transfer_required', async () => {
+    const originalFetch = global.fetch;
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                response_text:
+                  'Sobre valores, já deixei seu atendimento direcionado pra eles seguirem por aqui.',
+                transfer_required: false,
+                boundary_type: null,
+                reason: null,
+              }),
+            },
+          },
+        ],
+        usage: { prompt_tokens: 120, completion_tokens: 25, total_tokens: 145 },
+      }),
+    } as unknown as Response);
+
+    const result = await executeConversationalTurn({
+      db: mockDb,
+      accountId: 'account-123',
+      config: BASE_CONFIG,
+      propertyId: 'mahal-id',
+      messages: [{ role: 'user', content: 'Qual o valor do Mahal?' }],
+    });
+
+    expect(result.handoff).toBe(true);
+    expect(result.decision.transfer_required).toBe(true);
+    expect(result.decision.boundary_type).toBe('price');
+
+    global.fetch = originalFetch;
+  });
+
+  // 12. Limite de segurança de mensagens (unificado com autoReplyMaxPerConversation)
+  it('12. executeConversationalTurn enforces message limit threshold based on autoReplyMaxPerConversation or safetyMessageLimit', async () => {
+    const result = await executeConversationalTurn({
+      db: mockDb,
+      accountId: 'account-123',
+      config: {
+        ...BASE_CONFIG,
+        autoReplyMaxPerConversation: 4,
+        safetyMessageLimit: 8,
+      },
+      messages: [{ role: 'user', content: 'Oi, tudo bem?' }],
+      replyCount: 4,
+    });
+
+    expect(result.handoff).toBe(true);
+    expect(result.decision.transfer_required).toBe(true);
+    expect(result.decision.boundary_type).toBe('safety_limit_reached');
+    expect(result.decision.reason).toContain('4 mensagens');
+  });
+
+  it('13. prompt builder includes strict text-metadata coherence instruction in section 11', () => {
+    const prompt = buildConversationalSystemPrompt({
+      config: BASE_CONFIG,
+      mode: 'auto_reply',
+      structuredOutputRequired: true,
+      property: { id: 'mahal-id', name: 'Mahal Resort' },
+    });
+
+    expect(prompt).toContain('COERÊNCIA OBRIGATÓRIA ENTRE TEXTO E METADADOS');
+    expect(prompt).toContain('É estritamente proibido dizer no texto que vai transferir e marcar transfer_required: false');
   });
 });

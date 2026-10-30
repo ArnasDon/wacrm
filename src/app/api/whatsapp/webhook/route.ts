@@ -23,6 +23,9 @@ import { resumeAwaitingReply, runAutomationsForTrigger } from '@/lib/automations
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
+import { buildPushPayload } from '@/lib/push/payload'
+import { notifyInboundPush } from '@/lib/push/server'
+import type { ContentType } from '@/types'
 import {
   applyBroadcastRecipientStatus,
   flagBroadcastReply,
@@ -929,6 +932,22 @@ async function processMessage(
     whatsapp_message_id: message.id,
     content_type: contentType,
     text: contentText,
+  })
+
+  // Web Push to every opted-in device (phone / closed browser). Awaited for
+  // the same `after()` reason as above; bounded by a timeout and never
+  // throws, so a push problem cannot affect message processing. A replayed
+  // delivery returned early (idempotent insert), so this never double-fires.
+  await notifyInboundPush({
+    accountId,
+    payload: buildPushPayload({
+      message: {
+        conversation_id: conversation.id,
+        content_type: contentType as ContentType,
+        content_text: contentText,
+      },
+      contact: contactRecord,
+    }),
   })
 }
 

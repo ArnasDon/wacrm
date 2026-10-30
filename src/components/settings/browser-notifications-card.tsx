@@ -14,7 +14,8 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
-import { useBrowserNotifyPref } from '@/hooks/use-browser-notifications';
+import { useBrowserNotifyPref, usePushPref } from '@/hooks/use-browser-notifications';
+import { disablePush, enablePush, isPushSupported, sendTestPush } from '@/lib/push/client';
 import {
   BROWSER_NOTIFY_CHANGE_EVENT,
   getNotificationPermission,
@@ -54,6 +55,51 @@ export function BrowserNotificationsCard({ className }: { className?: string }) 
     serverPermission,
   );
   const [requesting, setRequesting] = useState(false);
+  const pushOn = usePushPref();
+  const [pushBusy, setPushBusy] = useState(false);
+  const pushSupported = typeof window !== 'undefined' && isPushSupported();
+
+  const onPushToggle = async (next: boolean) => {
+    setPushBusy(true);
+    try {
+      if (!next) {
+        await disablePush();
+        return;
+      }
+      const result = await enablePush();
+      if (result.ok) {
+        toast.success(t('pushEnabledToast'));
+      } else if (result.reason === 'denied') {
+        toast.error(t('statusDenied'), { description: t('deniedHint') });
+      } else if (result.reason === 'not_configured') {
+        toast.error(t('pushNotConfigured'));
+      } else {
+        toast.error(t('pushErrorToast'));
+      }
+    } finally {
+      setPushBusy(false);
+    }
+  };
+
+  const onPushTest = async () => {
+    setPushBusy(true);
+    try {
+      const r = await sendTestPush();
+      if (!r) toast.error(t('pushErrorToast'));
+      else if (!r.configured) toast.error(t('pushNotConfigured'));
+      else if (r.sent === 0) {
+        const detail =
+          r.errors[0] ??
+          (r.subscriptions === 0
+            ? 'This device is not registered on the server. Turn push off and on again.'
+            : undefined);
+        toast.error(t('pushTestNone'), { description: detail, duration: 15000 });
+      }
+      else toast.success(t('pushTestSent'));
+    } finally {
+      setPushBusy(false);
+    }
+  };
 
   const supported = permission !== 'unsupported';
   const checked = enabled && permission === 'granted';
@@ -159,6 +205,42 @@ export function BrowserNotificationsCard({ className }: { className?: string }) 
               <BellRing className="size-4" />
               {t('sendTest')}
             </Button>
+
+            {pushSupported && (
+              <div className="space-y-3 border-t border-border pt-4">
+                <div className="flex items-center justify-between gap-4 rounded-md border border-border p-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-foreground">
+                      {t('pushToggleLabel')}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {t('pushToggleDesc')}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {pushBusy && (
+                      <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                    )}
+                    <Switch
+                      checked={pushOn && permission === 'granted'}
+                      onCheckedChange={(next) => void onPushToggle(next)}
+                      disabled={pushBusy || permission === 'denied'}
+                      aria-label={t('pushToggleLabel')}
+                    />
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void onPushTest()}
+                  disabled={!pushOn || pushBusy}
+                >
+                  <BellRing className="size-4" />
+                  {t('pushSendTest')}
+                </Button>
+              </div>
+            )}
           </>
         )}
       </CardContent>

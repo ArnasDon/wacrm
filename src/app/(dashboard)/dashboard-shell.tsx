@@ -8,6 +8,7 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { AccountAccessAlert } from "@/components/layout/account-access-alert";
 import { PresenceHeartbeat } from "@/components/presence/presence-heartbeat";
+import { FollowupSweeper } from "@/components/followups/followup-sweeper";
 import { BrowserNotificationsListener } from "@/components/notifications/browser-notifications-listener";
 
 // Auth-gated dashboard shell. Extracted from the layout so the layout
@@ -51,6 +52,9 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
       {/* Desktop alerts for new customer messages (opt-in via Settings →
           Your profile). Headless — renders nothing. */}
       <BrowserNotificationsListener />
+      {/* Creates due follow-up reminders when the app is opened (safety net
+          for the scheduled job). Headless — renders nothing. */}
+      <FollowupSweeper />
       <Sidebar open={sidebarOpen} onClose={closeSidebar} />
       <div className="flex flex-1 flex-col overflow-hidden">
         <Header onOpenSidebar={() => setSidebarOpen(true)} />

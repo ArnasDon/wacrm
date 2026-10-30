@@ -41,7 +41,8 @@
     "defaultAvatar": "Avatar",
     "menuProfile": "Perfil",
     "menuSettings": "Configuración",
-    "menuSignOut": "Cerrar sesión"
+    "menuSignOut": "Cerrar sesión",
+    "followups": "Seguimientos"
   },
   "Header": {
     "dashboard": "Panel",
@@ -58,7 +59,8 @@
     "defaultAvatar": "Avatar",
     "menuProfile": "Perfil",
     "menuSettings": "Configuración",
-    "menuSignOut": "Cerrar sesión"
+    "menuSignOut": "Cerrar sesión",
+    "followups": "Seguimientos"
   },
   "ModeToggle": {
     "switchMode": "Cambiar al modo {mode}"
@@ -383,7 +385,6 @@
       "waitForSending": "Espera a que el mensaje termine de enviarse",
       "reactionFailed": "Error en la reacción: {reason}",
       "assignmentUpdateFailed": "Error al actualizar la asignación",
-      "assigneeNoLongerMember": "Ese compañero ya no es miembro de esta cuenta",
       "networkError": "error de red",
       "documentFallback": "Documento",
       "you": "Tú"
@@ -797,7 +798,6 @@
       "titlePlaceholder": "Título del negocio",
       "contact": "Contacto",
       "selectContact": "Selecciona un contacto",
-      "searchContacts": "Buscar contactos por nombre o teléfono",
       "linkToConversation": "Vincular a una conversación",
       "value": "Valor",
       "currency": "Moneda",
@@ -970,9 +970,7 @@
       "toastNotLinked": "Tu perfil no está vinculado a una cuenta.",
       "toastFailedDraft": "Error al guardar el borrador: {error}",
       "toastDraftSaved": "Borrador guardado",
-      "broadcastFailed": "Falló la difusión",
-      "toastSendTakenOver": "Otro envío tomó el control de esta difusión, así que esta pestaña dejó de enviar. Abre la difusión para seguir su progreso.",
-      "toastSendInterrupted": "El envío se detuvo porque se perdió la conexión con el servidor. Abre la difusión y usa Reanudar envío para enviar a los destinatarios restantes. El botón aparece en un máximo de 5 minutos."
+      "broadcastFailed": "Falló la difusión"
     },
     "wizard": {
       "next": "Siguiente",
@@ -1761,7 +1759,6 @@
       "category": "Categoría",
       "language": "Idioma",
       "langFixed": "El idioma es fijo una vez que la plantilla existe en Meta.",
-      "categoryFixed": "La categoría de una plantilla aprobada no se puede cambiar.",
       "langHint": "Debe coincidir exactamente con el código en Meta: <code>en_US</code> y <code>en</code> son distintos.",
       "header": "Encabezado",
       "headerNone": "Ninguno",
@@ -2066,7 +2063,15 @@
         "document": "📄 Documento",
         "location": "📍 Ubicación",
         "template": "📋 Plantilla"
-      }
+      },
+      "pushToggleLabel": "Alertas en el teléfono y con el navegador cerrado (push)",
+      "pushToggleDesc": "Recibe una notificación en este dispositivo incluso con WACRM cerrado. En Android, añade WACRM a la pantalla de inicio para mejores resultados. Puedes responder desde la notificación si tu navegador lo admite.",
+      "pushEnabledToast": "Notificaciones push activadas en este dispositivo",
+      "pushNotConfigured": "El push aún no está configurado en este servidor (faltan las claves VAPID). Consulta docs/push-notifications.md.",
+      "pushErrorToast": "No se pudieron configurar las notificaciones push. Inténtalo de nuevo.",
+      "pushSendTest": "Enviar push de prueba",
+      "pushTestSent": "Push de prueba enviado. Debería aparecer en este dispositivo en unos segundos.",
+      "pushTestNone": "Ningún dispositivo lo recibió. Desactiva y vuelve a activar el push en este dispositivo."
     },
     "apiKeys": {
       "title": "Claves de API",
@@ -2291,8 +2296,6 @@
       "usedBody": "Esta invitación ya fue aceptada. Si no fuiste tú, pide al administrador de la cuenta que envíe un enlace nuevo.",
       "expiredTitle": "Invitación expirada",
       "expiredBody": "Esta invitación expiró. Pide al administrador de la cuenta que envíe una nueva; generarla toma solo unos segundos.",
-      "rateLimitedTitle": "Demasiados intentos",
-      "rateLimitedBody": "Has comprobado esta invitación demasiadas veces en poco tiempo. Espera un minuto y vuelve a intentarlo.",
       "serverErrorTitle": "Algo salió mal",
       "serverErrorBody": "No pudimos verificar esta invitación en este momento. Intenta recargar la página en un momento."
     },
@@ -2592,7 +2595,6 @@
       "duplicateNodeKey": "node_key duplicado: \"{key}\".",
       "unreachable": "El nodo \"{key}\" no es accesible desde el nodo de entrada.",
       "autoAdvanceCycle": "Los nodos {keys} vuelven unos a otros sin esperar al cliente, así que el flujo seguiría enviando mensajes. Añade un paso de botones, lista o pregunta al bucle, o rómpelo.",
-      "autoAdvanceChainTooLong": "El nodo \"{key}\" inicia {count} pasos seguidos que se ejecutan sin esperar al cliente. Un flujo puede ejecutar como máximo {max} pasos así antes de esperar; añade un paso de botones, lista o pregunta para dividir la cadena.",
       "keywordsRequired": "Los disparadores por palabra clave necesitan al menos una palabra clave.",
       "blankKeywords": "{count} {count, plural, =1 {palabra clave está vacía} other {palabras clave están vacías}}: no coincidirán con nada.",
       "startNeedsNext": "El nodo Inicio debe apuntar a un nodo siguiente.",
@@ -2850,7 +2852,6 @@
       "statusInvalid": "El estado debe ser 'draft', 'active' o 'archived'",
       "cannotActivate": "No se puede activar el flujo: primero corrige los problemas de abajo.",
       "cannotSaveActive": "Este flujo está activo, así que no se puede guardar con estos problemas. Corrígelos o pausa el flujo primero.",
-      "timeoutHoursInvalid": "on_timeout_hours debe ser un número mayor que 0 y como máximo {max}.",
       "nameEmpty": "El nombre no puede estar vacío",
       "unknownTemplate": "Plantilla de flujo desconocida \"{slug}\"",
       "insertFailed": "error al crear el flujo",
@@ -2915,7 +2916,6 @@
       "neverSubmitted": "Esta plantilla nunca se envió a Meta: usa Nueva plantilla para enviarla.",
       "statusNotEditable": "Las plantillas con estado {status} no se pueden editar. Permitidos: APPROVED, REJECTED, PAUSED.",
       "authNotEditable": "Las plantillas de AUTENTICACIÓN no se pueden editar aquí: adminístralas en el Administrador de WhatsApp de Meta.",
-      "categoryLockedApproved": "Meta no permite cambiar la categoría de una plantilla aprobada. Crea una plantilla nueva.",
       "validationFailed": "Error de validación.",
       "headerUploadFailed": "Error al subir el archivo multimedia del encabezado.",
       "metaEditFailed": "Error al editar en Meta.",
@@ -2929,10 +2929,48 @@
       "metaSubmitFailed": "Error al enviar a Meta.",
       "rateLimit": "Se alcanzó el límite de Meta (100 creaciones de plantillas por hora). Inténtalo de nuevo más tarde.",
       "submittedSaveFailed": "Enviada a Meta, pero falló el guardado local: {message}. Usa \"Sincronizar desde Meta\" para recuperarla.",
-      "alreadyExists": "Ya existe una plantilla llamada {name} ({language}) en esta cuenta. Edita o vuelve a enviar esa plantilla en lugar de crear una nueva.",
       "submitFailed": "Error al enviar la plantilla.",
       "metaApiStatus": "Error de la API de Meta: {status}",
       "syncFailed": "Error al sincronizar las plantillas"
     }
+  },
+  "Followups": {
+    "followUp": "Seguimiento",
+    "followUpOn": "Seguimiento el {date}",
+    "dialogTitle": "Recordatorio de seguimiento",
+    "reminderInfo": "Recibirás una notificación el día anterior y el mismo día.",
+    "dateLabel": "Recuérdame el",
+    "presetTomorrow": "Mañana",
+    "preset3Days": "3 días",
+    "presetWeek": "1 semana",
+    "presetMonth": "1 mes",
+    "expiryLabel": "Vencimiento de la póliza (opcional)",
+    "expiryHint": "Las renovaciones abren 45 días antes del vencimiento. Indica la fecha y elegiremos el recordatorio por ti.",
+    "useRenewal": "Crear recordatorio de renovación",
+    "renewalNote": "La póliza vence el {expiry} - se abre la ventana de renovación",
+    "renewalSet": "Recordatorio fijado para el {date}, cuando se abre la ventana de renovación de 45 días.",
+    "renewalOpenNow": "La ventana de renovación de 45 días ya está abierta; el recordatorio queda para mañana.",
+    "noteLabel": "Nota",
+    "notePlaceholder": "p. ej. Llamar por el seguro del coche",
+    "save": "Guardar",
+    "markDone": "Marcar como hecho",
+    "remove": "Eliminar seguimiento",
+    "saved": "Seguimiento guardado",
+    "done": "Seguimiento completado",
+    "removed": "Seguimiento eliminado",
+    "saveFailed": "No se pudo guardar el seguimiento. Inténtalo de nuevo.",
+    "pastDate": "Elige hoy o una fecha futura.",
+    "pageTitle": "Seguimientos",
+    "pageDescription": "Clientes a los que prometiste responder. Te avisamos el día anterior y el mismo día.",
+    "emptyTitle": "Aún no hay seguimientos",
+    "emptyDesc": "Abre un chat y toca el botón del calendario para fijar una fecha.",
+    "group_overdue": "Vencidos",
+    "group_today": "Hoy",
+    "group_tomorrow": "Mañana",
+    "group_upcoming": "Próximos",
+    "customer": "Cliente",
+    "openChat": "Abrir chat",
+    "loadFailed": "No se pudieron cargar los seguimientos.",
+    "retry": "Reintentar"
   }
 }

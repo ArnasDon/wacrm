@@ -41,7 +41,8 @@
     "defaultAvatar": "Avatar",
     "menuProfile": "Profile",
     "menuSettings": "Settings",
-    "menuSignOut": "Sign out"
+    "menuSignOut": "Sign out",
+    "followups": "Follow-ups"
   },
   "Header": {
     "dashboard": "Dashboard",
@@ -58,7 +59,8 @@
     "defaultAvatar": "Avatar",
     "menuProfile": "Profile",
     "menuSettings": "Settings",
-    "menuSignOut": "Sign out"
+    "menuSignOut": "Sign out",
+    "followups": "Follow-ups"
   },
   "ModeToggle": {
     "switchMode": "Switch to {mode} mode"
@@ -383,7 +385,6 @@
       "waitForSending": "Wait for the message to finish sending",
       "reactionFailed": "Reaction failed: {reason}",
       "assignmentUpdateFailed": "Failed to update assignment",
-      "assigneeNoLongerMember": "That teammate is no longer a member of this account",
       "networkError": "network error",
       "documentFallback": "Document",
       "you": "You"
@@ -797,7 +798,6 @@
       "titlePlaceholder": "Deal title",
       "contact": "Contact",
       "selectContact": "Select a contact",
-      "searchContacts": "Search contacts by name or phone",
       "linkToConversation": "Link to Conversation",
       "value": "Value",
       "currency": "Currency",
@@ -970,9 +970,7 @@
       "toastNotLinked": "Your profile is not linked to an account.",
       "toastFailedDraft": "Failed to save draft: {error}",
       "toastDraftSaved": "Draft saved",
-      "broadcastFailed": "Broadcast failed",
-      "toastSendTakenOver": "Another delivery took over this broadcast, so this tab stopped sending. Open the broadcast to follow its progress.",
-      "toastSendInterrupted": "Sending stopped because the connection to the server dropped. Open the broadcast and select Resume sending to reach the remaining recipients. The button appears within 5 minutes."
+      "broadcastFailed": "Broadcast failed"
     },
     "wizard": {
       "next": "Next",
@@ -1761,7 +1759,6 @@
       "category": "Category",
       "language": "Language",
       "langFixed": "Language is fixed once a template exists on Meta.",
-      "categoryFixed": "The category of an approved template can't be changed.",
       "langHint": "Must match the exact code on Meta — <code>en_US</code> and <code>en</code> are distinct.",
       "header": "Header",
       "headerNone": "None",
@@ -2066,7 +2063,15 @@
         "document": "📄 Document",
         "location": "📍 Location",
         "template": "📋 Template"
-      }
+      },
+      "pushToggleLabel": "Phone & closed-browser alerts (push)",
+      "pushToggleDesc": "Get a notification on this device even when WACRM is closed. On Android, add WACRM to your home screen for best results. You can reply right from the notification where your browser supports it.",
+      "pushEnabledToast": "Push notifications enabled on this device",
+      "pushNotConfigured": "Push is not set up on this server yet (VAPID keys missing). See docs/push-notifications.md.",
+      "pushErrorToast": "Could not set up push notifications. Please try again.",
+      "pushSendTest": "Send test push",
+      "pushTestSent": "Test push sent. It should appear on this device in a few seconds.",
+      "pushTestNone": "No device received it. Turn push off and on again on this device."
     },
     "apiKeys": {
       "title": "API keys",
@@ -2291,8 +2296,6 @@
       "usedBody": "This invitation has already been accepted. If that wasn't you, ask the account admin to send a fresh link.",
       "expiredTitle": "Invite expired",
       "expiredBody": "This invitation has expired. Ask the account admin to send a new one — they take a few seconds to generate.",
-      "rateLimitedTitle": "Too many attempts",
-      "rateLimitedBody": "You've checked this invitation too many times in a short period. Wait a minute, then try again.",
       "serverErrorTitle": "Something went wrong",
       "serverErrorBody": "We couldn't verify this invitation right now. Try refreshing the page in a moment."
     },
@@ -2592,7 +2595,6 @@
       "duplicateNodeKey": "Duplicate node_key \"{key}\".",
       "unreachable": "Node \"{key}\" is unreachable from the entry node.",
       "autoAdvanceCycle": "Nodes {keys} loop back to each other without waiting for the customer, so the flow would keep sending messages. Add a buttons, list or question step to the loop, or break it.",
-      "autoAdvanceChainTooLong": "Node \"{key}\" starts {count} steps in a row that run without waiting for the customer. A flow can run at most {max} such steps before it waits; add a buttons, list or question step to split the chain.",
       "keywordsRequired": "Keyword triggers need at least one keyword.",
       "blankKeywords": "{count} {count, plural, =1 {keyword is} other {keywords are}} blank — they won't match anything.",
       "startNeedsNext": "Start node must point to a next node.",
@@ -2850,7 +2852,6 @@
       "statusInvalid": "status must be one of 'draft' | 'active' | 'archived'",
       "cannotActivate": "Cannot activate flow — fix the issues below first.",
       "cannotSaveActive": "This flow is live, so it can't be saved with these issues. Fix them or pause the flow first.",
-      "timeoutHoursInvalid": "on_timeout_hours must be a number greater than 0 and at most {max}.",
       "nameEmpty": "name cannot be empty",
       "unknownTemplate": "Unknown template_slug \"{slug}\"",
       "insertFailed": "flow insert failed",
@@ -2915,7 +2916,6 @@
       "neverSubmitted": "This template was never submitted to Meta — use New Template to submit it instead.",
       "statusNotEditable": "Templates in status {status} cannot be edited. Allowed: APPROVED, REJECTED, PAUSED.",
       "authNotEditable": "AUTHENTICATION templates are not editable here — manage them in Meta WhatsApp Manager.",
-      "categoryLockedApproved": "Meta doesn't allow changing the category of an approved template. Create a new template instead.",
       "validationFailed": "Validation failed.",
       "headerUploadFailed": "Header media upload failed.",
       "metaEditFailed": "Meta edit failed.",
@@ -2929,10 +2929,48 @@
       "metaSubmitFailed": "Meta submit failed.",
       "rateLimit": "Meta rate limit hit (100 template creates per hour). Try again later.",
       "submittedSaveFailed": "Submitted to Meta but failed to save locally: {message}. Run \"Sync from Meta\" to recover.",
-      "alreadyExists": "A template named {name} ({language}) already exists in this account. Edit or resubmit that template instead of creating a new one.",
       "submitFailed": "Failed to submit template.",
       "metaApiStatus": "Meta API error: {status}",
       "syncFailed": "Failed to sync templates"
     }
+  },
+  "Followups": {
+    "followUp": "Follow-up",
+    "followUpOn": "Follow-up on {date}",
+    "dialogTitle": "Follow-up reminder",
+    "reminderInfo": "You'll get a notification the day before and on the day.",
+    "dateLabel": "Remind me on",
+    "presetTomorrow": "Tomorrow",
+    "preset3Days": "3 days",
+    "presetWeek": "1 week",
+    "presetMonth": "1 month",
+    "expiryLabel": "Policy expiry date (optional)",
+    "expiryHint": "Renewals open 45 days before expiry. Enter the expiry date and we will pick the reminder date for you.",
+    "useRenewal": "Set renewal reminder",
+    "renewalNote": "Policy expires {expiry} - renewal window opens",
+    "renewalSet": "Reminder set for {date}, when the 45-day renewal window opens.",
+    "renewalOpenNow": "The 45-day renewal window is already open, so the reminder is set for tomorrow.",
+    "noteLabel": "Note",
+    "notePlaceholder": "e.g. Call back about car insurance",
+    "save": "Save",
+    "markDone": "Mark done",
+    "remove": "Remove follow-up",
+    "saved": "Follow-up saved",
+    "done": "Follow-up marked done",
+    "removed": "Follow-up removed",
+    "saveFailed": "Could not save the follow-up. Please try again.",
+    "pastDate": "Choose today or a future date.",
+    "pageTitle": "Follow-ups",
+    "pageDescription": "Customers you promised to get back to. You are reminded the day before and on the day.",
+    "emptyTitle": "No follow-ups yet",
+    "emptyDesc": "Open a chat and tap the calendar button to set a follow-up date.",
+    "group_overdue": "Overdue",
+    "group_today": "Today",
+    "group_tomorrow": "Tomorrow",
+    "group_upcoming": "Upcoming",
+    "customer": "Customer",
+    "openChat": "Open chat",
+    "loadFailed": "Couldn't load follow-ups.",
+    "retry": "Try again"
   }
 }

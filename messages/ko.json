@@ -517,6 +517,11 @@
       "notes": "메모",
       "deals": "딜",
       "noTags": "태그 없음",
+      "addTags": "태그 추가",
+      "availableTags": "사용 가능한 태그",
+      "noAvailableTags": "아직 생성된 태그가 없습니다.",
+      "removeTag": "{tag} 태그 제거",
+      "tagUpdateFailed": "연락처 태그를 업데이트하지 못했습니다.",
       "noDeals": "딜 없음",
       "addNotePlaceholder": "메모 추가..."
     },

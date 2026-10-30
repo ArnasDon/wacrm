@@ -517,6 +517,11 @@
       "notes": "Notas",
       "deals": "Negócios",
       "noTags": "Sem tags",
+      "addTags": "Adicionar tags",
+      "availableTags": "Tags disponíveis",
+      "noAvailableTags": "Nenhuma tag foi criada ainda.",
+      "removeTag": "Remover {tag}",
+      "tagUpdateFailed": "Não foi possível atualizar as tags do contato.",
       "noDeals": "Sem negócios",
       "addNotePlaceholder": "Adicionar uma nota..."
     },

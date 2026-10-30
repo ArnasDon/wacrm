@@ -19,16 +19,16 @@ describe('LinkifyText', () => {
       'Visit http://legacy.example.com and https://example.com/path?q=1'
     );
     expect(markup).toContain(
-      '<a href="http://legacy.example.com" target="_blank" rel="noopener noreferrer" class="text-blue-600 underline underline-offset-2 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300">http://legacy.example.com</a>'
+      '<a href="http://legacy.example.com" target="_blank" rel="noopener noreferrer nofollow" class="text-blue-600 underline underline-offset-2 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300">http://legacy.example.com</a>'
     );
     expect(markup).toContain(
-      '<a href="https://example.com/path?q=1" target="_blank" rel="noopener noreferrer" class="text-blue-600 underline underline-offset-2 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300">https://example.com/path?q=1</a>'
+      '<a href="https://example.com/path?q=1" target="_blank" rel="noopener noreferrer nofollow" class="text-blue-600 underline underline-offset-2 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300">https://example.com/path?q=1</a>'
     );
   });
 
   it('adds HTTPS to www URLs while preserving their display text', () => {
     expect(render('Visit www.example.com')).toContain(
-      '<a href="https://www.example.com" target="_blank" rel="noopener noreferrer" class="text-blue-600 underline underline-offset-2 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300">www.example.com</a>'
+      '<a href="https://www.example.com" target="_blank" rel="noopener noreferrer nofollow" class="text-blue-600 underline underline-offset-2 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300">www.example.com</a>'
     );
   });
 

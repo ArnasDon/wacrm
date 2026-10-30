@@ -53,7 +53,7 @@
     "date-fns": "^4.4.0",
     "linkify-react": "^4.4.0",
     "linkifyjs": "^4.4.0",
-    "lucide-react": "^1.55.0",
+    "lucide-react": "^1.62.0",
     "next": "16.3.8",
     "next-intl": "^4.14.9",
     "opus-recorder": "^8.0.5",

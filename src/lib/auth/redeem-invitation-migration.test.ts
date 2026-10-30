@@ -17,6 +17,10 @@ const tablesWithoutDomainData = new Set([
   // Per-device Web Push subscriptions: no business data; they cascade with the
   // account and a device re-registers itself (upsert by endpoint) on next open.
   "push_subscriptions",
+  // A follow-up requires a conversation (NOT NULL FK) in the same account, and
+  // conversations are already checked, so an account holding follow-ups can
+  // never look empty to redeem_invitation.
+  "conversation_followups",
 ]);
 
 function accountScopedTables(): Set<string> {

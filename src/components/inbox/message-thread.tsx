@@ -51,6 +51,7 @@ import {
 import { deleteAccountMedia } from "@/lib/storage/upload-media";
 import { TemplatePicker } from "./template-picker";
 import { AiThreadBanner } from "./ai-thread-banner";
+import { FollowupButton } from "@/components/followups/followup-button";
 import { buildReplyPreview } from "./reply-quote";
 import {
   renderTemplateBody,
@@ -61,7 +62,6 @@ import {
   templateNamesInMessages,
 } from "@/lib/whatsapp/template-message-view";
 import { contactHandle } from "@/lib/whatsapp/wa-identity";
-import { resolveAssignmentResult } from "@/lib/inbox/assignment";
 import {
   businessReactionOn,
   withBusinessReaction,
@@ -203,7 +203,6 @@ export function MessageThread({
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [profiles, setProfiles] = useState<Profile[]>([]);
-  const [profilesVersion, setProfilesVersion] = useState(0);
   const [reactions, setReactions] = useState<MessageReaction[]>([]);
   const [sentTemplates, setSentTemplates] = useState<MessageTemplate[]>([]);
   const sentTemplateNames = useMemo(
@@ -288,7 +287,7 @@ export function MessageThread({
     return () => {
       cancelled = true;
     };
-  }, [profilesVersion]);
+  }, []);
 
   // 24-hour session timer
   const sessionInfo = useMemo(() => {
@@ -943,12 +942,10 @@ export function MessageThread({
       if (!conversation) return;
 
       const supabase = createClient();
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from("conversations")
         .update({ assigned_agent_id: agentId })
-        .eq("id", conversation.id)
-        .select("assigned_agent_id")
-        .single();
+        .eq("id", conversation.id);
 
       if (error) {
         console.error("Failed to update assignment:", error);
@@ -956,16 +953,7 @@ export function MessageThread({
         return;
       }
 
-      const { assignedAgentId, rejected } = resolveAssignmentResult(
-        agentId,
-        data?.assigned_agent_id,
-      );
-      if (rejected) {
-        toast.error(t("assigneeNoLongerMember"));
-        setProfilesVersion((v) => v + 1);
-      }
-
-      onAssignChange(conversation.id, assignedAgentId);
+      onAssignChange(conversation.id, agentId);
     },
     [conversation, onAssignChange, t],
   );
@@ -1098,6 +1086,12 @@ export function MessageThread({
               />
             </button>
           )}
+
+          {/* Dated follow-up reminder for this conversation */}
+          <FollowupButton
+            conversationId={conversation.id}
+            contactId={conversation.contact_id}
+          />
 
           {/* Status dropdown */}
           <DropdownMenu>

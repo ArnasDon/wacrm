@@ -33,6 +33,16 @@ export function isPushConfigured(): boolean {
   return getVapid() !== null
 }
 
+export interface PushResult {
+  sent: number
+  removed: number
+  configured: boolean
+  /** How many registered devices the account has. */
+  subscriptions: number
+  /** Human-readable reasons (no secrets) when something went wrong. */
+  errors: string[]
+}
+
 interface SubRow {
   id: string
   endpoint: string
@@ -49,11 +59,19 @@ export async function sendPushToAccount(
   accountId: string,
   payload: PushPayload | Record<string, unknown>,
   opts: { userId?: string } = {},
-): Promise<{ sent: number; removed: number; configured: boolean }> {
+): Promise<PushResult> {
   const vapid = getVapid()
-  if (!vapid) return { sent: 0, removed: 0, configured: false }
+  if (!vapid) return { sent: 0, removed: 0, configured: false, subscriptions: 0, errors: [] }
+  const errors: string[] = []
   try {
-    webpush.setVapidDetails(vapid.subject, vapid.publicKey, vapid.privateKey)
+    try {
+      webpush.setVapidDetails(vapid.subject, vapid.publicKey, vapid.privateKey)
+    } catch (err) {
+      // Messages from web-push never contain the key values themselves.
+      const msg = `VAPID settings invalid: ${(err as Error).message}`
+      console.error('[push]', msg)
+      return { sent: 0, removed: 0, configured: true, subscriptions: 0, errors: [msg] }
+    }
 
     let q = admin()
       .from('push_subscriptions')
@@ -62,8 +80,9 @@ export async function sendPushToAccount(
     if (opts.userId) q = q.eq('user_id', opts.userId)
     const { data, error } = await q
     if (error || !data) {
-      console.error('[push] could not load subscriptions:', error?.message)
-      return { sent: 0, removed: 0, configured: true }
+      const msg = `Could not read push_subscriptions: ${error?.message ?? 'unknown'} (was migration 060 run?)`
+      console.error('[push]', msg)
+      return { sent: 0, removed: 0, configured: true, subscriptions: 0, errors: [msg] }
     }
 
     const body = JSON.stringify(payload)
@@ -81,15 +100,27 @@ export async function sendPushToAccount(
         } catch (err) {
           const status = (err as { statusCode?: number }).statusCode
           if (status === 404 || status === 410) dead.push(s.id)
-          else console.error('[push] send failed:', status ?? (err as Error).message)
+          else {
+            const body = String((err as { body?: unknown }).body ?? '').slice(0, 160)
+            const msg = `Push service refused (${status ?? 'network'}): ${body || (err as Error).message}`
+            errors.push(msg)
+            console.error('[push]', msg)
+          }
         }
       }),
     )
     if (dead.length) await admin().from('push_subscriptions').delete().in('id', dead)
-    return { sent, removed: dead.length, configured: true }
+    return {
+      sent,
+      removed: dead.length,
+      configured: true,
+      subscriptions: (data as unknown[]).length,
+      errors,
+    }
   } catch (err) {
-    console.error('[push] unexpected failure:', (err as Error).message)
-    return { sent: 0, removed: 0, configured: true }
+    const msg = `Unexpected failure: ${(err as Error).message}`
+    console.error('[push]', msg)
+    return { sent: 0, removed: 0, configured: true, subscriptions: 0, errors: [msg] }
   }
 }
 

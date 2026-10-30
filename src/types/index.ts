@@ -201,7 +201,7 @@ export interface Conversation {
 // Notifications (migration 027)
 // ============================================================
 
-export type NotificationType = 'conversation_assigned';
+export type NotificationType = 'conversation_assigned' | 'follow_up_due';
 
 export interface Notification {
   id: string;
@@ -217,6 +217,28 @@ export interface Notification {
   body?: string;
   read_at?: string;
   created_at: string;
+}
+
+// ============================================================
+// Follow-ups (migration 061)
+// ============================================================
+
+export type FollowupStatus = 'pending' | 'done';
+
+export interface Followup {
+  id: string;
+  account_id: string;
+  conversation_id: string;
+  contact_id?: string | null;
+  /** Who gets the reminders. */
+  user_id: string;
+  /** Calendar date, YYYY-MM-DD. */
+  due_date: string;
+  note?: string | null;
+  status: FollowupStatus;
+  completed_at?: string | null;
+  created_at: string;
+  contact?: { name?: string | null; phone?: string | null } | null;
 }
 
 export type SenderType = 'customer' | 'agent' | 'bot';
@@ -438,7 +460,6 @@ export interface Broadcast {
    * send. Added in migration 038.
    */
   delivery_locked_at?: string | null;
-  delivery_lease_until?: string | null;
   created_at: string;
 }
 

@@ -32,7 +32,7 @@ beforeEach(() => {
 describe('sendPushToAccount', () => {
   it('does nothing and reports not-configured without VAPID keys', async () => {
     const r = await sendPushToAccount('acct', { v: 1 })
-    expect(r).toEqual({ sent: 0, removed: 0, configured: false })
+    expect(r).toMatchObject({ sent: 0, removed: 0, configured: false })
     expect(sendNotification).not.toHaveBeenCalled()
   })
 
@@ -43,8 +43,18 @@ describe('sendPushToAccount', () => {
       if (sub.endpoint.endsWith('/b')) throw Object.assign(new Error('gone'), { statusCode: 410 })
     })
     const r = await sendPushToAccount('acct', { v: 1, title: 't' })
-    expect(r).toEqual({ sent: 1, removed: 1, configured: true })
+    expect(r).toMatchObject({ sent: 1, removed: 1, configured: true, subscriptions: 2, errors: [] })
     expect(deleted).toEqual([['b']])
+  })
+
+  it('reports the push service refusal reason (e.g. key mismatch) instead of hiding it', async () => {
+    process.env.VAPID_PUBLIC_KEY = 'pub'
+    process.env.VAPID_PRIVATE_KEY = 'priv'
+    sendNotification.mockRejectedValue(Object.assign(new Error('x'), { statusCode: 403, body: 'invalid JWT provided' }))
+    const r = await sendPushToAccount('acct', { v: 1 })
+    expect(r.sent).toBe(0)
+    expect(r.errors[0]).toContain('403')
+    expect(r.errors[0]).toContain('invalid JWT')
   })
 
   it('notifyInboundPush never throws even if sending blows up', async () => {

@@ -56,6 +56,14 @@ export type EnablePushResult =
   | { ok: true }
   | { ok: false; reason: 'unsupported' | 'denied' | 'not_configured' | 'error' }
 
+function sameKey(current: ArrayBuffer | null, wanted: Uint8Array): boolean {
+  if (!current) return false
+  const a = new Uint8Array(current)
+  if (a.length !== wanted.length) return false
+  for (let i = 0; i < a.length; i++) if (a[i] !== wanted[i]) return false
+  return true
+}
+
 async function ensureSubscription(): Promise<PushSubscription | null> {
   const keyRes = await fetch('/api/push/public-key', { credentials: 'same-origin' })
   if (!keyRes.ok) return null
@@ -64,11 +72,18 @@ async function ensureSubscription(): Promise<PushSubscription | null> {
 
   const reg = await navigator.serviceWorker.register('/sw.js')
   await navigator.serviceWorker.ready
+  const wanted = urlBase64ToUint8Array(key.publicKey)
   let sub = await reg.pushManager.getSubscription()
+  // A subscription made with an older/different VAPID key is rejected by the
+  // push service. After keys are rotated, drop it and subscribe again.
+  if (sub && !sameKey(sub.options.applicationServerKey, wanted)) {
+    await sub.unsubscribe()
+    sub = null
+  }
   if (!sub) {
     sub = await reg.pushManager.subscribe({
       userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(key.publicKey),
+      applicationServerKey: wanted,
     })
   }
   return sub
@@ -134,11 +149,18 @@ export async function syncPushSubscription(): Promise<void> {
   }
 }
 
-export async function sendTestPush(): Promise<{ sent: number; configured: boolean } | null> {
+export interface TestPushResult {
+  sent: number
+  configured: boolean
+  subscriptions: number
+  errors: string[]
+}
+
+export async function sendTestPush(): Promise<TestPushResult | null> {
   try {
     const res = await fetch('/api/push/test', { method: 'POST', credentials: 'same-origin' })
     if (!res.ok) return null
-    return (await res.json()) as { sent: number; configured: boolean }
+    return (await res.json()) as TestPushResult
   } catch {
     return null
   }

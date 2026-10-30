@@ -17,7 +17,12 @@ and polish.
   customer messages, an installable web app manifest, and a **Reply** / **Open chat** action on the
   notification (inline reply where the browser supports it). Off by default.
 
-> **Migration required:** apply `supabase/migrations/060_push_subscriptions.sql` (adds one table, nothing
+- **Dated follow-up reminders.** Set a follow-up date on any chat (with a policy-renewal helper: remind when the
+  45-day window opens). Reminders appear in Notifications the day before and on the day, with push, plus a new
+  Follow-ups list. See `docs/follow-ups.md`.
+
+> **Migrations required:** apply `supabase/migrations/060_push_subscriptions.sql` and
+> `supabase/migrations/061_conversation_followups.sql` (each adds a table; nothing
 > existing is changed) and set `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT`.
 > See `docs/push-notifications.md`.
 

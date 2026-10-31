@@ -145,8 +145,8 @@ export async function POST(request: Request) {
       process.env.WHATSAPP_TEMPLATES_DRY_RUN === 'true' ||
       process.env.WHATSAPP_TEMPLATES_DRY_RUN === '1'
 
-    let metaTemplateId: string
-    let metaStatus: string
+    let metaTemplateId = ''
+    let metaStatus = 'PENDING'
 
     if (dryRun) {
       metaTemplateId = `dry-run-${crypto.randomUUID()}`

@@ -21,6 +21,7 @@ export interface MetaPhoneInfo {
   display_phone_number: string
   verified_name?: string
   quality_rating?: string
+  whatsapp_business_account?: { id: string }
 }
 
 interface MetaErrorResponse {
@@ -55,7 +56,7 @@ export async function verifyPhoneNumber(
   args: VerifyPhoneNumberArgs
 ): Promise<MetaPhoneInfo> {
   const { phoneNumberId, accessToken } = args
-  const url = `${META_API_BASE}/${phoneNumberId}?fields=id,display_phone_number,verified_name,quality_rating`
+  const url = `${META_API_BASE}/${phoneNumberId}?fields=id,display_phone_number,verified_name,quality_rating,whatsapp_business_account`
   const response = await fetch(url, {
     headers: { Authorization: `Bearer ${accessToken}` },
   })
@@ -63,6 +64,21 @@ export async function verifyPhoneNumber(
     await throwMetaError(response, `Meta API error: ${response.status}`)
   }
   return response.json()
+}
+
+/**
+ * Resolve the parent WhatsApp Business Account (WABA) ID from a phone number ID.
+ */
+export async function getWabaIdFromPhoneNumber(args: {
+  phoneNumberId: string
+  accessToken: string
+}): Promise<string | null> {
+  try {
+    const info = await verifyPhoneNumber(args)
+    return info.whatsapp_business_account?.id ?? null
+  } catch {
+    return null
+  }
 }
 
 // ============================================================

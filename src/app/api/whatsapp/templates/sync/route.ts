@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { normalizeStatus } from '@/lib/whatsapp/template-status-normalize'
+import { getWabaIdFromPhoneNumber } from '@/lib/whatsapp/meta-api'
 import type { TemplateButton, TemplateSampleValues } from '@/types'
 
 /**
@@ -178,18 +179,55 @@ export async function POST() {
 
     const accessToken = decrypt(config.access_token)
 
+    let effectiveWabaId = config.waba_id
     const metaTemplates: MetaTemplate[] = []
     let nextUrl:
       | string
-      | null = `${META_API_BASE}/${config.waba_id}/message_templates?limit=100&fields=id,name,language,status,category,components,quality_score`
+      | null = `${META_API_BASE}/${effectiveWabaId}/message_templates?limit=100&fields=id,name,language,status,category,components,quality_score`
     const PAGE_CAP = 20
     let pageCount = 0
 
     while (nextUrl && pageCount < PAGE_CAP) {
       pageCount++
-      const metaRes: Response = await fetch(nextUrl, {
+      let metaRes: Response = await fetch(nextUrl, {
         headers: { Authorization: `Bearer ${accessToken}` },
       })
+
+      // If the WABA ID was swapped with a phone number ID, or invalid, auto-resolve
+      // the true WABA ID from the phone number ID.
+      if (!metaRes.ok && pageCount === 1 && config.phone_number_id) {
+        let errBody: { error?: { message?: string } } = {}
+        try {
+          errBody = await metaRes.clone().json()
+        } catch {}
+        const isObjectError =
+          metaRes.status === 400 ||
+          metaRes.status === 404 ||
+          (errBody.error?.message &&
+            /does not exist|cannot be loaded|Unsupported get request/i.test(
+              errBody.error.message
+            ))
+
+        if (isObjectError) {
+          const resolvedWaba = await getWabaIdFromPhoneNumber({
+            phoneNumberId: config.phone_number_id,
+            accessToken,
+          })
+          if (resolvedWaba && resolvedWaba !== effectiveWabaId) {
+            effectiveWabaId = resolvedWaba
+            // Persist the corrected WABA ID to DB so future operations use it
+            await supabase
+              .from('whatsapp_config')
+              .update({ waba_id: resolvedWaba, updated_at: new Date().toISOString() })
+              .eq('account_id', accountId)
+
+            nextUrl = `${META_API_BASE}/${resolvedWaba}/message_templates?limit=100&fields=id,name,language,status,category,components,quality_score`
+            metaRes = await fetch(nextUrl, {
+              headers: { Authorization: `Bearer ${accessToken}` },
+            })
+          }
+        }
+      }
 
       if (!metaRes.ok) {
         let metaErr = `Meta API error: ${metaRes.status}`

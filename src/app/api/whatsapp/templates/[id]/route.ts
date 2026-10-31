@@ -4,6 +4,7 @@ import { decrypt } from '@/lib/whatsapp/encryption'
 import {
   deleteMessageTemplate,
   editMessageTemplate,
+  getWabaIdFromPhoneNumber,
 } from '@/lib/whatsapp/meta-api'
 import {
   validateTemplatePayload,
@@ -290,16 +291,57 @@ export async function DELETE(
         )
       }
       const accessToken = decrypt(config.access_token)
+      let effectiveWabaId = config.waba_id
+
       try {
         await deleteMessageTemplate({
-          wabaId: config.waba_id,
+          wabaId: effectiveWabaId,
           accessToken,
           name: existing.name,
           metaTemplateId: existing.meta_template_id,
         })
       } catch (e) {
-        const message = e instanceof Error ? e.message : 'Meta delete failed.'
-        return NextResponse.json({ error: message }, { status: 502 })
+        let message = e instanceof Error ? e.message : 'Meta delete failed.'
+        // If the WABA ID was wrong (e.g. phone number ID was saved instead),
+        // try resolving the real WABA ID and retrying once.
+        if (
+          config.phone_number_id &&
+          /does not exist|cannot be loaded|Unsupported get request/i.test(message)
+        ) {
+          const resolved = await getWabaIdFromPhoneNumber({
+            phoneNumberId: config.phone_number_id,
+            accessToken,
+          })
+          if (resolved && resolved !== effectiveWabaId) {
+            effectiveWabaId = resolved
+            await supabase
+              .from('whatsapp_config')
+              .update({ waba_id: resolved, updated_at: new Date().toISOString() })
+              .eq('account_id', accountId)
+            try {
+              await deleteMessageTemplate({
+                wabaId: effectiveWabaId,
+                accessToken,
+                name: existing.name,
+                metaTemplateId: existing.meta_template_id,
+              })
+              message = ''
+            } catch (retryErr) {
+              message = retryErr instanceof Error ? retryErr.message : message
+            }
+          }
+        }
+
+        // If template doesn't exist on Meta (e.g. was draft or already deleted),
+        // proceed to delete locally rather than leaving user stuck.
+        if (
+          message &&
+          !/does not exist|cannot be loaded|not found|Unsupported get request/i.test(
+            message
+          )
+        ) {
+          return NextResponse.json({ error: message }, { status: 502 })
+        }
       }
     }
 

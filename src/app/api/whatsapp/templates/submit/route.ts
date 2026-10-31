@@ -2,7 +2,10 @@ import { NextResponse } from 'next/server'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 import { decrypt } from '@/lib/whatsapp/encryption'
-import { submitMessageTemplate } from '@/lib/whatsapp/meta-api'
+import {
+  submitMessageTemplate,
+  getWabaIdFromPhoneNumber,
+} from '@/lib/whatsapp/meta-api'
 import {
   validateTemplatePayload,
   type TemplatePayload,
@@ -189,35 +192,70 @@ export async function POST(request: Request) {
       }
 
       const metaPayload = buildMetaTemplatePayload(payload)
+      let effectiveWabaId = config.waba_id
+
       try {
         const meta = await submitMessageTemplate({
-          wabaId: config.waba_id,
+          wabaId: effectiveWabaId,
           accessToken,
           payload: metaPayload,
         })
         metaTemplateId = meta.id
         metaStatus = meta.status
       } catch (e) {
-        const message = e instanceof Error ? e.message : 'Meta submit failed.'
-        // Persist the failure so the user can retry; row stays DRAFT
-        // until they fix and re-submit.
-        await upsertTemplateRow(
-          supabase,
-          buildUpsertRow(accountId, user.id, payload, {
-            status: 'DRAFT',
-            metaTemplateId: null,
-            submissionError: message,
-          }),
-        )
-        const isRateLimit = /\b429\b/.test(message)
-        return NextResponse.json(
-          {
-            error: isRateLimit
-              ? 'Meta rate limit hit (100 template creates per hour). Try again later.'
-              : message,
-          },
-          { status: isRateLimit ? 429 : 502 },
-        )
+        let message = e instanceof Error ? e.message : 'Meta submit failed.'
+
+        // Auto-heal WABA ID if it was set to the phone number ID
+        if (
+          config.phone_number_id &&
+          /does not exist|cannot be loaded|Unsupported get request/i.test(message)
+        ) {
+          const resolved = await getWabaIdFromPhoneNumber({
+            phoneNumberId: config.phone_number_id,
+            accessToken,
+          })
+          if (resolved && resolved !== effectiveWabaId) {
+            effectiveWabaId = resolved
+            await supabase
+              .from('whatsapp_config')
+              .update({ waba_id: resolved, updated_at: new Date().toISOString() })
+              .eq('account_id', accountId)
+            try {
+              const metaRetry = await submitMessageTemplate({
+                wabaId: effectiveWabaId,
+                accessToken,
+                payload: metaPayload,
+              })
+              metaTemplateId = metaRetry.id
+              metaStatus = metaRetry.status
+              message = ''
+            } catch (retryErr) {
+              message = retryErr instanceof Error ? retryErr.message : message
+            }
+          }
+        }
+
+        if (message) {
+          // Persist the failure so the user can retry; row stays DRAFT
+          // until they fix and re-submit.
+          await upsertTemplateRow(
+            supabase,
+            buildUpsertRow(accountId, user.id, payload, {
+              status: 'DRAFT',
+              metaTemplateId: null,
+              submissionError: message,
+            }),
+          )
+          const isRateLimit = /\b429\b/.test(message)
+          return NextResponse.json(
+            {
+              error: isRateLimit
+                ? 'Meta rate limit hit (100 template creates per hour). Try again later.'
+                : message,
+            },
+            { status: isRateLimit ? 429 : 502 },
+          )
+        }
       }
     }
 

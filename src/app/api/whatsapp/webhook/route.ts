@@ -370,18 +370,23 @@ async function handleStatusUpdate(status: {
   timestamp: string
   recipient_id: string
 }) {
-  // 1) Mirror onto messages (legacy behavior) — Meta's status values
-  //    already match the CHECK constraint on messages.status. No
-  //    `.select()`: message_id is NOT unique (migration 009 — Meta ids
-  //    repeat across numbers), so this updates 0..N rows and must not
-  //    assume a single row.
-  const { error: msgErr } = await supabaseAdmin()
+  // 1) Mirror onto messages — guard against out-of-order status regressions
+  const { data: existingMsg } = await supabaseAdmin()
     .from('messages')
-    .update({ status: status.status })
+    .select('id, status')
     .eq('message_id', status.id)
+    .limit(1)
+    .maybeSingle()
 
-  if (msgErr) {
-    console.error('Error updating message status:', msgErr)
+  if (existingMsg && isValidStatusTransition(existingMsg.status, status.status)) {
+    const { error: msgErr } = await supabaseAdmin()
+      .from('messages')
+      .update({ status: status.status })
+      .eq('id', existingMsg.id)
+
+    if (msgErr) {
+      console.error('Error updating message status:', msgErr)
+    }
   }
 
   // Webhook fan-out for this status change happens at the END of this
@@ -681,6 +686,20 @@ async function processMessage(
     .eq('sender_type', 'customer')
   const isFirstInboundMessage = (priorCustomerMsgCount ?? 0) === 0
 
+  // Deduplicate before insert to guard against Meta webhook retries
+  if (message.id) {
+    const { data: existingMsg } = await supabaseAdmin()
+      .from('messages')
+      .select('id')
+      .eq('message_id', message.id)
+      .limit(1)
+      .maybeSingle()
+    if (existingMsg) {
+      console.log(`[webhook] Ignoring duplicate message ${message.id} (already ingested)`)
+      return
+    }
+  }
+
   const { error: msgError } = await supabaseAdmin().from('messages').insert({
     conversation_id: conversation.id,
     sender_type: 'customer',
@@ -698,6 +717,10 @@ async function processMessage(
   })
 
   if (msgError) {
+    if (isUniqueViolation(msgError)) {
+      console.log(`[webhook] Concurrent duplicate message ${message.id} ignored cleanly`)
+      return
+    }
     console.error('Error inserting message:', msgError)
     return
   }

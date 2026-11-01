@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
       const { data } = await admin
         .from('payment_orders')
         .select('*, products(title)')
-        .eq('provider_payment_link_id', session.id as string)
+        .or(`provider_payment_link_id.eq.${session.id},provider_order_id.eq.${session.id}`)
         .maybeSingle();
       order = data;
     }

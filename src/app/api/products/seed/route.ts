@@ -29,8 +29,10 @@ export async function POST(_request: NextRequest) {
 
     if (error) {
       if (error.message.includes('Could not find the table') || error.code === '42P01') {
-        const seeded = resetDemoProducts(accountId);
-        return NextResponse.json({ count: seeded.length, products: seeded, isDemoFallback: true });
+        return NextResponse.json(
+          { error: 'Products table does not exist in database. Run migration 032 first.' },
+          { status: 503 }
+        );
       }
 
       // If no unique constraint on (account_id, sku) yet, insert missing ones
@@ -41,8 +43,10 @@ export async function POST(_request: NextRequest) {
 
       if (insertError) {
         if (insertError.message.includes('Could not find the table') || insertError.code === '42P01') {
-          const seeded = resetDemoProducts(accountId);
-          return NextResponse.json({ count: seeded.length, products: seeded, isDemoFallback: true });
+          return NextResponse.json(
+            { error: 'Products table does not exist in database. Run migration 032 first.' },
+            { status: 503 }
+          );
         }
         return NextResponse.json({ error: insertError.message }, { status: 500 });
       }

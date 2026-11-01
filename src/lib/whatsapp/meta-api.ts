@@ -56,7 +56,7 @@ export async function verifyPhoneNumber(
   args: VerifyPhoneNumberArgs
 ): Promise<MetaPhoneInfo> {
   const { phoneNumberId, accessToken } = args
-  const url = `${META_API_BASE}/${phoneNumberId}?fields=id,display_phone_number,verified_name,quality_rating,whatsapp_business_account`
+  const url = `${META_API_BASE}/${phoneNumberId}?fields=id,display_phone_number,verified_name,quality_rating`
   const response = await fetch(url, {
     headers: { Authorization: `Bearer ${accessToken}` },
   })
@@ -74,8 +74,14 @@ export async function getWabaIdFromPhoneNumber(args: {
   accessToken: string
 }): Promise<string | null> {
   try {
-    const info = await verifyPhoneNumber(args)
-    return info.whatsapp_business_account?.id ?? null
+    const { phoneNumberId, accessToken } = args
+    const url = `${META_API_BASE}/${phoneNumberId}?fields=id,whatsapp_business_account`
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+    if (!res.ok) return null
+    const data = await res.json()
+    return data.whatsapp_business_account?.id ?? null
   } catch {
     return null
   }

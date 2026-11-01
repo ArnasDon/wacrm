@@ -18,9 +18,6 @@ function isPlatformAdmin(email?: string, systemRole?: string | null): boolean {
   if (email && adminEmails.includes(email.toLowerCase())) {
     return true;
   }
-  if (process.env.NODE_ENV === 'development' && adminEmails.length === 0) {
-    return true;
-  }
   return false;
 }
 

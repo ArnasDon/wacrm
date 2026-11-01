@@ -24,20 +24,13 @@ export async function GET(request: NextRequest) {
 
     const { data, error } = await query;
     if (error) {
-      // If table is missing from Postgres schema cache, gracefully fall back to demo catalog
       if (error.message.includes('Could not find the table') || error.code === '42P01') {
-        const demoList = getDemoProducts(accountId);
-        const filtered = activeOnly ? demoList.filter((p) => p.is_active) : demoList;
-        return NextResponse.json({ products: filtered, isDemoFallback: true });
+        return NextResponse.json(
+          { error: 'Products catalog table is not initialized. Please ensure migration 032 is applied.' },
+          { status: 503 }
+        );
       }
       return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-
-    // If database table is empty, auto-seed demo products
-    if (!data || data.length === 0) {
-      const demoList = getDemoProducts(accountId);
-      const filtered = activeOnly ? demoList.filter((p) => p.is_active) : demoList;
-      return NextResponse.json({ products: filtered, isDemoFallback: true });
     }
 
     return NextResponse.json({ products: data || [] });
@@ -87,10 +80,11 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (error) {
-      // If table is missing from Postgres schema cache, store in demo fallback store
       if (error.message.includes('Could not find the table') || error.code === '42P01') {
-        const created = addDemoProduct(accountId, productPayload);
-        return NextResponse.json({ product: created, isDemoFallback: true }, { status: 201 });
+        return NextResponse.json(
+          { error: 'Products catalog table is not initialized. Please ensure migration 032 is applied.' },
+          { status: 503 }
+        );
       }
       return NextResponse.json({ error: error.message }, { status: 500 });
     }

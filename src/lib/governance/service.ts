@@ -209,8 +209,15 @@ export async function adjustInventory(
 
       if (!rpcErr && rpcData) {
         result = rpcData as InventoryItem;
+      } else if (rpcErr) {
+        if (/insufficient stock/i.test(rpcErr.message)) {
+          throw new Error(rpcErr.message);
+        }
       }
-    } catch {
+    } catch (rpcCatchErr) {
+      if (rpcCatchErr instanceof Error && /insufficient stock/i.test(rpcCatchErr.message)) {
+        throw rpcCatchErr;
+      }
       // Fall through to upsert / query
     }
   }

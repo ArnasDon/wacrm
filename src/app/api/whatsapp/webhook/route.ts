@@ -98,10 +98,23 @@ interface WhatsAppMessage {
   button?: { text?: string; payload?: string }
   /** Present when the customer swipe-replies to one of our messages. */
   context?: { id: string }
+  /**
+   * Why Meta could not hand this message over. Set on a `type:
+   * 'unsupported'` delivery — a view-once photo, a poll, a disappearing
+   * message, or anything sent from an old or unofficial WhatsApp build.
+   * The content is NOT included on such a delivery and cannot be fetched
+   * afterwards, so this reason is the only thing there is to keep.
+   */
+  errors?: MetaError[]
 }
 
-/** One entry of a failed status's `errors` array, as Meta sends it. */
-interface MetaStatusError {
+/**
+ * One entry of an `errors` array, as Meta sends it. Appears on a failed
+ * *status* (why our outbound message bounced) and on an inbound *message*
+ * Meta could not hand over — a `type: 'unsupported'` delivery carries the
+ * reason here and no content at all.
+ */
+interface MetaError {
   code: number
   title: string
   message?: string
@@ -137,7 +150,7 @@ interface WhatsAppWebhookEntry {
          * `title` a short label, `error_data.details` the human-readable
          * explanation. See #535.
          */
-        errors?: MetaStatusError[]
+        errors?: MetaError[]
       }>
     }
     field: string
@@ -416,7 +429,7 @@ async function handleStatusUpdate(
     status: string
     timestamp: string
     recipient_id: string
-    errors?: MetaStatusError[]
+    errors?: MetaError[]
   },
   accountId: string | null
 ) {
@@ -644,12 +657,19 @@ async function processMessage(
   }
 
   // Parse message content based on type
-  const { contentText, mediaUrl, mediaType, interactiveReplyId } =
-    await parseMessageContent(
-      message,
-      accessToken,
-      mirrorMedia ? { accountId } : null
-    )
+  const {
+    contentText,
+    mediaUrl,
+    mediaType,
+    interactiveReplyId,
+    errorCode,
+    errorTitle,
+    errorDetails,
+  } = await parseMessageContent(
+    message,
+    accessToken,
+    mirrorMedia ? { accountId } : null
+  )
 
   // Resolve swipe-reply context if present. A missing parent is fine —
   // we just store NULL and the UI renders the message without a quote.
@@ -722,6 +742,14 @@ async function processMessage(
         // the column; null for every other content_type so existing inserts
         // behave identically.
         interactive_reply_id: interactiveReplyId,
+        // Non-null only for a `type: 'unsupported'` delivery, where they
+        // hold Meta's reason. Inbound rows are never status='failed', so
+        // the thread's delivery-failure banner (which gates on that) is
+        // unaffected; these are here so the reason survives and can be
+        // queried.
+        error_code: errorCode,
+        error_title: errorTitle,
+        error_details: errorDetails,
       },
       { onConflict: 'conversation_id,message_id', ignoreDuplicates: true }
     )
@@ -950,6 +978,16 @@ async function parseMessageContent(
    * tap with the right affordance. Null for everything else.
    */
   interactiveReplyId: string | null
+  /**
+   * Meta's account of a message it could not hand over, from the
+   * `errors[0]` on a `type: 'unsupported'` delivery. All three are null
+   * for every type we understand. Persisted to `messages.error_code` /
+   * `error_title` / `error_details` — the columns migration 042 added for
+   * failed outbound statuses, which hold the same shape of data.
+   */
+  errorCode: number | null
+  errorTitle: string | null
+  errorDetails: string | null
 }> {
   // getMediaUrl signature is (mediaId, accessToken) — earlier code had
   // the args swapped, so every verification hit an invalid Meta URL and
@@ -1002,11 +1040,24 @@ async function parseMessageContent(
 
   // Default shape — each case overrides only the fields it cares about.
   // Keeps the new `interactiveReplyId` field DRY across every return site.
-  const empty = {
+  const empty: {
+    contentText: string | null
+    mediaUrl: string | null
+    mediaType: string | null
+    interactiveReplyId: string | null
+    errorCode: number | null
+    errorTitle: string | null
+    errorDetails: string | null
+  } = {
     contentText: null,
     mediaUrl: null,
     mediaType: null,
     interactiveReplyId: null,
+    // Only the `unsupported` fallback below fills these in; every other
+    // type leaves them null, exactly as before.
+    errorCode: null,
+    errorTitle: null,
+    errorDetails: null,
   }
 
   switch (message.type) {
@@ -1130,11 +1181,30 @@ async function parseMessageContent(
       }
     }
 
-    default:
+    default: {
+      // Meta hands over `type: 'unsupported'` when WhatsApp itself cannot
+      // represent what the customer sent — a view-once photo, a poll, a
+      // disappearing message, or anything from an old or unofficial build.
+      // No content comes with it and there is no endpoint to fetch it
+      // later, so `errors[0]` is the only account of what happened. It was
+      // dropped here, leaving agents with a bare "[Unsupported message
+      // type: unsupported]" and nothing to act on. Keep the reason both in
+      // the visible text and in the same three columns a failed outbound
+      // status uses, so it is readable and queryable (issue #535 added
+      // them for exactly this kind of loss).
+      const reason = message.errors?.[0]
+      const detail =
+        reason?.error_data?.details || reason?.message || reason?.title
       return {
         ...empty,
-        contentText: `[Unsupported message type: ${message.type}]`,
+        contentText: detail
+          ? `[Unsupported message type: ${message.type} — ${detail}]`
+          : `[Unsupported message type: ${message.type}]`,
+        errorCode: reason?.code ?? null,
+        errorTitle: reason?.title ?? null,
+        errorDetails: reason?.error_data?.details ?? reason?.message ?? null,
       }
+    }
   }
 }
 

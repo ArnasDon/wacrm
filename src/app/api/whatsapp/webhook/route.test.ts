@@ -518,6 +518,62 @@ describe('inbound webhook: template quick-reply buttons (#478)', () => {
   })
 })
 
+describe('inbound webhook: unsupported messages keep Meta’s reason', () => {
+  // Meta sends `type: 'unsupported'` with no content and an `errors[0]`
+  // saying why — the only account of what the customer sent, since there
+  // is no endpoint to fetch the original afterwards.
+  const unsupported = {
+    id: 'wamid.UNSUP1',
+    from: '15551230000',
+    timestamp: '1700000000',
+    type: 'unsupported',
+    errors: [
+      {
+        code: 131051,
+        title: 'Unsupported message type',
+        message: 'Message type is not currently supported.',
+        error_data: { details: 'Message type is not currently supported.' },
+      },
+    ],
+  }
+
+  it('stores the reason in the text and in the error columns', async () => {
+    await runWebhook(unsupported)
+
+    expect(h.state.upsertCalls[0].row).toMatchObject({
+      content_text:
+        '[Unsupported message type: unsupported — Message type is not currently supported.]',
+      error_code: 131051,
+      error_title: 'Unsupported message type',
+      error_details: 'Message type is not currently supported.',
+      // Inbound rows stay 'delivered' so the thread's delivery-failure
+      // banner — which gates on status 'failed' — is not triggered.
+      status: 'delivered',
+    })
+  })
+
+  it('falls back to the bare placeholder when Meta sends no errors', async () => {
+    await runWebhook({ ...unsupported, errors: undefined })
+
+    expect(h.state.upsertCalls[0].row).toMatchObject({
+      content_text: '[Unsupported message type: unsupported]',
+      error_code: null,
+      error_title: null,
+      error_details: null,
+    })
+  })
+
+  it('leaves the error columns null for an ordinary text message', async () => {
+    await runWebhook()
+
+    expect(h.state.upsertCalls[0].row).toMatchObject({
+      error_code: null,
+      error_title: null,
+      error_details: null,
+    })
+  })
+})
+
 describe('inbound webhook: inbound media is mirrored (#466)', () => {
   const IMAGE_MESSAGE = {
     id: 'wamid.IMG1',

@@ -56,18 +56,25 @@ describe("dedupeByPhone", () => {
     expect(duplicates).toBe(1);
   });
 
-  it("drops rows without a leading + (no country code), counted as invalid", () => {
+  it("drops short national numbers without +, counted as invalid", () => {
     // "4155551212" is a US national number to the person who exported the
     // CSV, but Meta would deliver it to +41 (Switzerland). Refusing it here
     // is the bulk-import half of issue #586.
     const { unique, duplicates, invalid } = dedupeByPhone([
       { phone: "4155551212", name: "national" },
       { phone: "+14155551212", name: "international" },
-      { phone: "14155551212", name: "digits with CC but no +" },
+      { phone: "918733050995", name: "excel stripped IN" },
     ]);
-    expect(unique.map((r) => r.name)).toEqual(["international"]);
+    expect(unique.map((r) => r.name)).toEqual([
+      "international",
+      "excel stripped IN",
+    ]);
+    expect(unique.map((r) => r.phone)).toEqual([
+      "+14155551212",
+      "+918733050995",
+    ]);
     expect(duplicates).toBe(0);
-    expect(invalid).toBe(2);
+    expect(invalid).toBe(1);
   });
 
   it("drops rows with no digits, counted as invalid rather than duplicate", () => {

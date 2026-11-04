@@ -11,7 +11,7 @@ export interface CustomFieldFilter {
   value: string;
 }
 
-export type AudienceType = 'all' | 'tags' | 'custom_field' | 'csv';
+export type AudienceType = 'all' | 'tags' | 'groups' | 'custom_field' | 'csv';
 
 export interface CsvAudienceRow {
   phone: string;
@@ -21,9 +21,12 @@ export interface CsvAudienceRow {
 export interface AudienceConfig {
   type: AudienceType;
   tagIds?: string[];
+  /** Contact group ids when type === 'groups' (not tags). */
+  groupIds?: string[];
   customField?: CustomFieldFilter;
   csvContacts?: CsvAudienceRow[];
   excludeTagIds?: string[];
+  excludeGroupIds?: string[];
 }
 
 async function withContext<T>(label: string, run: () => Promise<T>): Promise<T> {
@@ -47,6 +50,25 @@ export function fetchTaggedContactIds(
           .from('contact_tags')
           .select('contact_id')
           .in('tag_id', slice)
+          .order('id')
+          .range(from, to),
+    );
+    return new Set(rows.map((row) => row.contact_id));
+  });
+}
+
+export function fetchGroupedContactIds(
+  db: SupabaseClient,
+  groupIds: readonly string[],
+): Promise<Set<string>> {
+  return withContext('contact group members', async () => {
+    const rows = await fetchAllInChunks<{ contact_id: string }, string>(
+      groupIds,
+      (slice, from, to) =>
+        db
+          .from('contact_group_members')
+          .select('contact_id')
+          .in('group_id', slice)
           .order('id')
           .range(from, to),
     );
@@ -97,10 +119,21 @@ async function fetchExcludedIds(
   db: SupabaseClient,
   audience: AudienceConfig,
 ): Promise<Set<string>> {
-  if (!audience.excludeTagIds || audience.excludeTagIds.length === 0) {
-    return new Set();
+  const excluded = new Set<string>();
+  if (audience.excludeTagIds && audience.excludeTagIds.length > 0) {
+    for (const id of await fetchTaggedContactIds(db, audience.excludeTagIds)) {
+      excluded.add(id);
+    }
   }
-  return fetchTaggedContactIds(db, audience.excludeTagIds);
+  if (audience.excludeGroupIds && audience.excludeGroupIds.length > 0) {
+    for (const id of await fetchGroupedContactIds(
+      db,
+      audience.excludeGroupIds,
+    )) {
+      excluded.add(id);
+    }
+  }
+  return excluded;
 }
 
 function hasCustomFieldFilter(
@@ -115,6 +148,13 @@ async function fetchAudienceContactIds(
 ): Promise<Set<string> | null> {
   if (audience.type === 'tags' && audience.tagIds && audience.tagIds.length > 0) {
     return fetchTaggedContactIds(db, audience.tagIds);
+  }
+  if (
+    audience.type === 'groups' &&
+    audience.groupIds &&
+    audience.groupIds.length > 0
+  ) {
+    return fetchGroupedContactIds(db, audience.groupIds);
   }
   if (audience.type === 'custom_field' && hasCustomFieldFilter(audience)) {
     return fetchCustomFieldContactIds(db, audience.customField);

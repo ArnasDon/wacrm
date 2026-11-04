@@ -68,29 +68,31 @@ describe('parseBroadcastCsv', () => {
       ok: true,
       duplicates: 1,
       invalid: 0,
-      contacts: [{ phone: '+1 (555) 123-0000', name: 'Ada' }],
+      contacts: [{ phone: '+15551230000', name: 'Ada' }],
     });
   });
 
-  // A national-format number has no country code, so Meta reads its
-  // leading digits as one: "4155551212" (US) is delivered to +41
-  // (Switzerland). Rows without a leading `+` are refused and counted,
-  // not silently dropped, so a whole-file export from a spreadsheet that
-  // stripped the `+` is visible to the user before anything is sent
-  // (issue #586).
-  it('rejects rows without a leading + and reports them as invalid', () => {
+  // Short national-format numbers have no country code, so Meta would
+  // mis-route them (issue #586). Excel-stripped international digits
+  // (11–15, country code already present) are accepted and rewritten
+  // with a leading +.
+  it('rejects short national numbers and accepts Excel-stripped international digits', () => {
     const result = parseBroadcastCsv(
       `phone,name
 4155551212,National US
 +14155551212,Ada
-9876543210,National IN`
+9876543210,National IN
+918733050995,Excel IN`
     );
 
     expect(result).toEqual({
       ok: true,
       duplicates: 0,
       invalid: 2,
-      contacts: [{ phone: '+14155551212', name: 'Ada' }],
+      contacts: [
+        { phone: '+14155551212', name: 'Ada' },
+        { phone: '+918733050995', name: 'Excel IN' },
+      ],
     });
   });
 

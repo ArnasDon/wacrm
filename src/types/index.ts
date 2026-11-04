@@ -140,6 +140,23 @@ export interface ContactTag {
   tag_id: string;
 }
 
+/** Named contact list for broadcast targeting — separate from tags. */
+export interface ContactGroup {
+  id: string;
+  user_id: string;
+  account_id: string;
+  name: string;
+  color: string;
+  created_at: string;
+}
+
+export interface ContactGroupMember {
+  id: string;
+  group_id: string;
+  contact_id: string;
+  created_at: string;
+}
+
 export interface CustomField {
   id: string;
   user_id: string;

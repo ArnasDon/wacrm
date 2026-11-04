@@ -40,7 +40,7 @@ CREATE INDEX IF NOT EXISTS idx_messages_reply_to
 -- 2. message_reactions
 -- ============================================================
 CREATE TABLE IF NOT EXISTS message_reactions (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   message_id UUID NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
   conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
   actor_type TEXT NOT NULL CHECK (actor_type IN ('customer', 'agent')),

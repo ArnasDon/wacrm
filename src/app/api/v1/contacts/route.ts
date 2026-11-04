@@ -14,31 +14,30 @@ import {
   parseListParams,
   keysetFilter,
   buildPage,
+  isUuid,
 } from '@/lib/api/v1/pagination';
 import {
   CONTACT_SELECT,
   serializeContact,
   findOrCreateContact,
   setContactTags,
+  addContactTags,
   getContactById,
   resolveAuditUserId,
   ContactError,
+  contactSearchFilter,
 } from '@/lib/api/v1/contacts';
-
-// PostgREST filter values are comma/paren-delimited; strip anything
-// that could break the `.or()` grammar before interpolating a search
-// term. Leaves the characters a phone or name legitimately contains.
-function sanitizeSearch(raw: string): string {
-  return raw.replace(/[^\p{L}\p{N} +@.\-_]/gu, '').trim();
-}
 
 export async function GET(request: Request) {
   try {
     const ctx = await requireApiKey(request, 'contacts:read');
     const { limit, cursor } = parseListParams(request);
     const url = new URL(request.url);
-    const search = sanitizeSearch(url.searchParams.get('search') ?? '');
+    const searchFilter = contactSearchFilter(url.searchParams.get('search') ?? '');
     const tag = url.searchParams.get('tag');
+    if (tag && !isUuid(tag)) {
+      return fail('bad_request', "'tag' must be a tag id (UUID)", 400);
+    }
 
     // When filtering by tag, add an aliased INNER join on contact_tags
     // used purely for the WHERE — the parent is kept only if it has the
@@ -55,8 +54,8 @@ export async function GET(request: Request) {
       .select(selectClause)
       .eq('account_id', ctx.accountId);
 
-    if (search) {
-      query = query.or(`name.ilike.*${search}*,phone.ilike.*${search}*`);
+    if (searchFilter) {
+      query = query.or(searchFilter);
     }
 
     if (tag) {
@@ -125,7 +124,8 @@ export async function POST(request: Request) {
     );
 
     if (Array.isArray(body.tags)) {
-      await setContactTags(
+      const applyTags = created ? setContactTags : addContactTags;
+      await applyTags(
         ctx.supabase,
         ctx.accountId,
         auditUserId,

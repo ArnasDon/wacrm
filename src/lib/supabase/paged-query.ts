@@ -31,6 +31,25 @@ export async function fetchAllPages<T>(
   }
 }
 
+export async function fetchPagesUpTo<T>(
+  fetchPage: (from: number, to: number) => PromiseLike<PageResult<T>>,
+  maxRows: number,
+  pageSize = PAGE_SIZE,
+): Promise<T[]> {
+  const rows: T[] = [];
+  while (rows.length < maxRows) {
+    const to = Math.min(rows.length + pageSize, maxRows) - 1;
+    const { data, error } = await fetchPage(rows.length, to);
+    if (error) throw new Error(error.message);
+    if (!data || data.length === 0) return rows;
+    for (const row of data) {
+      if (rows.length >= maxRows) break;
+      rows.push(row);
+    }
+  }
+  return rows;
+}
+
 export async function fetchAllInChunks<T, V>(
   values: readonly V[],
   fetchPage: (

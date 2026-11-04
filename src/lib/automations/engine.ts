@@ -25,6 +25,7 @@ import { engineSendText, engineSendTemplate, engineSendInteractive } from './met
 import { validateInteractivePayload } from '@/lib/whatsapp/interactive'
 import { isDeliverableUrl } from '@/lib/webhooks/ssrf'
 import { getT } from '@/lib/i18n/translate'
+import { isWithinTimeWindow } from './time-of-day'
 
 /** Step errors land in automation_logs and are shown on the logs page. */
 const tErr = getT('LibErrors.engine')
@@ -166,6 +167,7 @@ export async function resumePendingExecution(pending: {
   parent_step_id: string | null
   branch: 'yes' | 'no' | null
   next_step_position: number
+  parked_step_id?: string | null
   context: AutomationContext
 }): Promise<void> {
   const db = supabaseAdmin()
@@ -181,14 +183,24 @@ export async function resumePendingExecution(pending: {
     return
   }
 
+  if (!(automation as Automation).is_active) {
+    await markPending(pending.id, 'expired')
+    await setLogError(pending.log_id, tErr('pausedWhileWaiting'))
+    return
+  }
+
   try {
+    const resumePoint = await resolveResumePoint(pending, pending.automation_id)
+    if (!resumePoint) {
+      await markPending(pending.id, 'expired')
+      await setLogError(pending.log_id, tErr('stepRemovedWhileWaiting'))
+      return
+    }
     await runResumed({
       automation: automation as Automation,
       contactId: pending.contact_id,
       context: pending.context ?? {},
-      parentStepId: pending.parent_step_id,
-      branch: pending.branch,
-      startPosition: pending.next_step_position,
+      ...resumePoint,
       logId: pending.log_id,
       triggerEvent: 'resumed_wait',
     })
@@ -271,6 +283,13 @@ export async function resumeAwaitingReply(input: AwaitingReplyInput): Promise<bo
       return false
     }
 
+    const resumePoint = await resolveResumePoint(pending, pending.automation_id)
+    if (!resumePoint) {
+      await markPending(pending.id, 'expired')
+      await setLogError(pending.log_id, tErr('stepRemovedWhileWaiting'))
+      return false
+    }
+
     await runResumed({
       automation: automation as Automation,
       contactId: pending.contact_id,
@@ -282,9 +301,7 @@ export async function resumeAwaitingReply(input: AwaitingReplyInput): Promise<bo
         conversation_id: input.context.conversation_id,
         interactive_reply_id: input.context.interactive_reply_id,
       },
-      parentStepId: pending.parent_step_id,
-      branch: pending.branch,
-      startPosition: pending.next_step_position,
+      ...resumePoint,
       logId: pending.log_id,
       triggerEvent: 'resumed_reply',
     })
@@ -335,7 +352,65 @@ interface PendingRow {
   parent_step_id: string | null
   branch: 'yes' | 'no' | null
   next_step_position: number
+  parked_step_id?: string | null
   context: AutomationContext | null
+}
+
+type ResumePoint = Pick<ExecuteArgs, 'parentStepId' | 'branch' | 'startPosition'>
+
+async function resolveResumePoint(
+  pending: Pick<PendingRow, 'parent_step_id' | 'branch' | 'next_step_position' | 'parked_step_id'>,
+  automationId: string,
+): Promise<ResumePoint | null> {
+  if (pending.parked_step_id) {
+    const { data: parkedStep, error } = await supabaseAdmin()
+      .from('automation_steps')
+      .select('id, parent_step_id, branch, position')
+      .eq('id', pending.parked_step_id)
+      .eq('automation_id', automationId)
+      .maybeSingle()
+    if (error) throw new Error(error.message)
+    if (!parkedStep) return null
+    const step = parkedStep as Pick<AutomationStep, 'parent_step_id' | 'branch' | 'position'>
+    return {
+      parentStepId: step.parent_step_id ?? null,
+      branch: step.parent_step_id ? (step.branch ?? 'yes') : null,
+      startPosition: step.position + 1,
+    }
+  }
+  if (pending.branch !== null && pending.parent_step_id === null) return null
+  return {
+    parentStepId: pending.parent_step_id,
+    branch: pending.branch,
+    startPosition: pending.next_step_position,
+  }
+}
+
+export const STALLED_CLAIM_MS = 15 * 60 * 1000
+
+export async function claimPendingExecution(id: string, now: Date = new Date()): Promise<boolean> {
+  const { data } = await supabaseAdmin()
+    .from('automation_pending_executions')
+    .update({ status: 'running', claimed_at: now.toISOString() })
+    .eq('id', id)
+    .eq('status', 'pending')
+    .select('id')
+    .maybeSingle()
+  return Boolean(data)
+}
+
+export async function requeueStalledExecutions(now: Date = new Date()): Promise<number> {
+  const { data, error } = await supabaseAdmin()
+    .from('automation_pending_executions')
+    .update({ status: 'pending', claimed_at: null })
+    .eq('status', 'running')
+    .lt('claimed_at', new Date(now.getTime() - STALLED_CLAIM_MS).toISOString())
+    .select('id')
+  if (error) {
+    console.error('[automations] requeue stalled executions failed:', error)
+    return 0
+  }
+  return (data ?? []).length
 }
 
 // ------------------------------------------------------------
@@ -455,7 +530,7 @@ async function executeStepsFrom(args: ExecuteArgs): Promise<ScopeOutcome> {
     if (step.step_type === 'wait') {
       const cfg = step.step_config as WaitStepConfig
       const ms = waitMs(cfg)
-      await db.from('automation_pending_executions').insert({
+      const { error: waitErr } = await db.from('automation_pending_executions').insert({
         automation_id: args.automation.id,
         // Tenancy: account_id required NOT NULL post-017.
         account_id: args.automation.account_id,
@@ -465,10 +540,22 @@ async function executeStepsFrom(args: ExecuteArgs): Promise<ScopeOutcome> {
         parent_step_id: args.parentStepId,
         branch: args.branch,
         next_step_position: step.position + 1,
+        parked_step_id: step.id,
         context: args.context,
         run_at: new Date(Date.now() + ms).toISOString(),
         status: 'pending',
       })
+      if (waitErr) {
+        errorMessage = tErr('scheduleWaitFailed', { message: waitErr.message })
+        results.push({
+          step_id: step.id,
+          step_type: step.step_type,
+          status: 'failed',
+          detail: errorMessage,
+        })
+        status = 'failed'
+        break
+      }
       results.push({
         step_id: step.id,
         step_type: step.step_type,
@@ -502,6 +589,10 @@ async function executeStepsFrom(args: ExecuteArgs): Promise<ScopeOutcome> {
         // (see runResumed).
         if (branchOutcome === 'suspended') {
           return suspend(args, results, errorMessage)
+        }
+        if (branchOutcome === 'failed') {
+          status = 'failed'
+          break
         }
         continue
       }
@@ -614,13 +705,15 @@ function waitsForReply(step: AutomationStep): boolean {
  * is superseded, so a reply can never resume a stale menu.
  */
 async function parkForReply(step: AutomationStep, args: ExecuteArgs): Promise<void> {
+  if (!args.contactId) throw new Error(tErr('needsContact', { step: step.step_type }))
   const db = supabaseAdmin()
-  await db
+  const { error: supErr } = await db
     .from('automation_pending_executions')
     .update({ status: 'superseded' })
     .eq('account_id', args.automation.account_id)
     .eq('contact_id', args.contactId)
     .eq('status', 'awaiting_reply')
+  if (supErr) throw new Error(tErr('parkForReplyFailed', { message: supErr.message }))
   const { error } = await db.from('automation_pending_executions').insert({
     automation_id: args.automation.id,
     account_id: args.automation.account_id,
@@ -630,6 +723,7 @@ async function parkForReply(step: AutomationStep, args: ExecuteArgs): Promise<vo
     parent_step_id: args.parentStepId,
     branch: args.branch,
     next_step_position: step.position + 1,
+    parked_step_id: step.id,
     context: args.context,
     // For awaiting_reply rows run_at is the reply deadline (migration 045).
     run_at: new Date(Date.now() + REPLY_WAIT_MS).toISOString(),
@@ -1045,7 +1139,7 @@ async function evaluateCondition(cfg: ConditionStepConfig, args: ExecuteArgs): P
       return (count ?? 0) > 0
     }
     case 'contact_field': {
-      if (!args.contactId || !cfg.operand) return false
+      if (!args.contactId || !cfg.operand || !(cfg.value ?? '').trim()) return false
       // Scope to the account so the condition can't be turned into a
       // cross-tenant read oracle via the service-role client.
       const { data } = await db
@@ -1055,27 +1149,16 @@ async function evaluateCondition(cfg: ConditionStepConfig, args: ExecuteArgs): P
         .eq('account_id', args.automation.account_id)
         .maybeSingle()
       const v = (data as Record<string, unknown> | null)?.[cfg.operand]
-      return v != null && String(v) === String(cfg.value ?? '')
+      return v != null && String(v) === String(cfg.value)
     }
     case 'message_content': {
+      const needle = (cfg.value ?? '').trim().toLowerCase()
+      if (!needle) return false
       const text = (args.context.message_text ?? '').toString()
-      return text.toLowerCase().includes((cfg.value ?? '').toLowerCase())
+      return text.toLowerCase().includes(needle)
     }
-    case 'time_of_day': {
-      // operand form "HH:mm-HH:mm" — true if now is within that window
-      // (supports over-midnight ranges like "18:00-09:00").
-      const [from, to] = (cfg.operand ?? '').split('-')
-      if (!from || !to) return false
-      const now = new Date()
-      const mins = now.getHours() * 60 + now.getMinutes()
-      const parse = (s: string) => {
-        const [h, m] = s.split(':').map(Number)
-        return (h || 0) * 60 + (m || 0)
-      }
-      const f = parse(from)
-      const t = parse(to)
-      return f <= t ? mins >= f && mins < t : mins >= f || mins < t
-    }
+    case 'time_of_day':
+      return isWithinTimeWindow(cfg.operand, new Date(), cfg.timezone)
     default:
       return false
   }

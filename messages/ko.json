@@ -73,24 +73,6 @@
     "retry": "다시 시도"
   },
   "Dashboard": {
-    "page": {
-      "title": "대시보드",
-      "description": "대화, 연락처, 딜, 브로드캐스트, 자동화 전반의 실시간 분석입니다.",
-      "activeConversations": "진행 중인 대화",
-      "newContactsToday": "오늘의 신규 연락처",
-      "openDealsValue": "진행 중인 딜 금액",
-      "messagesSentToday": "오늘 보낸 메시지",
-      "newTodayVsYesterday": "어제 대비 신규",
-      "vsYesterday": "어제 대비",
-      "openDeals": "진행 중인 딜 {count}건",
-      "noChange": "변동 없음 {suffix}"
-    },
-    "quickActions": {
-      "newContact": "새 연락처",
-      "newDeal": "새 딜",
-      "newBroadcast": "새 브로드캐스트",
-      "newAutomation": "새 자동화"
-    },
     "activityFeed": {
       "title": "최근 활동",
       "viewAll": "전체 보기 →",
@@ -104,6 +86,7 @@
       "timeD": "{day}일 전",
       "items": {
         "newMessage": "{who}에게서 새 메시지",
+        "newMessages": "{who}님이 메시지 {count}개를 보냄",
         "newContact": "새 연락처: {name}",
         "dealInStage": "딜 \"{title}\" - {stage} 단계",
         "dealUpdated": "딜 \"{title}\" 업데이트됨",
@@ -123,39 +106,228 @@
         "automationFallback": "자동화"
       }
     },
-    "conversationsChart": {
-      "title": "기간별 대화 추이",
-      "description": "방향별 일일 메시지 볼륨",
-      "days": "{count}일",
-      "noActivity": "이 기간에는 메시지 활동이 없습니다",
-      "noActivityHint": "메시지를 주고받으면 이 차트가 채워지기 시작합니다.",
-      "incoming": "수신",
-      "outgoing": "발신",
-      "tooltipIncoming": "수신 {count}건",
-      "tooltipOutgoing": "발신 {count}건",
-      "ariaLabel": "일별 대화 수"
-    },
-    "pipelineDonut": {
-      "title": "파이프라인 금액",
-      "description": "단계별 진행 중인 딜",
-      "noOpenDeals": "아직 진행 중인 딜이 없습니다",
-      "noOpenDealsHint": "파이프라인에서 딜을 만들면 단계별 분포를 여기서 확인할 수 있습니다.",
-      "dealCount": "딜 {count}건",
-      "total": "합계",
-      "ariaLabel": "단계별 파이프라인 금액"
-    },
-    "responseTimeChart": {
-      "title": "평균 첫 응답 시간",
-      "description": "요일별, 고객의 첫 미응답 메시지에 답변하기까지 걸린 시간(분)",
-      "target": "목표 {minutes}분",
-      "thisWeek": "이번 주:",
-      "lastWeek": "지난 주:",
-      "noReplies": "아직 기록된 응답이 없습니다",
-      "noRepliesHint": "고객 메시지에 답변하면 이 차트가 채워집니다.",
-      "avgMinutes": "평균 시간(분)"
-    },
     "emptyState": {
       "title": "아직 데이터가 충분하지 않습니다"
+    },
+    "overview": {
+      "loadFailed": "대시보드를 불러오지 못했습니다.",
+      "retry": "다시 시도",
+      "header": {
+        "greeting": {
+          "morning": "좋은 아침이에요, {name}님",
+          "afternoon": "좋은 오후예요, {name}님",
+          "evening": "좋은 저녁이에요, {name}님"
+        },
+        "greetingNoName": {
+          "morning": "좋은 아침이에요",
+          "afternoon": "좋은 오후예요",
+          "evening": "좋은 저녁이에요"
+        },
+        "contextWaiting": "고객 {count}명이 답장을 기다리고 있으며, 가장 오래 기다린 고객은 {wait}째입니다.",
+        "contextClear": "지금 답장을 기다리는 고객이 없습니다.",
+        "contextSetup": "설정을 마치면 여기에서 WhatsApp 메시지를 받을 수 있습니다.",
+        "rangeLabel": "기간",
+        "range": {
+          "1": "오늘",
+          "7": "7일",
+          "30": "30일",
+          "90": "90일"
+        },
+        "new": "새로 만들기",
+        "newContact": "새 연락처",
+        "newDeal": "새 딜",
+        "newBroadcast": "새 브로드캐스트",
+        "newAutomation": "새 자동화"
+      },
+      "health": {
+        "title": "WhatsApp 번호 상태",
+        "quality": {
+          "GREEN": "품질: 높음",
+          "YELLOW": "품질: 보통",
+          "RED": "품질: 낮음",
+          "UNKNOWN": "품질: 평가 전"
+        },
+        "perDay": "하루 {count}",
+        "unlimited": "일일 한도 없음",
+        "disconnected": "WhatsApp 연결 안 됨",
+        "unavailable": "번호 상태를 확인하지 못했습니다"
+      },
+      "attention": {
+        "waiting": "답장 대기",
+        "waitingMeta": "최장 {wait} · 목표 초과 {count}건",
+        "waitingNone": "모든 고객에게 답장함",
+        "unassigned": "미배정",
+        "onlineNow": "온라인 팀원 {count}명",
+        "closing": "곧 닫히는 응답 창",
+        "closingMeta": "2시간 안에 무료 답장 가능 시간이 끝남",
+        "failed": "실패한 메시지",
+        "failedMeta": "최근 24시간 · 원인 보기"
+      },
+      "failedDialog": {
+        "title": "실패한 메시지",
+        "description": "최근 24시간 동안 WhatsApp이 전달하지 못한 메시지입니다.",
+        "empty": "최근 24시간 동안 실패한 메시지가 없습니다.",
+        "unknownContact": "알 수 없는 연락처",
+        "unknownReason": "WhatsApp이 원인을 알려주지 않았습니다.",
+        "reasonWithCode": "{reason} (오류 {code})",
+        "showingLatest": "{total}건 중 최근 {shown}건을 표시합니다."
+      },
+      "kpi": {
+        "newConversations": "새 대화",
+        "newConversationsInfo": "이 기간에 시작된 대화입니다.",
+        "medianReply": "첫 답장 중앙값",
+        "medianReplyInfo": "고객의 첫 미답장 메시지부터 팀원의 답장까지 걸린 일반적인 시간입니다. AI와 자동화 답장은 포함하지 않습니다.",
+        "resolved": "해결됨",
+        "resolvedInfo": "이 기간에 종료된 대화입니다.",
+        "dealsWon": "성사된 딜",
+        "dealsWonInfo": "이 기간에 성사로 표시된 딜과 총 금액입니다.",
+        "readRate": "브로드캐스트 읽음률",
+        "readRateInfo": "이 기간에 보낸 브로드캐스트의 읽은 메시지 수를 전달된 메시지 수로 나눈 값입니다.",
+        "readOfDelivered": "전달 {delivered}건 중 {read}건 읽음",
+        "noBroadcasts": "이 기간에 보낸 브로드캐스트 없음",
+        "none": "—",
+        "vsPrevious": {
+          "1": "어제 대비",
+          "7": "이전 7일 대비",
+          "30": "이전 30일 대비",
+          "90": "이전 90일 대비"
+        },
+        "noComparison": "변화 없음",
+        "new": "신규",
+        "better": "이전보다 좋음",
+        "worse": "이전보다 나쁨",
+        "unchanged": "변화 없음",
+        "target": "목표 {minutes}분",
+        "targetMax": "{minutes}분"
+      },
+      "volume": {
+        "title": "메시지량",
+        "description": "받은 메시지와 보낸 메시지",
+        "hoursDescription": "시간대별 평균 받은 메시지",
+        "byDay": "일별",
+        "byHour": "시간별",
+        "busiestHours": "바쁜 시간대",
+        "incoming": "받음",
+        "outgoing": "보냄",
+        "averageIncoming": "평균 받은 메시지",
+        "perDay": "하루 평균 받은 메시지",
+        "perHour": "시간당 받은 메시지",
+        "busiestDay": "가장 바쁜 날",
+        "busiestHour": "가장 바쁜 시간",
+        "peakHour": "가장 바쁜 시간",
+        "secondPeak": "두 번째로 바쁜 시간",
+        "none": "—",
+        "empty": "이 기간에 메시지가 없습니다",
+        "emptyHint": "고객이 메시지를 보내면 여기에 표시됩니다."
+      },
+      "queue": {
+        "title": "답장 대기열",
+        "description": "오래 기다린 순",
+        "openInbox": "인박스 열기",
+        "empty": "모두 처리했습니다",
+        "emptyHint": "답장을 기다리는 고객이 없습니다.",
+        "unknownContact": "알 수 없는 연락처",
+        "noPreview": "미리보기 없음",
+        "windowLeft": "무료 답장까지 {time} 남음",
+        "handedOff": "AI가 넘김",
+        "assigned": "배정됨",
+        "unassigned": "미배정"
+      },
+      "pipeline": {
+        "title": "파이프라인",
+        "description": "단계별 진행 중인 딜",
+        "link": "파이프라인",
+        "choosePipeline": "파이프라인 선택",
+        "deals": "딜 {count}건",
+        "open": "진행 중",
+        "winRate": "성사율",
+        "avgToWin": "평균 성사 기간",
+        "days": "{count}일",
+        "none": "—",
+        "idle": "진행 중인 딜 {count}건이 7일 이상 활동이 없습니다",
+        "empty": "진행 중인 딜이 없습니다",
+        "emptyHint": "파이프라인에서 딜을 만들면 여기에 표시됩니다."
+      },
+      "team": {
+        "title": "팀",
+        "description": "이 기간의 답장",
+        "link": "팀원",
+        "member": "팀원",
+        "open": "진행 중",
+        "replies": "답장",
+        "median": "답장 중앙값",
+        "teammate": "팀원",
+        "ai": "AI 에이전트",
+        "none": "—",
+        "presence": {
+          "online": "온라인",
+          "away": "자리 비움",
+          "offline": "오프라인"
+        }
+      },
+      "campaigns": {
+        "title": "캠페인 및 자동화",
+        "description": "이 기간",
+        "link": "브로드캐스트",
+        "sentAt": "{date} · 수신자 {count}명",
+        "delivered": "전달됨",
+        "read": "읽음",
+        "replied": "답장함",
+        "failed": "실패",
+        "noBroadcast": "아직 보낸 브로드캐스트가 없습니다.",
+        "automations": "자동화 · 실행 {count}회",
+        "noRuns": "실행 없음",
+        "succeeded": "{percent} 성공",
+        "flows": "플로우",
+        "flowNamed": "플로우 “{name}”",
+        "flowFailed": "실패한 실행 {count}회",
+        "flowsOk": "실패한 실행 없음",
+        "aiReplies": "AI 답장 · {count}건",
+        "aiMedian": "중앙값 {time}",
+        "templates": "템플릿 · 승인 {count}개",
+        "templatesRejected": "거부 {count}개",
+        "templatesOk": "거부된 템플릿 없음",
+        "none": "—"
+      },
+      "setup": {
+        "title": "시작하기",
+        "progress": "{total}단계 중 {done}단계 완료",
+        "doneLabel": "(완료)",
+        "todoLabel": "(할 일)",
+        "steps": {
+          "whatsapp": {
+            "title": "WhatsApp 번호 연결",
+            "description": "고객이 메시지를 보내는 번호를 연결하세요.",
+            "action": "연결"
+          },
+          "contacts": {
+            "title": "연락처 추가",
+            "description": "CSV를 가져오거나, 고객이 메시지를 보내면 자동으로 추가됩니다.",
+            "action": "연락처 추가"
+          },
+          "template": {
+            "title": "메시지 템플릿 승인받기",
+            "description": "최근 24시간 동안 메시지를 보내지 않은 고객에게 연락하려면 필요합니다.",
+            "action": "템플릿 만들기"
+          },
+          "teammate": {
+            "title": "팀원 초대",
+            "description": "인박스를 공유하고 대화를 배정하세요.",
+            "action": "초대"
+          }
+        },
+        "previewTitle": "여기에 지표가 표시됩니다",
+        "previewHint": "고객이 메시지를 보내기 시작하면 이 페이지에 대기 중인 고객, 팀의 답장 속도, 딜과 캠페인 현황이 표시됩니다.",
+        "previewAction": "인박스 열기"
+      },
+      "duration": {
+        "seconds": "{value}초",
+        "minutes": "{value}분",
+        "hours": "{value}시간 {remainder}분",
+        "hoursOnly": "{value}시간",
+        "days": "{value}일 {remainder}시간",
+        "daysOnly": "{value}일"
+      }
     }
   },
   "Inbox": {
@@ -166,6 +338,9 @@
       "searchPlaceholder": "대화 검색...",
       "filterAll": "전체",
       "filterUnread": "읽지 않음",
+      "filterWaiting": "답장 대기",
+      "filterUnassigned": "미배정",
+      "filterExpiring": "응답 창 종료 임박",
       "filterOpen": "열림",
       "filterPending": "대기 중",
       "filterClosed": "닫힘",
@@ -184,6 +359,9 @@
       "hideContact": "연락처 숨기기",
       "showContact": "연락처 표시",
       "refresh": "새로고침",
+      "loadOlder": "이전 메시지 불러오기",
+      "loadingOlder": "불러오는 중…",
+      "loadOlderFailed": "이전 메시지를 불러오지 못했습니다.",
       "refreshConversation": "대화 새로고침",
       "status": "상태",
       "statusOpen": "열림",
@@ -207,6 +385,7 @@
       "waitForSending": "메시지 전송이 끝날 때까지 기다려 주세요",
       "reactionFailed": "반응 추가 실패: {reason}",
       "assignmentUpdateFailed": "담당자 변경에 실패했습니다",
+      "assigneeNoLongerMember": "해당 팀원은 더 이상 이 계정의 멤버가 아닙니다",
       "networkError": "네트워크 오류",
       "documentFallback": "문서",
       "you": "나"
@@ -700,6 +879,7 @@
       "titlePlaceholder": "딜 제목",
       "contact": "연락처",
       "selectContact": "연락처 선택",
+      "searchContacts": "이름 또는 전화번호로 연락처 검색",
       "linkToConversation": "대화에 연결",
       "value": "금액",
       "currency": "통화",
@@ -872,7 +1052,9 @@
       "toastNotLinked": "프로필이 계정에 연결되어 있지 않습니다.",
       "toastFailedDraft": "초안 저장 실패: {error}",
       "toastDraftSaved": "초안이 저장되었습니다",
-      "broadcastFailed": "브로드캐스트 실패"
+      "broadcastFailed": "브로드캐스트 실패",
+      "toastSendTakenOver": "다른 전송 작업이 이 브로드캐스트를 넘겨받아 이 탭에서는 전송을 중단했습니다. 브로드캐스트를 열어 진행 상황을 확인하세요.",
+      "toastSendInterrupted": "서버 연결이 끊겨 전송이 중단되었습니다. 브로드캐스트를 열고 이어서 발송을 눌러 남은 수신자에게 보내세요. 버튼은 5분 이내에 표시됩니다."
     },
     "wizard": {
       "next": "다음",
@@ -1220,6 +1402,7 @@
         },
         "operandLabel": "피연산자",
         "placeholderTime": "HH:mm-HH:mm",
+        "timezoneLabel": "시간대",
         "placeholderContact": "이름 / 이메일 / 회사",
         "placeholderTag": "태그 id",
         "urlLabel": "URL",
@@ -1309,6 +1492,7 @@
       "statusHandedOff": "인계됨",
       "statusTimedOut": "시간 초과",
       "statusPaused": "상담원이 일시 중지함",
+      "statusCancelled": "취소됨",
       "statusFailed": "실패"
     },
     "builder": {
@@ -1665,6 +1849,7 @@
       "category": "카테고리",
       "language": "언어",
       "langFixed": "템플릿이 Meta에 존재하면 언어가 고정됩니다.",
+      "categoryFixed": "승인된 템플릿의 카테고리는 변경할 수 없습니다.",
       "langHint": "Meta의 정확한 코드와 일치해야 합니다 — <code>en_US</code>와 <code>en</code>은 다른 코드입니다.",
       "header": "헤더",
       "headerNone": "없음",
@@ -1870,6 +2055,7 @@
       "quick-replies": "빠른 답장",
       "fields": "필드 & 태그",
       "deals": "딜 & 통화",
+      "inbox": "인박스",
       "members": "팀원",
       "api": "API 키"
     },
@@ -2020,6 +2206,21 @@
       "saveFailed": "기본 통화를 저장하지 못했습니다",
       "saveSuccess": "기본 통화가 업데이트되었습니다"
     },
+    "inbox": {
+      "title": "인박스",
+      "description": "대시보드가 팀의 답장 시간을 측정하는 기준입니다.",
+      "replyTarget": "답장 시간 목표",
+      "replyTargetDesc": "첫 답장을 이 시간보다 오래 기다린 대화를 대시보드에 표시하고, 답장 중앙값을 이 목표와 비교합니다.",
+      "minutesLabel": "분",
+      "hint": "1에서 1440(24시간) 사이의 정수입니다.",
+      "invalid": "1에서 1440 사이의 정수를 입력하세요.",
+      "adminOnlyHint": "계정 관리자만 답장 시간 목표를 변경할 수 있습니다.",
+      "save": "저장",
+      "saving": "저장 중...",
+      "saveFailed": "답장 시간 목표를 저장하지 못했습니다",
+      "saveSuccess": "답장 시간 목표가 업데이트되었습니다",
+      "loadFailed": "답장 시간 목표를 불러오지 못했습니다"
+    },
     "aiConfig": {
       "title": "에이전트 설정",
       "description": "OpenAI, Anthropic 또는 OpenAI 호환 API 키를 직접 사용하세요. wacrm은 입력한 키로 제공업체를 직접 호출하므로 좌석당 AI 요금이 없으며 데이터는 그대로 유지됩니다. 받은 키는 받은편지함 AI 초안, 자동 응답 봇, Playground에 사용됩니다.",
@@ -2075,6 +2276,8 @@
       "removeFailed": "제거하지 못했습니다.",
       "reindexSuccess": "문서 {count}개를 재색인했습니다.",
       "reindexFailed": "재색인에 실패했습니다.",
+      "reindexWithFailures": "문서 {total}개 중 {reindexed}개를 재색인했습니다. {failedCount}개 실패: {titles}. 재색인을 사용해 다시 시도하세요.",
+      "reindexKeywordOnly": "문서 {count}개를 재색인했지만 {keywordOnlyCount}개는 키워드로만 검색할 수 있습니다(의미 기반 색인 실패). 재색인을 사용해 다시 시도하세요.",
       "title": "지식베이스",
       "description": "FAQ, 정책, 제품 정보를 추가하세요. 어시스턴트가 초안 작성과 자동 응답 시 관련된 부분을 검색해 인계 대신 직접 답변할 수 있습니다.{searchType}",
       "semanticSearchOn": " 의미 기반 검색이 켜져 있습니다 (임베딩 키 설정됨).",
@@ -2176,6 +2379,8 @@
       "usedBody": "이 초대는 이미 수락되었습니다. 본인이 아니라면 계정 관리자에게 새 링크를 요청하세요.",
       "expiredTitle": "초대가 만료되었습니다",
       "expiredBody": "이 초대는 만료되었습니다. 계정 관리자에게 새 초대를 요청하세요 — 몇 초면 생성됩니다.",
+      "rateLimitedTitle": "시도 횟수가 너무 많습니다",
+      "rateLimitedBody": "짧은 시간에 이 초대를 너무 여러 번 확인했습니다. 1분 정도 기다린 후 다시 시도하세요.",
       "serverErrorTitle": "문제가 발생했습니다",
       "serverErrorBody": "지금은 이 초대를 확인할 수 없습니다. 잠시 후 페이지를 새로 고쳐 보세요."
     },
@@ -2417,7 +2622,9 @@
       "contactNotFound": "연락처를 찾을 수 없습니다",
       "tagNotFound": "태그를 찾을 수 없습니다",
       "addFailed": "연락처 태그를 추가하지 못했습니다: {message}",
-      "removeFailed": "연락처 태그를 제거하지 못했습니다: {message}"
+      "removeFailed": "연락처 태그를 제거하지 못했습니다: {message}",
+      "invalidContactId": "연락처 ID는 UUID여야 합니다",
+      "invalidTagId": "태그 ID는 UUID여야 합니다"
     },
     "auth": {
       "unauthorized": "인증되지 않았습니다",
@@ -2453,6 +2660,9 @@
       "pausedWhileWaitingForReply": "답장을 기다리는 동안 자동화가 일시 중지되었습니다",
       "noReplyWithin24h": "24시간 내 답장 없음",
       "parkForReplyFailed": "답장 대기 상태로 전환할 수 없습니다: {message}",
+      "pausedWhileWaiting": "대기 중에 자동화가 일시 중지되었습니다",
+      "stepRemovedWhileWaiting": "이 실행이 대기하던 단계가 삭제되었거나 분기 밖으로 이동되었습니다",
+      "scheduleWaitFailed": "대기를 예약할 수 없습니다: {message}",
       "destinationNotAllowed": "send_webhook: 허용되지 않는 대상입니다",
       "webhookStatus": "웹훅이 {status}을(를) 반환했습니다",
       "conversationNotInAccount": "대화가 이 계정에 속하지 않습니다",
@@ -2469,6 +2679,8 @@
       "entryMissing": "시작 노드 \"{id}\"이(가) 존재하지 않습니다.",
       "duplicateNodeKey": "중복된 node_key \"{key}\".",
       "unreachable": "노드 \"{key}\"은(는) 시작 노드에서 도달할 수 없습니다.",
+      "autoAdvanceCycle": "노드 {keys}이(가) 고객 응답을 기다리지 않고 서로 반복되어 플로우가 메시지를 계속 보내게 됩니다. 반복 구간에 버튼, 목록 또는 질문 단계를 추가하거나 반복을 끊으세요.",
+      "autoAdvanceChainTooLong": "노드 \"{key}\"부터 고객 응답을 기다리지 않는 단계가 {count}개 연속으로 이어집니다. 플로우는 대기 전에 이런 단계를 최대 {max}개까지 실행할 수 있습니다. 버튼, 목록 또는 질문 단계를 추가해 구간을 나누세요.",
       "keywordsRequired": "키워드 트리거에는 키워드가 하나 이상 필요합니다.",
       "blankKeywords": "키워드 {count}개가 비어 있습니다 — 아무것과도 일치하지 않습니다.",
       "startNeedsNext": "시작 노드는 다음 노드를 가리켜야 합니다.",
@@ -2533,6 +2745,8 @@
       "waitUnitInvalid": "대기 단위는 분, 시간 또는 일이어야 합니다",
       "conditionSubjectRequired": "조건 대상은 필수입니다",
       "conditionOperandRequired": "조건 피연산자는 필수입니다",
+      "conditionValueRequired": "조건 값은 필수입니다",
+      "conditionTimezoneInvalid": "조건 시간대가 올바른 IANA 시간대가 아닙니다",
       "webhookUrlRequired": "웹훅 URL은 필수입니다",
       "webhookUrlScheme": "웹훅 URL은 http 또는 https를 사용해야 합니다",
       "webhookUrlInvalid": "웹훅 URL이 올바른 URL이 아닙니다",
@@ -2697,15 +2911,16 @@
         "updateDocFailed": "문서를 업데이트하지 못했습니다",
         "indexingFailed": "색인 실패",
         "updatedIndexFailed": "업데이트되었지만 의미 기반 색인에 실패했습니다({message}). 키워드 검색은 계속 작동합니다. 재색인을 사용해 다시 시도하세요.",
+        "updatedNotIndexed": "업데이트되었지만 색인에 실패했습니다({message}). 아직 문서를 검색할 수 없습니다. 재색인을 사용해 다시 시도하세요.",
         "updatedKeywordOnly": "키워드 검색만으로 업데이트되었습니다 — 임베딩 키를 복호화할 수 없습니다(ENCRYPTION_KEY를 확인한 후 키를 다시 입력하세요).",
         "deleteDocFailed": "문서를 삭제하지 못했습니다",
         "loadDocsFailed": "문서 목록을 불러오지 못했습니다",
         "reindexKeyCorrupt": "임베딩 키를 복호화할 수 없습니다(ENCRYPTION_KEY를 확인한 후 설정 → AI 어시스턴트에서 키를 다시 입력하세요). 재색인된 항목이 없습니다.",
-        "reindexPartial": "{reindexed}개를 재색인한 후 오류가 발생했습니다: {message}",
         "loadKbFailed": "지식베이스를 불러오지 못했습니다",
         "titleContentRequired": "제목과 내용은 필수입니다",
         "saveDocFailed": "문서를 저장하지 못했습니다",
         "savedIndexFailed": "저장되었지만 의미 기반 색인에 실패했습니다({message}). 키워드 검색은 계속 작동합니다. 재색인을 사용해 다시 시도하세요.",
+        "savedNotIndexed": "저장되었지만 색인에 실패했습니다({message}). 아직 문서를 검색할 수 없습니다. 재색인을 사용해 다시 시도하세요.",
         "savedKeywordOnly": "키워드 검색만으로 저장되었습니다 — 임베딩 키를 복호화할 수 없습니다(ENCRYPTION_KEY를 확인한 후 키를 다시 입력하세요)."
       }
     },
@@ -2722,6 +2937,8 @@
     "flows": {
       "statusInvalid": "상태는 'draft', 'active', 'archived' 중 하나여야 합니다",
       "cannotActivate": "플로우를 활성화할 수 없습니다 — 먼저 아래 문제를 해결하세요.",
+      "cannotSaveActive": "이 플로우는 활성 상태이므로 이 문제가 있는 상태로 저장할 수 없습니다. 문제를 해결하거나 먼저 플로우를 일시 중지하세요.",
+      "timeoutHoursInvalid": "on_timeout_hours는 0보다 크고 {max} 이하인 숫자여야 합니다.",
       "nameEmpty": "이름은 비워둘 수 없습니다",
       "unknownTemplate": "알 수 없는 플로우 템플릿 \"{slug}\"",
       "insertFailed": "플로우를 생성하지 못했습니다",
@@ -2786,6 +3003,7 @@
       "neverSubmitted": "이 템플릿은 Meta에 제출된 적이 없습니다 — 새 템플릿을 사용해 제출하세요.",
       "statusNotEditable": "{status} 상태의 템플릿은 수정할 수 없습니다. 허용: APPROVED, REJECTED, PAUSED.",
       "authNotEditable": "AUTHENTICATION 템플릿은 여기서 수정할 수 없습니다 — Meta WhatsApp 관리자에서 관리하세요.",
+      "categoryLockedApproved": "Meta는 승인된 템플릿의 카테고리 변경을 허용하지 않습니다. 대신 새 템플릿을 만드세요.",
       "validationFailed": "유효성 검사에 실패했습니다.",
       "headerUploadFailed": "헤더 미디어 업로드에 실패했습니다.",
       "metaEditFailed": "Meta에서 수정하지 못했습니다.",
@@ -2799,6 +3017,7 @@
       "metaSubmitFailed": "Meta에 제출하지 못했습니다.",
       "rateLimit": "Meta 요청 한도에 도달했습니다(시간당 템플릿 생성 100개). 나중에 다시 시도하세요.",
       "submittedSaveFailed": "Meta에 제출되었지만 로컬에 저장하지 못했습니다: {message}. 복구하려면 \"Meta에서 동기화\"를 실행하세요.",
+      "alreadyExists": "이 계정에 {name} ({language}) 템플릿이 이미 있습니다. 새로 만들지 말고 기존 템플릿을 수정하거나 다시 제출하세요.",
       "submitFailed": "템플릿을 제출하지 못했습니다.",
       "metaApiStatus": "Meta API 오류: {status}",
       "syncFailed": "템플릿을 동기화하지 못했습니다"

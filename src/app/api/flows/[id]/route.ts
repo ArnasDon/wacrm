@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
+import { validateFlowForActivation } from '@/lib/flows/validate'
+import { MAX_FLOW_TIMEOUT_HOURS } from '@/lib/flows/types'
 import { getT } from '@/lib/i18n/translate'
 
 const t = getT('Api')
@@ -9,10 +11,7 @@ const t = getT('Api')
 /**
  * GET   /api/flows/[id]  — fetch one flow with its nodes.
  * PUT   /api/flows/[id]  — replace name/trigger/entry/fallback + the
- *                          full node graph (delete-then-insert under
- *                          the hood; not atomic, but the runner is
- *                          resilient to mid-edit reads — node_not_found
- *                          gracefully ends the run).
+ *                          full node graph.
  * DELETE /api/flows/[id] — hard delete (RLS+CASCADE clean up nodes,
  *                          runs, events).
  *
@@ -119,14 +118,24 @@ export async function PUT(
     )
   }
 
+  if (!isValidFallbackPolicy(body.fallback_policy)) {
+    return NextResponse.json(
+      { error: t('flows.timeoutHoursInvalid', { max: MAX_FLOW_TIMEOUT_HOURS }) },
+      { status: 400 },
+    )
+  }
+
   const admin = supabaseAdmin()
 
-  // Update the flow row first — the body may not include `nodes` (a
-  // header-only save for editing the trigger config without touching
-  // the graph). Skip node replacement in that case.
-  const flowPatch: Record<string, unknown> = {
-    updated_at: new Date().toISOString(),
+  const activeBlockers = await validateIfActive(admin, id, body)
+  if (activeBlockers) {
+    return NextResponse.json(
+      { error: t('flows.cannotSaveActive'), issues: activeBlockers },
+      { status: 422 },
+    )
   }
+
+  const flowPatch: Record<string, unknown> = {}
   if (body.name !== undefined) flowPatch.name = body.name.trim()
   if (body.description !== undefined)
     flowPatch.description = body.description
@@ -138,38 +147,28 @@ export async function PUT(
   if (body.fallback_policy !== undefined)
     flowPatch.fallback_policy = body.fallback_policy
 
-  const { error: updErr } = await admin
-    .from('flows')
-    .update(flowPatch)
-    .eq('id', id)
-  if (updErr) {
-    return NextResponse.json({ error: updErr.message }, { status: 500 })
-  }
-
   if (body.nodes !== undefined) {
-    // Delete-then-insert. Not transactional but the runner handles
-    // mid-edit reads safely (a node_not_found ends the run cleanly).
-    const { error: delErr } = await admin
-      .from('flow_nodes')
-      .delete()
-      .eq('flow_id', id)
-    if (delErr) {
-      return NextResponse.json({ error: delErr.message }, { status: 500 })
+    const { error: graphErr } = await guard.supabase.rpc('replace_flow_graph', {
+      p_flow_id: id,
+      p_nodes: body.nodes.map((n) => ({
+        node_key: n.node_key,
+        node_type: n.node_type,
+        config: n.config,
+        position_x: n.position_x ?? 0,
+        position_y: n.position_y ?? 0,
+      })),
+      p_flow: flowPatch,
+    })
+    if (graphErr) {
+      return NextResponse.json({ error: graphErr.message }, { status: 500 })
     }
-    if (body.nodes.length > 0) {
-      const { error: insErr } = await admin.from('flow_nodes').insert(
-        body.nodes.map((n) => ({
-          flow_id: id,
-          node_key: n.node_key,
-          node_type: n.node_type,
-          config: n.config,
-          position_x: n.position_x ?? 0,
-          position_y: n.position_y ?? 0,
-        })),
-      )
-      if (insErr) {
-        return NextResponse.json({ error: insErr.message }, { status: 500 })
-      }
+  } else {
+    const { error: updErr } = await admin
+      .from('flows')
+      .update({ ...flowPatch, updated_at: new Date().toISOString() })
+      .eq('id', id)
+    if (updErr) {
+      return NextResponse.json({ error: updErr.message }, { status: 500 })
     }
   }
 
@@ -184,6 +183,55 @@ export async function PUT(
       .order('created_at', { ascending: true }),
   ])
   return NextResponse.json({ flow, nodes: nodes ?? [] })
+}
+
+function isValidFallbackPolicy(policy: unknown): boolean {
+  if (policy === undefined) return true
+  if (!policy || typeof policy !== 'object' || Array.isArray(policy)) return false
+  const hours = (policy as { on_timeout_hours?: unknown }).on_timeout_hours
+  if (hours === undefined) return true
+  return (
+    typeof hours === 'number' &&
+    Number.isFinite(hours) &&
+    hours > 0 &&
+    hours <= MAX_FLOW_TIMEOUT_HOURS
+  )
+}
+
+async function validateIfActive(
+  admin: ReturnType<typeof supabaseAdmin>,
+  flowId: string,
+  body: PutBody,
+): Promise<ReturnType<typeof validateFlowForActivation> | null> {
+  const { data: current } = await admin
+    .from('flows')
+    .select('name, status, trigger_type, trigger_config, entry_node_id')
+    .eq('id', flowId)
+    .maybeSingle()
+  if (!current || current.status !== 'active') return null
+
+  const nodes =
+    body.nodes ??
+    ((
+      await admin
+        .from('flow_nodes')
+        .select('node_key, node_type, config')
+        .eq('flow_id', flowId)
+    ).data ?? [])
+
+  const issues = validateFlowForActivation(
+    {
+      name: body.name !== undefined ? body.name.trim() : current.name,
+      trigger_type: body.trigger_type ?? current.trigger_type,
+      trigger_config: body.trigger_config ?? current.trigger_config ?? {},
+      entry_node_id:
+        body.entry_node_id !== undefined
+          ? body.entry_node_id
+          : current.entry_node_id,
+    },
+    nodes,
+  )
+  return issues.some((i) => i.severity === 'error') ? issues : null
 }
 
 export async function DELETE(

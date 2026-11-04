@@ -20,16 +20,25 @@ export function normalizePhone(phone: string): string {
 /**
  * Compare two phone numbers accounting for trunk prefix differences.
  * e.g. "370063949836" (with trunk 0) matches "37063949836" (without trunk 0)
- * by comparing the last 8 digits.
  */
 export function phonesMatch(phone1: string, phone2: string): boolean {
   const n1 = normalizePhone(phone1)
   const n2 = normalizePhone(phone2)
   if (n1 === n2) return true
-  if (n1.length >= 8 && n2.length >= 8) {
-    return n1.slice(-8) === n2.slice(-8)
-  }
-  return false
+  return isTrunkZeroVariant(n1, n2)
+}
+
+const MIN_TRUNK_MATCH_DIGITS = 8
+
+function isTrunkZeroVariant(n1: string, n2: string): boolean {
+  if (Math.abs(n1.length - n2.length) !== 1) return false
+  const [shorter, longer] = n1.length < n2.length ? [n1, n2] : [n2, n1]
+  if (shorter.length < MIN_TRUNK_MATCH_DIGITS) return false
+  return [1, 2, 3].some((ccLen) => {
+    const nationalPart = shorter.slice(ccLen)
+    if (nationalPart.startsWith('0')) return false
+    return shorter.slice(0, ccLen) + '0' + nationalPart === longer
+  })
 }
 
 /**

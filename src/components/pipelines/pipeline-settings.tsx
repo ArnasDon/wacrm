@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   DndContext,
   PointerSensor,
@@ -18,6 +18,11 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { createClient } from "@/lib/supabase/client";
 import type { Pipeline, PipelineStage } from "@/types";
+import {
+  buildStageUpdateRows,
+  reconcileStages,
+  sortByPosition,
+} from "@/lib/pipelines/stage-sync";
 import {
   Dialog,
   DialogContent,
@@ -79,14 +84,23 @@ export function PipelineSettings({
   const [saving, setSaving] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const wasOpen = useRef(false);
 
   // Reset form state when the dialog opens or its prop inputs change
   // — legitimate prop-driven sync.
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      wasOpen.current = false;
+      return;
+    }
+    if (wasOpen.current) {
+      setLocalStages((current) => reconcileStages(current, stages));
+      return;
+    }
+    wasOpen.current = true;
     setName(pipeline.name);
-    setLocalStages([...stages].sort((a, b) => a.position - b.position));
+    setLocalStages(sortByPosition(stages));
     setShowDeleteConfirm(false);
   }, [open, pipeline, stages]);
   /* eslint-enable react-hooks/set-state-in-effect */
@@ -107,16 +121,21 @@ export function PipelineSettings({
   async function handleSave() {
     setSaving(true);
 
+    const existing = await supabase
+      .from("pipeline_stages")
+      .select("id")
+      .eq("pipeline_id", pipeline.id);
+    if (existing.error) {
+      setSaving(false);
+      toast.error(t("toastFailedSave"));
+      return;
+    }
+    const existingIds = new Set((existing.data ?? []).map((row) => row.id as string));
+
     // One upsert for all stages — batches N stage writes into a single
     // round-trip. Previous implementation did N sequential UPDATEs which
     // latency-scaled linearly with stage count.
-    const stageRows = localStages.map((s, i) => ({
-      id: s.id,
-      pipeline_id: s.pipeline_id,
-      name: s.name,
-      color: s.color,
-      position: i,
-    }));
+    const stageRows = buildStageUpdateRows(localStages, existingIds);
 
     const [renameRes, stagesRes] = await Promise.all([
       supabase
@@ -156,9 +175,10 @@ export function PipelineSettings({
       toast.error(t("toastFailedAddStage"));
       return;
     }
-    setLocalStages([...localStages, data as PipelineStage]);
+    setLocalStages((current) => [...current, data as PipelineStage]);
     setNewStageName("");
     setNewStageColor(STAGE_COLORS[(localStages.length + 1) % STAGE_COLORS.length]);
+    onStagesChanged();
   }
 
   async function handleRemoveStage(stageId: string) {
@@ -179,7 +199,8 @@ export function PipelineSettings({
       toast.error(t("toastFailedDeleteStage"));
       return;
     }
-    setLocalStages(localStages.filter((s) => s.id !== stageId));
+    setLocalStages((current) => current.filter((s) => s.id !== stageId));
+    onStagesChanged();
   }
 
   async function handleDeletePipeline() {

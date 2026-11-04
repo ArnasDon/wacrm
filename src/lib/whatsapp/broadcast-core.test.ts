@@ -124,6 +124,28 @@ describe('createBroadcast recipient validation (#586)', () => {
     ]);
   });
 
+  it('counts recipients that resolve to an already-listed contact as duplicates', async () => {
+    const { db } = makeDb({
+      data: [{ broadcast_id: 'b-1', recipient_id: 'r-1', contact_id: 'c1' }],
+      error: null,
+    });
+
+    const plan = await createBroadcast(db, 'acc', 'user', {
+      templateName: 'promo',
+      recipients: [
+        { to: '+14155550123', params: ['first'] },
+        { to: '+1 415 555 0123', params: ['second'] },
+        { to: 'invalid' },
+      ],
+    });
+
+    expect(plan.rejected).toBe(1);
+    expect(plan.duplicates).toBe(1);
+    expect(plan.planned).toEqual([
+      { recipientRowId: 'r-1', phone: '14155550123', params: ['first'] },
+    ]);
+  });
+
   it('fails the whole request when no recipient carries a country code', async () => {
     const { db, calls } = makeDb({ data: [], error: null });
     await expect(
@@ -155,6 +177,25 @@ describe('createBroadcast atomicity (#370)', () => {
     expect(plan.planned).toEqual([
       { recipientRowId: 'r-1', phone: '14155550123', params: [] },
     ]);
+  });
+
+  it('sends one params array per contact, even for a single-variable template', async () => {
+    const { db, calls } = makeDb({
+      data: [{ broadcast_id: 'b-1', recipient_id: 'r-1', contact_id: 'c1' }],
+      error: null,
+    });
+
+    await createBroadcast(db, 'acc', 'user', {
+      templateName: 'promo',
+      recipients: [{ to: '+14155550123', params: ['Ann'] }],
+    });
+
+    const args = calls.rpc[0].args as {
+      p_contact_ids: string[];
+      p_template_params: unknown;
+    };
+    expect(args.p_contact_ids).toEqual(['c1']);
+    expect(args.p_template_params).toEqual([['Ann']]);
   });
 
   it('throws and leaves no orphaned parent when the atomic create fails', async () => {

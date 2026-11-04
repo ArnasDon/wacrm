@@ -22,7 +22,7 @@
   ],
   "type": "module",
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.0.0"
   },
   "bin": {
     "wacrm-mcp": "./dist/index.js"
@@ -43,7 +43,7 @@
     "zod": "^3.25.0"
   },
   "devDependencies": {
-    "@types/node": "^20.19.0",
+    "@types/node": "^22.19.0",
     "typescript": "^5.7.0"
   },
   "overrides": {

@@ -24,18 +24,12 @@ interface ActivityFeedProps {
 const PAGE_SIZES = [5, 10, 20, 50] as const
 type PageSize = (typeof PAGE_SIZES)[number]
 
-interface KindTheme {
-  icon: ComponentType<{ className?: string }>
-  /** Tailwind classes for the round icon badge + label color. */
-  badge: string
-}
-
-const KIND_THEME: Record<ActivityKind, KindTheme> = {
-  message: { icon: MessageSquare, badge: 'bg-blue-500/10 text-blue-400' },
-  contact: { icon: UserPlus, badge: 'bg-primary/10 text-primary' },
-  deal: { icon: Briefcase, badge: 'bg-primary/10 text-primary' },
-  broadcast: { icon: Radio, badge: 'bg-amber-500/10 text-amber-400' },
-  automation: { icon: Zap, badge: 'bg-rose-500/10 text-rose-400' },
+const KIND_ICON: Record<ActivityKind, ComponentType<{ className?: string }>> = {
+  message: MessageSquare,
+  contact: UserPlus,
+  deal: Briefcase,
+  broadcast: Radio,
+  automation: Zap,
 }
 
 import { useTranslations } from 'next-intl'
@@ -57,9 +51,9 @@ export function ActivityFeed({ items, loading }: ActivityFeedProps) {
     i === 0 || totalLoaded > PAGE_SIZES[i - 1]
 
   return (
-    <section className="rounded-xl border border-border bg-card">
+    <section className="overflow-hidden rounded-xl bg-card ring-1 ring-foreground/10">
       <header className="flex items-center justify-between border-b border-border px-5 py-4">
-        <h2 className="text-sm font-semibold text-foreground">{t('title')}</h2>
+        <h2 className="text-base font-medium text-foreground">{t('title')}</h2>
         <Link
           href="/inbox"
           className="text-xs font-medium text-primary hover:text-primary/80"
@@ -86,20 +80,14 @@ export function ActivityFeed({ items, loading }: ActivityFeedProps) {
         <>
           <ul className="divide-y divide-border">
             {visible.map((it, i) => {
-              const theme = KIND_THEME[it.kind]
-              const Icon = theme.icon
+              const Icon = KIND_ICON[it.kind]
               // Alternating row background for scanability. bg-muted/40
               // keeps the stripe visible in both light and dark modes
               // (bg-card/40 vanishes against a white card surface in light).
               const stripe = i % 2 === 0 ? 'bg-transparent' : 'bg-muted/40'
               const row = (
                 <div className="flex items-center gap-3 px-5 py-2.5">
-                  <span
-                    className={cn(
-                      'flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full',
-                      theme.badge,
-                    )}
-                  >
+                  <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
                     <Icon className="h-3.5 w-3.5" />
                   </span>
                   <span className="min-w-0 flex-1 truncate text-sm text-foreground">

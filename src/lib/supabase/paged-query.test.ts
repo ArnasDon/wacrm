@@ -4,6 +4,7 @@ import {
   chunk,
   fetchAllInChunks,
   fetchAllPages,
+  fetchPagesUpTo,
   IN_CHUNK_SIZE,
   PAGE_SIZE,
   type PageResult,
@@ -100,5 +101,33 @@ describe('fetchAllInChunks', () => {
     );
     expect(seen.map((s) => s.length)).toEqual([100, 100, 50]);
     expect(rows).toHaveLength(500);
+  });
+});
+
+describe('fetchPagesUpTo', () => {
+  it('reads past the 1000-row cap up to the limit', async () => {
+    const { fetchPage, calls } = cappedSource(12000, 1000);
+    const rows = await fetchPagesUpTo(fetchPage, 10001);
+    expect(rows).toHaveLength(10001);
+    expect(rows[10000]).toBe(10000);
+    expect(calls[calls.length - 1]).toEqual([10000, 10000]);
+  });
+
+  it('stops when the source is exhausted', async () => {
+    const { fetchPage } = cappedSource(2500, 1000);
+    expect(await fetchPagesUpTo(fetchPage, 10001)).toHaveLength(2500);
+  });
+
+  it('keeps paging when the server cap is below the page size', async () => {
+    const { fetchPage } = cappedSource(1200, 500);
+    expect(await fetchPagesUpTo(fetchPage, 1100)).toHaveLength(1100);
+  });
+
+  it('throws on a page error', async () => {
+    const failing = async (): Promise<PageResult<number>> => ({
+      data: null,
+      error: { message: 'boom' },
+    });
+    await expect(fetchPagesUpTo(failing, 10)).rejects.toThrow('boom');
   });
 });

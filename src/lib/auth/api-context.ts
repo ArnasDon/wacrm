@@ -59,9 +59,7 @@ export interface ApiKeyContext {
 function extractKey(request: Request): string | null {
   const header = request.headers.get('authorization');
   if (!header) return null;
-  const value = header.startsWith('Bearer ')
-    ? header.slice('Bearer '.length).trim()
-    : header.trim();
+  const value = header.replace(/^\s*bearer\s+/i, '').trim();
   return value.length > 0 ? value : null;
 }
 

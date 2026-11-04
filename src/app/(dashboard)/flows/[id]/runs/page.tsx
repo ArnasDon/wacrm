@@ -10,6 +10,7 @@ import {
   Clock,
   UserPlus,
   PlayCircle,
+  CircleSlash,
   PauseCircle,
   ChevronDown,
   ChevronRight,
@@ -40,6 +41,7 @@ interface RunRow {
     | "handed_off"
     | "timed_out"
     | "paused_by_agent"
+    | "cancelled"
     | "failed";
   current_node_key: string | null;
   started_at: string;
@@ -82,6 +84,10 @@ const STATUS_META: Record<
   paused_by_agent: {
     classes: "border-border bg-muted text-muted-foreground",
     icon: PauseCircle,
+  },
+  cancelled: {
+    classes: "border-border bg-muted/60 text-muted-foreground",
+    icon: CircleSlash,
   },
   failed: {
     classes: "border-red-600/40 bg-red-500/10 text-red-300",
@@ -257,6 +263,8 @@ function RunCard({
                   ? "statusTimedOut"
                   : run.status === "paused_by_agent"
                   ? "statusPaused"
+                  : run.status === "cancelled"
+                  ? "statusCancelled"
                   : "statusFailed"
               )}
             </Badge>

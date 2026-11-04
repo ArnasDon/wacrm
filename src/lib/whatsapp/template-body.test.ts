@@ -6,6 +6,7 @@ import {
   resolveTemplateRow,
   templateBodyParams,
   templateContentText,
+  templateHeaderMediaUrl,
 } from './template-body';
 import type { MessageTemplate } from '@/types';
 
@@ -62,6 +63,15 @@ describe('renderTemplateBody', () => {
     );
     expect(renderTemplateBody('{{1}} and {{1}}', ['twice'])).toBe(
       'twice and twice'
+    );
+  });
+
+  it('substitutes named placeholders in sorted-name order', () => {
+    expect(
+      renderTemplateBody('Hi {{name}}, see you {{date}}', ['Monday', 'Sam'])
+    ).toBe('Hi Sam, see you Monday');
+    expect(renderTemplateBody('Call on {{service_details}}', [])).toBe(
+      'Call on {{service_details}}'
     );
   });
 });
@@ -202,5 +212,40 @@ describe('templateContentText', () => {
 
   it('is null when there is no local row to render from', () => {
     expect(templateContentText(null, ['A123'])).toBeNull();
+  });
+});
+
+describe('templateHeaderMediaUrl', () => {
+  const image = row({
+    header_type: 'image',
+    header_media_url: 'https://cdn.example.com/banner.png',
+  });
+
+  it("returns the template's header media", () => {
+    expect(templateHeaderMediaUrl(image)).toBe(
+      'https://cdn.example.com/banner.png'
+    );
+  });
+
+  it('prefers the per-send media override', () => {
+    expect(
+      templateHeaderMediaUrl(image, {
+        headerMediaUrl: 'https://cdn.example.com/override.png',
+      })
+    ).toBe('https://cdn.example.com/override.png');
+  });
+
+  it('returns null when the send used an uploaded media id instead', () => {
+    expect(templateHeaderMediaUrl(image, { headerMediaId: '123' })).toBeNull();
+  });
+
+  it('returns null for text headers, no header, or no row', () => {
+    expect(
+      templateHeaderMediaUrl(
+        row({ header_type: 'text', header_content: 'Hello' })
+      )
+    ).toBeNull();
+    expect(templateHeaderMediaUrl(row({}))).toBeNull();
+    expect(templateHeaderMediaUrl(null)).toBeNull();
   });
 });

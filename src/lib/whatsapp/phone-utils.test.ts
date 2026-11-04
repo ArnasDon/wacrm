@@ -42,9 +42,42 @@ describe("phonesMatch", () => {
     expect(phonesMatch("+37063949836", "37063949836")).toBe(true);
   });
 
-  it("matches across trunk-prefix variants by last-8 fallback", () => {
-    // Lithuanian trunk-0 variant. Last 8 digits ("63949836") collide.
+  it("matches the Lithuanian trunk-0 variant in either order", () => {
     expect(phonesMatch("370063949836", "37063949836")).toBe(true);
+    expect(phonesMatch("+370 63949836", "+370 0 63949836")).toBe(true);
+  });
+
+  it("matches the UK trunk-0 variant after a two-digit country code", () => {
+    expect(phonesMatch("447911123456", "4407911123456")).toBe(true);
+  });
+
+  it("rejects different US numbers that only share the last 8 digits", () => {
+    expect(phonesMatch("+13125551234", "12125551234")).toBe(false);
+    expect(phonesMatch("+12125551234", "+13125551234")).toBe(false);
+  });
+
+  it("rejects a +44 number against a +1 number with the same subscriber digits", () => {
+    expect(phonesMatch("+442125551234", "+12125551234")).toBe(false);
+    expect(phonesMatch("+4412125551234", "+12125551234")).toBe(false);
+  });
+
+  it("rejects a digit other than 0 inserted after the country code", () => {
+    expect(phonesMatch("370163949836", "37063949836")).toBe(false);
+  });
+
+  it("rejects a second trunk 0 and a 0 inserted deeper in the number", () => {
+    expect(phonesMatch("3700063949836", "370063949836")).toBe(false);
+    expect(phonesMatch("370630949836", "37063949836")).toBe(false);
+  });
+
+  it("agrees with phoneVariants on every trunk variant it accepts", () => {
+    for (const phone of ["37063949836", "370063949836", "14155551212"]) {
+      for (const variant of phoneVariants(phone)) {
+        if (phonesMatch(phone, variant)) {
+          expect(phoneVariants(variant)).toContain(phone);
+        }
+      }
+    }
   });
 
   it("rejects mismatched numbers", () => {
@@ -60,7 +93,11 @@ describe("phonesMatch", () => {
 
   it("ignores formatting noise on both sides", () => {
     expect(phonesMatch("+370 6 394 9836", "37063949836")).toBe(true);
-    expect(phonesMatch("(415) 555-1212", "+1 415-555-1212")).toBe(true);
+    expect(phonesMatch("+1 (415) 555-1212", "1 415-555-1212")).toBe(true);
+  });
+
+  it("does not treat a national-format number as the international one", () => {
+    expect(phonesMatch("(415) 555-1212", "+1 415-555-1212")).toBe(false);
   });
 });
 

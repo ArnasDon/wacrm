@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { validateFlowForActivation, reachableFromEntry } from "./validate";
+import {
+  validateFlowForActivation,
+  reachableFromEntry,
+  findAutoAdvancingCycles,
+  longestAutoAdvancingChain,
+} from "./validate";
+import { MAX_AUTO_ADVANCING_CHAIN } from "./types";
 
 const validFlow = {
   name: "Welcome",
@@ -545,5 +551,120 @@ describe("reachableFromEntry", () => {
     ];
     const set = reachableFromEntry("a", nodes);
     expect(set).toEqual(new Set(["a", "b"]));
+  });
+});
+
+describe("auto-advancing cycles", () => {
+  const loopNodes = [
+    { node_key: "start", node_type: "start", config: { next_node_key: "hello" } },
+    {
+      node_key: "hello",
+      node_type: "send_message",
+      config: { text: "Hi", next_node_key: "check" },
+    },
+    {
+      node_key: "check",
+      node_type: "condition",
+      config: {
+        subject: "var",
+        subject_key: "x",
+        operator: "present",
+        true_next: "hello",
+        false_next: "done",
+      },
+    },
+    { node_key: "done", node_type: "end", config: {} },
+  ];
+
+  it("rejects a loop made only of auto-advancing nodes", () => {
+    const issues = validateFlowForActivation(validFlow, loopNodes);
+    const cycle = issues.filter((i) => i.message.includes("hello, check"));
+    expect(cycle).toHaveLength(1);
+    expect(cycle[0]).toMatchObject({
+      severity: "error",
+      scope: "node",
+      node_key: "hello",
+    });
+  });
+
+  it("rejects a self-looping node", () => {
+    expect(
+      findAutoAdvancingCycles([
+        {
+          node_key: "spam",
+          node_type: "send_message",
+          config: { text: "x", next_node_key: "spam" },
+        },
+      ]),
+    ).toEqual([["spam"]]);
+  });
+
+  it("accepts a loop that passes through a node waiting for input", () => {
+    const nodes = [
+      { node_key: "start", node_type: "start", config: { next_node_key: "menu" } },
+      {
+        node_key: "menu",
+        node_type: "send_buttons",
+        config: {
+          text: "Pick",
+          buttons: [
+            { reply_id: "again", title: "Again", next_node_key: "info" },
+            { reply_id: "stop", title: "Stop", next_node_key: "done" },
+          ],
+        },
+      },
+      {
+        node_key: "info",
+        node_type: "send_message",
+        config: { text: "Info", next_node_key: "menu" },
+      },
+      { node_key: "done", node_type: "end", config: {} },
+    ];
+    expect(findAutoAdvancingCycles(nodes)).toEqual([]);
+    expect(validateFlowForActivation(validFlow, nodes)).toEqual([]);
+  });
+
+  it("finds no cycle in the well-formed flow", () => {
+    expect(findAutoAdvancingCycles(validNodes)).toEqual([]);
+  });
+});
+
+describe("auto-advancing chain length", () => {
+  function linearFlow(messageCount: number) {
+    const nodes: { node_key: string; node_type: string; config: Record<string, unknown> }[] = [
+      { node_key: "start", node_type: "start", config: { next_node_key: "m0" } },
+    ];
+    for (let i = 0; i < messageCount; i += 1) {
+      nodes.push({
+        node_key: `m${i}`,
+        node_type: "send_message",
+        config: { text: `Step ${i}`, next_node_key: i + 1 < messageCount ? `m${i + 1}` : "done" },
+      });
+    }
+    nodes.push({ node_key: "done", node_type: "end", config: {} });
+    return nodes;
+  }
+  const flow = { ...validFlow, entry_node_id: "start" };
+
+  it("measures the longest run of nodes that do not wait for the customer", () => {
+    expect(longestAutoAdvancingChain(linearFlow(3))).toEqual({ start: "start", length: 4 });
+    expect(longestAutoAdvancingChain(validNodes)).toEqual({ start: "start", length: 1 });
+  });
+
+  it("accepts the longest chain the engine can run in one advance", () => {
+    const issues = validateFlowForActivation(flow, linearFlow(MAX_AUTO_ADVANCING_CHAIN - 1));
+    expect(issues.filter((i) => i.severity === "error")).toEqual([]);
+  });
+
+  it("rejects a chain longer than the engine can run in one advance", () => {
+    const issues = validateFlowForActivation(flow, linearFlow(MAX_AUTO_ADVANCING_CHAIN));
+    expect(issues).toEqual([
+      expect.objectContaining({
+        severity: "error",
+        scope: "node",
+        node_key: "start",
+        message: expect.stringContaining(String(MAX_AUTO_ADVANCING_CHAIN + 1)),
+      }),
+    ]);
   });
 });

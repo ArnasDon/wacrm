@@ -31,6 +31,7 @@ import type { AiProvider } from '@/lib/ai/types';
 import type { AccountMember } from '@/types';
 import { fetchAccountMembers, memberLabel } from '@/lib/account/members';
 import { useTranslations } from 'next-intl';
+import { invalidateAiAccountStatus } from '@/lib/ai/account-status-cache';
 
 const MASKED_KEY = '••••••••••••••••';
 
@@ -203,6 +204,7 @@ export function AiConfig() {
       });
       const data = await res.json();
       if (res.ok) {
+        invalidateAiAccountStatus();
         toast.success(t('saveSuccess'));
         await fetchConfig();
       } else {
@@ -220,12 +222,16 @@ export function AiConfig() {
     try {
       const res = await fetch('/api/ai/config', { method: 'DELETE' });
       if (res.ok) {
+        invalidateAiAccountStatus();
         toast.success(t('removeSuccess'));
         setConfigured(false);
         setBaseUrl('');
         setHasStoredKey(false);
         setApiKey('');
         setKeyEdited(false);
+        setHasStoredEmbeddingsKey(false);
+        setEmbeddingsKey('');
+        setEmbeddingsKeyEdited(false);
         setIsActive(false);
         setAutoReplyEnabled(false);
         setSystemPrompt('');

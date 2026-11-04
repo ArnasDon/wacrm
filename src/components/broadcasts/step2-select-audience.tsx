@@ -158,8 +158,11 @@ export function Step2SelectAudience({
     fetchFields();
   }, [audience.type]);
 
+  const estimateSeq = useRef(0);
   const fetchEstimatedCount = useCallback(async () => {
+    const seq = ++estimateSeq.current;
     setLoadingCount(true);
+    let count: number | null;
     try {
       setEstimatedCount(
         await countAudience(createClient(), {
@@ -173,10 +176,11 @@ export function Step2SelectAudience({
         }),
       );
     } catch {
-      setEstimatedCount(null);
-    } finally {
-      setLoadingCount(false);
+      count = null;
     }
+    if (seq !== estimateSeq.current) return;
+    setEstimatedCount(count);
+    setLoadingCount(false);
   }, [
     audience.type,
     audience.tagIds,

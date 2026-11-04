@@ -14,6 +14,7 @@ import { assertConversationInAccount } from '@/lib/whatsapp/conversation-scope'
 import {
   resolveTemplateRow,
   templateContentText,
+  templateHeaderMediaUrl,
 } from '@/lib/whatsapp/template-body'
 import { supabaseAdmin } from './admin-client'
 import { getT } from '@/lib/i18n/translate'
@@ -158,10 +159,8 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
 
   const accessToken = decrypt(config.access_token)
 
-  // Local template row — read for the body we persist below, not for
-  // the Meta payload (the wire shape is deliberately unchanged here).
-  // A missing row is fine: the send still goes out, we just can't
-  // reconstruct the text the customer saw.
+  // Local template row. A missing row is fine: the send still goes
+  // out, we just can't reconstruct the text the customer saw.
   const templateRow =
     input.kind === 'template'
       ? (
@@ -182,6 +181,7 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
         to: phone,
         templateName: input.templateName,
         language: input.language,
+        template: templateRow ?? undefined,
         params: input.params,
       })
       return r.messageId
@@ -238,6 +238,7 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
     sender_type: 'bot',
     content_type,
     content_text,
+    media_url: templateHeaderMediaUrl(templateRow),
     template_name,
     message_id: waMessageId,
     status: 'sent',

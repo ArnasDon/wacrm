@@ -63,7 +63,7 @@ export default function NewBroadcastPage() {
     if (!template) return;
 
     try {
-      const broadcastId = await createAndSendBroadcast({
+      const { broadcastId, interruption } = await createAndSendBroadcast({
         name,
         template,
         audience: {

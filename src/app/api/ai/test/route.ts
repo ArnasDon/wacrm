@@ -5,6 +5,7 @@ import { decrypt } from '@/lib/whatsapp/encryption'
 import { validateAiCredentials } from '@/lib/ai/validate'
 import { AiError, type AiProvider } from '@/lib/ai/types'
 import { normalizeOpenAiCompatibleBaseUrl } from '@/lib/ai/providers/openai-compatible'
+import { canReuseStoredAiKey } from '@/lib/ai/stored-key'
 import { getT } from '@/lib/i18n/translate'
 
 const t = getT('Api')
@@ -55,23 +56,6 @@ export async function POST(request: Request) {
         .maybeSingle()
       existing = data as unknown as { api_key: string; provider: AiProvider; base_url: string | null } | null
     }
-    if (!apiKeyPlain) {
-      if (!existing?.api_key) {
-        return NextResponse.json(
-          { error: t('ai.enterApiKey') },
-          { status: 400 },
-        )
-      }
-      try {
-        apiKeyPlain = decrypt(existing.api_key)
-      } catch {
-        return NextResponse.json(
-          { error: t('ai.storedKeyReenter') },
-          { status: 400 },
-        )
-      }
-    }
-
     let baseUrl: string | null = null
     if (provider === 'openai_compatible') {
       const candidate = baseUrlProvided
@@ -86,6 +70,23 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: err instanceof AiError ? err.message : t('ai.baseUrlInvalid'), code: 'invalid_base_url' }, { status: 400 })
       }
       baseUrl = candidate
+    }
+
+    if (!apiKeyPlain) {
+      if (!existing?.api_key || !canReuseStoredAiKey(existing, provider, baseUrl)) {
+        return NextResponse.json(
+          { error: t('ai.enterApiKey') },
+          { status: 400 },
+        )
+      }
+      try {
+        apiKeyPlain = decrypt(existing.api_key)
+      } catch {
+        return NextResponse.json(
+          { error: t('ai.storedKeyReenter') },
+          { status: 400 },
+        )
+      }
     }
 
     try {

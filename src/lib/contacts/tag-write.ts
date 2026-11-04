@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getT } from '@/lib/i18n/translate';
+import { isUuid } from '@/lib/api/v1/pagination';
 
 const t = getT('LibErrors');
 
@@ -23,6 +24,13 @@ async function assertContactAndTagOwnership(
   db: SupabaseClient,
   input: ContactTagWriteInput
 ): Promise<void> {
+  if (!isUuid(input.contactId)) {
+    throw new ContactTagWriteError(t('tags.invalidContactId'), 400);
+  }
+  if (!isUuid(input.tagId)) {
+    throw new ContactTagWriteError(t('tags.invalidTagId'), 400);
+  }
+
   const [contactResult, tagResult] = await Promise.all([
     db
       .from('contacts')

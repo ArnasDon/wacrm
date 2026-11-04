@@ -102,6 +102,26 @@ describe("requireApiKey", () => {
     expect(ctx.accountId).toBe("acct-1");
   });
 
+  it("accepts the Bearer scheme in any letter case", async () => {
+    findActiveKeyByHash.mockResolvedValue(row());
+    for (const scheme of ["bearer", "BEARER", "BeArEr"]) {
+      const ctx = await requireApiKey(reqWith(`${scheme} ${KEY}`));
+      expect(ctx.accountId).toBe("acct-1");
+    }
+    expect(findActiveKeyByHash).toHaveBeenCalledTimes(3);
+  });
+
+  it("propagates a store outage instead of reporting an invalid key", async () => {
+    findActiveKeyByHash.mockRejectedValue(
+      new ApiError("unavailable", "API key verification is temporarily unavailable", 503),
+    );
+    await expectApiError(
+      requireApiKey(reqWith(`Bearer ${KEY}`)),
+      "unavailable",
+      503,
+    );
+  });
+
   it("403s when the key lacks the required scope", async () => {
     findActiveKeyByHash.mockResolvedValue(row({ scopes: ["contacts:read"] }));
     await expectApiError(

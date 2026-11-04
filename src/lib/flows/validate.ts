@@ -25,6 +25,7 @@
 
 import { INTERACTIVE_LIMITS } from "@/lib/whatsapp/meta-api";
 import { getT } from "@/lib/i18n/translate";
+import { AUTO_ADVANCING_NODE_TYPES, MAX_AUTO_ADVANCING_CHAIN } from "./types";
 
 const t = getT("Validation.flows");
 
@@ -135,7 +136,114 @@ export function validateFlowForActivation(
     }
   }
 
+  for (const cycle of findAutoAdvancingCycles(nodes)) {
+    issues.push({
+      severity: "error",
+      scope: "node",
+      node_key: cycle[0],
+      message: t("autoAdvanceCycle", { keys: cycle.join(", ") }),
+    });
+  }
+
+  const longestChain = longestAutoAdvancingChain(nodes);
+  if (longestChain && longestChain.length > MAX_AUTO_ADVANCING_CHAIN) {
+    issues.push({
+      severity: "error",
+      scope: "node",
+      node_key: longestChain.start,
+      message: t("autoAdvanceChainTooLong", {
+        key: longestChain.start,
+        count: longestChain.length,
+        max: MAX_AUTO_ADVANCING_CHAIN,
+      }),
+    });
+  }
+
   return issues;
+}
+
+export function longestAutoAdvancingChain(
+  nodes: NodeInput[],
+): { start: string; length: number } | null {
+  const autoNodes = new Map<string, NodeInput>();
+  for (const n of nodes) {
+    if (AUTO_ADVANCING_NODE_TYPES.has(n.node_type) && !autoNodes.has(n.node_key)) {
+      autoNodes.set(n.node_key, n);
+    }
+  }
+  const chainLength = new Map<string, number>();
+  const inProgress = new Set<string>();
+  const lengthFrom = (key: string): number => {
+    const known = chainLength.get(key);
+    if (known !== undefined) return known;
+    if (inProgress.has(key)) return 0;
+    inProgress.add(key);
+    let longestNext = 0;
+    for (const next of outgoingEdges(autoNodes.get(key)!)) {
+      if (autoNodes.has(next)) longestNext = Math.max(longestNext, lengthFrom(next));
+    }
+    inProgress.delete(key);
+    chainLength.set(key, longestNext + 1);
+    return longestNext + 1;
+  };
+
+  let longest: { start: string; length: number } | null = null;
+  for (const key of autoNodes.keys()) {
+    const length = lengthFrom(key);
+    if (!longest || length > longest.length) longest = { start: key, length };
+  }
+  return longest;
+}
+
+export function findAutoAdvancingCycles(nodes: NodeInput[]): string[][] {
+  const autoNodes = new Map<string, NodeInput>();
+  for (const n of nodes) {
+    if (AUTO_ADVANCING_NODE_TYPES.has(n.node_type) && !autoNodes.has(n.node_key)) {
+      autoNodes.set(n.node_key, n);
+    }
+  }
+  const successors = (key: string): string[] =>
+    outgoingEdges(autoNodes.get(key)!).filter((next) => autoNodes.has(next));
+
+  const index = new Map<string, number>();
+  const lowLink = new Map<string, number>();
+  const onStack = new Set<string>();
+  const stack: string[] = [];
+  const cycles: string[][] = [];
+  let counter = 0;
+
+  const visit = (key: string): void => {
+    index.set(key, counter);
+    lowLink.set(key, counter);
+    counter += 1;
+    stack.push(key);
+    onStack.add(key);
+    for (const next of successors(key)) {
+      if (!index.has(next)) {
+        visit(next);
+        lowLink.set(key, Math.min(lowLink.get(key)!, lowLink.get(next)!));
+      } else if (onStack.has(next)) {
+        lowLink.set(key, Math.min(lowLink.get(key)!, index.get(next)!));
+      }
+    }
+    if (lowLink.get(key) !== index.get(key)) return;
+    const component: string[] = [];
+    let member: string;
+    do {
+      member = stack.pop()!;
+      onStack.delete(member);
+      component.push(member);
+    } while (member !== key);
+    if (component.length > 1 || successors(key).includes(key)) {
+      const inNodeOrder = [...autoNodes.keys()].filter((k) => component.includes(k));
+      cycles.push(inNodeOrder);
+    }
+  };
+
+  for (const key of autoNodes.keys()) {
+    if (!index.has(key)) visit(key);
+  }
+  return cycles;
 }
 
 // ============================================================

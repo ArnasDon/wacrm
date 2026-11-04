@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   __resetRateLimitForTests,
   checkRateLimit,
+  getClientIp,
   rateLimitResponse,
 } from "./rate-limit";
 
@@ -115,4 +116,40 @@ describe("RATE_LIMITS presets", () => {
 
 afterEach(() => {
   __resetRateLimitForTests();
+});
+
+describe("getClientIp", () => {
+  const req = (headers: Record<string, string>) =>
+    new Request("https://x.test/api/invitations/t/peek", { headers });
+
+  it("prefers x-real-ip over x-forwarded-for", () => {
+    expect(
+      getClientIp(req({ "x-real-ip": "203.0.113.7", "x-forwarded-for": "1.1.1.1" })),
+    ).toBe("203.0.113.7");
+  });
+
+  it("uses the rightmost x-forwarded-for hop, which the last proxy appended", () => {
+    expect(
+      getClientIp(req({ "x-forwarded-for": "6.6.6.6, 198.51.100.4" })),
+    ).toBe("198.51.100.4");
+  });
+
+  it("cannot be rotated by a client-supplied leftmost entry", () => {
+    const first = getClientIp(req({ "x-forwarded-for": "10.0.0.1, 198.51.100.4" }));
+    const second = getClientIp(req({ "x-forwarded-for": "10.0.0.2, 198.51.100.4" }));
+    expect(first).toBe(second);
+  });
+
+  it("ignores empty hops and blank headers", () => {
+    expect(getClientIp(req({ "x-forwarded-for": "198.51.100.4, " }))).toBe(
+      "198.51.100.4",
+    );
+    expect(getClientIp(req({ "x-real-ip": "  ", "x-forwarded-for": " , " }))).toBe(
+      "unknown",
+    );
+  });
+
+  it("falls back to a constant with no proxy headers", () => {
+    expect(getClientIp(req({}))).toBe("unknown");
+  });
 });

@@ -6,7 +6,7 @@ import {
 } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { loadEmbeddingsKey } from '@/lib/ai/config'
-import { ingestDocument } from '@/lib/ai/knowledge'
+import { ingestDocument, type IngestResult } from '@/lib/ai/knowledge'
 import { AiError } from '@/lib/ai/types'
 import { getT } from '@/lib/i18n/translate'
 
@@ -84,18 +84,31 @@ export async function PATCH(request: Request, { params }: Params) {
         supabase,
         accountId,
       )
+      let ingest: IngestResult
       try {
-        await ingestDocument(supabase, accountId, { embeddingsApiKey }, id, content)
+        ingest = await ingestDocument(supabase, accountId, { embeddingsApiKey }, id, content)
       } catch (err) {
         const message = err instanceof AiError ? err.message : t('ai.knowledge.indexingFailed')
         console.error('[ai/knowledge/[id] PATCH] ingest error:', err)
         return NextResponse.json(
           {
             success: true,
-            warning: t('ai.knowledge.updatedIndexFailed', { message }),
+            warning: t('ai.knowledge.updatedNotIndexed', { message }),
           },
           { status: 200 },
         )
+      }
+      if (ingest.keywordOnly) {
+        const message =
+          ingest.embedError instanceof AiError
+            ? ingest.embedError.message
+            : t('ai.knowledge.indexingFailed')
+        console.error('[ai/knowledge/[id] PATCH] embedding error:', ingest.embedError)
+        return NextResponse.json({
+          success: true,
+          keyword_only: true,
+          warning: t('ai.knowledge.updatedIndexFailed', { message }),
+        })
       }
       if (corrupt) {
         return NextResponse.json({

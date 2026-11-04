@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
-import { daysAgoStart, lastNDayKeys, localDayKey } from '@/lib/dashboard/date-utils'
+import { resolveTimeZone, zonedDayKey, zonedDayStart, zonedLastNDayKeys } from '@/lib/ai/usage-days'
+import { fetchPagesUpTo } from '@/lib/supabase/paged-query'
 import { getT } from '@/lib/i18n/translate'
 
 const t = getT('Api')
@@ -24,7 +25,7 @@ interface UsageRow {
 }
 
 /**
- * GET /api/ai/usage?days=30  (admin+)
+ * GET /api/ai/usage?days=30&tz=Europe/Vilnius  (admin+)
  *
  * Token-spend summary for the account's BYO key over the last `days`
  * (1–90, default 30): totals, per-mode + per-model breakdowns, and a
@@ -46,25 +47,27 @@ export async function GET(request: Request) {
         ? Math.min(90, Math.floor(rawDays))
         : DEFAULT_WINDOW_DAYS
 
-    // Align the query cutoff to the START of the oldest local day we'll
-    // chart (not a rolling `now - N*24h` instant). Otherwise rows in the
-    // oldest partial day would be counted in the totals but fall outside
-    // every daily bucket, so the chart's bars wouldn't sum to the
-    // headline total. Local-day boundaries match every other dashboard
-    // chart (see lib/dashboard/date-utils).
-    const since = daysAgoStart(days - 1)
+    const timeZone = resolveTimeZone(url.searchParams.get('tz'))
+    const dayKeys = zonedLastNDayKeys(days, timeZone)
+    const since = zonedDayStart(dayKeys[0], timeZone)
 
-    const { data, error } = await supabase
-      .from('ai_usage_log')
-      .select(
-        'created_at, mode, provider, model, prompt_tokens, completion_tokens, total_tokens',
+    let all: UsageRow[]
+    try {
+      all = await fetchPagesUpTo<UsageRow>(
+        (from, to) =>
+          supabase
+            .from('ai_usage_log')
+            .select(
+              'created_at, mode, provider, model, prompt_tokens, completion_tokens, total_tokens',
+            )
+            .eq('account_id', accountId)
+            .gte('created_at', since.toISOString())
+            .order('created_at', { ascending: false })
+            .order('id', { ascending: false })
+            .range(from, to),
+        MAX_ROWS + 1,
       )
-      .eq('account_id', accountId)
-      .gte('created_at', since.toISOString())
-      .order('created_at', { ascending: false })
-      .limit(MAX_ROWS + 1)
-
-    if (error) {
+    } catch (error) {
       console.error('[ai/usage GET] fetch error:', error)
       return NextResponse.json(
         { error: t('ai.loadUsageFailed') },
@@ -72,7 +75,6 @@ export async function GET(request: Request) {
       )
     }
 
-    const all = (data ?? []) as UsageRow[]
     const truncated = all.length > MAX_ROWS
     const rows = truncated ? all.slice(0, MAX_ROWS) : all
 
@@ -92,10 +94,9 @@ export async function GET(request: Request) {
     >()
 
     // Zero-filled daily buckets so the chart shows quiet days as gaps,
-    // not missing points. Local-day keys, oldest → newest — the same
-    // helper every other dashboard chart uses, so day boundaries agree.
+    // not missing points. Oldest → newest, in the caller's time zone.
     const daily = new Map<string, { date: string; tokens: number; calls: number }>()
-    for (const key of lastNDayKeys(days)) {
+    for (const key of dayKeys) {
       daily.set(key, { date: key, tokens: 0, calls: 0 })
     }
 
@@ -116,7 +117,7 @@ export async function GET(request: Request) {
       m.tokens += r.total_tokens
       modelMap.set(mk, m)
 
-      const bucket = daily.get(localDayKey(r.created_at))
+      const bucket = daily.get(zonedDayKey(r.created_at, timeZone))
       if (bucket) {
         bucket.tokens += r.total_tokens
         bucket.calls += 1
@@ -127,6 +128,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       window_days: days,
+      time_zone: timeZone,
       truncated,
       totals: {
         calls: rows.length,

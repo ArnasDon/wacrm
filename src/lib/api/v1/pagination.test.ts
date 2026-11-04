@@ -5,6 +5,7 @@ import {
   decodeCursor,
   keysetFilter,
   buildPage,
+  isUuid,
   DEFAULT_LIMIT,
   MAX_LIMIT,
 } from './pagination';
@@ -78,6 +79,32 @@ describe('encode/decodeCursor round-trip', () => {
     ).toString('base64url');
     expect(decodeCursor(bad)).toBeNull();
   });
+
+  it('rejects timestamps Date.parse tolerates but that are not ISO 8601', () => {
+    const id = '11111111-1111-4111-8111-111111111111';
+    for (const ts of [
+      '1',
+      'Jan 1 2026',
+      '2026-01-01',
+      '2026-01-01T00:00:00Z),or(account_id.neq.0',
+      'Thu, 01 Jan 2026 00:00:00 GMT',
+    ]) {
+      const cursor = Buffer.from(`${ts}|${id}`, 'utf8').toString('base64url');
+      expect(decodeCursor(cursor)).toBeNull();
+    }
+  });
+
+  it('accepts the timestamp shapes Postgres returns', () => {
+    const id = '11111111-1111-4111-8111-111111111111';
+    for (const ts of [
+      '2026-01-01T00:00:00+00:00',
+      '2026-01-01T00:00:00.123456+00:00',
+      '2026-01-01T00:00:00.123Z',
+    ]) {
+      const cursor = Buffer.from(`${ts}|${id}`, 'utf8').toString('base64url');
+      expect(decodeCursor(cursor)).toEqual({ createdAt: ts, id });
+    }
+  });
 });
 
 describe('keysetFilter', () => {
@@ -108,5 +135,18 @@ describe('buildPage', () => {
     const page = buildPage(rows, 5);
     expect(page.items).toHaveLength(5);
     expect(page.nextCursor).toBe(encodeCursor(rows[4]));
+  });
+});
+
+describe('isUuid', () => {
+  it('accepts a UUID in either case', () => {
+    expect(isUuid('3f2b8c1e-9a4d-4e2f-b6a1-0c9d8e7f6a5b')).toBe(true);
+    expect(isUuid('3F2B8C1E-9A4D-4E2F-B6A1-0C9D8E7F6A5B')).toBe(true);
+  });
+
+  it('rejects anything else, including PostgREST filter syntax', () => {
+    expect(isUuid('')).toBe(false);
+    expect(isUuid('tag-1')).toBe(false);
+    expect(isUuid('3f2b8c1e-9a4d-4e2f-b6a1-0c9d8e7f6a5b,id.eq.x')).toBe(false);
   });
 });

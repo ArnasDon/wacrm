@@ -53,30 +53,36 @@ export async function POST() {
       )
     }
 
+    const total = (docs ?? []).length
     let reindexed = 0
+    const failed: string[] = []
+    const keywordOnly: string[] = []
     for (const doc of docs ?? []) {
       try {
-        await ingestDocument(supabase, accountId, { embeddingsApiKey }, doc.id, doc.content)
+        const result = await ingestDocument(supabase, accountId, { embeddingsApiKey }, doc.id, doc.content)
         reindexed += 1
+        if (result.keywordOnly) {
+          keywordOnly.push(doc.id)
+          console.error(`[ai/knowledge/reindex] doc ${doc.id} keyword-only:`, describeError(result.embedError))
+        }
       } catch (err) {
-        // One bad document (e.g. a mid-run embeddings rate-limit) should
-        // not abort the whole batch.
-        const message = err instanceof AiError ? err.message : String(err)
-        console.error(`[ai/knowledge/reindex] doc ${doc.id} failed:`, message)
-        return NextResponse.json(
-          {
-            success: false,
-            reindexed,
-            total: (docs ?? []).length,
-            error: t('ai.knowledge.reindexPartial', { reindexed, message }),
-          },
-          { status: 200 },
-        )
+        failed.push(doc.id)
+        console.error(`[ai/knowledge/reindex] doc ${doc.id} failed:`, describeError(err))
       }
     }
 
-    return NextResponse.json({ success: true, reindexed })
+    return NextResponse.json({
+      success: failed.length === 0,
+      reindexed,
+      total,
+      failed,
+      keyword_only: keywordOnly,
+    })
   } catch (err) {
     return toErrorResponse(err)
   }
+}
+
+function describeError(err: unknown): string {
+  return err instanceof AiError ? err.message : String(err)
 }

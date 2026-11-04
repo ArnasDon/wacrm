@@ -12,6 +12,7 @@ import {
   parseListParams,
   keysetFilter,
   buildPage,
+  isUuid,
 } from '@/lib/api/v1/pagination';
 import {
   CONVERSATION_SELECT,
@@ -27,6 +28,9 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const status = url.searchParams.get('status');
     const contactId = url.searchParams.get('contact_id');
+    if (contactId && !isUuid(contactId)) {
+      return fail('bad_request', "'contact_id' must be a contact id (UUID)", 400);
+    }
 
     let query = ctx.supabase
       .from('conversations')

@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  RECIPIENT_STATUSES,
+  allowedPredecessors,
   broadcastStatusConfig,
   getBroadcastStatus,
   getRecipientStatus,
+  isValidRecipientTransition,
   recipientStatusConfig,
 } from "./broadcast-status";
 
@@ -47,5 +50,40 @@ describe("getRecipientStatus", () => {
 
   it("falls back to pending on an unknown status string", () => {
     expect(getRecipientStatus("???")).toBe(recipientStatusConfig.pending);
+  });
+});
+
+describe("recipient status transitions", () => {
+  it("moves forward along the success ladder only", () => {
+    expect(isValidRecipientTransition("sent", "delivered")).toBe(true);
+    expect(isValidRecipientTransition("sent", "read")).toBe(true);
+    expect(isValidRecipientTransition("read", "delivered")).toBe(false);
+    expect(isValidRecipientTransition("read", "read")).toBe(false);
+  });
+
+  it("allows failed only before delivery and treats it as terminal", () => {
+    expect(isValidRecipientTransition("pending", "failed")).toBe(true);
+    expect(isValidRecipientTransition("sent", "failed")).toBe(true);
+    expect(isValidRecipientTransition("delivered", "failed")).toBe(false);
+    expect(isValidRecipientTransition("failed", "delivered")).toBe(false);
+  });
+
+  it("derives each status's allowed predecessors from the same rules", () => {
+    expect(allowedPredecessors("sent")).toEqual(["pending"]);
+    expect(allowedPredecessors("delivered")).toEqual(["pending", "sent"]);
+    expect(allowedPredecessors("read")).toEqual(["pending", "sent", "delivered"]);
+    expect(allowedPredecessors("replied")).toEqual([
+      "pending",
+      "sent",
+      "delivered",
+      "read",
+    ]);
+    expect(allowedPredecessors("failed")).toEqual(["pending", "sent"]);
+    expect(allowedPredecessors("pending")).toEqual([]);
+    for (const next of RECIPIENT_STATUSES) {
+      for (const current of allowedPredecessors(next)) {
+        expect(isValidRecipientTransition(current, next)).toBe(true);
+      }
+    }
   });
 });

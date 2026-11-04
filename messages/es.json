@@ -73,24 +73,6 @@
     "retry": "Reintentar"
   },
   "Dashboard": {
-    "page": {
-      "title": "Panel",
-      "description": "Métricas en vivo de conversaciones, contactos, negocios, difusiones y automatizaciones.",
-      "activeConversations": "Conversaciones activas",
-      "newContactsToday": "Contactos nuevos hoy",
-      "openDealsValue": "Valor de negocios abiertos",
-      "messagesSentToday": "Mensajes enviados hoy",
-      "newTodayVsYesterday": "nuevos hoy vs. ayer",
-      "vsYesterday": "vs. ayer",
-      "openDeals": "{count} {count, plural, =1 {negocio abierto} other {negocios abiertos}}",
-      "noChange": "Sin cambios {suffix}"
-    },
-    "quickActions": {
-      "newContact": "Nuevo contacto",
-      "newDeal": "Nuevo negocio",
-      "newBroadcast": "Nueva difusión",
-      "newAutomation": "Nueva automatización"
-    },
     "activityFeed": {
       "title": "Actividad reciente",
       "viewAll": "Ver todo →",
@@ -104,6 +86,7 @@
       "timeD": "hace {day}d",
       "items": {
         "newMessage": "Nuevo mensaje de {who}",
+        "newMessages": "{who} envió {count} mensajes",
         "newContact": "Nuevo contacto: {name}",
         "dealInStage": "Negocio \"{title}\" en {stage}",
         "dealUpdated": "Negocio \"{title}\" actualizado",
@@ -123,39 +106,228 @@
         "automationFallback": "Automatización"
       }
     },
-    "conversationsChart": {
-      "title": "Conversaciones a lo largo del tiempo",
-      "description": "Volumen diario de mensajes por dirección",
-      "days": "{count} días",
-      "noActivity": "No hay actividad de mensajes en este rango",
-      "noActivityHint": "Envía o recibe mensajes para empezar a llenar este gráfico.",
-      "incoming": "Entrantes",
-      "outgoing": "Salientes",
-      "tooltipIncoming": "{count} entrantes",
-      "tooltipOutgoing": "{count} salientes",
-      "ariaLabel": "Conversaciones por día"
-    },
-    "pipelineDonut": {
-      "title": "Valor del pipeline",
-      "description": "Negocios abiertos por etapa",
-      "noOpenDeals": "Aún no hay negocios abiertos",
-      "noOpenDealsHint": "Crea negocios en Pipelines para ver aquí el desglose por etapa.",
-      "dealCount": "{count} {count, plural, =1 {negocio} other {negocios}}",
-      "total": "Total",
-      "ariaLabel": "Valor del pipeline por etapa"
-    },
-    "responseTimeChart": {
-      "title": "Tiempo promedio de primera respuesta",
-      "description": "Minutos para responder al primer mensaje sin respuesta de un cliente, por día de la semana",
-      "target": "objetivo {minutes}min",
-      "thisWeek": "Esta semana:",
-      "lastWeek": "Semana pasada:",
-      "noReplies": "Aún no hay respuestas registradas",
-      "noRepliesHint": "Este gráfico se llena a medida que respondes a los mensajes de los clientes.",
-      "avgMinutes": "Promedio en minutos"
-    },
     "emptyState": {
       "title": "Aún no hay datos suficientes"
+    },
+    "overview": {
+      "loadFailed": "No se pudo cargar el panel.",
+      "retry": "Reintentar",
+      "header": {
+        "greeting": {
+          "morning": "Buenos días, {name}",
+          "afternoon": "Buenas tardes, {name}",
+          "evening": "Buenas noches, {name}"
+        },
+        "greetingNoName": {
+          "morning": "Buenos días",
+          "afternoon": "Buenas tardes",
+          "evening": "Buenas noches"
+        },
+        "contextWaiting": "{count, plural, =1 {1 cliente espera respuesta,} other {# clientes esperan respuesta,}} el más antiguo desde hace {wait}.",
+        "contextClear": "Ahora mismo nadie espera respuesta.",
+        "contextSetup": "Termina la configuración para empezar a recibir mensajes de WhatsApp aquí.",
+        "rangeLabel": "Periodo",
+        "range": {
+          "1": "Hoy",
+          "7": "7 días",
+          "30": "30 días",
+          "90": "90 días"
+        },
+        "new": "Nuevo",
+        "newContact": "Nuevo contacto",
+        "newDeal": "Nuevo negocio",
+        "newBroadcast": "Nueva difusión",
+        "newAutomation": "Nueva automatización"
+      },
+      "health": {
+        "title": "Estado del número de WhatsApp",
+        "quality": {
+          "GREEN": "Calidad: alta",
+          "YELLOW": "Calidad: media",
+          "RED": "Calidad: baja",
+          "UNKNOWN": "Calidad: sin valorar"
+        },
+        "perDay": "{count}/día",
+        "unlimited": "Sin límite diario",
+        "disconnected": "WhatsApp no conectado",
+        "unavailable": "No se pudo comprobar tu número"
+      },
+      "attention": {
+        "waiting": "Esperan respuesta",
+        "waitingMeta": "El más antiguo {wait} · {count} por encima del objetivo",
+        "waitingNone": "Todos tienen respuesta",
+        "unassigned": "Sin asignar",
+        "onlineNow": "{count, plural, =0 {Ningún compañero conectado} =1 {1 compañero conectado} other {# compañeros conectados}}",
+        "closing": "Ventanas de respuesta a punto de cerrar",
+        "closingMeta": "Las respuestas gratuitas terminan en menos de 2 horas",
+        "failed": "Mensajes fallidos",
+        "failedMeta": "Últimas 24 horas · ver por qué"
+      },
+      "failedDialog": {
+        "title": "Mensajes fallidos",
+        "description": "Mensajes que WhatsApp no entregó en las últimas 24 horas.",
+        "empty": "No hay mensajes fallidos en las últimas 24 horas.",
+        "unknownContact": "Contacto desconocido",
+        "unknownReason": "WhatsApp no indicó el motivo.",
+        "reasonWithCode": "{reason} (error {code})",
+        "showingLatest": "Se muestran los {shown} más recientes de {total}."
+      },
+      "kpi": {
+        "newConversations": "Conversaciones nuevas",
+        "newConversationsInfo": "Conversaciones iniciadas en este periodo.",
+        "medianReply": "Mediana de primera respuesta",
+        "medianReplyInfo": "Tiempo habitual desde el primer mensaje sin responder de un cliente hasta la respuesta de un compañero. No cuenta las respuestas de la IA ni de las automatizaciones.",
+        "resolved": "Resueltas",
+        "resolvedInfo": "Conversaciones cerradas en este periodo.",
+        "dealsWon": "Negocios ganados",
+        "dealsWonInfo": "Negocios marcados como ganados en este periodo y su valor total.",
+        "readRate": "Tasa de lectura de difusiones",
+        "readRateInfo": "Mensajes leídos entre mensajes entregados, para las difusiones enviadas en este periodo.",
+        "readOfDelivered": "{read} leídos de {delivered} entregados",
+        "noBroadcasts": "No hay difusiones en este periodo",
+        "none": "—",
+        "vsPrevious": {
+          "1": "frente a ayer",
+          "7": "frente a los 7 días anteriores",
+          "30": "frente a los 30 días anteriores",
+          "90": "frente a los 90 días anteriores"
+        },
+        "noComparison": "Sin cambios",
+        "new": "Nuevo",
+        "better": "Mejor que antes",
+        "worse": "Peor que antes",
+        "unchanged": "Sin cambios",
+        "target": "Objetivo {minutes} min",
+        "targetMax": "{minutes} min"
+      },
+      "volume": {
+        "title": "Volumen de mensajes",
+        "description": "Mensajes entrantes y salientes",
+        "hoursDescription": "Media de mensajes entrantes por hora del día",
+        "byDay": "Por día",
+        "byHour": "Por hora",
+        "busiestHours": "Horas punta",
+        "incoming": "Entrantes",
+        "outgoing": "Salientes",
+        "averageIncoming": "Media de entrantes",
+        "perDay": "Entrantes por día",
+        "perHour": "Entrantes por hora",
+        "busiestDay": "Día con más mensajes",
+        "busiestHour": "Hora con más mensajes",
+        "peakHour": "Hora con más mensajes",
+        "secondPeak": "Segunda hora con más mensajes",
+        "none": "—",
+        "empty": "No hay mensajes en este periodo",
+        "emptyHint": "Los mensajes aparecen aquí cuando los clientes te escriben."
+      },
+      "queue": {
+        "title": "Cola de respuestas",
+        "description": "Primero quien más espera",
+        "openInbox": "Abrir bandeja de entrada",
+        "empty": "Estás al día",
+        "emptyHint": "Ningún cliente espera respuesta.",
+        "unknownContact": "Contacto desconocido",
+        "noPreview": "Sin vista previa",
+        "windowLeft": "Quedan {time} para responder gratis",
+        "handedOff": "Derivada por la IA",
+        "assigned": "Asignada",
+        "unassigned": "Sin asignar"
+      },
+      "pipeline": {
+        "title": "Pipeline",
+        "description": "Negocios abiertos por etapa",
+        "link": "Pipelines",
+        "choosePipeline": "Elige un pipeline",
+        "deals": "{count, plural, =1 {1 negocio} other {# negocios}}",
+        "open": "Abierto",
+        "winRate": "Tasa de éxito",
+        "avgToWin": "Tiempo medio hasta ganar",
+        "days": "{count, plural, =1 {1 día} other {# días}}",
+        "none": "—",
+        "idle": "{count, plural, =1 {1 negocio abierto lleva} other {# negocios abiertos llevan}} 7 días o más sin actividad",
+        "empty": "No hay negocios abiertos",
+        "emptyHint": "Crea negocios en Pipelines para verlos aquí."
+      },
+      "team": {
+        "title": "Equipo",
+        "description": "Respuestas en este periodo",
+        "link": "Miembros",
+        "member": "Miembro",
+        "open": "Abiertas",
+        "replies": "Respuestas",
+        "median": "Mediana de respuesta",
+        "teammate": "Compañero",
+        "ai": "Agente de IA",
+        "none": "—",
+        "presence": {
+          "online": "Conectado",
+          "away": "Ausente",
+          "offline": "Desconectado"
+        }
+      },
+      "campaigns": {
+        "title": "Campañas y automatizaciones",
+        "description": "En este periodo",
+        "link": "Difusiones",
+        "sentAt": "{date} · {count, plural, =1 {1 destinatario} other {# destinatarios}}",
+        "delivered": "Entregados",
+        "read": "Leídos",
+        "replied": "Respondidos",
+        "failed": "Fallidos",
+        "noBroadcast": "Todavía no se ha enviado ninguna difusión.",
+        "automations": "{count, plural, =1 {Automatizaciones · 1 ejecución} other {Automatizaciones · # ejecuciones}}",
+        "noRuns": "Sin ejecuciones",
+        "succeeded": "{percent} correctas",
+        "flows": "Flujos",
+        "flowNamed": "Flujo “{name}”",
+        "flowFailed": "{count, plural, =1 {1 ejecución fallida} other {# ejecuciones fallidas}}",
+        "flowsOk": "Sin ejecuciones fallidas",
+        "aiReplies": "{count, plural, =1 {Respuestas de IA · 1} other {Respuestas de IA · #}}",
+        "aiMedian": "Mediana {time}",
+        "templates": "{count, plural, =1 {Plantillas · 1 aprobada} other {Plantillas · # aprobadas}}",
+        "templatesRejected": "{count, plural, =1 {1 rechazada} other {# rechazadas}}",
+        "templatesOk": "Ninguna rechazada",
+        "none": "—"
+      },
+      "setup": {
+        "title": "Configura tu cuenta",
+        "progress": "{done} de {total} completados",
+        "doneLabel": "(completado)",
+        "todoLabel": "(pendiente)",
+        "steps": {
+          "whatsapp": {
+            "title": "Conecta tu número de WhatsApp",
+            "description": "Vincula el número al que escriben tus clientes.",
+            "action": "Conectar"
+          },
+          "contacts": {
+            "title": "Añade tus contactos",
+            "description": "Importa un CSV, o los contactos se añaden cuando te escriben.",
+            "action": "Añadir contactos"
+          },
+          "template": {
+            "title": "Consigue una plantilla aprobada",
+            "description": "La necesitas para escribir a quien no te ha escrito en las últimas 24 horas.",
+            "action": "Crear plantilla"
+          },
+          "teammate": {
+            "title": "Invita a un compañero",
+            "description": "Comparte la bandeja de entrada y asigna conversaciones.",
+            "action": "Invitar"
+          }
+        },
+        "previewTitle": "Aquí aparecerán tus cifras",
+        "previewHint": "Cuando los clientes empiecen a escribirte, esta página mostrará quién espera, lo rápido que responde tu equipo y cómo van tus negocios y campañas.",
+        "previewAction": "Abrir bandeja de entrada"
+      },
+      "duration": {
+        "seconds": "{value} s",
+        "minutes": "{value} min",
+        "hours": "{value} h {remainder} min",
+        "hoursOnly": "{value} h",
+        "days": "{value} d {remainder} h",
+        "daysOnly": "{value} d"
+      }
     }
   },
   "Inbox": {
@@ -166,6 +338,9 @@
       "searchPlaceholder": "Buscar conversaciones...",
       "filterAll": "Todas",
       "filterUnread": "Sin leer",
+      "filterWaiting": "Esperan respuesta",
+      "filterUnassigned": "Sin asignar",
+      "filterExpiring": "Ventana a punto de cerrar",
       "filterOpen": "Abiertas",
       "filterPending": "Pendientes",
       "filterClosed": "Cerradas",
@@ -184,6 +359,9 @@
       "hideContact": "Ocultar contacto",
       "showContact": "Mostrar contacto",
       "refresh": "Actualizar",
+      "loadOlder": "Cargar mensajes anteriores",
+      "loadingOlder": "Cargando…",
+      "loadOlderFailed": "No se pudieron cargar los mensajes anteriores.",
       "refreshConversation": "Actualizar conversación",
       "status": "Estado",
       "statusOpen": "Abierta",
@@ -207,6 +385,7 @@
       "waitForSending": "Espera a que el mensaje termine de enviarse",
       "reactionFailed": "Error en la reacción: {reason}",
       "assignmentUpdateFailed": "Error al actualizar la asignación",
+      "assigneeNoLongerMember": "Ese compañero ya no es miembro de esta cuenta",
       "networkError": "error de red",
       "documentFallback": "Documento",
       "you": "Tú"
@@ -700,6 +879,7 @@
       "titlePlaceholder": "Título del negocio",
       "contact": "Contacto",
       "selectContact": "Selecciona un contacto",
+      "searchContacts": "Buscar contactos por nombre o teléfono",
       "linkToConversation": "Vincular a una conversación",
       "value": "Valor",
       "currency": "Moneda",
@@ -872,7 +1052,9 @@
       "toastNotLinked": "Tu perfil no está vinculado a una cuenta.",
       "toastFailedDraft": "Error al guardar el borrador: {error}",
       "toastDraftSaved": "Borrador guardado",
-      "broadcastFailed": "Falló la difusión"
+      "broadcastFailed": "Falló la difusión",
+      "toastSendTakenOver": "Otro envío tomó el control de esta difusión, así que esta pestaña dejó de enviar. Abre la difusión para seguir su progreso.",
+      "toastSendInterrupted": "El envío se detuvo porque se perdió la conexión con el servidor. Abre la difusión y usa Reanudar envío para enviar a los destinatarios restantes. El botón aparece en un máximo de 5 minutos."
     },
     "wizard": {
       "next": "Siguiente",
@@ -1220,6 +1402,7 @@
         },
         "operandLabel": "Operando",
         "placeholderTime": "HH:mm-HH:mm",
+        "timezoneLabel": "Zona horaria",
         "placeholderContact": "name / email / company",
         "placeholderTag": "id de etiqueta",
         "urlLabel": "URL",
@@ -1309,6 +1492,7 @@
       "statusHandedOff": "Transferida",
       "statusTimedOut": "Tiempo agotado",
       "statusPaused": "Pausada por el agente",
+      "statusCancelled": "Cancelada",
       "statusFailed": "Fallida"
     },
     "builder": {
@@ -1665,6 +1849,7 @@
       "category": "Categoría",
       "language": "Idioma",
       "langFixed": "El idioma es fijo una vez que la plantilla existe en Meta.",
+      "categoryFixed": "La categoría de una plantilla aprobada no se puede cambiar.",
       "langHint": "Debe coincidir exactamente con el código en Meta: <code>en_US</code> y <code>en</code> son distintos.",
       "header": "Encabezado",
       "headerNone": "Ninguno",
@@ -1870,6 +2055,7 @@
       "quick-replies": "Respuestas rápidas",
       "fields": "Campos y etiquetas",
       "deals": "Negocios y moneda",
+      "inbox": "Bandeja de entrada",
       "members": "Miembros del equipo",
       "api": "Claves de API"
     },
@@ -2020,6 +2206,21 @@
       "saveFailed": "Error al guardar la moneda predeterminada",
       "saveSuccess": "Moneda predeterminada actualizada"
     },
+    "inbox": {
+      "title": "Bandeja de entrada",
+      "description": "Cómo mide el panel los tiempos de respuesta de tu equipo.",
+      "replyTarget": "Objetivo de tiempo de respuesta",
+      "replyTargetDesc": "El panel marca las conversaciones que esperan más que esto una primera respuesta y compara con él tu mediana de respuesta.",
+      "minutesLabel": "Minutos",
+      "hint": "Un número entero de 1 a 1440 (24 horas).",
+      "invalid": "Introduce un número entero de 1 a 1440.",
+      "adminOnlyHint": "Solo los administradores de la cuenta pueden cambiar el objetivo.",
+      "save": "Guardar",
+      "saving": "Guardando...",
+      "saveFailed": "No se pudo guardar el objetivo de tiempo de respuesta",
+      "saveSuccess": "Objetivo de tiempo de respuesta actualizado",
+      "loadFailed": "No se pudo cargar el objetivo de tiempo de respuesta"
+    },
     "aiConfig": {
       "title": "Configuración del agente",
       "description": "Usa tu propia clave de OpenAI, Anthropic o de una API compatible con OpenAI. wacrm llama al proveedor directamente con tu clave, sin cargos de IA por puesto, y tus datos siguen siendo tuyos. Esto impulsa las respuestas redactadas por IA, el bot de respuesta automática y el Playground.",
@@ -2075,6 +2276,8 @@
       "removeFailed": "Error al eliminar.",
       "reindexSuccess": "{count} documento(s) reindexado(s).",
       "reindexFailed": "Error al reindexar.",
+      "reindexWithFailures": "Se reindexaron {reindexed} de {total} documento(s). {failedCount} fallaron: {titles}. Usa Reindexar para reintentar.",
+      "reindexKeywordOnly": "Se reindexaron {count} documento(s), pero {keywordOnlyCount} solo se pueden encontrar por palabra clave (la indexación semántica falló). Usa Reindexar para reintentar.",
       "title": "Base de conocimiento",
       "description": "Agrega preguntas frecuentes, políticas o detalles de productos. El asistente recupera los fragmentos relevantes al redactar y responder automáticamente, para poder responder en lugar de derivar.{searchType}",
       "semanticSearchOn": " La búsqueda semántica está activada (clave de embeddings configurada).",
@@ -2176,6 +2379,8 @@
       "usedBody": "Esta invitación ya fue aceptada. Si no fuiste tú, pide al administrador de la cuenta que envíe un enlace nuevo.",
       "expiredTitle": "Invitación expirada",
       "expiredBody": "Esta invitación expiró. Pide al administrador de la cuenta que envíe una nueva; generarla toma solo unos segundos.",
+      "rateLimitedTitle": "Demasiados intentos",
+      "rateLimitedBody": "Has comprobado esta invitación demasiadas veces en poco tiempo. Espera un minuto y vuelve a intentarlo.",
       "serverErrorTitle": "Algo salió mal",
       "serverErrorBody": "No pudimos verificar esta invitación en este momento. Intenta recargar la página en un momento."
     },
@@ -2417,7 +2622,9 @@
       "contactNotFound": "Contacto no encontrado",
       "tagNotFound": "Etiqueta no encontrada",
       "addFailed": "No se pudo agregar la etiqueta al contacto: {message}",
-      "removeFailed": "No se pudo quitar la etiqueta del contacto: {message}"
+      "removeFailed": "No se pudo quitar la etiqueta del contacto: {message}",
+      "invalidContactId": "El ID del contacto debe ser un UUID",
+      "invalidTagId": "El ID de la etiqueta debe ser un UUID"
     },
     "auth": {
       "unauthorized": "No autorizado",
@@ -2453,6 +2660,9 @@
       "pausedWhileWaitingForReply": "automatización pausada mientras esperaba respuesta",
       "noReplyWithin24h": "sin respuesta en 24 h",
       "parkForReplyFailed": "no se pudo esperar la respuesta: {message}",
+      "pausedWhileWaiting": "automatización pausada durante la espera",
+      "stepRemovedWhileWaiting": "el paso en el que esperaba esta ejecución se eliminó o salió de su rama",
+      "scheduleWaitFailed": "no se pudo programar la espera: {message}",
       "destinationNotAllowed": "send_webhook: destino no permitido",
       "webhookStatus": "el webhook devolvió {status}",
       "conversationNotInAccount": "la conversación no pertenece a esta cuenta",
@@ -2469,6 +2679,8 @@
       "entryMissing": "El nodo de entrada \"{id}\" no existe.",
       "duplicateNodeKey": "node_key duplicado: \"{key}\".",
       "unreachable": "El nodo \"{key}\" no es accesible desde el nodo de entrada.",
+      "autoAdvanceCycle": "Los nodos {keys} vuelven unos a otros sin esperar al cliente, así que el flujo seguiría enviando mensajes. Añade un paso de botones, lista o pregunta al bucle, o rómpelo.",
+      "autoAdvanceChainTooLong": "El nodo \"{key}\" inicia {count} pasos seguidos que se ejecutan sin esperar al cliente. Un flujo puede ejecutar como máximo {max} pasos así antes de esperar; añade un paso de botones, lista o pregunta para dividir la cadena.",
       "keywordsRequired": "Los disparadores por palabra clave necesitan al menos una palabra clave.",
       "blankKeywords": "{count} {count, plural, =1 {palabra clave está vacía} other {palabras clave están vacías}}: no coincidirán con nada.",
       "startNeedsNext": "El nodo Inicio debe apuntar a un nodo siguiente.",
@@ -2533,6 +2745,8 @@
       "waitUnitInvalid": "la unidad de espera debe ser minutos, horas o días",
       "conditionSubjectRequired": "el sujeto de la condición es obligatorio",
       "conditionOperandRequired": "el operando de la condición es obligatorio",
+      "conditionValueRequired": "el valor de la condición es obligatorio",
+      "conditionTimezoneInvalid": "la zona horaria de la condición no es una zona IANA válida",
       "webhookUrlRequired": "la URL del webhook es obligatoria",
       "webhookUrlScheme": "la URL del webhook debe usar http o https",
       "webhookUrlInvalid": "la URL del webhook no es una URL válida",
@@ -2697,15 +2911,16 @@
         "updateDocFailed": "Error al actualizar el documento",
         "indexingFailed": "error de indexación",
         "updatedIndexFailed": "Actualizado, pero la indexación semántica falló ({message}). La búsqueda por palabras clave sigue funcionando; usa Reindexar para reintentar.",
+        "updatedNotIndexed": "Actualizado, pero la indexación falló ({message}). El documento aún no aparece en las búsquedas; usa Reindexar para reintentar.",
         "updatedKeywordOnly": "Actualizado solo con búsqueda por palabras clave: no se pudo descifrar tu clave de embeddings (revisa ENCRYPTION_KEY y vuelve a ingresar la clave).",
         "deleteDocFailed": "Error al eliminar el documento",
         "loadDocsFailed": "Error al cargar los documentos",
         "reindexKeyCorrupt": "No se pudo descifrar tu clave de embeddings (revisa ENCRYPTION_KEY y vuelve a ingresar la clave en Configuración → Asistente de IA). No se reindexó nada.",
-        "reindexPartial": "Se reindexaron {reindexed} y luego ocurrió un error: {message}",
         "loadKbFailed": "Error al cargar la base de conocimiento",
         "titleContentRequired": "El título y el contenido son obligatorios",
         "saveDocFailed": "Error al guardar el documento",
         "savedIndexFailed": "Guardado, pero la indexación semántica falló ({message}). La búsqueda por palabras clave sigue funcionando; usa Reindexar para reintentar.",
+        "savedNotIndexed": "Guardado, pero la indexación falló ({message}). El documento aún no aparece en las búsquedas; usa Reindexar para reintentar.",
         "savedKeywordOnly": "Guardado solo con búsqueda por palabras clave: no se pudo descifrar tu clave de embeddings (revisa ENCRYPTION_KEY y vuelve a ingresar la clave)."
       }
     },
@@ -2722,6 +2937,8 @@
     "flows": {
       "statusInvalid": "El estado debe ser 'draft', 'active' o 'archived'",
       "cannotActivate": "No se puede activar el flujo: primero corrige los problemas de abajo.",
+      "cannotSaveActive": "Este flujo está activo, así que no se puede guardar con estos problemas. Corrígelos o pausa el flujo primero.",
+      "timeoutHoursInvalid": "on_timeout_hours debe ser un número mayor que 0 y como máximo {max}.",
       "nameEmpty": "El nombre no puede estar vacío",
       "unknownTemplate": "Plantilla de flujo desconocida \"{slug}\"",
       "insertFailed": "error al crear el flujo",
@@ -2786,6 +3003,7 @@
       "neverSubmitted": "Esta plantilla nunca se envió a Meta: usa Nueva plantilla para enviarla.",
       "statusNotEditable": "Las plantillas con estado {status} no se pueden editar. Permitidos: APPROVED, REJECTED, PAUSED.",
       "authNotEditable": "Las plantillas de AUTENTICACIÓN no se pueden editar aquí: adminístralas en el Administrador de WhatsApp de Meta.",
+      "categoryLockedApproved": "Meta no permite cambiar la categoría de una plantilla aprobada. Crea una plantilla nueva.",
       "validationFailed": "Error de validación.",
       "headerUploadFailed": "Error al subir el archivo multimedia del encabezado.",
       "metaEditFailed": "Error al editar en Meta.",
@@ -2799,6 +3017,7 @@
       "metaSubmitFailed": "Error al enviar a Meta.",
       "rateLimit": "Se alcanzó el límite de Meta (100 creaciones de plantillas por hora). Inténtalo de nuevo más tarde.",
       "submittedSaveFailed": "Enviada a Meta, pero falló el guardado local: {message}. Usa \"Sincronizar desde Meta\" para recuperarla.",
+      "alreadyExists": "Ya existe una plantilla llamada {name} ({language}) en esta cuenta. Edita o vuelve a enviar esa plantilla en lugar de crear una nueva.",
       "submitFailed": "Error al enviar la plantilla.",
       "metaApiStatus": "Error de la API de Meta: {status}",
       "syncFailed": "Error al sincronizar las plantillas"

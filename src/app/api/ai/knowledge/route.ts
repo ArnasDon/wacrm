@@ -6,7 +6,7 @@ import {
 } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { loadEmbeddingsKey } from '@/lib/ai/config'
-import { ingestDocument } from '@/lib/ai/knowledge'
+import { ingestDocument, type IngestResult } from '@/lib/ai/knowledge'
 import { AiError } from '@/lib/ai/types'
 import { getT } from '@/lib/i18n/translate'
 
@@ -77,8 +77,9 @@ export async function POST(request: Request) {
       supabase,
       accountId,
     )
+    let ingest: IngestResult
     try {
-      await ingestDocument(
+      ingest = await ingestDocument(
         supabase,
         accountId,
         { embeddingsApiKey },
@@ -92,10 +93,23 @@ export async function POST(request: Request) {
         {
           success: true,
           id: doc.id,
-          warning: t('ai.knowledge.savedIndexFailed', { message }),
+          warning: t('ai.knowledge.savedNotIndexed', { message }),
         },
         { status: 200 },
       )
+    }
+    if (ingest.keywordOnly) {
+      const message =
+        ingest.embedError instanceof AiError
+          ? ingest.embedError.message
+          : t('ai.knowledge.indexingFailed')
+      console.error('[ai/knowledge POST] embedding error:', ingest.embedError)
+      return NextResponse.json({
+        success: true,
+        id: doc.id,
+        keyword_only: true,
+        warning: t('ai.knowledge.savedIndexFailed', { message }),
+      })
     }
 
     if (corrupt) {

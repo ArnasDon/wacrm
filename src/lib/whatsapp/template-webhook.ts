@@ -41,7 +41,10 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { normalizeStatus } from './template-status-normalize'
+import {
+  clearsRejectionReason,
+  templateStatusFromWebhookEvent,
+} from './template-status-normalize'
 
 const TEMPLATE_WEBHOOK_FIELDS = new Set([
   'message_template_status_update',
@@ -145,17 +148,23 @@ async function handleStatusUpdate(
     return
   }
 
-  const status = normalizeStatus(value.event)
+  const status = templateStatusFromWebhookEvent(value.event)
+  if (!status) {
+    console.info(
+      `[template-webhook] event ${value.event} for meta_template_id ${metaTemplateId} is not a status change; status left as is`,
+    )
+    return
+  }
 
   // Persist the rejection reason on REJECTED — that's the only event
-  // where Meta sends a human-readable explanation. Clear it on any
-  // other status flip so the UI doesn't show a stale REJECTED banner
-  // after Meta re-approves a resubmitted template.
-  const update: Record<string, unknown> = {
-    status,
-    rejection_reason:
-      status === 'REJECTED' ? value.reason ?? 'Rejected by Meta' : null,
-    submission_error: null,
+  // where Meta sends a human-readable explanation.
+  const update: Record<string, unknown> = { status }
+  if (status === 'REJECTED') {
+    update.rejection_reason = value.reason ?? 'Rejected by Meta'
+    update.submission_error = null
+  } else if (clearsRejectionReason(status)) {
+    update.rejection_reason = null
+    update.submission_error = null
   }
 
   const { data, error } = await supabase
@@ -357,7 +366,7 @@ async function createStubForUnknownTemplate(p: StubParams): Promise<void> {
   }
 
   // Unique violation: either a concurrent sync/webhook just created the
-  // row, or the account already has a local (user_id, name, language)
+  // row, or the account already has a local
   // row that isn't linked to this meta_template_id. Retry the original
   // UPDATE once — it covers the first case; the second still needs a
   // sync and is logged as such.

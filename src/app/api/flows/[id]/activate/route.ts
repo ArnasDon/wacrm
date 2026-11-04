@@ -118,5 +118,21 @@ export async function POST(
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
+
+  if (status !== 'active') {
+    const { error: runsErr } = await admin
+      .from('flow_runs')
+      .update({
+        status: 'cancelled',
+        ended_at: new Date().toISOString(),
+        end_reason: `flow_${status}`,
+      })
+      .eq('flow_id', id)
+      .eq('status', 'active')
+    if (runsErr) {
+      console.error('[flows] cancel active runs failed:', runsErr.message)
+    }
+  }
+
   return NextResponse.json({ flow: updated })
 }

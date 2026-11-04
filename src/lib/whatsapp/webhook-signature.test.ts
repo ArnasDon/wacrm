@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   parseAppSecrets,
   verifyMetaWebhookSignature,
+  verifyTokenMatches,
 } from "./webhook-signature";
 
 const SECRET = process.env.META_APP_SECRET!;
@@ -129,5 +130,23 @@ describe("verifyMetaWebhookSignature", () => {
       expect(verifyMetaWebhookSignature(body, signedHeader(body, " , "))).toBe(false);
       expect(verifyMetaWebhookSignature(body, signedHeader(body, ""))).toBe(false);
     });
+  });
+});
+
+describe("verifyTokenMatches", () => {
+  it("accepts an identical token", () => {
+    expect(verifyTokenMatches("my-verify-token", "my-verify-token")).toBe(true);
+  });
+
+  it("rejects a token that differs in content or length", () => {
+    expect(verifyTokenMatches("my-verify-token", "my-verify-tokem")).toBe(false);
+    expect(verifyTokenMatches("my-verify-token", "my-verify-token-2")).toBe(false);
+    expect(verifyTokenMatches("my-verify-token", "my-verify")).toBe(false);
+    expect(verifyTokenMatches("my-verify-token", "")).toBe(false);
+  });
+
+  it("does not treat NUL padding as equal", () => {
+    expect(verifyTokenMatches("abc", "\0abc")).toBe(false);
+    expect(verifyTokenMatches("abc", "abc\0")).toBe(false);
   });
 });

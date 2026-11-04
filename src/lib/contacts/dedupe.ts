@@ -3,6 +3,7 @@ import {
   normalizePhone,
   parseInternationalPhone,
   phonesMatch,
+  phoneVariants,
 } from "@/lib/whatsapp/phone-utils";
 
 /**
@@ -13,8 +14,7 @@ import {
  * The canonical key is `normalizePhone` (digits-only) — the same form
  * the DB stores in the generated `contacts.phone_normalized` column
  * and enforces unique per account. `phonesMatch` adds trunk-prefix
- * tolerance (last-8-digit match) for the softer "possible duplicate"
- * surfaces.
+ * tolerance for the softer "possible duplicate" surfaces.
  */
 
 /** Canonical de-dup key for a phone string (digits only). */
@@ -32,9 +32,7 @@ export interface ExistingContact {
 
 /**
  * Find an existing contact in `accountId` whose phone matches `phone`,
- * or null. Pre-filters in SQL by the last-8-digit suffix (so we don't
- * pull every contact), then applies the strict `phonesMatch` in JS on
- * the small candidate set — the exact approach the webhook has used.
+ * or null.
  */
 export async function findExistingContact(
   db: SupabaseClient,
@@ -44,18 +42,26 @@ export async function findExistingContact(
   const normalized = normalizePhone(phone);
   if (!normalized) return null;
 
-  const suffix = normalized.length >= 8 ? normalized.slice(-8) : normalized;
-
   const { data, error } = await db
     .from("contacts")
     .select("*")
     .eq("account_id", accountId)
-    .like("phone", `%${suffix}`);
+    .in("phone_normalized", phoneVariants(normalized));
 
   if (error || !data) return null;
 
+  return pickBestPhoneMatch(data as ExistingContact[], phone);
+}
+
+export function pickBestPhoneMatch<T extends { phone: string }>(
+  candidates: T[],
+  phone: string,
+): T | null {
+  const key = normalizeKey(phone);
   return (
-    (data as ExistingContact[]).find((c) => phonesMatch(c.phone, phone)) ?? null
+    candidates.find((c) => normalizeKey(c.phone) === key) ??
+    candidates.find((c) => phonesMatch(c.phone, phone)) ??
+    null
   );
 }
 

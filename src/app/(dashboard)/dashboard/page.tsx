@@ -1,234 +1,179 @@
-"use client"
+'use client'
 
-import { useCallback, useEffect, useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
-import { useAuth } from '@/hooks/use-auth'
-import { formatCurrency } from '@/lib/currency'
-import {
-  MessageSquare,
-  UserPlus,
-  DollarSign,
-  Send,
-} from 'lucide-react'
-
-import {
-  loadActivity,
-  loadConversationsSeries,
-  loadMetrics,
-  loadPipelineDonut,
-  loadResponseTime,
-} from '@/lib/dashboard/queries'
-import type {
-  ActivityItem,
-  ConversationsSeriesPoint,
-  MetricsBundle,
-  PipelineDonutData,
-  ResponseTimeSummary,
-} from '@/lib/dashboard/types'
-
-import { MetricCard } from '@/components/dashboard/metric-card'
-import { SkeletonCard } from '@/components/dashboard/skeleton'
-import { QuickActions } from '@/components/dashboard/quick-actions'
-import { ConversationsChart } from '@/components/dashboard/conversations-chart'
-import { PipelineDonut } from '@/components/dashboard/pipeline-donut'
-import { ResponseTimeChart } from '@/components/dashboard/response-time-chart'
-import { ActivityFeed } from '@/components/dashboard/activity-feed'
-
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { useTranslations } from 'next-intl'
 
-type RangeDays = 7 | 30 | 90
+import { createClient } from '@/lib/supabase/client'
+import { useAuth } from '@/hooks/use-auth'
+import { useRealtime } from '@/hooks/use-realtime'
+import { Button } from '@/components/ui/button'
+import { loadActivity } from '@/lib/dashboard/queries'
+import type { ActivityItem } from '@/lib/dashboard/types'
+import {
+  browserTimeZone,
+  loadOverview,
+  needsSetup,
+  parseOverviewRange,
+  type DashboardOverview,
+  type OverviewRange,
+} from '@/lib/dashboard/overview'
+import { derivePresence } from '@/lib/presence'
+
+import { ActivityFeed } from '@/components/dashboard/activity-feed'
+import { AttentionRow } from '@/components/dashboard/attention-row'
+import { CampaignsCard } from '@/components/dashboard/campaigns-card'
+import { KpiRow } from '@/components/dashboard/kpi-row'
+import { MessageVolumeCard } from '@/components/dashboard/message-volume-card'
+import { OverviewHeader } from '@/components/dashboard/overview-header'
+import { PipelineCard } from '@/components/dashboard/pipeline-card'
+import { ReplyQueueCard } from '@/components/dashboard/reply-queue-card'
+import { SetupChecklist } from '@/components/dashboard/setup-checklist'
+import { TeamCard } from '@/components/dashboard/team-card'
+
+const POLL_MS = 60_000
+const REALTIME_DEBOUNCE_MS = 2_000
 
 export default function DashboardPage() {
-  const t = useTranslations('Dashboard.page')
-  const { defaultCurrency } = useAuth()
-  const [metrics, setMetrics] = useState<MetricsBundle | null>(null)
-  const [metricsLoading, setMetricsLoading] = useState(true)
+  return (
+    <Suspense fallback={null}>
+      <DashboardPageInner />
+    </Suspense>
+  )
+}
 
-  const [range, setRange] = useState<RangeDays>(30)
-  // Keep a cache per range so switching tabs doesn't re-fetch what we
-  // already have. Ranges the user hasn't opened yet stay null and
-  // trigger a fetch on first view.
-  const [series, setSeries] = useState<Record<RangeDays, ConversationsSeriesPoint[] | null>>({
-    7: null,
-    30: null,
-    90: null,
-  })
-  const [seriesLoading, setSeriesLoading] = useState(true)
+function DashboardPageInner() {
+  const t = useTranslations('Dashboard.overview')
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const range = parseOverviewRange(searchParams.get('range'))
+  const { defaultCurrency, profile } = useAuth()
 
-  const [pipeline, setPipeline] = useState<PipelineDonutData | null>(null)
-  const [pipelineLoading, setPipelineLoading] = useState(true)
-
-  const [responseTime, setResponseTime] = useState<ResponseTimeSummary | null>(null)
-  const [responseTimeLoading, setResponseTimeLoading] = useState(true)
-
+  const [overview, setOverview] = useState<DashboardOverview | null>(null)
+  const [failed, setFailed] = useState(false)
   const [activity, setActivity] = useState<ActivityItem[] | null>(null)
   const [activityLoading, setActivityLoading] = useState(true)
+  const [now, setNow] = useState(() => Date.now())
+  const requestRef = useRef(0)
+  const debounceRef = useRef<number | null>(null)
 
-  const loadAll = useCallback(() => {
-    const db = createClient()
+  const refresh = useCallback((days: OverviewRange) => {
+    const request = ++requestRef.current
+    loadOverview(createClient(), days, browserTimeZone())
+      .then((data) => {
+        if (request !== requestRef.current) return
+        setOverview(data)
+        setFailed(false)
+        setNow(Date.now())
+      })
+      .catch((err) => {
+        if (request !== requestRef.current) return
+        console.error('[dashboard] overview failed:', err)
+        setFailed(true)
+      })
+  }, [])
 
-    // Kick everything off in parallel. Each block has its own
-    // setState + finally so a slow query doesn't hold up faster
-    // sections — each widget shows its own skeleton independently.
-    void loadMetrics(db)
-      .then((m) => setMetrics(m))
-      .catch((err) => console.error('[dashboard] metrics failed:', err))
-      .finally(() => setMetricsLoading(false))
+  useEffect(() => {
+    refresh(range)
+  }, [range, refresh])
 
-    void loadConversationsSeries(db, 30)
-      .then((s) => setSeries((prev) => ({ ...prev, 30: s })))
-      .catch((err) => console.error('[dashboard] series failed:', err))
-      .finally(() => setSeriesLoading(false))
-
-    void loadPipelineDonut(db)
-      .then((p) => setPipeline(p))
-      .catch((err) => console.error('[dashboard] pipeline failed:', err))
-      .finally(() => setPipelineLoading(false))
-
-    void loadResponseTime(db)
-      .then((r) => setResponseTime(r))
-      .catch((err) => console.error('[dashboard] response time failed:', err))
-      .finally(() => setResponseTimeLoading(false))
-
-    // Fetch up to 50 so the biggest page-size option in the feed
-    // (50 rows) is already in memory — switching sizes then becomes
-    // a pure client-side slice with no extra round trip.
-    void loadActivity(db, 50)
-      .then((a) => setActivity(a))
+  useEffect(() => {
+    loadActivity(createClient(), 50)
+      .then(setActivity)
       .catch((err) => console.error('[dashboard] activity failed:', err))
       .finally(() => setActivityLoading(false))
   }, [])
 
   useEffect(() => {
-    loadAll()
-  }, [loadAll])
+    const tick = window.setInterval(() => {
+      setNow(Date.now())
+      if (document.visibilityState === 'visible') refresh(range)
+    }, POLL_MS)
+    return () => window.clearInterval(tick)
+  }, [range, refresh])
 
-  // Range switch handler — kept in an event callback (not an effect)
-  // so the setState calls stay out of the react-hooks/set-state-in-effect
-  // rule's way. The cached bucket check means switching back to a
-  // previously-viewed range is instant and doesn't re-fetch.
-  const handleRangeChange = useCallback(
-    (r: RangeDays) => {
-      setRange(r)
-      if (series[r] !== null) return
-      setSeriesLoading(true)
-      const db = createClient()
-      loadConversationsSeries(db, r)
-        .then((s) => setSeries((prev) => ({ ...prev, [r]: s })))
-        .catch((err) => console.error('[dashboard] series failed:', err))
-        .finally(() => setSeriesLoading(false))
+  useEffect(
+    () => () => {
+      if (debounceRef.current) window.clearTimeout(debounceRef.current)
     },
-    [series],
+    [],
   )
+
+  const scheduleRefresh = useCallback(() => {
+    if (debounceRef.current) window.clearTimeout(debounceRef.current)
+    debounceRef.current = window.setTimeout(() => refresh(range), REALTIME_DEBOUNCE_MS)
+  }, [range, refresh])
+
+  useRealtime({
+    channelName: 'dashboard-overview',
+    onMessageEvent: scheduleRefresh,
+    onConversationEvent: scheduleRefresh,
+  })
+
+  const handleRangeChange = useCallback(
+    (next: OverviewRange) => {
+      const params = new URLSearchParams(searchParams.toString())
+      params.set('range', String(next))
+      setFailed(false)
+      router.replace(`/dashboard?${params.toString()}`, { scroll: false })
+    },
+    [router, searchParams],
+  )
+
+  const data = overview?.days === range ? overview : null
+
+  const onlineCount = useMemo(
+    () =>
+      (overview?.replies.team ?? []).filter(
+        (m) => derivePresence(m.presence ?? undefined, m.lastSeenAt, now) === 'online',
+      ).length,
+    [overview, now],
+  )
+
+  if (failed && !data) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border py-16 text-center">
+        <p className="text-sm text-muted-foreground">{t('loadFailed')}</p>
+        <Button variant="outline" size="sm" onClick={() => refresh(range)}>
+          {t('retry')}
+        </Button>
+      </div>
+    )
+  }
 
   return (
-    <div className="space-y-5">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">{t('title')}</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {t('description')}
-        </p>
-      </div>
+    <div className="space-y-4">
+      <OverviewHeader
+        data={data}
+        now={now}
+        name={profile?.full_name ?? null}
+        range={range}
+        onRangeChange={handleRangeChange}
+      />
 
-      {/* Metric cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {metricsLoading || !metrics ? (
-          Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)
-        ) : (
-          <>
-            <MetricCard
-              title={t('activeConversations')}
-              value={metrics.activeConversations.current.toLocaleString()}
-              icon={MessageSquare}
-              delta={{
-                sign: metrics.activeConversations.previous,
-                label: deltaLabel(
-                  metrics.activeConversations.previous, 
-                  t('newTodayVsYesterday'), 
-                  t('noChange', { suffix: t('newTodayVsYesterday') })
-                ),
-              }}
-            />
-            <MetricCard
-              title={t('newContactsToday')}
-              value={metrics.newContactsToday.current.toLocaleString()}
-              icon={UserPlus}
-              delta={{
-                sign:
-                  metrics.newContactsToday.current - metrics.newContactsToday.previous,
-                label: deltaLabel(
-                  metrics.newContactsToday.current - metrics.newContactsToday.previous,
-                  t('vsYesterday'),
-                  t('noChange', { suffix: t('vsYesterday') })
-                ),
-              }}
-            />
-            <MetricCard
-              title={t('openDealsValue')}
-              value={formatCurrency(metrics.openDealsValue, defaultCurrency)}
-              icon={DollarSign}
-              subtitle={t('openDeals', { count: metrics.openDealsCount })}
-            />
-            <MetricCard
-              title={t('messagesSentToday')}
-              value={metrics.messagesSentToday.current.toLocaleString()}
-              icon={Send}
-              delta={{
-                sign:
-                  metrics.messagesSentToday.current - metrics.messagesSentToday.previous,
-                label: deltaLabel(
-                  metrics.messagesSentToday.current - metrics.messagesSentToday.previous,
-                  t('vsYesterday'),
-                  t('noChange', { suffix: t('vsYesterday') })
-                ),
-              }}
-            />
-          </>
-        )}
-      </div>
+      {data && needsSetup(data.setup) ? (
+        <SetupChecklist setup={data.setup} />
+      ) : (
+        <>
+          <AttentionRow data={data} now={now} onlineCount={onlineCount} />
+          <KpiRow data={data} currency={defaultCurrency} />
 
-      {/* Quick actions */}
-      <QuickActions />
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
+            <MessageVolumeCard data={data} />
+            <ReplyQueueCard data={data} now={now} />
+          </div>
 
-      {/* Charts row */}
-      {/* items-stretch (the grid default) stretches the two columns to
-          match the tallest sibling; adding h-full on each wrapper and
-          on the inner panels makes both cards actually fill that
-          stretched height so their rounded borders line up. Without
-          this, the pipeline card rendered at its natural (shorter)
-          height while the line chart drove the row height. */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
-        <div className="h-full lg:col-span-3">
-          <ConversationsChart
-            series={series}
-            loading={seriesLoading}
-            range={range}
-            onRangeChange={handleRangeChange}
-          />
-        </div>
-        <div className="h-full lg:col-span-2">
-          <PipelineDonut
-            data={pipeline}
-            loading={pipelineLoading}
-            currency={defaultCurrency}
-          />
-        </div>
-      </div>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-3">
+            <PipelineCard data={data} currency={defaultCurrency} />
+            <TeamCard data={data} now={now} />
+            <div className="lg:col-span-2 2xl:col-span-1">
+              <CampaignsCard data={data} />
+            </div>
+          </div>
 
-      {/* Response time */}
-      <ResponseTimeChart data={responseTime} loading={responseTimeLoading} />
-
-      {/* Activity feed */}
-      <ActivityFeed items={activity} loading={activityLoading} />
+          <ActivityFeed items={activity} loading={activityLoading} />
+        </>
+      )}
     </div>
   )
-}
-
-// ------------------------------------------------------------
-
-function deltaLabel(delta: number, suffix: string, noChangeLabel: string): string {
-  if (delta === 0) return noChangeLabel
-  const sign = delta > 0 ? '+' : ''
-  return `${sign}${delta.toLocaleString()} ${suffix}`
 }

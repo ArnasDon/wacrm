@@ -67,7 +67,11 @@ export function AiUsageCard() {
   const fetchUsage = useCallback(async (windowDays: number) => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/ai/usage?days=${windowDays}`, {
+      const params = new URLSearchParams({
+        days: String(windowDays),
+        tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      });
+      const res = await fetch(`/api/ai/usage?${params}`, {
         cache: 'no-store',
       });
       const json = await res.json().catch(() => null);

@@ -10,6 +10,7 @@ import { validateAiCredentials } from '@/lib/ai/validate'
 import { embedTexts } from '@/lib/ai/embeddings'
 import { AiError, type AiProvider } from '@/lib/ai/types'
 import { normalizeOpenAiCompatibleBaseUrl } from '@/lib/ai/providers/openai-compatible'
+import { canReuseStoredAiKey } from '@/lib/ai/stored-key'
 import { getT } from '@/lib/i18n/translate'
 
 const t = getT('Api')
@@ -157,7 +158,7 @@ export async function POST(request: Request) {
     }
     if (rawKey) {
       apiKeyPlain = rawKey
-    } else if (existing?.api_key) {
+    } else if (existing?.api_key && canReuseStoredAiKey(existing, provider, baseUrl)) {
       try {
         apiKeyPlain = decrypt(existing.api_key)
       } catch {

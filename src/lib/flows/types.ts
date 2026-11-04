@@ -270,8 +270,10 @@ export interface FlowRunRow {
     | "handed_off"
     | "timed_out"
     | "paused_by_agent"
+    | "cancelled"
     | "failed";
   current_node_key: string | null;
+  transition_seq: number;
   last_prompt_message_id: string | null;
   vars: Record<string, unknown>;
   reprompt_count: number;
@@ -295,6 +297,8 @@ export interface FlowFallbackPolicy {
   /** What to do once max_reprompts has been hit. */
   on_exhaust: "handoff" | "end";
 }
+
+export const MAX_FLOW_TIMEOUT_HOURS = 87600;
 
 export const DEFAULT_FALLBACK_POLICY: FlowFallbackPolicy = {
   on_unknown_reply: "reprompt",
@@ -358,6 +362,7 @@ export interface DispatchInboundResult {
     | "handed_off"
     | "fallback_fired"
     | "duplicate_inbound_ignored"
+    | "run_error"
     | "no_match";
 }
 
@@ -369,6 +374,18 @@ export interface DispatchInboundResult {
  * Throws a typed compile-time error if the switch over a discriminated
  * union forgets a case. Used in the engine's node-type switch.
  */
+export const AUTO_ADVANCING_NODE_TYPES: ReadonlySet<string> = new Set([
+  "start",
+  "send_message",
+  "send_media",
+  "condition",
+  "set_tag",
+]);
+
+export const MAX_NODES_PER_ADVANCE = 25;
+
+export const MAX_AUTO_ADVANCING_CHAIN = MAX_NODES_PER_ADVANCE - 1;
+
 export function assertNever(x: never): never {
   throw new Error(`Unhandled node type: ${JSON.stringify(x)}`);
 }

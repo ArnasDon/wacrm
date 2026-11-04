@@ -114,7 +114,8 @@ function chain(table: string, op: string) {
       if (op !== 'select' && matches()) {
         h.state.writes.push({ table, op, filters: [...filters] })
       }
-      return Promise.resolve({ data: null, error: null }).then(resolve)
+      const data = op === 'select' ? null : matches() ? [h.state.row] : []
+      return Promise.resolve({ data, error: null }).then(resolve)
     },
   }
   return api
@@ -174,7 +175,7 @@ describe('automations/[id] tenancy (GHSA-xvrq-88hg-44q6)', () => {
     const del = (await DELETE(new Request('http://t/'), {
       params,
     })) as unknown as { status: number }
-    expect(del.status).toBe(200) // scoped DELETE is a no-op, not an error
+    expect(del.status).toBe(404)
 
     const dup = (await DUPLICATE(new Request('http://t/', { method: 'POST' }), {
       params,
@@ -208,6 +209,26 @@ describe('automations/[id] tenancy (GHSA-xvrq-88hg-44q6)', () => {
       params,
     })) as unknown as { status: number }
     expect(dup.status).toBe(201)
+  })
+
+  it('deletes exactly the caller account row', async () => {
+    h.state.callerAccountId = 'acc-old'
+
+    const del = (await DELETE(new Request('http://t/'), {
+      params,
+    })) as unknown as { status: number; body: unknown }
+    expect(del.status).toBe(200)
+    expect(del.body).toEqual({ ok: true })
+    expect(h.state.writes).toEqual([
+      {
+        table: 'automations',
+        op: 'delete',
+        filters: [
+          ['id', 'auto-1'],
+          ['account_id', 'acc-old'],
+        ],
+      },
+    ])
   })
 
   it('clones into the caller account, never the row stored account', async () => {

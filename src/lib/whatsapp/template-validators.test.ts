@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  extractTemplateVariables,
   extractVariableIndices,
+  isNamedVariable,
   TEMPLATE_LIMITS,
   validateBody,
   validateButtons,
@@ -273,5 +275,32 @@ describe('validateTemplatePayload — integration', () => {
         body_text: 'Hi {{1}}',
       }),
     ).toThrow(/exactly 1 sample/);
+  });
+});
+
+describe('extractTemplateVariables', () => {
+  it('returns positional keys in numeric order', () => {
+    expect(extractTemplateVariables('{{2}} then {{10}} then {{1}}')).toEqual([
+      '1',
+      '2',
+      '10',
+    ]);
+  });
+
+  it('returns named keys sorted by name, deduplicated', () => {
+    expect(
+      extractTemplateVariables(
+        'Hi {{customer_name}}, order {{order_id}} for {{customer_name}}',
+      ),
+    ).toEqual(['customer_name', 'order_id']);
+  });
+
+  it('returns [] when there are no variables', () => {
+    expect(extractTemplateVariables('No variables here')).toEqual([]);
+  });
+
+  it('tells named keys from positional ones', () => {
+    expect(isNamedVariable('service_details')).toBe(true);
+    expect(isNamedVariable('1')).toBe(false);
   });
 });

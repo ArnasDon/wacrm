@@ -167,11 +167,15 @@ export async function DELETE(
     return toErrorResponse(err)
   }
 
-  const { error } = await supabaseAdmin()
+  const { data: deleted, error } = await supabaseAdmin()
     .from('automations')
     .delete()
     .eq('id', id)
     .eq('account_id', accountId)
+    .select('id')
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (!deleted || deleted.length === 0) {
+    return NextResponse.json({ error: t('common.notFound') }, { status: 404 })
+  }
   return NextResponse.json({ ok: true })
 }

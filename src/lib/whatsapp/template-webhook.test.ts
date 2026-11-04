@@ -177,7 +177,64 @@ describe('handleTemplateWebhookChange — status update', () => {
     expect(calls[0].update?.rejection_reason).toBe('Rejected by Meta');
   });
 
-  it('normalises PENDING_REVIEW → PENDING (via shared normalizeStatus)', async () => {
+  it('maps REINSTATED to APPROVED and clears the old rejection', async () => {
+    const { stub, calls } = makeSupabaseStub();
+    await handleTemplateWebhookChange(
+      {
+        field: 'message_template_status_update',
+        value: { event: 'REINSTATED', message_template_id: '1' },
+      },
+      stub,
+    );
+    expect(calls[0].update).toEqual({
+      status: 'APPROVED',
+      rejection_reason: null,
+      submission_error: null,
+    });
+  });
+
+  it.each(['FLAGGED', 'LIMIT_EXCEEDED', 'LOCKED', 'ARCHIVED', 'SOMETHING_NEW'])(
+    'leaves the row untouched on %s, which is not a status we track',
+    async (event) => {
+      const { stub, calls } = makeSupabaseStub();
+      await handleTemplateWebhookChange(
+        {
+          field: 'message_template_status_update',
+          value: { event, message_template_id: '1' },
+        },
+        stub,
+      );
+      expect(calls).toHaveLength(0);
+    },
+  );
+
+  it('keeps the rejection reason when a template is paused or disabled', async () => {
+    for (const event of ['PAUSED', 'DISABLED', 'IN_APPEAL']) {
+      const { stub, calls } = makeSupabaseStub();
+      await handleTemplateWebhookChange(
+        {
+          field: 'message_template_status_update',
+          value: { event, message_template_id: '1' },
+        },
+        stub,
+      );
+      expect(calls[0].update).toEqual({ status: event });
+    }
+  });
+
+  it('maps DELETED to PENDING_DELETION', async () => {
+    const { stub, calls } = makeSupabaseStub();
+    await handleTemplateWebhookChange(
+      {
+        field: 'message_template_status_update',
+        value: { event: 'DELETED', message_template_id: '1' },
+      },
+      stub,
+    );
+    expect(calls[0].update).toEqual({ status: 'PENDING_DELETION' });
+  });
+
+  it('normalises PENDING_REVIEW → PENDING', async () => {
     const { stub, calls } = makeSupabaseStub();
     await handleTemplateWebhookChange(
       {

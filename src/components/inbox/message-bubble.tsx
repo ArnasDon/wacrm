@@ -1,7 +1,12 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import type { Message, MessageReaction } from "@/types";
+import type {
+  Message,
+  MessageReaction,
+  MessageTemplate,
+  TemplateButton,
+} from "@/types";
 import {
   Clock,
   Check,
@@ -11,10 +16,16 @@ import {
   LayoutTemplate,
   CornerDownLeft,
   Sparkles,
+  Reply,
+  ExternalLink,
+  Phone,
+  Copy,
+  type LucideIcon,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ReplyQuote } from "./reply-quote";
 import { MessageReactions } from "./message-reactions";
+import { LinkifyText } from "@/lib/inbox/linkify-text";
 import {
   MediaAudioBubble,
   MediaDocumentBubble,
@@ -23,14 +34,18 @@ import {
   MediaVideoBubble,
 } from "./message-media";
 import { InteractivePreview } from "@/components/interactive/interactive-preview";
+import {
+  templateMessageView,
+  type TemplateMessageHeader,
+} from "@/lib/whatsapp/template-message-view";
 import { useTranslations } from "next-intl";
 
 interface MessageBubbleProps {
   message: Message;
+  template?: MessageTemplate | null;
   /** Pre-computed quote info for messages that reply to another. */
   reply?: { authorLabel: string; preview: string } | null;
   reactions?: MessageReaction[];
-  currentUserId?: string;
   onToggleReaction?: (emoji: string) => void;
   /**
    * Opens the thread's media viewer on this message. Only images and videos
@@ -61,6 +76,54 @@ function LocalizedInteractivePreview({
         menu: t("previewMenu"),
       }}
     />
+  );
+}
+
+const TEMPLATE_BUTTON_ICONS: Record<TemplateButton["type"], LucideIcon> = {
+  QUICK_REPLY: Reply,
+  URL: ExternalLink,
+  PHONE_NUMBER: Phone,
+  COPY_CODE: Copy,
+};
+
+function TemplateHeader({
+  header,
+  message,
+  t,
+}: {
+  header: TemplateMessageHeader;
+  message: Message;
+  t: ReturnType<typeof useTranslations>;
+}) {
+  if (header.type === "text") {
+    return (
+      <p className="mt-1 break-words text-sm font-semibold">{header.text}</p>
+    );
+  }
+  if (!header.url) {
+    const label =
+      header.type === "image"
+        ? t("photo")
+        : header.type === "video"
+          ? t("video")
+          : t("document");
+    return (
+      <div className="mt-1">
+        <MediaUnavailable label={label} t={t} />
+      </div>
+    );
+  }
+  const media = { ...message, media_url: header.url };
+  return (
+    <div className="mt-1">
+      {header.type === "image" ? (
+        <MediaImageBubble message={media} t={t} />
+      ) : header.type === "video" ? (
+        <MediaVideoBubble message={media} t={t} />
+      ) : (
+        <MediaDocumentBubble message={media} t={t} />
+      )}
+    </div>
   );
 }
 
@@ -101,11 +164,13 @@ function StatusIcon({
 
 function MessageContent({
   message,
+  template,
   t,
   isAgent,
   onOpenMedia,
 }: {
   message: Message;
+  template: MessageTemplate | null;
   t: ReturnType<typeof useTranslations>;
   /** Outbound bubbles sit on the primary fill — badges must invert. */
   isAgent: boolean;
@@ -119,7 +184,7 @@ function MessageContent({
     case "text":
       return (
         <p className="whitespace-pre-wrap break-words text-sm">
-          {message.content_text}
+          <LinkifyText text={message.content_text ?? ""} isAgent={isAgent} />
         </p>
       );
 
@@ -133,7 +198,7 @@ function MessageContent({
           )}
           {message.content_text && (
             <p className="mt-1 whitespace-pre-wrap break-words text-sm">
-              {message.content_text}
+              <LinkifyText text={message.content_text} isAgent={isAgent} />
             </p>
           )}
         </div>
@@ -149,7 +214,7 @@ function MessageContent({
           )}
           {message.content_text && (
             <p className="mt-1 whitespace-pre-wrap break-words text-sm">
-              {message.content_text}
+              <LinkifyText text={message.content_text} isAgent={isAgent} />
             </p>
           )}
         </div>
@@ -172,7 +237,7 @@ function MessageContent({
       }
       return <MediaDocumentBubble message={message} t={t} />;
 
-    case "template":
+    case "template": {
       // Templates are almost always outbound, where the bubble fill IS
       // `primary` — so the old `bg-primary/20 text-primary` chip was
       // primary-on-primary and invisible. Paired with a null
@@ -180,6 +245,7 @@ function MessageContent({
       // in it at all. Invert on the primary fill, and fall back to the
       // template's name when we have no stored body (legacy rows sent
       // before the fix).
+      const view = templateMessageView(message, template);
       return (
         <div>
           <span
@@ -193,9 +259,12 @@ function MessageContent({
             <LayoutTemplate className="h-3 w-3" />
             {t("template")}
           </span>
+          {view.header && (
+            <TemplateHeader header={view.header} message={message} t={t} />
+          )}
           {message.content_text ? (
             <p className="mt-1 whitespace-pre-wrap break-words text-sm">
-              {message.content_text}
+              <LinkifyText text={message.content_text} isAgent={isAgent} />
             </p>
           ) : (
             message.template_name && (
@@ -204,8 +273,45 @@ function MessageContent({
               </p>
             )
           )}
+          {view.footer && (
+            <p
+              className={cn(
+                "mt-1 break-words text-[11px]",
+                isAgent ? "text-primary-foreground/70" : "text-muted-foreground",
+              )}
+            >
+              {view.footer}
+            </p>
+          )}
+          {view.buttons.length > 0 && (
+            <div
+              className={cn(
+                "mt-2 flex flex-col border-t",
+                isAgent ? "border-primary-foreground/20" : "border-border",
+              )}
+            >
+              {view.buttons.map((button, i) => {
+                const Icon = TEMPLATE_BUTTON_ICONS[button.type];
+                return (
+                  <span
+                    key={i}
+                    className={cn(
+                      "flex items-center justify-center gap-1.5 border-t py-1.5 text-sm font-medium first:border-t-0",
+                      isAgent
+                        ? "border-primary-foreground/20 text-primary-foreground"
+                        : "border-border text-primary",
+                    )}
+                  >
+                    <Icon className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">{button.text}</span>
+                  </span>
+                );
+              })}
+            </div>
+          )}
         </div>
       );
+    }
 
     case "location":
       return (
@@ -236,14 +342,20 @@ function MessageContent({
               {t("buttonReply")}
             </span>
             <p className="whitespace-pre-wrap break-words text-sm">
-              {message.content_text || t("interactiveReply")}
+              <LinkifyText
+                text={message.content_text || t("interactiveReply")}
+                isAgent={isAgent}
+              />
             </p>
           </div>
         );
       }
       return (
         <p className="whitespace-pre-wrap break-words text-sm">
-          {message.content_text || t("interactiveReply")}
+          <LinkifyText
+            text={message.content_text || t("interactiveReply")}
+            isAgent={isAgent}
+          />
         </p>
       );
     }
@@ -251,7 +363,10 @@ function MessageContent({
     default:
       return (
         <p className="whitespace-pre-wrap break-words text-sm">
-          {message.content_text || t("unsupported")}
+          <LinkifyText
+            text={message.content_text || t("unsupported")}
+            isAgent={isAgent}
+          />
         </p>
       );
   }
@@ -259,9 +374,9 @@ function MessageContent({
 
 export function MessageBubble({
   message,
+  template = null,
   reply,
   reactions,
-  currentUserId,
   onToggleReaction,
   onOpenMedia,
 }: MessageBubbleProps) {
@@ -297,6 +412,7 @@ export function MessageBubble({
         )}
         <MessageContent
           message={message}
+          template={template}
           t={t}
           isAgent={isAgent}
           onOpenMedia={onOpenMedia}
@@ -346,7 +462,6 @@ export function MessageBubble({
       {reactions && reactions.length > 0 && onToggleReaction && (
         <MessageReactions
           reactions={reactions}
-          currentUserId={currentUserId}
           onToggle={onToggleReaction}
         />
       )}

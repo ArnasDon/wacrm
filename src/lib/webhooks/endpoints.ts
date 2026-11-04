@@ -48,19 +48,34 @@ export function serializeWebhookEndpoint(
   };
 }
 
+export type WebhookUrlCheck =
+  | { ok: true; url: string }
+  | { ok: false; message: string };
+
 /**
  * Validate a webhook target URL: must be a well-formed absolute
  * `https://` URL (an unencrypted `http://` sink would leak signed
- * event payloads). Returns the normalized string or null.
+ * event payloads).
  */
-export function normalizeWebhookUrl(input: unknown): string | null {
-  if (typeof input !== 'string') return null;
-  const trimmed = input.trim();
+export function checkWebhookUrl(input: unknown): WebhookUrlCheck {
+  const invalid: WebhookUrlCheck = {
+    ok: false,
+    message: "'url' must be a valid https:// URL",
+  };
+  if (typeof input !== 'string') return invalid;
+  let u: URL;
   try {
-    const u = new URL(trimmed);
-    if (u.protocol !== 'https:') return null;
-    return u.toString();
+    u = new URL(input.trim());
   } catch {
-    return null;
+    return invalid;
   }
+  if (u.protocol !== 'https:') return invalid;
+  if (u.username || u.password) {
+    return {
+      ok: false,
+      message:
+        "'url' must not contain a username or password; authenticate deliveries with the signing secret instead",
+    };
+  }
+  return { ok: true, url: u.toString() };
 }

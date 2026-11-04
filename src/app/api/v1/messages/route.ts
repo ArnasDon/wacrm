@@ -31,6 +31,8 @@
 //               "contact_id", "contact_created" } }
 // ============================================================
 
+import { after } from 'next/server';
+
 import { requireApiKey } from '@/lib/auth/api-context';
 import { ok, fail, toApiErrorResponse } from '@/lib/api/v1/respond';
 import { resolveConversationByPhone } from '@/lib/whatsapp/resolve-conversation';
@@ -40,6 +42,7 @@ import {
   SendMessageError,
 } from '@/lib/whatsapp/send-message';
 import type { InteractiveMessagePayload } from '@/lib/whatsapp/interactive';
+import { dispatchWebhookEvent } from '@/lib/webhooks/deliver';
 
 export async function POST(request: Request) {
   try {
@@ -104,6 +107,15 @@ export async function POST(request: Request) {
       to,
       typeof body.name === 'string' ? body.name : null
     );
+
+    if (resolved.conversationCreated) {
+      after(() =>
+        dispatchWebhookEvent(ctx.supabase, ctx.accountId, 'conversation.created', {
+          conversation_id: resolved.conversationId,
+          contact_id: resolved.contactId,
+        })
+      );
+    }
 
     const result = await sendMessageToConversation(
       ctx.supabase,

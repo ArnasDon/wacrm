@@ -168,16 +168,26 @@ export async function dispatchInboundToAiReply(
         messages,
         replyCount: conv.ai_reply_count ?? 0,
       })
-      const update: Record<string, unknown> = {
-        ai_autoreply_disabled: true,
-        ai_handoff_summary: summary,
-      }
+      await db
+        .from('conversations')
+        .update({ ai_autoreply_disabled: true, ai_handoff_summary: summary })
+        .eq('id', conversationId)
       // Only set the assignee when a target is configured AND the thread
       // isn't already owned — never stomp an existing human assignment.
-      if (config.handoffAgentId && !conv.assigned_agent_id) {
-        update.assigned_agent_id = config.handoffAgentId
+      if (config.handoffAgentId) {
+        await db
+          .from('conversations')
+          .update({ assigned_agent_id: config.handoffAgentId })
+          .eq('id', conversationId)
+          .is('assigned_agent_id', null)
       }
-      await db.from('conversations').update(update).eq('id', conversationId)
+      return
+    }
+
+    if (
+      inboundMessageId &&
+      (await hasNewerInbound(db, conversationId, inboundMessageId))
+    ) {
       return
     }
 
@@ -201,7 +211,7 @@ export async function dispatchInboundToAiReply(
       console.error('[ai auto-reply] claim_ai_reply_slot failed:', claimErr)
       return
     }
-    if (claimed !== true) return // lost the per-conversation cap race
+    if (claimed !== true) return
 
     await engineSendText({
       accountId,
@@ -214,6 +224,22 @@ export async function dispatchInboundToAiReply(
   } catch (err) {
     console.error('[ai auto-reply] dispatch failed:', err)
   }
+}
+
+async function hasNewerInbound(
+  db: ReturnType<typeof supabaseAdmin>,
+  conversationId: string,
+  inboundMessageId: string,
+): Promise<boolean> {
+  const { data, error } = await db
+    .from('messages')
+    .select('message_id')
+    .eq('conversation_id', conversationId)
+    .eq('sender_type', 'customer')
+    .order('created_at', { ascending: false })
+    .limit(1)
+  if (error || !data || data.length === 0) return false
+  return data[0].message_id !== inboundMessageId
 }
 
 /**

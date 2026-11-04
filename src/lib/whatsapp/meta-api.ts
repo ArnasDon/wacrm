@@ -28,6 +28,13 @@ export interface MetaPhoneInfo {
   quality_rating?: string
 }
 
+export interface MetaPhoneHealth {
+  id: string
+  display_phone_number?: string
+  quality_rating?: string
+  whatsapp_business_manager_messaging_limit?: string
+}
+
 interface MetaErrorResponse {
   error?: {
     message?: string
@@ -134,6 +141,33 @@ export async function verifyPhoneNumber(
     await throwMetaError(response, `Meta API error: ${response.status}`)
   }
   return response.json()
+}
+
+export async function getPhoneNumberHealth(
+  args: VerifyPhoneNumberArgs
+): Promise<MetaPhoneHealth> {
+  const { phoneNumberId, accessToken } = args
+  const headers = { Authorization: `Bearer ${accessToken}` }
+  const [response, limitResponse] = await Promise.all([
+    fetch(`${META_API_BASE}/${phoneNumberId}?fields=id,display_phone_number,quality_rating`, { headers }),
+    fetch(`${META_API_BASE}/${phoneNumberId}?fields=whatsapp_business_manager_messaging_limit`, { headers }).catch(
+      () => null
+    ),
+  ])
+  if (!response.ok) {
+    await throwMetaError(response, `Meta API error: ${response.status}`)
+  }
+  const health: MetaPhoneHealth = await response.json()
+  if (limitResponse?.ok) {
+    const limit = (await limitResponse.json().catch(() => null)) as Pick<
+      MetaPhoneHealth,
+      'whatsapp_business_manager_messaging_limit'
+    > | null
+    if (limit?.whatsapp_business_manager_messaging_limit) {
+      health.whatsapp_business_manager_messaging_limit = limit.whatsapp_business_manager_messaging_limit
+    }
+  }
+  return health
 }
 
 // ============================================================

@@ -9,6 +9,10 @@ import {
   RATE_LIMITS,
 } from '@/lib/rate-limit';
 import { getT } from '@/lib/i18n/translate';
+import {
+  removeBusinessReaction,
+  setBusinessReaction,
+} from '@/lib/inbox/business-reaction';
 
 const t = getT('Api');
 
@@ -130,12 +134,7 @@ export async function POST(request: Request) {
 
     // Mirror into DB. Empty emoji = removal.
     if (emoji === '') {
-      const { error: delError } = await supabase
-        .from('message_reactions')
-        .delete()
-        .eq('message_id', targetMessage.id)
-        .eq('actor_type', 'agent')
-        .eq('actor_id', userId);
+      const delError = await removeBusinessReaction(supabase, targetMessage.id);
 
       if (delError) {
         console.error('[whatsapp/react] DB delete failed:', delError.message);
@@ -145,17 +144,14 @@ export async function POST(request: Request) {
         );
       }
     } else {
-      // Upsert. The unique constraint (message_id, actor_type, actor_id)
-      // lets us swap emoji in a single statement.
-      const { error: upsertError } = await supabase.from('message_reactions').upsert(
+      const upsertError = await setBusinessReaction(
+        supabase,
         {
-          message_id: targetMessage.id,
-          conversation_id: targetMessage.conversation_id,
-          actor_type: 'agent',
-          actor_id: userId,
-          emoji,
+          messageId: targetMessage.id,
+          conversationId: targetMessage.conversation_id,
         },
-        { onConflict: 'message_id,actor_type,actor_id' },
+        userId,
+        emoji,
       );
 
       if (upsertError) {

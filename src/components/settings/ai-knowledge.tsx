@@ -145,7 +145,26 @@ export function AiKnowledgeCard({
     try {
       const res = await fetch('/api/ai/knowledge/reindex', { method: 'POST' });
       const data = await res.json();
-      if (res.ok && data.success) {
+      const failed: string[] = Array.isArray(data.failed) ? data.failed : [];
+      const keywordOnly: string[] = Array.isArray(data.keyword_only) ? data.keyword_only : [];
+      if (res.ok && failed.length > 0) {
+        const titleById = new Map(docs.map((d) => [d.id, d.title]));
+        toast.error(
+          t('reindexWithFailures', {
+            reindexed: data.reindexed,
+            total: data.total,
+            failedCount: failed.length,
+            titles: failed.map((id) => titleById.get(id) ?? id).join(', '),
+          }),
+        );
+      } else if (res.ok && data.success && keywordOnly.length > 0) {
+        toast.warning(
+          t('reindexKeywordOnly', {
+            count: data.reindexed,
+            keywordOnlyCount: keywordOnly.length,
+          }),
+        );
+      } else if (res.ok && data.success) {
         toast.success(t('reindexSuccess', { count: data.reindexed }));
       } else {
         toast.error(data.error ?? t('reindexFailed'));

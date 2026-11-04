@@ -77,6 +77,7 @@ may be reworded.
 | 400    | `bad_request`  | Malformed input                                  |
 | 404    | `not_found`    | No such resource                                 |
 | 500    | `internal`     | Server error                                     |
+| 503    | `unavailable`  | The key could not be verified right now — retry  |
 
 ## Rate limits
 
@@ -119,7 +120,9 @@ curl https://your-crm.example.com/api/v1/me \
 
 Send a WhatsApp message to a phone number. Scope: `messages:send`. You
 pass an **E.164 number**, not an internal id — the endpoint
-finds-or-creates the contact + conversation, then sends.
+finds-or-creates the contact + conversation, then sends. An optional
+`name` names the contact only when this call creates it; an existing
+contact's name is never changed.
 
 `to` must start with `+` followed by the country code (`+14155550123`;
 spaces, dashes and parentheses between the digits are fine). A number
@@ -198,7 +201,9 @@ and country code required — same rule as `POST /api/v1/messages`) is
 required; `name`, `email`, `company`, and `tags` (an array of tag names,
 created if missing) are optional. **Find-or-create by phone:** an existing
 match returns `200` with the existing contact; a new contact returns
-`201`. The response body is the serialized contact (same shape as the
+`201`. For an existing contact, `name`, `email` and `company` are left
+unchanged and `tags` are **added** to the tags it already has (none are
+removed); use `PATCH` to replace its tags. The response body is the serialized contact (same shape as the
 list rows above).
 
 ### `GET` / `PATCH /api/v1/contacts/{id}`
@@ -252,7 +257,9 @@ curl -X POST https://your-crm.example.com/api/v1/broadcasts \
 Recipients are capped at **1000 per request** — split larger sends.
 Invalid phone numbers — including any without a leading `+` and country
 code — are dropped and counted as `rejected`; if none are valid the
-request fails with `400 bad_request`. Response (202):
+request fails with `400 bad_request`. Recipients that resolve to a
+contact already listed earlier in the same request are messaged once and
+counted as `duplicates`. Response (202):
 
 ```json
 {
@@ -261,7 +268,8 @@ request fails with `400 bad_request`. Response (202):
     "status": "sending",
     "total_recipients": 2,
     "accepted": 2,
-    "rejected": 0
+    "rejected": 0,
+    "duplicates": 0
   }
 }
 ```
@@ -288,7 +296,8 @@ GET /api/v1/contacts?limit=50&cursor=eyJ…
 
 Cursors are keyset-based (stable under concurrent inserts). Pass the
 cursor back verbatim — don't parse it. `next_cursor: null` means the
-last page.
+last page. A malformed or tampered cursor is ignored and the first page
+is returned.
 
 ## Webhooks
 
@@ -302,13 +311,13 @@ things happen in your account. **Migration required:** apply
 | ------------------------ | ------------------------------------------------- |
 | `message.received`       | An inbound message arrives from a contact         |
 | `message.status_updated` | A message you sent changed delivery status        |
-| `conversation.created`   | A new conversation is opened for a contact        |
+| `conversation.created`   | A new conversation is opened for a contact (by an inbound message or `POST /api/v1/messages`) |
 
 ### Managing endpoints
 
 All under scope `webhooks:manage`.
 
-- `POST /api/v1/webhooks` — register `{ "url": "https://…", "events": ["message.received"] }`. `url` must be `https://`. **The response includes `secret` exactly once** — store it to verify signatures; wacrm keeps only an encrypted copy.
+- `POST /api/v1/webhooks` — register `{ "url": "https://…", "events": ["message.received"] }`. `url` must be `https://` and must not embed a username or password (`https://user:pass@…` is rejected with `400`; verify deliveries with the signing secret instead). **The response includes `secret` exactly once** — store it to verify signatures; wacrm keeps only an encrypted copy.
 - `GET /api/v1/webhooks` — list your endpoints (never returns the secret).
 - `GET /api/v1/webhooks/{id}` — read one.
 - `PATCH /api/v1/webhooks/{id}` — update `url`, `events`, or `is_active` (re-enabling clears the failure counter).

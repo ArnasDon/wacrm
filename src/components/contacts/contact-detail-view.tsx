@@ -41,6 +41,7 @@ import {
   LayoutTemplate,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import { planCustomValueWrites } from '@/lib/contacts/custom-value-writes';
 import { contactHandle } from '@/lib/whatsapp/wa-identity';
 import { parseInternationalPhone } from '@/lib/whatsapp/phone-utils';
 
@@ -308,24 +309,24 @@ export function ContactDetailView({
     setSavingCustom(true);
 
     try {
-      // Delete existing values and re-insert
-      await supabase
-        .from('contact_custom_values')
-        .delete()
-        .eq('contact_id', contactId);
+      const { upserts, clearedFieldIds } = planCustomValueWrites(
+        contactId,
+        customValues
+      );
 
-      const rows = Object.entries(customValues)
-        .filter(([, val]) => val.trim())
-        .map(([fieldId, val]) => ({
-          contact_id: contactId,
-          custom_field_id: fieldId,
-          value: val.trim(),
-        }));
-
-      if (rows.length > 0) {
+      if (upserts.length > 0) {
         const { error } = await supabase
           .from('contact_custom_values')
-          .insert(rows);
+          .upsert(upserts, { onConflict: 'contact_id,custom_field_id' });
+        if (error) throw error;
+      }
+
+      if (clearedFieldIds.length > 0) {
+        const { error } = await supabase
+          .from('contact_custom_values')
+          .delete()
+          .eq('contact_id', contactId)
+          .in('custom_field_id', clearedFieldIds);
         if (error) throw error;
       }
 

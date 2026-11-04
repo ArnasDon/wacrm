@@ -64,23 +64,30 @@ export function isValidE164(phone: string): boolean {
 /**
  * Parse a phone number as typed by a person or sent by an API integrator.
  *
- * Requires the international `+` prefix so the country code is explicit,
+ * Prefers an explicit international `+` so the country code is unambiguous,
  * then returns the digits-only form Meta wants — or null. Formatting noise
  * (spaces, dots, dashes, parentheses) between the digits is tolerated:
  * "+1 (415) 555-1212" → "14155551212".
  *
- * Without the `+` requirement a national-format number passes `isValidE164`
- * and is delivered to whichever country its leading digits happen to spell:
- * "4155551212" (US, national) is sent as +41 55 555 12 12 (Switzerland),
- * Meta accepts it, and the send looks successful (issue #586). Making the
- * `+` load-bearing at every boundary where raw input enters is what the
- * error messages ("E.164 format, e.g. +14155550123") already promised.
+ * Excel and many CSV exporters strip a leading `+` and leave the country
+ * code as bare digits ("918733050995"). Digit-only strings of 11–15
+ * characters (already long enough to include a country code) are accepted
+ * as that form. Shorter digit strings stay rejected — "4155551212" (US
+ * national) would otherwise be sent as +41… (Switzerland) and look like a
+ * successful Meta send (issue #586).
  */
 export function parseInternationalPhone(raw: string | null | undefined): string | null {
   if (!raw) return null
   const compact = raw.trim().replace(/[\s().-]/g, '')
-  if (!compact.startsWith('+')) return null
-  const digits = compact.slice(1)
+  let digits: string
+  if (compact.startsWith('+')) {
+    digits = compact.slice(1)
+  } else if (/^[1-9]\d{10,14}$/.test(compact)) {
+    // Excel-stripped international: country code already present, no '+'.
+    digits = compact
+  } else {
+    return null
+  }
   if (!/^\d+$/.test(digits)) return null
   return isValidE164(digits) ? digits : null
 }

@@ -4,11 +4,12 @@ import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { countAudience } from '@/lib/broadcast-audience';
 import { parseBroadcastCsv } from '@/lib/broadcast-csv';
-import { CustomField, Tag } from '@/types';
+import { ContactGroup, CustomField, Tag } from '@/types';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import {
   Users,
+  UsersRound,
   Tags,
   Filter,
   Upload,
@@ -20,7 +21,7 @@ import {
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
-type AudienceType = 'all' | 'tags' | 'custom_field' | 'csv';
+type AudienceType = 'all' | 'tags' | 'groups' | 'custom_field' | 'csv';
 type CustomFieldOperator = 'is' | 'is_not' | 'contains';
 
 interface CustomFieldFilter {
@@ -32,9 +33,11 @@ interface CustomFieldFilter {
 interface AudienceConfig {
   type: AudienceType;
   tagIds?: string[];
+  groupIds?: string[];
   customField?: CustomFieldFilter;
   csvContacts?: { phone: string; name?: string }[];
   excludeTagIds?: string[];
+  excludeGroupIds?: string[];
 }
 
 interface Step2Props {
@@ -71,6 +74,12 @@ export function Step2SelectAudience({
       icon: Users,
     },
     {
+      type: 'groups',
+      label: t('selectAudience.method.groups'),
+      description: t('selectAudience.groupDesc'),
+      icon: UsersRound,
+    },
+    {
       type: 'tags',
       label: t('selectAudience.method.tags'),
       description: t('selectAudience.tagDesc'),
@@ -90,8 +99,10 @@ export function Step2SelectAudience({
     },
   ], [t]);
   const [tags, setTags] = useState<Tag[]>([]);
+  const [groups, setGroups] = useState<ContactGroup[]>([]);
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
   const [loadingTags, setLoadingTags] = useState(false);
+  const [loadingGroups, setLoadingGroups] = useState(false);
   const [loadingFields, setLoadingFields] = useState(false);
   const [estimatedCount, setEstimatedCount] = useState<number | null>(null);
   const [loadingCount, setLoadingCount] = useState(false);
@@ -106,20 +117,26 @@ export function Step2SelectAudience({
   // picking another audience type wipes `csvContacts`.
   const csvFileName = csvCount > 0 ? pickedCsvName : null;
 
-  // Tags are used both by the primary "Filter by Tags" audience type
-  // AND by the exclude-list below — so always load once on mount.
+  // Tags + groups power both primary audience pickers and the exclude
+  // lists below — load once on mount.
   useEffect(() => {
-    async function fetchTags() {
+    async function fetchTagsAndGroups() {
       setLoadingTags(true);
+      setLoadingGroups(true);
       try {
         const supabase = createClient();
-        const { data } = await supabase.from('tags').select('*').order('name');
-        setTags(data ?? []);
+        const [tagRes, groupRes] = await Promise.all([
+          supabase.from('tags').select('*').order('name'),
+          supabase.from('contact_groups').select('*').order('name'),
+        ]);
+        setTags(tagRes.data ?? []);
+        setGroups((groupRes.data as ContactGroup[]) ?? []);
       } finally {
         setLoadingTags(false);
+        setLoadingGroups(false);
       }
     }
-    fetchTags();
+    fetchTagsAndGroups();
   }, []);
 
   // Lazy-load custom fields only when that audience type is active.
@@ -147,13 +164,17 @@ export function Step2SelectAudience({
     setLoadingCount(true);
     let count: number | null;
     try {
-      count = await countAudience(createClient(), {
-        type: audience.type,
-        tagIds: audience.tagIds,
-        customField: audience.customField,
-        csvContacts: audience.csvContacts,
-        excludeTagIds: audience.excludeTagIds,
-      });
+      setEstimatedCount(
+        await countAudience(createClient(), {
+          type: audience.type,
+          tagIds: audience.tagIds,
+          groupIds: audience.groupIds,
+          customField: audience.customField,
+          csvContacts: audience.csvContacts,
+          excludeTagIds: audience.excludeTagIds,
+          excludeGroupIds: audience.excludeGroupIds,
+        }),
+      );
     } catch {
       count = null;
     }
@@ -163,9 +184,11 @@ export function Step2SelectAudience({
   }, [
     audience.type,
     audience.tagIds,
+    audience.groupIds,
     audience.customField,
     audience.csvContacts,
     audience.excludeTagIds,
+    audience.excludeGroupIds,
   ]);
 
   useEffect(() => {
@@ -213,12 +236,28 @@ export function Step2SelectAudience({
     onUpdate({ ...audience, tagIds: updated });
   }
 
+  function toggleGroup(groupId: string) {
+    const current = audience.groupIds ?? [];
+    const updated = current.includes(groupId)
+      ? current.filter((id) => id !== groupId)
+      : [...current, groupId];
+    onUpdate({ ...audience, groupIds: updated });
+  }
+
   function toggleExcludeTag(tagId: string) {
     const current = audience.excludeTagIds ?? [];
     const updated = current.includes(tagId)
       ? current.filter((id) => id !== tagId)
       : [...current, tagId];
     onUpdate({ ...audience, excludeTagIds: updated });
+  }
+
+  function toggleExcludeGroup(groupId: string) {
+    const current = audience.excludeGroupIds ?? [];
+    const updated = current.includes(groupId)
+      ? current.filter((id) => id !== groupId)
+      : [...current, groupId];
+    onUpdate({ ...audience, excludeGroupIds: updated });
   }
 
   function updateCustomField(patch: Partial<CustomFieldFilter>) {
@@ -233,6 +272,9 @@ export function Step2SelectAudience({
   const isValid =
     audience.type === 'all' ||
     (audience.type === 'tags' && audience.tagIds && audience.tagIds.length > 0) ||
+    (audience.type === 'groups' &&
+      audience.groupIds &&
+      audience.groupIds.length > 0) ||
     (audience.type === 'custom_field' &&
       !!audience.customField?.fieldId &&
       audience.customField.value.length > 0) ||
@@ -263,6 +305,8 @@ export function Step2SelectAudience({
                   // Wipe shape fields from other types to avoid stale
                   // config leaking across selections.
                   tagIds: option.type === 'tags' ? audience.tagIds : undefined,
+                  groupIds:
+                    option.type === 'groups' ? audience.groupIds : undefined,
                   customField:
                     option.type === 'custom_field'
                       ? audience.customField
@@ -299,7 +343,9 @@ export function Step2SelectAudience({
 
       {audience.type === 'tags' && (
         <div className="rounded-xl border border-border bg-card/50 p-4">
-          <p className="mb-3 text-sm font-medium text-foreground">{t('selectAudience.selectTags')}</p>
+          <p className="mb-3 text-sm font-medium text-foreground">
+            {t('selectAudience.selectTags')}
+          </p>
           {loadingTags ? (
             <Loader2 className="h-5 w-5 animate-spin text-primary" />
           ) : tags.length === 0 ? (
@@ -325,6 +371,44 @@ export function Step2SelectAudience({
                       style={{ backgroundColor: tag.color }}
                     />
                     {tag.name}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {audience.type === 'groups' && (
+        <div className="rounded-xl border border-border bg-card/50 p-4">
+          <p className="mb-3 text-sm font-medium text-foreground">
+            {t('selectAudience.selectGroups')}
+          </p>
+          {loadingGroups ? (
+            <Loader2 className="h-5 w-5 animate-spin text-primary" />
+          ) : groups.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              {t('selectAudience.noGroupsFound')}
+            </p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {groups.map((group) => {
+                const isSelected = audience.groupIds?.includes(group.id);
+                return (
+                  <button
+                    key={group.id}
+                    onClick={() => toggleGroup(group.id)}
+                    className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium transition-all ${
+                      isSelected
+                        ? 'border-primary/30 bg-primary/10 text-primary'
+                        : 'border-border bg-muted text-muted-foreground hover:border-border'
+                    }`}
+                  >
+                    <span
+                      className="mr-1.5 h-2 w-2 rounded-full"
+                      style={{ backgroundColor: group.color }}
+                    />
+                    {group.name}
                   </button>
                 );
               })}
@@ -426,7 +510,7 @@ export function Step2SelectAudience({
         </div>
       )}
 
-      {/* Exclude list — applies regardless of audience type */}
+      {/* Exclude lists — apply regardless of audience type */}
       <div className="rounded-xl border border-border bg-card/50 p-4">
         <div className="mb-3 flex items-center gap-2">
           <X className="h-4 w-4 text-red-400" />
@@ -434,7 +518,9 @@ export function Step2SelectAudience({
             {t('selectAudience.excludeTags')}
           </p>
         </div>
-        {tags.length === 0 ? (
+        {loadingTags ? (
+          <Loader2 className="h-5 w-5 animate-spin text-primary" />
+        ) : tags.length === 0 ? (
           <p className="text-xs text-muted-foreground">{t('selectAudience.noTagsFound')}</p>
         ) : (
           <div className="flex flex-wrap gap-2">
@@ -455,6 +541,45 @@ export function Step2SelectAudience({
                     style={{ backgroundColor: tag.color }}
                   />
                   {tag.name}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-xl border border-border bg-card/50 p-4">
+        <div className="mb-3 flex items-center gap-2">
+          <X className="h-4 w-4 text-red-400" />
+          <p className="text-sm font-medium text-foreground">
+            {t('selectAudience.excludeGroups')}
+          </p>
+        </div>
+        {loadingGroups ? (
+          <Loader2 className="h-5 w-5 animate-spin text-primary" />
+        ) : groups.length === 0 ? (
+          <p className="text-xs text-muted-foreground">
+            {t('selectAudience.noGroupsFound')}
+          </p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {groups.map((group) => {
+              const isExcluded = audience.excludeGroupIds?.includes(group.id);
+              return (
+                <button
+                  key={group.id}
+                  onClick={() => toggleExcludeGroup(group.id)}
+                  className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium transition-all ${
+                    isExcluded
+                      ? 'border-red-500/30 bg-red-500/10 text-red-300'
+                      : 'border-border bg-muted text-muted-foreground hover:border-border'
+                  }`}
+                >
+                  <span
+                    className="mr-1.5 h-2 w-2 rounded-full"
+                    style={{ backgroundColor: group.color }}
+                  />
+                  {group.name}
                 </button>
               );
             })}

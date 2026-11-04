@@ -41,7 +41,8 @@
     "defaultAvatar": "Avatar",
     "menuProfile": "Perfil",
     "menuSettings": "Configuración",
-    "menuSignOut": "Cerrar sesión"
+    "menuSignOut": "Cerrar sesión",
+    "groups": "Grupos"
   },
   "Header": {
     "dashboard": "Panel",
@@ -58,7 +59,8 @@
     "defaultAvatar": "Avatar",
     "menuProfile": "Perfil",
     "menuSettings": "Configuración",
-    "menuSignOut": "Cerrar sesión"
+    "menuSignOut": "Cerrar sesión",
+    "groups": "Grupos"
   },
   "ModeToggle": {
     "switchMode": "Cambiar al modo {mode}"
@@ -553,6 +555,7 @@
         "email": "Correo",
         "company": "Empresa",
         "tags": "Etiquetas",
+        "groups": "Grupos",
         "createdAt": "Creado"
       },
       "loading": "Cargando contactos...",
@@ -749,6 +752,85 @@
       "toastRenameFailed": "No se pudo renombrar el campo.",
       "toastDeleteFailed": "No se pudo eliminar el campo.",
       "toastDeleted": "\"{name}\" eliminado."
+    }
+  },
+  "Groups": {
+    "page": {
+      "title": "Grupos",
+      "subtitle": "Organiza contactos en grupos y envía una difusión a todo el grupo.",
+      "createGroup": "Crear grupo",
+      "createFirst": "Crea tu primer grupo",
+      "createTitle": "Crear grupo",
+      "createDesc": "Ponle un nombre al grupo. Puedes añadir contactos en la siguiente pantalla.",
+      "namePlaceholder": "p. ej. Leads de pérdida de peso",
+      "pickColor": "Elegir color",
+      "create": "Crear",
+      "cancel": "Cancelar",
+      "loading": "Cargando grupos…",
+      "empty": "Aún no hay grupos.",
+      "columns": {
+        "name": "Nombre",
+        "members": "Miembros"
+      },
+      "memberCount": "{count} {count, plural, =1 {miembro} other {miembros}}",
+      "broadcast": "Difusión",
+      "delete": "Eliminar",
+      "deleteTitle": "Eliminar grupo",
+      "deleteDesc": "¿Eliminar \"{name}\"? Los contactos siguen en tu lista; solo se quitan de este grupo.",
+      "toastLoadFailed": "No se pudieron cargar los grupos",
+      "toastNameRequired": "Introduce un nombre de grupo",
+      "toastNotAuthenticated": "Debes iniciar sesión",
+      "toastCreateFailed": "No se pudo crear el grupo",
+      "toastCreated": "Grupo creado",
+      "toastDeleteFailed": "No se pudo eliminar el grupo",
+      "toastDeleted": "Grupo eliminado",
+      "toastEmptyBroadcast": "Añade contactos al grupo antes de difundir"
+    },
+    "detail": {
+      "back": "Volver a grupos",
+      "notFound": "No se encontró este grupo.",
+      "memberCount": "{count} {count, plural, =1 {miembro} other {miembros}}",
+      "addMembers": "Añadir miembros",
+      "broadcast": "Difusión",
+      "emptyMembers": "Aún no hay contactos en este grupo.",
+      "unnamed": "Sin nombre",
+      "removeMember": "Quitar del grupo",
+      "columns": {
+        "name": "Nombre",
+        "phone": "Teléfono",
+        "email": "Correo"
+      },
+      "addMembersTitle": "Añadir contactos al grupo",
+      "addMembersDesc": "Busca por nombre, teléfono o correo y selecciona contactos.",
+      "searchContacts": "Buscar por nombre, teléfono o correo…",
+      "searchHint": "Los contactos se cargan por páginas. Busca por nombre, teléfono o correo.",
+      "loadMore": "Cargar más",
+      "noCandidates": "No hay contactos coincidentes para añadir.",
+      "cancel": "Cancelar",
+      "addSelected": "Añadir {count}",
+      "toastNotFound": "Grupo no encontrado",
+      "toastLoadFailed": "No se pudo cargar el grupo",
+      "toastMembersAdded": "Se añadieron {count} {count, plural, =1 {contacto} other {contactos}}",
+      "toastAddFailed": "No se pudieron añadir contactos",
+      "toastMemberRemoved": "Quitado del grupo",
+      "toastRemoveFailed": "No se pudo quitar el contacto",
+      "toastEmptyBroadcast": "Añade contactos al grupo antes de difundir",
+      "importCsv": "Importar CSV",
+      "importCsvTitle": "Importar miembros desde CSV",
+      "importCsvDesc": "Sube un CSV con columna phone. Los números nuevos se crean como contactos y se unen a este grupo.",
+      "modeSelect": "Desde contactos",
+      "modeCsv": "Desde CSV",
+      "chooseCsv": "Elegir archivo CSV",
+      "csvFormatHint": "Debe incluir una columna phone en E.164 (+código…). name es opcional.",
+      "csvReady": "{name} — {count} {count, plural, =1 {contact} other {contacts}} ready",
+      "importCount": "Importar {count}",
+      "toastCsvMissingPhone": "El CSV debe tener una columna phone.",
+      "toastCsvNoRows": "No se encontraron teléfonos válidos en el CSV.",
+      "toastCsvInvalidPhones": "{count} fila(s) omitida(s): el teléfono debe empezar con + y código de país.",
+      "toastCsvDuplicates": "{count} número(s) duplicado(s) omitido(s).",
+      "toastCsvAlreadyMembers": "Esos contactos ya están en este grupo.",
+      "toastCsvFailed": "No se pudieron importar los miembros del CSV",
+      "toastNotAuthenticated": "Debes iniciar sesión"
     }
   },
   "Pipelines": {
@@ -992,7 +1074,8 @@
           "all": "Todos los contactos",
           "tags": "Filtrar por etiquetas",
           "customField": "Campo personalizado",
-          "csv": "Subir CSV"
+          "csv": "Subir CSV",
+          "groups": "Filtrar por grupos"
         },
         "allDesc": "Enviar a los {count} contactos de tu base de datos.",
         "allDescLoading": "Enviar a todos los contactos de tu base de datos.",
@@ -1003,6 +1086,7 @@
         "searchTags": "Buscar etiquetas...",
         "noTagsFound": "No se encontraron etiquetas.",
         "excludeTags": "Excluir etiquetas (opcional)",
+        "excludeGroups": "Excluir grupos (opcional)",
         "searchExcludeTags": "Buscar etiquetas para excluir...",
         "field": "Campo",
         "selectField": "Selecciona un campo...",
@@ -1023,7 +1107,10 @@
         "audienceSummary": "Resumen de la audiencia",
         "calculating": "Calculando…",
         "estimatedRecipients": "destinatarios estimados",
-        "selectTypeForEstimate": "Selecciona un tipo de audiencia para ver la estimación."
+        "selectTypeForEstimate": "Selecciona un tipo de audiencia para ver la estimación.",
+        "groupDesc": "Enviar a contactos en grupos específicos.",
+        "selectGroups": "Seleccionar grupos",
+        "noGroupsFound": "No hay grupos. Crea uno en Groups primero."
       },
       "personalize": {
         "title": "Personalizar variables",
@@ -1084,7 +1171,8 @@
         "estimatedReach": "Alcance estimado",
         "language": "Idioma",
         "confirmTitle": "Confirmar difusión",
-        "confirmDesc": "Estás a punto de enviar esta difusión a <b>{count, number}</b> {count, plural, =1 {contacto} other {contactos}} con la plantilla <b>{template}</b>. Esta acción no se puede deshacer."
+        "confirmDesc": "Estás a punto de enviar esta difusión a <b>{count, number}</b> {count, plural, =1 {contacto} other {contactos}} con la plantilla <b>{template}</b>. Esta acción no se puede deshacer.",
+        "audienceGroups": "Filtrada por grupos"
       }
     },
     "sending": {

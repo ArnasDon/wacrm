@@ -92,11 +92,15 @@ export function isUniqueViolation(error: unknown): boolean {
  * the import result should say so instead of telling the user a
  * contact with a real, unique number was skipped as a dupe.
  *
- * "Usable" means `parseInternationalPhone` accepts it: a leading `+`
- * and country code are required. A CSV of national-format numbers
- * ("4155551212") is the bulk version of issue #586 — every row would
- * be stored and later delivered to the wrong country — so those rows
- * are reported as invalid here, before anything is written.
+ * "Usable" means `parseInternationalPhone` accepts it: explicit `+`
+ * country code, or Excel-stripped digits that already include one
+ * (11–15 digits). National-format numbers ("4155551212") are the bulk
+ * version of issue #586 — every row would be stored and later delivered
+ * to the wrong country — so those rows are reported as invalid here,
+ * before anything is written.
+ *
+ * Accepted rows are rewritten to `+{digits}` so storage stays E.164
+ * even when the CSV omitted the plus.
  */
 export function dedupeByPhone<T extends { phone: string }>(
   rows: T[],
@@ -117,7 +121,7 @@ export function dedupeByPhone<T extends { phone: string }>(
       continue;
     }
     seen.add(key);
-    unique.push(row);
+    unique.push({ ...row, phone: `+${key}` });
   }
 
   return { unique, duplicates, invalid };

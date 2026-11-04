@@ -126,6 +126,18 @@ function tagRows(contactRows: Row[], tagId: string, prefix: string): Row[] {
   }));
 }
 
+function groupRows(
+  contactRows: Row[],
+  groupId: string,
+  prefix: string,
+): Row[] {
+  return contactRows.map((c, i) => ({
+    id: uuid(prefix, i),
+    contact_id: c.id,
+    group_id: groupId,
+  }));
+}
+
 const noCsv = async (): Promise<Contact[]> => [];
 
 describe('resolveAudienceContacts', () => {
@@ -284,6 +296,43 @@ describe('resolveAudienceContacts', () => {
     expect(requests).toHaveLength(0);
   });
 
+  it('resolves a groups audience from contact_group_members (not tags)', async () => {
+    const all = contacts(1500);
+    const members = all.slice(0, 1200);
+    const { db, requests } = cappedPostgrest({
+      contacts: all,
+      contact_group_members: groupRows(members, 'group-a', 'g'),
+      contact_tags: tagRows(all, 'tag-unrelated', 't'),
+    });
+
+    const result = await resolveAudienceContacts(
+      db,
+      { type: 'groups', groupIds: ['group-a'] },
+      noCsv,
+    );
+
+    expect(result).toHaveLength(1200);
+    expect(new Set(result.map((c) => c.id))).toEqual(
+      new Set(members.map((c) => c.id)),
+    );
+    expect(requests.some((r) => r.table === 'contact_tags')).toBe(false);
+    expect(requests.some((r) => r.table === 'contact_group_members')).toBe(
+      true,
+    );
+  });
+
+  it('returns nothing for an empty group selection', async () => {
+    const { db, requests } = cappedPostgrest({ contacts: contacts(5) });
+    expect(
+      await resolveAudienceContacts(
+        db,
+        { type: 'groups', groupIds: [] },
+        noCsv,
+      ),
+    ).toEqual([]);
+    expect(requests).toHaveLength(0);
+  });
+
   it('surfaces a query failure instead of resolving an empty audience', async () => {
     const db = {
       from: () => {
@@ -372,11 +421,38 @@ describe('countAudience', () => {
     const { db } = cappedPostgrest({});
     expect(await countAudience(db, { type: 'tags', tagIds: [] })).toBeNull();
     expect(
+      await countAudience(db, { type: 'groups', groupIds: [] }),
+    ).toBeNull();
+    expect(
       await countAudience(db, {
         type: 'custom_field',
         customField: { fieldId: 'f', operator: 'is', value: '' },
       }),
     ).toBeNull();
     expect(await countAudience(db, { type: 'csv' })).toBeNull();
+  });
+
+  it('counts a groups audience from contact_group_members', async () => {
+    const all = contacts(800);
+    const { db } = cappedPostgrest({
+      contact_group_members: groupRows(all.slice(0, 500), 'group-b', 'g'),
+    });
+    expect(
+      await countAudience(db, { type: 'groups', groupIds: ['group-b'] }),
+    ).toBe(500);
+  });
+
+  it('subtracts excluded groups from "all"', async () => {
+    const all = contacts(100);
+    const { db } = cappedPostgrest({
+      contacts: all,
+      contact_group_members: groupRows(all.slice(0, 40), 'group-skip', 'g'),
+    });
+    expect(
+      await countAudience(db, {
+        type: 'all',
+        excludeGroupIds: ['group-skip'],
+      }),
+    ).toBe(60);
   });
 });

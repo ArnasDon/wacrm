@@ -41,7 +41,8 @@
     "defaultAvatar": "아바타",
     "menuProfile": "프로필",
     "menuSettings": "설정",
-    "menuSignOut": "로그아웃"
+    "menuSignOut": "로그아웃",
+    "groups": "그룹"
   },
   "Header": {
     "dashboard": "대시보드",
@@ -58,7 +59,8 @@
     "defaultAvatar": "아바타",
     "menuProfile": "프로필",
     "menuSettings": "설정",
-    "menuSignOut": "로그아웃"
+    "menuSignOut": "로그아웃",
+    "groups": "그룹"
   },
   "ModeToggle": {
     "switchMode": "{mode} 모드로 전환"
@@ -553,6 +555,7 @@
         "email": "이메일",
         "company": "회사",
         "tags": "태그",
+        "groups": "그룹",
         "createdAt": "생성일"
       },
       "loading": "연락처를 불러오는 중...",
@@ -749,6 +752,85 @@
       "toastRenameFailed": "필드 이름을 변경할 수 없습니다.",
       "toastDeleteFailed": "필드를 삭제할 수 없습니다.",
       "toastDeleted": "\"{name}\"을(를) 삭제했습니다."
+    }
+  },
+  "Groups": {
+    "page": {
+      "title": "그룹",
+      "subtitle": "연락처를 그룹으로 정리한 뒤 그룹 전체에 브로드캐스트하세요.",
+      "createGroup": "그룹 만들기",
+      "createFirst": "첫 그룹 만들기",
+      "createTitle": "그룹 만들기",
+      "createDesc": "그룹 이름을 입력하세요. 다음 화면에서 연락처를 추가할 수 있습니다.",
+      "namePlaceholder": "예: 체중 감량 문의",
+      "pickColor": "색상 선택",
+      "create": "만들기",
+      "cancel": "취소",
+      "loading": "그룹 불러오는 중…",
+      "empty": "아직 그룹이 없습니다.",
+      "columns": {
+        "name": "이름",
+        "members": "멤버"
+      },
+      "memberCount": "{count} {count, plural, =1 {member} other {members}}",
+      "broadcast": "브로드캐스트",
+      "delete": "삭제",
+      "deleteTitle": "그룹 삭제",
+      "deleteDesc": "\"{name}\" 그룹을 삭제할까요? 연락처는 목록에 남고 이 그룹에서만 제거됩니다.",
+      "toastLoadFailed": "그룹을 불러오지 못했습니다",
+      "toastNameRequired": "그룹 이름을 입력하세요",
+      "toastNotAuthenticated": "로그인이 필요합니다",
+      "toastCreateFailed": "그룹을 만들지 못했습니다",
+      "toastCreated": "그룹이 만들어졌습니다",
+      "toastDeleteFailed": "그룹을 삭제하지 못했습니다",
+      "toastDeleted": "그룹이 삭제되었습니다",
+      "toastEmptyBroadcast": "브로드캐스트 전에 그룹에 연락처를 추가하세요"
+    },
+    "detail": {
+      "back": "그룹으로 돌아가기",
+      "notFound": "그룹을 찾을 수 없습니다.",
+      "memberCount": "{count} {count, plural, =1 {member} other {members}}",
+      "addMembers": "멤버 추가",
+      "broadcast": "브로드캐스트",
+      "emptyMembers": "이 그룹에 연락처가 없습니다.",
+      "unnamed": "이름 없음",
+      "removeMember": "그룹에서 제거",
+      "columns": {
+        "name": "이름",
+        "phone": "전화번호",
+        "email": "이메일"
+      },
+      "addMembersTitle": "그룹에 연락처 추가",
+      "addMembersDesc": "이름, 전화번호, 이메일로 검색한 뒤 연락처를 선택하세요.",
+      "searchContacts": "이름, 전화번호, 이메일로 검색…",
+      "searchHint": "연락처는 페이지로 불러옵니다. 이름·전화·이메일로 검색하세요.",
+      "loadMore": "더 보기",
+      "noCandidates": "추가할 연락처가 없습니다.",
+      "cancel": "취소",
+      "addSelected": "{count}명 추가",
+      "toastNotFound": "그룹을 찾을 수 없습니다",
+      "toastLoadFailed": "그룹을 불러오지 못했습니다",
+      "toastMembersAdded": "{count} {count, plural, =1 {contact} other {contacts}} 추가됨",
+      "toastAddFailed": "연락처를 추가하지 못했습니다",
+      "toastMemberRemoved": "그룹에서 제거했습니다",
+      "toastRemoveFailed": "연락처를 제거하지 못했습니다",
+      "toastEmptyBroadcast": "브로드캐스트 전에 그룹에 연락처를 추가하세요",
+      "importCsv": "CSV 가져오기",
+      "importCsvTitle": "CSV로 멤버 가져오기",
+      "importCsvDesc": "phone 열이 있는 CSV를 업로드하세요. 새 번호는 연락처로 추가되고 이 그룹에 들어갑니다.",
+      "modeSelect": "연락처에서",
+      "modeCsv": "CSV에서",
+      "chooseCsv": "CSV 파일 선택",
+      "csvFormatHint": "E.164(+국가코드…) phone 열이 필요합니다. name은 선택입니다.",
+      "csvReady": "{name} — {count} {count, plural, =1 {contact} other {contacts}} ready",
+      "importCount": "{count}명 가져오기",
+      "toastCsvMissingPhone": "CSV에 phone 열이 필요합니다.",
+      "toastCsvNoRows": "CSV에서 유효한 전화번호를 찾지 못했습니다.",
+      "toastCsvInvalidPhones": "{count}행 건너뜀: 번호는 +와 국가코드로 시작해야 합니다.",
+      "toastCsvDuplicates": "중복 번호 {count}개 건너뜀.",
+      "toastCsvAlreadyMembers": "해당 연락처는 이미 이 그룹에 있습니다.",
+      "toastCsvFailed": "CSV 멤버 가져오기에 실패했습니다",
+      "toastNotAuthenticated": "로그인이 필요합니다"
     }
   },
   "Pipelines": {
@@ -992,7 +1074,8 @@
           "all": "전체 연락처",
           "tags": "태그로 필터링",
           "customField": "커스텀 필드",
-          "csv": "CSV 업로드"
+          "csv": "CSV 업로드",
+          "groups": "그룹으로 필터"
         },
         "allDesc": "데이터베이스의 전체 연락처 {count}명에게 보냅니다.",
         "allDescLoading": "데이터베이스의 전체 연락처에게 보냅니다.",
@@ -1003,6 +1086,7 @@
         "searchTags": "태그 검색...",
         "noTagsFound": "태그를 찾을 수 없습니다.",
         "excludeTags": "제외할 태그 (선택)",
+        "excludeGroups": "제외할 그룹 (선택)",
         "searchExcludeTags": "제외할 태그 검색...",
         "field": "필드",
         "selectField": "필드 선택...",
@@ -1023,7 +1107,10 @@
         "audienceSummary": "대상 요약",
         "calculating": "계산 중…",
         "estimatedRecipients": "예상 수신자",
-        "selectTypeForEstimate": "예상치를 보려면 대상 유형을 선택하세요."
+        "selectTypeForEstimate": "예상치를 보려면 대상 유형을 선택하세요.",
+        "groupDesc": "특정 그룹의 연락처에 보냅니다.",
+        "selectGroups": "그룹 선택",
+        "noGroupsFound": "그룹이 없습니다. 먼저 Groups에서 만드세요."
       },
       "personalize": {
         "title": "변수 개인화",
@@ -1084,7 +1171,8 @@
         "estimatedReach": "예상 도달 수",
         "language": "언어",
         "confirmTitle": "브로드캐스트 확인",
-        "confirmDesc": "<b>{template}</b> 템플릿으로 연락처 <b>{count, number}</b>명에게 이 브로드캐스트를 보내려고 합니다. 이 작업은 되돌릴 수 없습니다."
+        "confirmDesc": "<b>{template}</b> 템플릿으로 연락처 <b>{count, number}</b>명에게 이 브로드캐스트를 보내려고 합니다. 이 작업은 되돌릴 수 없습니다.",
+        "audienceGroups": "그룹으로 필터링됨"
       }
     },
     "sending": {

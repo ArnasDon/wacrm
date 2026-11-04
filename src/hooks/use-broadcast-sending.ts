@@ -342,8 +342,10 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
           audience_filter: {
             type: payload.audience.type,
             tagIds: payload.audience.tagIds,
+            groupIds: payload.audience.groupIds,
             customField: payload.audience.customField,
             excludeTagIds: payload.audience.excludeTagIds,
+            excludeGroupIds: payload.audience.excludeGroupIds,
           },
           status: 'sending',
           total_recipients: contacts.length,

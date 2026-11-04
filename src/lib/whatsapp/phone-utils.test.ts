@@ -150,12 +150,13 @@ describe("parseInternationalPhone", () => {
   it("rejects national-format numbers with no country code", () => {
     expect(parseInternationalPhone("4155551212")).toBeNull(); // US national → would parse as +41 (CH)
     expect(parseInternationalPhone("07700900123")).toBeNull(); // UK national, trunk 0
-    expect(parseInternationalPhone("9876543210")).toBeNull(); // 10-digit national → would parse as +98 (IR)
+    expect(parseInternationalPhone("9876543210")).toBeNull(); // 10-digit IN mobile without 91
   });
 
-  it("rejects digits that carry a country code but no + (the caller cannot tell)", () => {
-    expect(parseInternationalPhone("14155551212")).toBeNull();
-    expect(parseInternationalPhone("37063949836")).toBeNull();
+  it("accepts Excel-stripped international digits (country code present, no +)", () => {
+    expect(parseInternationalPhone("14155551212")).toBe("14155551212");
+    expect(parseInternationalPhone("37063949836")).toBe("37063949836");
+    expect(parseInternationalPhone("918733050995")).toBe("918733050995");
   });
 
   it("rejects a + followed by an invalid digit string", () => {

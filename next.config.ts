@@ -100,6 +100,7 @@ const nextConfig: NextConfig = {
    * has no effect on a production build.
    */
   allowedDevOrigins: [
+    "*.ngrok-free.dev",
     "*.ngrok-free.app",
     "*.ngrok.app",
     "*.ngrok.io",

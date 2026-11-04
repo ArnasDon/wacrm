@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
@@ -11,6 +11,10 @@ import { Step2SelectAudience } from '@/components/broadcasts/step2-select-audien
 import { Step3Personalize } from '@/components/broadcasts/step3-personalize';
 import { Step4ScheduleSend } from '@/components/broadcasts/step4-schedule-send';
 import { useBroadcastSending } from '@/hooks/use-broadcast-sending';
+import {
+  clearBroadcastGroupIds,
+  peekBroadcastGroupIds,
+} from '@/lib/broadcast-selected-groups';
 import { Check } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
@@ -30,8 +34,9 @@ export default function NewBroadcastPage() {
   const [currentStep, setCurrentStep] = useState(0);
   const [template, setTemplate] = useState<MessageTemplate | null>(null);
   const [audience, setAudience] = useState<{
-    type: 'all' | 'tags' | 'custom_field' | 'csv';
+    type: 'all' | 'tags' | 'groups' | 'custom_field' | 'csv';
     tagIds?: string[];
+    groupIds?: string[];
     customField?: {
       fieldId: string;
       operator: 'is' | 'is_not' | 'contains';
@@ -39,12 +44,20 @@ export default function NewBroadcastPage() {
     };
     csvContacts?: { phone: string; name?: string }[];
     excludeTagIds?: string[];
+    excludeGroupIds?: string[];
   }>({ type: 'all' });
   const [variables, setVariables] = useState<
     Record<string, { type: 'static' | 'field' | 'custom_field'; value: string }>
   >({});
   const [headerMediaUrl, setHeaderMediaUrl] = useState('');
   const [name, setName] = useState('');
+
+  // Groups → Broadcast: restore the chosen contact group once on mount.
+  useEffect(() => {
+    const groupIds = peekBroadcastGroupIds();
+    if (groupIds.length === 0) return;
+    setAudience({ type: 'groups', groupIds });
+  }, []);
 
   async function handleSend() {
     if (!template) return;
@@ -56,15 +69,16 @@ export default function NewBroadcastPage() {
         audience: {
           type: audience.type,
           tagIds: audience.tagIds,
+          groupIds: audience.groupIds,
           customField: audience.customField,
           csvContacts: audience.csvContacts,
           excludeTagIds: audience.excludeTagIds,
+          excludeGroupIds: audience.excludeGroupIds,
         },
         variables,
         headerMediaUrl,
       });
-      if (interruption === 'lease_lost') toast.warning(t('toastSendTakenOver'));
-      if (interruption === 'lease_error') toast.error(t('toastSendInterrupted'));
+      clearBroadcastGroupIds();
       router.push(`/broadcasts/${broadcastId}`);
     } catch (err) {
       // Previously swallowed with console.error — the wizard would
@@ -113,6 +127,9 @@ export default function NewBroadcastPage() {
       audience_filter: {
         type: audience.type,
         tagIds: audience.tagIds,
+        groupIds: audience.groupIds,
+        excludeTagIds: audience.excludeTagIds,
+        excludeGroupIds: audience.excludeGroupIds,
       },
       status: 'draft',
       total_recipients: 0,
@@ -127,6 +144,7 @@ export default function NewBroadcastPage() {
       toast.error(t('toastFailedDraft', { error: error.message }));
       return;
     }
+    clearBroadcastGroupIds();
     toast.success(t('toastDraftSaved'));
     router.push('/broadcasts');
   }

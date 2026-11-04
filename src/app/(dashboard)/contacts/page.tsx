@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
-import type { Contact, Tag, ContactTag } from '@/types';
+import type { Contact, ContactGroup, Tag, ContactTag } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -67,6 +67,7 @@ const PAGE_SIZE = 25;
 
 interface ContactWithTags extends Contact {
   tags?: Tag[];
+  groups?: ContactGroup[];
 }
 
 export default function ContactsPage() {
@@ -100,8 +101,9 @@ export default function ContactsPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
 
-  // All tags for display
+  // All tags / groups for display
   const [tagsMap, setTagsMap] = useState<Record<string, Tag>>({});
+  const [groupsMap, setGroupsMap] = useState<Record<string, ContactGroup>>({});
 
   // Guards against out-of-order fetch responses: each fetchContacts run
   // claims a sequence number and only the latest is allowed to commit its
@@ -121,6 +123,15 @@ export default function ContactsPage() {
         const pruned = prev.filter((id) => map[id]);
         return pruned.length === prev.length ? prev : pruned;
       });
+    }
+  }, [supabase]);
+
+  const fetchGroups = useCallback(async () => {
+    const { data } = await supabase.from('contact_groups').select('*');
+    if (data) {
+      const map: Record<string, ContactGroup> = {};
+      for (const group of data as ContactGroup[]) map[group.id] = group;
+      setGroupsMap(map);
     }
   }, [supabase]);
 
@@ -203,12 +214,18 @@ export default function ContactsPage() {
       return;
     }
 
-    // Fetch tags for these contacts
+    // Fetch tags + groups for these contacts
     const contactIds = contactRows.map((c) => c.id);
-    const { data: contactTags } = await supabase
-      .from('contact_tags')
-      .select('contact_id, tag_id')
-      .in('contact_id', contactIds);
+    const [{ data: contactTags }, { data: contactGroups }] = await Promise.all([
+      supabase
+        .from('contact_tags')
+        .select('contact_id, tag_id')
+        .in('contact_id', contactIds),
+      supabase
+        .from('contact_group_members')
+        .select('contact_id, group_id')
+        .in('contact_id', contactIds),
+    ]);
     if (seq !== fetchSeq.current) return; // superseded by a newer fetch
 
     const tagsByContact: Record<string, string[]> = {};
@@ -217,16 +234,25 @@ export default function ContactsPage() {
       tagsByContact[ct.contact_id].push(ct.tag_id);
     });
 
+    const groupsByContact: Record<string, string[]> = {};
+    contactGroups?.forEach((row) => {
+      if (!groupsByContact[row.contact_id]) groupsByContact[row.contact_id] = [];
+      groupsByContact[row.contact_id].push(row.group_id);
+    });
+
     const enriched: ContactWithTags[] = contactRows.map((c) => ({
       ...c,
       tags: (tagsByContact[c.id] ?? [])
         .map((tid) => tagsMap[tid])
         .filter(Boolean),
+      groups: (groupsByContact[c.id] ?? [])
+        .map((gid) => groupsMap[gid])
+        .filter(Boolean),
     }));
 
     setContacts(enriched);
     setLoading(false);
-  }, [supabase, page, search, selectedTagIds, tagsMap, t]);
+  }, [supabase, page, search, selectedTagIds, tagsMap, groupsMap, t]);
 
   // Load-once-on-mount-ish data fetches. Each setter inside runs
   // inside an async promise completion (Supabase await), not
@@ -235,7 +261,8 @@ export default function ContactsPage() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchTags();
-  }, [fetchTags]);
+    fetchGroups();
+  }, [fetchTags, fetchGroups]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -565,6 +592,7 @@ export default function ContactsPage() {
               <TableHead className="text-muted-foreground hidden md:table-cell">{t('tableColumns.email')}</TableHead>
               <TableHead className="text-muted-foreground hidden lg:table-cell">{t('tableColumns.company')}</TableHead>
               <TableHead className="text-muted-foreground hidden md:table-cell">{t('tableColumns.tags')}</TableHead>
+              <TableHead className="text-muted-foreground hidden md:table-cell">{t('tableColumns.groups')}</TableHead>
               <TableHead className="text-muted-foreground hidden lg:table-cell">{t('tableColumns.createdAt')}</TableHead>
               <TableHead className="text-muted-foreground w-12" />
             </TableRow>
@@ -572,7 +600,7 @@ export default function ContactsPage() {
           <TableBody>
             {loading ? (
               <TableRow className="border-border">
-                <TableCell colSpan={8} className="text-center py-12">
+                <TableCell colSpan={9} className="text-center py-12">
                   <div className="flex flex-col items-center gap-2">
                     <Loader2 className="size-6 animate-spin text-primary" />
                     <p className="text-sm text-muted-foreground">{t('loading')}</p>
@@ -581,7 +609,7 @@ export default function ContactsPage() {
               </TableRow>
             ) : contacts.length === 0 ? (
               <TableRow className="border-border">
-                <TableCell colSpan={8} className="text-center py-12">
+                <TableCell colSpan={9} className="text-center py-12">
                   <div className="flex flex-col items-center gap-2">
                     <Users className="size-8 text-muted-foreground" />
                     <p className="text-sm text-muted-foreground">
@@ -652,6 +680,31 @@ export default function ContactsPage() {
                       {contact.tags && contact.tags.length > 3 && (
                         <span className="text-[10px] text-muted-foreground">
                           +{contact.tags.length - 3}
+                        </span>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell className="hidden md:table-cell">
+                    <div className="flex flex-wrap gap-1">
+                      {contact.groups && contact.groups.length > 0 ? (
+                        contact.groups.slice(0, 3).map((group) => (
+                          <span
+                            key={group.id}
+                            className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium"
+                            style={{
+                              backgroundColor: group.color + '20',
+                              color: group.color,
+                            }}
+                          >
+                            {group.name}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-muted-foreground text-xs">-</span>
+                      )}
+                      {contact.groups && contact.groups.length > 3 && (
+                        <span className="text-[10px] text-muted-foreground">
+                          +{contact.groups.length - 3}
                         </span>
                       )}
                     </div>

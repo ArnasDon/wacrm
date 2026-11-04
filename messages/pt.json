@@ -41,7 +41,8 @@
     "defaultAvatar": "Avatar",
     "menuProfile": "Perfil",
     "menuSettings": "Configurações",
-    "menuSignOut": "Sair"
+    "menuSignOut": "Sair",
+    "groups": "Grupos"
   },
   "Header": {
     "dashboard": "Painel",
@@ -58,7 +59,8 @@
     "defaultAvatar": "Avatar",
     "menuProfile": "Perfil",
     "menuSettings": "Configurações",
-    "menuSignOut": "Sair"
+    "menuSignOut": "Sair",
+    "groups": "Grupos"
   },
   "ModeToggle": {
     "switchMode": "Mudar para o modo {mode}"
@@ -553,6 +555,7 @@
         "email": "E-mail",
         "company": "Empresa",
         "tags": "Tags",
+        "groups": "Grupos",
         "createdAt": "Criado em"
       },
       "loading": "Carregando contatos...",
@@ -749,6 +752,85 @@
       "toastRenameFailed": "Não foi possível renomear o campo.",
       "toastDeleteFailed": "Não foi possível excluir o campo.",
       "toastDeleted": "\"{name}\" excluído."
+    }
+  },
+  "Groups": {
+    "page": {
+      "title": "Grupos",
+      "subtitle": "Organize contatos em grupos e envie um broadcast para o grupo inteiro.",
+      "createGroup": "Criar grupo",
+      "createFirst": "Crie seu primeiro grupo",
+      "createTitle": "Criar grupo",
+      "createDesc": "Dê um nome ao grupo. Você pode adicionar contatos na próxima tela.",
+      "namePlaceholder": "ex.: Leads de emagrecimento",
+      "pickColor": "Escolher cor",
+      "create": "Criar",
+      "cancel": "Cancelar",
+      "loading": "Carregando grupos…",
+      "empty": "Nenhum grupo ainda.",
+      "columns": {
+        "name": "Nome",
+        "members": "Membros"
+      },
+      "memberCount": "{count} {count, plural, =1 {membro} other {membros}}",
+      "broadcast": "Broadcast",
+      "delete": "Excluir",
+      "deleteTitle": "Excluir grupo",
+      "deleteDesc": "Excluir \"{name}\"? Os contatos permanecem na lista; só saem deste grupo.",
+      "toastLoadFailed": "Falha ao carregar grupos",
+      "toastNameRequired": "Informe um nome de grupo",
+      "toastNotAuthenticated": "Você precisa estar conectado",
+      "toastCreateFailed": "Falha ao criar grupo",
+      "toastCreated": "Grupo criado",
+      "toastDeleteFailed": "Falha ao excluir grupo",
+      "toastDeleted": "Grupo excluído",
+      "toastEmptyBroadcast": "Adicione contatos ao grupo antes do broadcast"
+    },
+    "detail": {
+      "back": "Voltar aos grupos",
+      "notFound": "Este grupo não foi encontrado.",
+      "memberCount": "{count} {count, plural, =1 {membro} other {membros}}",
+      "addMembers": "Adicionar membros",
+      "broadcast": "Broadcast",
+      "emptyMembers": "Ainda não há contatos neste grupo.",
+      "unnamed": "Sem nome",
+      "removeMember": "Remover do grupo",
+      "columns": {
+        "name": "Nome",
+        "phone": "Telefone",
+        "email": "E-mail"
+      },
+      "addMembersTitle": "Adicionar contatos ao grupo",
+      "addMembersDesc": "Pesquise por nome, telefone ou e-mail e selecione contatos.",
+      "searchContacts": "Pesquisar por nome, telefone ou e-mail…",
+      "searchHint": "Os contatos carregam em páginas. Pesquise por nome, telefone ou e-mail.",
+      "loadMore": "Carregar mais",
+      "noCandidates": "Nenhum contato correspondente para adicionar.",
+      "cancel": "Cancelar",
+      "addSelected": "Adicionar {count}",
+      "toastNotFound": "Grupo não encontrado",
+      "toastLoadFailed": "Falha ao carregar grupo",
+      "toastMembersAdded": "Adicionado(s) {count} {count, plural, =1 {contato} other {contatos}}",
+      "toastAddFailed": "Falha ao adicionar contatos",
+      "toastMemberRemoved": "Removido do grupo",
+      "toastRemoveFailed": "Falha ao remover contato",
+      "toastEmptyBroadcast": "Adicione contatos ao grupo antes do broadcast",
+      "importCsv": "Importar CSV",
+      "importCsvTitle": "Importar membros por CSV",
+      "importCsvDesc": "Envie um CSV com coluna phone. Números novos viram contatos e entram neste grupo.",
+      "modeSelect": "Dos contatos",
+      "modeCsv": "Do CSV",
+      "chooseCsv": "Escolher arquivo CSV",
+      "csvFormatHint": "Precisa de uma coluna phone em E.164 (+código…). name é opcional.",
+      "csvReady": "{name} — {count} {count, plural, =1 {contact} other {contacts}} ready",
+      "importCount": "Importar {count}",
+      "toastCsvMissingPhone": "O CSV precisa de uma coluna phone.",
+      "toastCsvNoRows": "Nenhum telefone válido encontrado no CSV.",
+      "toastCsvInvalidPhones": "{count} linha(s) ignorada(s): o telefone deve começar com + e código do país.",
+      "toastCsvDuplicates": "{count} número(s) duplicado(s) ignorado(s).",
+      "toastCsvAlreadyMembers": "Esses contatos já estão neste grupo.",
+      "toastCsvFailed": "Falha ao importar membros do CSV",
+      "toastNotAuthenticated": "Você precisa estar conectado"
     }
   },
   "Pipelines": {
@@ -992,7 +1074,8 @@
           "all": "Todos os contatos",
           "tags": "Filtrar por tags",
           "customField": "Campo personalizado",
-          "csv": "Enviar CSV"
+          "csv": "Enviar CSV",
+          "groups": "Filtrar por grupos"
         },
         "allDesc": "Enviar para todos os {count} contatos do seu banco de dados.",
         "allDescLoading": "Enviar para todos os contatos do seu banco de dados.",
@@ -1003,6 +1086,7 @@
         "searchTags": "Buscar tags...",
         "noTagsFound": "Nenhuma tag encontrada.",
         "excludeTags": "Excluir tags (opcional)",
+        "excludeGroups": "Excluir grupos (opcional)",
         "searchExcludeTags": "Buscar tags para excluir...",
         "field": "Campo",
         "selectField": "Selecione um campo...",
@@ -1023,7 +1107,10 @@
         "audienceSummary": "Resumo do público",
         "calculating": "Calculando…",
         "estimatedRecipients": "destinatários estimados",
-        "selectTypeForEstimate": "Selecione um tipo de público para ver a estimativa."
+        "selectTypeForEstimate": "Selecione um tipo de público para ver a estimativa.",
+        "groupDesc": "Enviar para contatos em grupos específicos.",
+        "selectGroups": "Selecionar grupos",
+        "noGroupsFound": "Nenhum grupo encontrado. Crie um em Groups primeiro."
       },
       "personalize": {
         "title": "Personalizar variáveis",
@@ -1084,7 +1171,8 @@
         "estimatedReach": "Alcance estimado",
         "language": "Idioma",
         "confirmTitle": "Confirmar disparo",
-        "confirmDesc": "Você está prestes a enviar este disparo para <b>{count, number}</b> {count, plural, =1 {contato} other {contatos}} usando o modelo <b>{template}</b>. Esta ação não pode ser desfeita."
+        "confirmDesc": "Você está prestes a enviar este disparo para <b>{count, number}</b> {count, plural, =1 {contato} other {contatos}} usando o modelo <b>{template}</b>. Esta ação não pode ser desfeita.",
+        "audienceGroups": "Filtrado por grupos"
       }
     },
     "sending": {

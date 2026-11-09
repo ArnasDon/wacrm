@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getProviderForAccount } from "@/lib/whatsapp/send-core";
 import { tokensMetaDasLojas } from "@/lib/trafego/servidor";
 import { fetchAll } from "@/lib/trafego/fetchAll";
-import { agoraBahia, bateCondicao, decidir, ontem, textoDaAutomacao, type Automacao } from "./automacoes";
+import { agoraBahia, bateCondicao, decidir, ehDemandas, GRUPO_DEMANDAS, ontem, textoDaAutomacao, textoDemandas, type Automacao } from "./automacoes";
 
 type Resultado = { id: string; nome: string; status: "success" | "error" | "pulado"; resumo: string };
 
@@ -29,7 +29,7 @@ async function gastoDeHojeNoMeta(admin: SupabaseClient, orgId: string, token: st
  */
 export async function rodarAutomacoes(admin: SupabaseClient, opcoes: { so?: { orgId: string; id: string }; agora?: Date } = {}): Promise<Resultado[]> {
   const agora = agoraBahia(opcoes.agora);
-  let q = admin.from("tr_automations").select("id, org_id, tipo, nome, group_jid, conteudo, horario, dias, cond_operador, cond_valor, enabled, last_run_date, run_requested").neq("tipo", "sistema");
+  let q = admin.from("tr_automations").select("id, org_id, tipo, nome, group_jid, conteudo, horario, dias, cond_operador, cond_valor, enabled, last_run_date, run_requested");
   if (opcoes.so) q = q.eq("org_id", opcoes.so.orgId).eq("id", opcoes.so.id);
   const { data, error } = await q;
   if (error) throw new Error(`tr_automations: ${error.message}`);
@@ -59,7 +59,8 @@ export async function rodarAutomacoes(admin: SupabaseClient, opcoes: { so?: { or
         .select("id");
       if (!reservado?.length) continue;
 
-      if (!a.group_jid) throw new Error("Sem grupo escolhido.");
+      const destino = a.group_jid || (ehDemandas(a) ? GRUPO_DEMANDAS : null);
+      if (!destino) throw new Error("Sem grupo escolhido.");
       if (!contaWhats.has(a.org_id)) {
         const { data: contas } = await admin.from("accounts").select("id").eq("organization_id", a.org_id);
         const ids = (contas ?? []).map((c) => c.id as string);
@@ -69,10 +70,10 @@ export async function rodarAutomacoes(admin: SupabaseClient, opcoes: { so?: { or
       const conta = contaWhats.get(a.org_id);
       if (!conta) throw new Error("Nenhum WhatsApp que mande em grupos está ligado (a API oficial do Meta não manda em grupos).");
       const gastoOntem = a.tipo === "relatorio" ? await gastoDoDia(admin, a.org_id, ontem(agora.data)) : undefined;
-      const texto = textoDaAutomacao(a, { gastoOntem, gastoHoje, manual });
+      const texto = ehDemandas(a) ? textoDemandas(agora, manual) : textoDaAutomacao(a, { gastoOntem, gastoHoje, manual });
       const prov = await getProviderForAccount(admin, conta);
-      await prov.sendText({ to: a.group_jid, text: texto });
-      const resumo = a.tipo === "alerta" ? `Alerta disparado (gasto: R$ ${gastoHoje!.toFixed(2).replace(".", ",")}).` : "Mensagem enviada.";
+      await prov.sendText({ to: destino, text: texto });
+      const resumo = a.tipo === "alerta" ? `Alerta disparado (gasto: R$ ${gastoHoje!.toFixed(2).replace(".", ",")}).` : ehDemandas(a) ? "Cota do dia enviada pro grupo." : "Mensagem enviada.";
       await registrar(admin, a, "success", resumo);
       saida.push({ id: a.id, nome: a.nome, status: "success", resumo });
     } catch (e) {

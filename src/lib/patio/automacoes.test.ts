@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { agoraBahia, decidir, bateCondicao, textoDaAutomacao, ontem, type Automacao } from "./automacoes";
+import { agoraBahia, decidir, bateCondicao, textoDaAutomacao, textoDemandas, ontem, type Automacao } from "./automacoes";
 
 const a = (o: Partial<Automacao>): Automacao => ({ id: "1", org_id: "o", tipo: "mensagem", nome: "Bom dia", group_jid: "1@g.us", conteudo: "Oi", horario: 8, dias: [1, 2, 3, 4, 5], cond_operador: null, cond_valor: null, enabled: true, last_run_date: null, run_requested: false, ...o });
 
@@ -19,7 +19,15 @@ describe("automações", () => {
   });
   it("manual dispara mesmo desligada; sistema nunca", () => {
     expect(decidir(a({ enabled: false, run_requested: true, last_run_date: "2026-11-09" }), seg8)).toEqual({ disparar: true, motivo: "manual" });
-    expect(decidir(a({ tipo: "sistema", run_requested: true }), seg8)).toEqual({ disparar: false });
+    expect(decidir(a({ tipo: "sistema", nome: "Outra", run_requested: true }), seg8)).toEqual({ disparar: false });
+  });
+  it("demandas do time: de manhã, 1x por dia; domingo mensagem curta", () => {
+    const dem = a({ tipo: "sistema", nome: "Demandas do time", horario: null, dias: null });
+    expect(decidir(dem, seg8)).toEqual({ disparar: true, motivo: "horario" });
+    expect(decidir({ ...dem, last_run_date: "2026-11-09" }, seg8)).toEqual({ disparar: false });
+    expect(decidir(a({ tipo: "sistema", nome: "Tráfego" }), seg8)).toEqual({ disparar: false });
+    expect(textoDemandas({ data: "2026-11-10", dia: 2 })).toContain("modelo específico do estoque");
+    expect(textoDemandas({ data: "2026-11-08", dia: 0 })).toContain("Domingo");
   });
   it("alerta de gasto", () => {
     expect(decidir(a({ tipo: "alerta", horario: null, cond_operador: ">", cond_valor: 500 }), seg8)).toEqual({ disparar: true, motivo: "precisa_gasto" });

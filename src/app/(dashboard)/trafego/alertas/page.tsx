@@ -262,7 +262,7 @@ export default function AutomacoesPage() {
 
   async function pedirExecucaoAgora(a: Automation) {
     // Envia na hora pelo servidor (antes só marcava o pedido e esperava o agendador).
-    if (a.tipo === "sistema") {
+    if (a.tipo === "sistema" && !/demandas/i.test(a.nome)) {
       await supabase.from("tr_automations").update({ run_requested: true, run_requested_at: new Date().toISOString() }).eq("id", a.id);
     } else {
       const r = await fetch("/api/automacoes/rodar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: a.id }) });

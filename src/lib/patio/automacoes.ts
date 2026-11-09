@@ -25,7 +25,16 @@ export function ontem(data: string): string {
 
 export type Decisao = { disparar: false } | { disparar: true; motivo: "manual" | "horario" | "precisa_gasto" };
 
+/** A automação de sistema "Demandas do time" (cota de conteúdo do dia, de manhã). */
+export const ehDemandas = (a: Pick<Automacao, "tipo" | "nome">) => a.tipo === "sistema" && /demandas/i.test(a.nome);
+export const GRUPO_DEMANDAS = "120363429202081229@g.us"; // IBOX PRIME | MARKETING
+
 export function decidir(a: Automacao, agora: { data: string; hora: number; dia: number }): Decisao {
+  if (ehDemandas(a)) {
+    if (a.run_requested) return { disparar: true, motivo: "manual" };
+    if (!a.enabled || a.last_run_date === agora.data) return { disparar: false };
+    return (a.horario ?? 8) === agora.hora ? { disparar: true, motivo: "horario" } : { disparar: false };
+  }
   if (a.tipo === "sistema") return { disparar: false };
   if (a.run_requested) return { disparar: true, motivo: "manual" };
   if (!a.enabled) return { disparar: false };
@@ -54,4 +63,27 @@ export function textoDaAutomacao(a: Automacao, extra: { gastoOntem?: number; gas
   if (a.tipo === "alerta" && extra.gastoHoje != null) t = t.includes("{{valor}}") ? t.split("{{valor}}").join(reais(extra.gastoHoje)) : `${t}\n💰 Gasto de hoje: ${reais(extra.gastoHoje)}`;
   if (extra.manual) t += "\n_(disparo manual solicitado pelo sistema)_";
   return t;
+}
+
+const DIAS_PT = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"];
+const TEMA_DARK = ["", "assuntos em alta", "modelo específico do estoque", "curiosidade", "história (real ou inventada)", "modelo polêmico", "assuntos em alta"];
+
+/** Mensagem da manhã com as entregas do dia (a mesma lista da automação antiga). */
+export function textoDemandas(agora: { data: string; dia: number }, manual = false): string {
+  const [, m, d] = agora.data.split("-");
+  const fim = manual ? "\n_(disparo manual solicitado pelo sistema)_" : "";
+  if (agora.dia === 0) return `☀️ Domingo — sem cota fixa de conteúdo hoje. Bom descanso, time!${fim}`;
+  return [
+    `📋 *Demandas de hoje — ${DIAS_PT[agora.dia]}, ${d}/${m}*`,
+    "",
+    "Bom dia, time! Essas são as entregas de hoje:",
+    "",
+    "🎯 *Gabriel* — pauta até 08h30, aprovar os 2 lotes, tráfego no ar, GMN em dia",
+    "🎬 *Abel* — 4 carrosséis de carro + 4 vídeos, lotes às 13h e 16h",
+    "🎨 *Raziel* — 2 imagens + 1 carrossel + 2 Reels IA + ajustes de site",
+    `✏️ *Dark* — carrossel temático (${TEMA_DARK[agora.dia]}) + capas dos carros + mín. 4 Reels editados`,
+    "🎥 *Will / Rapha / Apolo* — Reels do rodízio · Rapha/Apolo também atualizam OLX e WebMotors",
+    "",
+    "✅ Bom trabalho, time! 💪",
+  ].join("\n") + fim;
 }

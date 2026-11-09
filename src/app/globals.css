@@ -84,6 +84,15 @@
  * project/Color Themes.html — change one, change the other.
  * ============================================================ */
 
+/* ---- Fontes (pacotes @fontsource importados em app/layout.tsx) ---- */
+:root {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-outfit: "Outfit Variable";
+  --font-hanken-global: "Hanken Grotesk Variable";
+  --font-archivo-global: "Archivo Variable";
+  --font-plex-global: "IBM Plex Mono";
+}
+
 /* ---- MODE: neutral surfaces ---- */
 
 :root,

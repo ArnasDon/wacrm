@@ -1,7 +1,15 @@
 import type { Metadata, Viewport } from "next";
 import { NextIntlClientProvider } from 'next-intl';
 import { getLocale, getMessages } from 'next-intl/server';
-import { Archivo, Hanken_Grotesk, IBM_Plex_Mono, Inter, Outfit } from "next/font/google";
+// Fontes servidas pelo próprio sistema (pacotes @fontsource), sem baixar do
+// Google na hora do build: o download do Google falhava de vez em quando e
+// derrubava a publicação.
+import "@fontsource-variable/inter";
+import "@fontsource-variable/outfit";
+import "@fontsource-variable/hanken-grotesk";
+import "@fontsource-variable/archivo/wdth.css";
+import "@fontsource/ibm-plex-mono/500.css";
+import "@fontsource/ibm-plex-mono/600.css";
 import Script from "next/script";
 import "./globals.css";
 import { ThemeProvider } from "@/hooks/use-theme";
@@ -15,30 +23,6 @@ import {
   STORAGE_KEY,
   THEME_IDS,
 } from "@/lib/themes";
-
-const inter = Inter({
-  variable: "--font-sans",
-  subsets: ["latin"],
-});
-
-// Fonte da marca iBox (tema "ibox"): só é usada quando esse tema está
-// ativo — ver html[data-theme="ibox"] em globals.css.
-const outfit = Outfit({
-  variable: "--font-outfit",
-  subsets: ["latin"],
-  weight: ["300", "400", "500", "600", "700"],
-});
-
-// Fonte de leitura do visual aprovado da iBox (modo claro do tema "ibox").
-const hanken = Hanken_Grotesk({
-  variable: "--font-hanken-global",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-});
-
-// Títulos do visual aprovado (Archivo largo), para as telas fora do Pátio.
-const archivo = Archivo({ variable: "--font-archivo-global", subsets: ["latin"], axes: ["wdth"] });
-const plexMono = IBM_Plex_Mono({ variable: "--font-plex-global", subsets: ["latin"], weight: ["500", "600"] });
 
 export const metadata: Metadata = {
   title: {
@@ -110,7 +94,7 @@ export default async function RootLayout({
       lang={locale}
       data-theme={DEFAULT_THEME}
       data-mode={DEFAULT_MODE}
-      className={`${inter.variable} ${outfit.variable} ${hanken.variable} ${archivo.variable} ${plexMono.variable} h-full antialiased`}
+      className="h-full antialiased"
       // The `theme-boot` script below rewrites `data-theme` and
       // `data-mode` on <html> from localStorage before React hydrates,
       // so for any non-default choice the client DOM intentionally

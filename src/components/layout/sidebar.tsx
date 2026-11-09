@@ -10,7 +10,6 @@ import { useUnreadNotifications } from "@/hooks/use-unread-notifications";
 import {
   BarChart3,
   Bell,
-  BellRing,
   Bot,
   Car,
   ChevronDown,
@@ -32,7 +31,6 @@ import {
   UserCog,
   Users,
   UsersRound,
-  Workflow,
   X,
   Zap,
   Sun,
@@ -109,6 +107,8 @@ interface NavItem {
   soon?: boolean;
   /** Só aparece quando a loja tem este módulo ligado. */
   module?: ModuleKey;
+  /** Outras telas que acendem este item (ex.: as abas de Automações). */
+  also?: string[];
 }
 
 interface NavSection {
@@ -150,9 +150,7 @@ const NAV_SECTIONS: NavSection[] = [
       { href: "/trafego/carros", labelKey: "trafficCars", icon: Car, module: "trafego", minRole: "admin" },
       { href: "/trafego/links-utm", labelKey: "trafficUtm", icon: Link2, module: "trafego", minRole: "admin" },
       { href: "/broadcasts", labelKey: "broadcasts", icon: Radio },
-      { href: "/automations", labelKey: "automations", icon: Zap },
-      { href: "/flows", labelKey: "flows", icon: Workflow, beta: true },
-      { href: "/trafego/alertas", labelKey: "trafficAlerts", icon: BellRing, module: "trafego", minRole: "admin" },
+      { href: "/automations", labelKey: "automations", icon: Zap, also: ["/regras", "/trafego/alertas", "/flows"] },
     ],
   },
   {
@@ -181,7 +179,6 @@ const NAV_SECTIONS: NavSection[] = [
     labelKey: "groups.ajustes",
     items: [
       { href: "/settings", labelKey: "settings", icon: Settings },
-      { href: "/regras", labelKey: "rules", icon: BellRing, minRole: "admin" },
       { href: "/ajustes/conexoes", labelKey: "trafficConnections", icon: Plug, module: "estoque", minRole: "admin" },
       { href: "/ajustes/equipe", labelKey: "team", icon: UserCog, module: "estoque", minRole: "admin" },
       { href: "/trafego/importar", labelKey: "importData", icon: CirclePlus, module: "trafego", minRole: "admin" },
@@ -369,7 +366,8 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
                         pathname === item.href ||
                         (item.href !== "/dashboard" &&
                           item.href !== "/trafego" &&
-                          pathname.startsWith(item.href));
+                          pathname.startsWith(item.href)) ||
+                        !!item.also?.some((p) => pathname === p || pathname.startsWith(p + "/"));
 
                       const showUnreadDot =
                         item.href === "/inbox" && totalUnread > 0 && !isActive;

@@ -1,5 +1,6 @@
 "use client";
 
+import { AbasAutomacoes } from "@/components/layout/abas-automacoes";
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { CAMPOS, GATILHOS, OPERADORES, frase, validar, type Acao, type Condicao, type Gatilho, type Operador, type Regra } from "@/lib/patio/regras";
@@ -56,6 +57,7 @@ export default function RegrasPage() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20, maxWidth: 1240 }}>
+      <AbasAutomacoes />
       <div>
         <h1 className="disp" style={{ margin: 0, fontSize: 40, lineHeight: 1.05 }}>Regras e alertas</h1>
         <p className="rot" style={{ margin: "6px 0 0", fontSize: 14 }}>Nada vem pronto: você monta cada regra. Quando todas as condições batem, o alerta aparece em Hoje.</p>

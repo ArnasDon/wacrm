@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 // Ficha individual do carro (Fase 3.4) — paridade total com a tela de
 // detalhe do Artifact original: header editável, KPIs, painel "Dados do
 // negócio" (abas Venda/Troca), tabela "mensagens por vendedor" e a lista de
@@ -27,6 +29,7 @@ type Car = {
   valor_troca: number | null;
   valor_volta: number | null;
   margem_lucro: number | null;
+  site_vehicle_id: string | null;
 };
 
 type Campaign = {
@@ -85,7 +88,7 @@ export default function CarroDetalhePage() {
     const [{ data: carData }, { data: campaignsData }, { data: metricsData }] = await Promise.all([
       supabase
         .from("veiculos")
-        .select("id, placa, modelo, status, valor_venda, tipo_negocio, veiculo_troca, valor_troca, valor_volta, margem_lucro")
+        .select("id, placa, modelo, status, valor_venda, tipo_negocio, veiculo_troca, valor_troca, valor_volta, margem_lucro, site_vehicle_id")
         .eq("org_id", accId)
         .eq("id", carId)
         .maybeSingle(),
@@ -295,6 +298,11 @@ export default function CarroDetalhePage() {
             className="text-sm font-mono tracking-widest px-2 py-1 rounded"
             style={selectStyle}
           />
+          {car.site_vehicle_id && (
+            <Link href={`/patio/${car.site_vehicle_id}`} className="text-xs font-semibold px-2 py-1 rounded" style={{ background: "var(--primary-soft)", color: "var(--primary)" }}>
+              Abrir ficha no Pátio
+            </Link>
+          )}
           {car.status === "vendido" && (
             <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "var(--az-fundo)", color: "var(--az)" }}>
               Vendido

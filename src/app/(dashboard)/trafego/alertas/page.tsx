@@ -12,6 +12,7 @@
 // artefato usa botões-pílula (.naf-dia-btn) em vez de checkbox, mas o
 // resultado gravado no banco é idêntico.
 
+import { AbasAutomacoes } from "@/components/layout/abas-automacoes";
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { orgIdAtual } from "@/lib/trafego/org";
@@ -317,6 +318,7 @@ export default function AutomacoesPage() {
 
   return (
     <main className="automacoes-wrap">
+      <AbasAutomacoes />
       <div className="auto-page-head">
         <div>
           <h2>Automações</h2>

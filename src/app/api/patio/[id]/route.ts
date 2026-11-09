@@ -30,6 +30,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     ]);
     const anuncios = porCarro[id] ?? null;
     const anunciosTotal = porCarroTotal[id] ?? null;
+    const { data: vTrafego } = await admin.from("veiculos").select("id").eq("org_id", quem.orgId).eq("site_vehicle_id", id).maybeSingle();
     let historico: unknown[] = [];
     if (quem.papel === "socio") {
       const { data } = await admin
@@ -64,7 +65,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
         .limit(100);
       visitas = vs ?? [];
     }
-    return NextResponse.json({ papel: quem.papel, carro: { ...carro, dias: diasNoPatio(completo) }, anuncios, anunciosTotal, historico, clientes, visitas });
+    return NextResponse.json({ papel: quem.papel, carro: { ...carro, dias: diasNoPatio(completo) }, anuncios, anunciosTotal, veiculoTrafegoId: vTrafego?.id ?? null, historico, clientes, visitas });
   } catch (e) {
     console.error("[patio] ler:", e);
     return NextResponse.json({ erro: "Não foi possível ler este carro agora." }, { status: 502 });

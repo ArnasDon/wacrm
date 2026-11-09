@@ -21,6 +21,7 @@ export default function FichaCarroPage({ params }: { params: Promise<{ id: strin
   const [carro, setCarro] = useState<CarroUI | null>(null);
   const [anuncios, setAnuncios] = useState<AnunciosDoCarro | null>(null);
   const [anunciosTotal, setAnunciosTotal] = useState<AnunciosDoCarro | null>(null);
+  const [veiculoTrafegoId, setVeiculoTrafegoId] = useState<string | null>(null);
   const [historico, setHistorico] = useState<Historico[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [visitas, setVisitas] = useState<VisitaCarro[]>([]);
@@ -47,6 +48,7 @@ export default function FichaCarroPage({ params }: { params: Promise<{ id: strin
     setCarro(d.carro);
     setAnuncios(d.anuncios);
     setAnunciosTotal(d.anunciosTotal ?? null);
+    setVeiculoTrafegoId(d.veiculoTrafegoId ?? null);
     setHistorico(d.historico ?? []);
     setClientes(d.clientes ?? []);
     setVisitas(d.visitas ?? []);
@@ -161,7 +163,7 @@ export default function FichaCarroPage({ params }: { params: Promise<{ id: strin
       {aba === "geral" && <VisaoGeral carro={carro} anuncios={anuncios} />}
       {aba === "site" && <DadosSite key={carro.atualizado_em ?? "novo"} carro={carro} podeEditar={podeEditar} salvando={salvando} salvar={salvar} />}
       {aba === "fotos" && <Fotos carro={carro} podeEditar={podeEditar} salvando={salvando} salvar={salvar} />}
-      {aba === "anuncios" && <Anuncios anuncios={anuncios} />}
+      {aba === "anuncios" && <Anuncios anuncios={anuncios} veiculoTrafegoId={veiculoTrafegoId} />}
       {aba === "clientes" && <ClientesDoCarro clientes={clientes} visitas={visitas} />}
       {aba === "financeiro" && ehSocio && <Financeiro key={carro.atualizado_em ?? "novo"} carro={carro} anunciosTotal={anunciosTotal} salvando={salvando} salvar={salvar} />}
       {aba === "dono" && ehSocio && <Dono key={carro.atualizado_em ?? "novo"} carro={carro} salvando={salvando} salvar={salvar} />}
@@ -344,14 +346,18 @@ function Fotos({ carro, podeEditar, salvando, salvar }: { carro: CarroUI; podeEd
   );
 }
 
-function Anuncios({ anuncios }: { anuncios: AnunciosDoCarro | null }) {
+function Anuncios({ anuncios, veiculoTrafegoId }: { anuncios: AnunciosDoCarro | null; veiculoTrafegoId: string | null }) {
+  const gerenciar = veiculoTrafegoId
+    ? <p style={{ margin: "0 0 12px", fontSize: 14 }}>Ligar ou desligar campanhas, retorno por campanha e dados da troca: <Link href={`/trafego/carros/${veiculoTrafegoId}`}>abrir a análise de tráfego deste carro</Link>.</p>
+    : null;
   if (!anuncios?.campanhas.length) {
-    return <section className="card" style={{ padding: 20 }}><p style={{ margin: 0 }}>Nenhuma campanha ligada. Em <Link href="/trafego/campanhas">Tráfego → Campanhas</Link> você escolhe o carro de cada campanha.</p></section>;
+    return <section className="card" style={{ padding: 20 }}>{gerenciar}<p style={{ margin: 0 }}>Nenhuma campanha ligada. Em <Link href="/trafego/campanhas">Marketing → Campanhas</Link> você escolhe o carro de cada campanha.</p></section>;
   }
   return (
     <section className="card" style={{ overflowX: "auto" }}>
+      {gerenciar && <div style={{ padding: "14px 16px 0" }}>{gerenciar}</div>}
       <table className="tab">
-        <thead><tr><th scope="col">Campanha</th><th scope="col">Situação</th><th scope="col" style={{ textAlign: "right" }}>Gasto (30 dias)</th><th scope="col" style={{ textAlign: "right" }}>Conversas</th><th scope="col" style={{ textAlign: "right" }}>Custo por conversa</th></tr></thead>
+        <thead><tr><th scope="col">Campanha</th><th scope="col">Situação</th><th scope="col" style={{ textAlign: "right" }}>Gasto (30 dias, com imposto)</th><th scope="col" style={{ textAlign: "right" }}>Conversas</th><th scope="col" style={{ textAlign: "right" }}>Custo por conversa</th></tr></thead>
         <tbody>
           {anuncios.campanhas.map((c) => (
             <tr key={c.id}>

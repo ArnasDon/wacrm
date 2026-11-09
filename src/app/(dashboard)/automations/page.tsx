@@ -1,5 +1,6 @@
 "use client"
 
+import { AbasAutomacoes } from "@/components/layout/abas-automacoes";
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
@@ -160,6 +161,7 @@ export default function AutomationsPage() {
 
   return (
     <div className="space-y-6">
+      <AbasAutomacoes />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">{t("title")}</h1>

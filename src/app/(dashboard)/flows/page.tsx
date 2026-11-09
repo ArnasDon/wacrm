@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { AbasAutomacoes } from "@/components/layout/abas-automacoes";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -201,6 +202,7 @@ export default function FlowsPage() {
 
   return (
     <div className="space-y-6 p-6">
+      <AbasAutomacoes />
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">

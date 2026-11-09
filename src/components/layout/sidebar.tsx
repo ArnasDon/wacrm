@@ -164,6 +164,7 @@ const NAV_SECTIONS: NavSection[] = [
       { href: "/site/conteudo", labelKey: "siteContent", icon: LayoutTemplate },
       { href: "/site/links", labelKey: "siteLinks", icon: Link2 },
       { href: "/site/club", labelKey: "siteClub", icon: Crown },
+      { href: "/ajustes/site", labelKey: "siteSettings", icon: Settings, module: "estoque" },
     ],
   },
   {
@@ -181,7 +182,8 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { href: "/settings", labelKey: "settings", icon: Settings },
       { href: "/regras", labelKey: "rules", icon: BellRing, minRole: "admin" },
-      { href: "/trafego/conexoes", labelKey: "trafficConnections", icon: Plug, module: "trafego", minRole: "admin" },
+      { href: "/ajustes/conexoes", labelKey: "trafficConnections", icon: Plug, module: "estoque", minRole: "admin" },
+      { href: "/ajustes/equipe", labelKey: "team", icon: UserCog, module: "estoque", minRole: "admin" },
       { href: "/trafego/importar", labelKey: "importData", icon: CirclePlus, module: "trafego", minRole: "admin" },
     ],
   },

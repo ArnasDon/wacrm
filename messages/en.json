@@ -82,7 +82,8 @@
     "crmPanel": "CRM dashboard",
     "report": "Report",
     "importData": "Import data",
-    "rules": "Rules and alerts"
+    "rules": "Rules and alerts",
+    "team": "Team and roles"
   },
   "Header": {
     "dashboard": "Dashboard",

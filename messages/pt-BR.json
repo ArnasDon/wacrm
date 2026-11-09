@@ -82,7 +82,8 @@
     "crmPanel": "Painel do CRM",
     "report": "Relatório",
     "importData": "Importar dados",
-    "rules": "Regras e alertas"
+    "rules": "Regras e alertas",
+    "team": "Equipe e papéis"
   },
   "Header": {
     "dashboard": "Painel",

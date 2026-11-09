@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 // Reescrita (Fase 6 — paridade visual com o standalone/Artifact original):
 // página única com lista mestre na lateral (busca não muda de URL) + detalhe
 // inline no conteúdo principal, exatamente como o Placa a Placa original.
@@ -338,6 +340,7 @@ export default function CarrosPage() {
               <button className="btn" onClick={atualizarEstoque} disabled={syncEstoque.rodando}>
                 ↻ Atualizar estoque
               </button>
+              <Link className="btn" href="/patio/auditoria">Auditoria: pátio × anúncios</Link>
               {paraConferir.length > 0 && (
                 <button
                   className="btn btn-accent"

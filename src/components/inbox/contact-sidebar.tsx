@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { format } from "date-fns";
 import { useTranslations } from "next-intl";
+import { CarroDoCliente } from "./carro-do-cliente";
 
 interface ContactSidebarProps {
   contact: Contact | null;
@@ -223,6 +224,11 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
           </div>
 
           {/* Divider */}
+          <div className="my-4 border-t border-border" />
+
+          {/* Carro de interesse, origem e visitas (sistema único, fase 4) */}
+          <CarroDoCliente key={contact.id} contact={contact} />
+
           <div className="my-4 border-t border-border" />
 
           {/* Active Deals */}

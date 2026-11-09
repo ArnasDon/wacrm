@@ -7,7 +7,9 @@ import { enviarParaCloudinary } from "@/lib/patio/cloudinary";
 import { brl, Foto, nomeCarro, seloDias, STATUS_NOME, STATUS_SELO, type CarroUI, type Papel } from "../comum";
 
 type Historico = { criado_em: string; quem: string | null; acao: string; campos: string[]; antes: Record<string, unknown> | null; depois: Record<string, unknown> | null };
-type Aba = "geral" | "site" | "fotos" | "anuncios" | "financeiro" | "dono" | "docs" | "historico";
+type Aba = "geral" | "site" | "fotos" | "anuncios" | "clientes" | "financeiro" | "dono" | "docs" | "historico";
+type Cliente = { id: string; name: string | null; phone: string; origem: string | null; created_at: string };
+type VisitaCarro = { id: string; contact_id: string; quando: string; status: string };
 type Mapa = Record<string, unknown>;
 
 const txt = (v: unknown) => (v == null ? "" : String(v));
@@ -18,6 +20,8 @@ export default function FichaCarroPage({ params }: { params: Promise<{ id: strin
   const [carro, setCarro] = useState<CarroUI | null>(null);
   const [anuncios, setAnuncios] = useState<AnunciosDoCarro | null>(null);
   const [historico, setHistorico] = useState<Historico[]>([]);
+  const [clientes, setClientes] = useState<Cliente[]>([]);
+  const [visitas, setVisitas] = useState<VisitaCarro[]>([]);
   const [papel, setPapel] = useState<Papel>("vendedor");
   const [erro, setErro] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
@@ -31,6 +35,8 @@ export default function FichaCarroPage({ params }: { params: Promise<{ id: strin
     setCarro(d.carro);
     setAnuncios(d.anuncios);
     setHistorico(d.historico ?? []);
+    setClientes(d.clientes ?? []);
+    setVisitas(d.visitas ?? []);
     setPapel(d.papel);
   }
 
@@ -61,10 +67,10 @@ export default function FichaCarroPage({ params }: { params: Promise<{ id: strin
   const ehSocio = papel === "socio";
   const podeEditar = papel !== "vendedor";
   const abas = useMemo(() => {
-    const base: [Aba, string][] = [["geral", "Visão geral"], ["site", "Dados do site"], ["fotos", "Fotos"], ["anuncios", "Anúncios"]];
+    const base: [Aba, string][] = [["geral", "Visão geral"], ["site", "Dados do site"], ["fotos", "Fotos"], ["anuncios", "Anúncios"], ["clientes", `Clientes · ${clientes.length}`]];
     if (ehSocio) base.push(["financeiro", "Financeiro"], ["dono", "Dono"], ["docs", "Documentos"], ["historico", "Histórico"]);
     return base;
-  }, [ehSocio]);
+  }, [ehSocio, clientes.length]);
 
   if (erro) {
     return (
@@ -138,6 +144,7 @@ export default function FichaCarroPage({ params }: { params: Promise<{ id: strin
       {aba === "site" && <DadosSite key={carro.atualizado_em ?? "novo"} carro={carro} podeEditar={podeEditar} salvando={salvando} salvar={salvar} />}
       {aba === "fotos" && <Fotos carro={carro} podeEditar={podeEditar} salvando={salvando} salvar={salvar} />}
       {aba === "anuncios" && <Anuncios anuncios={anuncios} />}
+      {aba === "clientes" && <ClientesDoCarro clientes={clientes} visitas={visitas} />}
       {aba === "financeiro" && ehSocio && <Financeiro key={carro.atualizado_em ?? "novo"} carro={carro} anuncios={anuncios} salvando={salvando} salvar={salvar} />}
       {aba === "dono" && ehSocio && <Dono key={carro.atualizado_em ?? "novo"} carro={carro} salvando={salvando} salvar={salvar} />}
       {aba === "docs" && ehSocio && <Documentos carro={carro} />}
@@ -488,6 +495,39 @@ function HistoricoTab({ itens }: { itens: Historico[] }) {
               <td>{h.acao === "editou" ? h.campos.join(", ") : h.acao}</td>
             </tr>
           ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+const SIT: Record<string, string> = { agendada: "Agendada", realizada: "Veio", faltou: "Não veio", cancelada: "Cancelada" };
+
+function ClientesDoCarro({ clientes, visitas }: { clientes: Cliente[]; visitas: VisitaCarro[] }) {
+  if (!clientes.length) {
+    return (
+      <section className="card" style={{ padding: 20 }}>
+        <p style={{ margin: 0 }}>Nenhum cliente ligado a este carro ainda. Na Caixa de entrada, abra a conversa e escolha o carro em “Carro de interesse”.</p>
+      </section>
+    );
+  }
+  return (
+    <section className="card" style={{ overflowX: "auto" }}>
+      <table className="tab">
+        <thead><tr><th scope="col">Cliente</th><th scope="col">Telefone</th><th scope="col">De onde veio</th><th scope="col">Visita</th><th scope="col">Desde</th></tr></thead>
+        <tbody>
+          {clientes.map((c) => {
+            const v = visitas.find((x) => x.contact_id === c.id);
+            return (
+              <tr key={c.id}>
+                <td><Link href={`/inbox?contact=${c.id}`}><b>{c.name || "Sem nome"}</b></Link></td>
+                <td className="dado" style={{ fontWeight: 500 }}>{c.phone}</td>
+                <td>{c.origem ?? "—"}</td>
+                <td>{v ? `${SIT[v.status] ?? v.status} · ${new Date(v.quando).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}` : "—"}</td>
+                <td className="dado" style={{ fontWeight: 500 }}>{new Date(c.created_at).toLocaleDateString("pt-BR")}</td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </section>

@@ -37,7 +37,30 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
         .limit(50);
       historico = data ?? [];
     }
-    return NextResponse.json({ papel: quem.papel, carro: { ...carro, dias: diasNoPatio(completo) }, anuncios, historico });
+    // Clientes interessados neste carro (contatos de qualquer conta da loja) e visitas.
+    let clientes: unknown[] = [];
+    let visitas: unknown[] = [];
+    const { data: contas } = await admin.from("accounts").select("id").eq("organization_id", quem.orgId);
+    const idsContas = (contas ?? []).map((c: { id: string }) => c.id);
+    if (idsContas.length) {
+      const { data: cs } = await admin
+        .from("contacts")
+        .select("id, name, phone, origem, created_at")
+        .in("account_id", idsContas)
+        .eq("veiculo_site_id", id)
+        .order("created_at", { ascending: false })
+        .limit(100);
+      clientes = cs ?? [];
+      const { data: vs } = await admin
+        .from("visitas")
+        .select("id, contact_id, quando, status")
+        .in("account_id", idsContas)
+        .eq("veiculo_site_id", id)
+        .order("quando", { ascending: false })
+        .limit(100);
+      visitas = vs ?? [];
+    }
+    return NextResponse.json({ papel: quem.papel, carro: { ...carro, dias: diasNoPatio(completo) }, anuncios, historico, clientes, visitas });
   } catch (e) {
     console.error("[patio] ler:", e);
     return NextResponse.json({ erro: "Não foi possível ler este carro agora." }, { status: 502 });

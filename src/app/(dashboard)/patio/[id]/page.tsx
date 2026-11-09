@@ -4,6 +4,7 @@ import Link from "next/link";
 import { use, useEffect, useMemo, useState } from "react";
 import type { AnunciosDoCarro } from "@/lib/patio/anuncios";
 import { enviarParaCloudinary } from "@/lib/patio/cloudinary";
+import { createClient } from "@/lib/supabase/client";
 import { brl, Foto, nomeCarro, seloDias, STATUS_NOME, STATUS_SELO, type CarroUI, type Papel } from "../comum";
 
 type Historico = { criado_em: string; quem: string | null; acao: string; campos: string[]; antes: Record<string, unknown> | null; depois: Record<string, unknown> | null };
@@ -147,7 +148,7 @@ export default function FichaCarroPage({ params }: { params: Promise<{ id: strin
       {aba === "clientes" && <ClientesDoCarro clientes={clientes} visitas={visitas} />}
       {aba === "financeiro" && ehSocio && <Financeiro key={carro.atualizado_em ?? "novo"} carro={carro} anuncios={anuncios} salvando={salvando} salvar={salvar} />}
       {aba === "dono" && ehSocio && <Dono key={carro.atualizado_em ?? "novo"} carro={carro} salvando={salvando} salvar={salvar} />}
-      {aba === "docs" && ehSocio && <Documentos carro={carro} />}
+      {aba === "docs" && ehSocio && <Documentos carro={carro} salvando={salvando} salvar={salvar} />}
       {aba === "historico" && ehSocio && <HistoricoTab itens={historico} />}
     </div>
   );
@@ -457,26 +458,89 @@ function Dono({ carro, salvando, salvar }: { carro: CarroUI; salvando: boolean; 
   );
 }
 
-function Documentos({ carro }: { carro: CarroUI }) {
-  const docs = (carro.documents ?? []) as { id?: string; name?: string; type?: string; url?: string; file_url?: string }[];
+type Doc = { id?: string; name?: string; type?: string; url?: string; file_url?: string; storage_path?: string; file_name?: string; file_type?: string; date?: string };
+
+function Documentos({ carro, salvando, salvar }: { carro: CarroUI; salvando: boolean; salvar: (m: Mapa) => void }) {
+  const docs = (carro.documents ?? []) as Doc[];
+  const [nomeDoc, setNomeDoc] = useState("");
+  const [tipo, setTipo] = useState("CRLV");
+  const [arquivo, setArquivo] = useState<File | null>(null);
+  const [aviso, setAviso] = useState<string | null>(null);
+  const [enviando, setEnviando] = useState(false);
+
+  async function abrir(d: Doc) {
+    if (d.url || d.file_url) return window.open(d.url || d.file_url, "_blank", "noopener");
+    if (!d.storage_path) return;
+    const { data, error } = await createClient().storage.from("patio-docs").createSignedUrl(d.storage_path, 120);
+    if (error || !data) setAviso("Não foi possível abrir o arquivo.");
+    else window.open(data.signedUrl, "_blank", "noopener");
+  }
+
+  async function enviar(e: React.FormEvent) {
+    e.preventDefault();
+    if (!nomeDoc.trim()) return;
+    if (arquivo && arquivo.size > 50 * 1024 * 1024) return setAviso("Arquivo muito grande. Máximo de 50 MB.");
+    setEnviando(true);
+    setAviso(null);
+    try {
+      const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      const novo: Doc = { id, name: nomeDoc.trim(), type: tipo, date: new Date().toISOString().slice(0, 10) };
+      if (arquivo) {
+        const sb = createClient();
+        const { data: marca } = await sb.rpc("my_branding");
+        const orgId = (Array.isArray(marca) ? marca[0] : marca)?.organization_id as string | undefined;
+        if (!orgId) throw new Error("loja não encontrada");
+        const limpo = arquivo.name.normalize("NFD").replace(/[^\w.-]+/g, "_").slice(-80);
+        const caminho = `${orgId}/${carro.id}/${id}-${limpo}`;
+        const { error } = await sb.storage.from("patio-docs").upload(caminho, arquivo, { contentType: arquivo.type || undefined });
+        if (error) throw new Error(error.message);
+        Object.assign(novo, { storage_path: caminho, file_name: arquivo.name, file_type: arquivo.type });
+      }
+      salvar({ documents: [...docs, novo] });
+      setNomeDoc("");
+      setArquivo(null);
+    } catch (err) {
+      setAviso(`Não foi possível enviar (${(err as Error).message}).`);
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  async function remover(i: number) {
+    const d = docs[i];
+    if (!confirm(`Tirar “${d.name ?? "documento"}” deste carro? O arquivo é apagado.`)) return;
+    if (d.storage_path) await createClient().storage.from("patio-docs").remove([d.storage_path]);
+    salvar({ documents: docs.filter((_, k) => k !== i) });
+  }
+
   return (
-    <section className="card" style={{ padding: "8px 16px" }}>
+    <section className="card" style={{ padding: "8px 16px 16px" }}>
       {docs.length === 0 ? (
         <p className="rot" style={{ fontSize: 14 }}>Nenhum documento neste carro.</p>
       ) : (
         <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
           {docs.map((d, i) => {
-            const link = d.url || d.file_url;
+            const temArquivo = !!(d.url || d.file_url || d.storage_path);
             return (
-              <li key={d.id ?? i} style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "12px 0", borderBottom: i < docs.length - 1 ? "1px solid var(--p-linha-2)" : 0 }}>
-                <span><b>{d.name || "Documento"}</b> {d.type && <span className="rot">· {d.type}</span>}</span>
-                {link ? <a href={link} target="_blank" rel="noreferrer">Abrir</a> : <span className="rot">sem arquivo</span>}
+              <li key={d.id ?? i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "12px 0", borderBottom: "1px solid var(--p-linha-2)" }}>
+                <span><b>{d.name || "Documento"}</b> {d.type && <span className="rot">· {d.type}</span>} {d.date && <span className="rot">· {d.date}</span>}</span>
+                <span style={{ display: "flex", gap: 8 }}>
+                  {temArquivo ? <button type="button" className="btns" onClick={() => abrir(d)}>Abrir</button> : <span className="rot" title="Enviado pelo admin antigo: o arquivo ficou só no computador de quem enviou.">arquivo só no computador de quem enviou</span>}
+                  <button type="button" className="btns" onClick={() => remover(i)} disabled={salvando} aria-label={`Remover ${d.name ?? "documento"}`}>Remover</button>
+                </span>
               </li>
             );
           })}
         </ul>
       )}
-      <p className="rot" style={{ margin: "8px 0 12px" }}>Enviar documento novo ainda é pelo admin do site; entra aqui na próxima etapa.</p>
+      <form onSubmit={enviar} style={{ marginTop: 14, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, alignItems: "end" }}>
+        <label className="campo">Nome do documento<input value={nomeDoc} onChange={(e) => setNomeDoc(e.target.value)} required placeholder="Ex.: CRLV 2026" /></label>
+        <label className="campo">Tipo<select value={tipo} onChange={(e) => setTipo(e.target.value)}>{["CRLV", "Laudo", "Nota fiscal", "Contrato", "Procuração", "Outro"].map((t) => <option key={t}>{t}</option>)}</select></label>
+        <label className="campo">Arquivo (PDF, JPG, PNG · até 50 MB)<input type="file" accept=".pdf,image/*" onChange={(e) => setArquivo(e.target.files?.[0] ?? null)} /></label>
+        <button type="submit" className="btnp" disabled={enviando || salvando || !nomeDoc.trim()}>{enviando ? "Enviando…" : "Adicionar documento"}</button>
+      </form>
+      <p className="rot" style={{ margin: "10px 0 0" }}>Os arquivos ficam guardados num armazenamento privado: só sócios da loja abrem.</p>
+      {aviso && <p role="alert" style={{ margin: "8px 0 0", color: "#8e2f22" }}>{aviso}</p>}
     </section>
   );
 }

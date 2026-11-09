@@ -219,7 +219,7 @@ export default function ResultadosPage() {
                     return (
                       <li key={o.origem} style={{ display: "grid", gridTemplateColumns: "170px 1fr 48px", gap: 10, alignItems: "center", fontSize: 14 }}>
                         <span>{o.origem}</span>
-                        <span style={{ height: 10, background: "var(--p-linha-2)", borderRadius: 5, overflow: "hidden" }}><span style={{ display: "block", height: "100%", width: `${(o.clientes / max) * 100}%`, background: "var(--p-azul)" }} /></span>
+                        <span style={{ height: 10, background: "var(--p-linha-2)", borderRadius: 5, overflow: "hidden" }}><span style={{ display: "block", height: "100%", width: `${(o.clientes / max) * 100}%`, background: "var(--chart-1)" }} /></span>
                         <span className="dado" style={{ textAlign: "right" }}>{o.clientes}</span>
                       </li>
                     );
@@ -327,7 +327,7 @@ export default function ResultadosPage() {
                     return (
                       <li key={f.nome} style={{ display: "grid", gridTemplateColumns: "130px 1fr 32px", gap: 8, alignItems: "center", fontSize: 13 }}>
                         <span>{f.nome}</span>
-                        <span style={{ height: 10, background: "var(--p-linha-2)", borderRadius: 5, overflow: "hidden" }}><span style={{ display: "block", height: "100%", width: `${(f.carros / max) * 100}%`, background: "var(--p-azul)" }} /></span>
+                        <span style={{ height: 10, background: "var(--p-linha-2)", borderRadius: 5, overflow: "hidden" }}><span style={{ display: "block", height: "100%", width: `${(f.carros / max) * 100}%`, background: "var(--chart-1)" }} /></span>
                         <span className="dado" style={{ textAlign: "right" }}>{f.carros}</span>
                       </li>
                     );

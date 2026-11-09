@@ -255,10 +255,10 @@ html[data-theme="ibox"] {
 /* ============================================================
  * Visual padrão da iBox (claro e escuro). Uma paleta só para TODAS as
  * telas: as do CRM, as do tráfego e as novas (Pátio, Hoje, Relatório,
- * Site, Ajustes) leem estes mesmos tokens. Claro = branco e cinza bem
- * leve; escuro = grafite. Azul é o que se clica; o dourado fica só na
- * etiqueta de preço. Situações (ok, atenção, problema, info, neutro)
- * têm par de cor de fundo e de texto para cada modo.
+ * Site, Ajustes) leem estes mesmos tokens. O template é neutro: preto,
+ * branco e cinzas (botões e seleção em preto no claro, em branco no
+ * escuro). Cor forte só onde informa: o dourado da iBox no preço e nas
+ * métricas de destaque; verde, laranja e vermelho nas situações.
  * ============================================================ */
 html[data-theme="ibox"][data-mode="light"] {
   --background: #f6f7f5;
@@ -276,27 +276,28 @@ html[data-theme="ibox"][data-mode="light"] {
   --accent-foreground: #17191b;
   --border: #e2e4df;
   --input: #d5d8d1;
-  --primary: #1f4fa3;
+  --primary: #17191b;
   --primary-foreground: #ffffff;
-  --primary-hover: #163a7a;
-  --primary-soft: rgb(31 79 163 / 0.08);
-  --primary-soft-2: rgb(31 79 163 / 0.15);
-  --ring: #1f4fa3;
-  --chart-1: #1f4fa3;
-  --chart-2: #b9661a;
+  --primary-hover: #000000;
+  --primary-soft: rgb(23 25 27 / 0.05);
+  --primary-soft-2: rgb(23 25 27 / 0.1);
+  --ring: #17191b;
+  --chart-1: #c9962e;
+  --chart-2: #5d625d;
   --sidebar: #ffffff;
   --sidebar-foreground: #3b403c;
-  --sidebar-accent: #eef2fa;
-  --sidebar-accent-foreground: #163a7a;
+  --sidebar-accent: #f1f2ef;
+  --sidebar-accent-foreground: #17191b;
   --sidebar-border: #e2e4df;
-  --sidebar-primary: #1f4fa3;
+  --sidebar-primary: #17191b;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-ring: #1f4fa3;
+  --sidebar-ring: #17191b;
   --linha-2: #eceee9;
   --campo: #ffffff;
   --foto: #e6e8e3;
   --seg: #eceee9;
   --ouro: #f8c45b;
+  --ouro-forte: #a87a1c;
   --ouro-tinta: #17191b;
   --destaque: #17191b;
   --destaque-tinta: #fbfbf9;
@@ -304,7 +305,7 @@ html[data-theme="ibox"][data-mode="light"] {
   --ok-fundo: #ddebe2; --ok: #1f5a39;
   --at-fundo: #f5e3d0; --at: #8a4a10;
   --ru-fundo: #f3dad6; --ru: #8e2f22;
-  --az-fundo: #dce5f5; --az: #163a7a;
+  --az-fundo: #f6ecd6; --az: #6b4e12;
   --ne-fundo: #eceee9; --ne: #3e433f;
   --sombra: 0 1px 2px rgb(23 25 27 / 0.06), 0 1px 1px rgb(23 25 27 / 0.04);
   --font-sans: var(--font-hanken-global), var(--font-outfit), ui-sans-serif, system-ui, sans-serif;
@@ -326,27 +327,28 @@ html[data-theme="ibox"][data-mode="dark"] {
   --accent-foreground: #eceee9;
   --border: #2a2e33;
   --input: #363b41;
-  --primary: #7da2e8;
+  --primary: #eceee9;
   --primary-foreground: #0f1113;
-  --primary-hover: #a3bdf0;
-  --primary-soft: rgb(125 162 232 / 0.12);
-  --primary-soft-2: rgb(125 162 232 / 0.2);
-  --ring: #7da2e8;
-  --chart-1: #7da2e8;
-  --chart-2: #f0b878;
+  --primary-hover: #ffffff;
+  --primary-soft: rgb(236 238 233 / 0.07);
+  --primary-soft-2: rgb(236 238 233 / 0.12);
+  --ring: #eceee9;
+  --chart-1: #f8c45b;
+  --chart-2: #a3a8a2;
   --sidebar: #0b0d0f;
   --sidebar-foreground: #c9ccc5;
-  --sidebar-accent: #1c2128;
+  --sidebar-accent: #1c1f23;
   --sidebar-accent-foreground: #ffffff;
   --sidebar-border: #22262b;
-  --sidebar-primary: #7da2e8;
+  --sidebar-primary: #eceee9;
   --sidebar-primary-foreground: #0f1113;
-  --sidebar-ring: #7da2e8;
+  --sidebar-ring: #eceee9;
   --linha-2: #23272b;
   --campo: #121417;
   --foto: #23272b;
   --seg: #23272b;
   --ouro: #f8c45b;
+  --ouro-forte: #f8c45b;
   --ouro-tinta: #17191b;
   --destaque: #23272b;
   --destaque-tinta: #eceee9;
@@ -354,7 +356,7 @@ html[data-theme="ibox"][data-mode="dark"] {
   --ok-fundo: #183526; --ok: #8fd3a8;
   --at-fundo: #3a2a14; --at: #f0b878;
   --ru-fundo: #3d1d19; --ru: #f19a8e;
-  --az-fundo: #1a2a4a; --az: #a9c2f2;
+  --az-fundo: #33291a; --az: #f2cf86;
   --ne-fundo: #262a2e; --ne: #c3c7c1;
   --sombra: 0 1px 2px rgb(0 0 0 / 0.4);
   --font-sans: var(--font-hanken-global), var(--font-outfit), ui-sans-serif, system-ui, sans-serif;
@@ -366,7 +368,7 @@ html[data-theme="ibox"] .modulo-trafego {
   --tr-warn: var(--at); --tr-warn-bg: var(--at-fundo);
   --tr-bad: var(--ru); --tr-bad-bg: var(--ru-fundo);
   --tr-whatsapp: var(--ok); --tr-whatsapp-bg: var(--ok-fundo);
-  --tr-gold-1: var(--primary-hover); --tr-gold-2: var(--primary); --tr-gold-3: var(--primary-hover);
+  --tr-gold-1: var(--ouro-forte); --tr-gold-2: var(--ouro-forte); --tr-gold-3: var(--ouro-forte);
   --tr-shadow-float: 0 10px 30px -14px rgb(0 0 0 / 0.35), 0 2px 6px -2px rgb(0 0 0 / 0.15);
 }
 html[data-theme="ibox"] .modulo-trafego .num {
@@ -390,3 +392,108 @@ html[data-theme="ibox"] main h1 {
 html[data-theme="ibox"] main h1.gold-text { color: transparent; }
 /* Cartões do CRM com a mesma sombra leve dos cartões novos */
 html[data-theme="ibox"] main [data-slot="card"] { box-shadow: var(--sombra); }
+
+/* Template neutro: as cores decorativas das telas do CRM (azul, roxo,
+   ciano, rosa...) viram cinza no tema da iBox. Ficam coloridos só verde,
+   âmbar/laranja e vermelho, que dizem a situação de algo. */
+html[data-theme="ibox"] {
+  --color-blue-50: var(--muted);
+  --color-blue-100: var(--muted);
+  --color-blue-200: var(--accent);
+  --color-blue-300: var(--muted-foreground);
+  --color-blue-400: var(--muted-foreground);
+  --color-blue-500: var(--foreground);
+  --color-blue-600: var(--foreground);
+  --color-blue-700: var(--foreground);
+  --color-blue-800: var(--foreground);
+  --color-blue-900: var(--foreground);
+  --color-blue-950: var(--foreground);
+  --color-indigo-50: var(--muted);
+  --color-indigo-100: var(--muted);
+  --color-indigo-200: var(--accent);
+  --color-indigo-300: var(--muted-foreground);
+  --color-indigo-400: var(--muted-foreground);
+  --color-indigo-500: var(--foreground);
+  --color-indigo-600: var(--foreground);
+  --color-indigo-700: var(--foreground);
+  --color-indigo-800: var(--foreground);
+  --color-indigo-900: var(--foreground);
+  --color-indigo-950: var(--foreground);
+  --color-violet-50: var(--muted);
+  --color-violet-100: var(--muted);
+  --color-violet-200: var(--accent);
+  --color-violet-300: var(--muted-foreground);
+  --color-violet-400: var(--muted-foreground);
+  --color-violet-500: var(--foreground);
+  --color-violet-600: var(--foreground);
+  --color-violet-700: var(--foreground);
+  --color-violet-800: var(--foreground);
+  --color-violet-900: var(--foreground);
+  --color-violet-950: var(--foreground);
+  --color-purple-50: var(--muted);
+  --color-purple-100: var(--muted);
+  --color-purple-200: var(--accent);
+  --color-purple-300: var(--muted-foreground);
+  --color-purple-400: var(--muted-foreground);
+  --color-purple-500: var(--foreground);
+  --color-purple-600: var(--foreground);
+  --color-purple-700: var(--foreground);
+  --color-purple-800: var(--foreground);
+  --color-purple-900: var(--foreground);
+  --color-purple-950: var(--foreground);
+  --color-sky-50: var(--muted);
+  --color-sky-100: var(--muted);
+  --color-sky-200: var(--accent);
+  --color-sky-300: var(--muted-foreground);
+  --color-sky-400: var(--muted-foreground);
+  --color-sky-500: var(--foreground);
+  --color-sky-600: var(--foreground);
+  --color-sky-700: var(--foreground);
+  --color-sky-800: var(--foreground);
+  --color-sky-900: var(--foreground);
+  --color-sky-950: var(--foreground);
+  --color-cyan-50: var(--muted);
+  --color-cyan-100: var(--muted);
+  --color-cyan-200: var(--accent);
+  --color-cyan-300: var(--muted-foreground);
+  --color-cyan-400: var(--muted-foreground);
+  --color-cyan-500: var(--foreground);
+  --color-cyan-600: var(--foreground);
+  --color-cyan-700: var(--foreground);
+  --color-cyan-800: var(--foreground);
+  --color-cyan-900: var(--foreground);
+  --color-cyan-950: var(--foreground);
+  --color-fuchsia-50: var(--muted);
+  --color-fuchsia-100: var(--muted);
+  --color-fuchsia-200: var(--accent);
+  --color-fuchsia-300: var(--muted-foreground);
+  --color-fuchsia-400: var(--muted-foreground);
+  --color-fuchsia-500: var(--foreground);
+  --color-fuchsia-600: var(--foreground);
+  --color-fuchsia-700: var(--foreground);
+  --color-fuchsia-800: var(--foreground);
+  --color-fuchsia-900: var(--foreground);
+  --color-fuchsia-950: var(--foreground);
+  --color-pink-50: var(--muted);
+  --color-pink-100: var(--muted);
+  --color-pink-200: var(--accent);
+  --color-pink-300: var(--muted-foreground);
+  --color-pink-400: var(--muted-foreground);
+  --color-pink-500: var(--foreground);
+  --color-pink-600: var(--foreground);
+  --color-pink-700: var(--foreground);
+  --color-pink-800: var(--foreground);
+  --color-pink-900: var(--foreground);
+  --color-pink-950: var(--foreground);
+  --color-teal-50: var(--muted);
+  --color-teal-100: var(--muted);
+  --color-teal-200: var(--accent);
+  --color-teal-300: var(--muted-foreground);
+  --color-teal-400: var(--muted-foreground);
+  --color-teal-500: var(--foreground);
+  --color-teal-600: var(--foreground);
+  --color-teal-700: var(--foreground);
+  --color-teal-800: var(--foreground);
+  --color-teal-900: var(--foreground);
+  --color-teal-950: var(--foreground);
+}

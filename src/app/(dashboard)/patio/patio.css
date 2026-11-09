@@ -26,8 +26,9 @@
   padding: 4px 4px 32px;
   font-size: 15px;
 }
-.modulo-patio a { color: var(--p-azul); }
-.modulo-patio a:hover { color: var(--p-azul-2); }
+.modulo-patio a { color: var(--p-ink); text-decoration: none; }
+.modulo-patio p a, .modulo-patio li > a:not([style]), .modulo-patio td a { text-decoration: underline; text-decoration-color: var(--p-linha); text-underline-offset: 3px; }
+.modulo-patio a:hover { color: var(--p-ink); text-decoration-color: currentColor; }
 .modulo-patio :focus-visible { outline: 2px solid var(--p-azul); outline-offset: 2px; }
 .modulo-patio .disp { font-family: var(--font-archivo), ui-sans-serif, sans-serif; font-stretch: 125%; font-weight: 800; letter-spacing: -.01em; text-wrap: balance; }
 .modulo-patio .dado { font-family: var(--font-plex-mono), ui-monospace, monospace; font-variant-numeric: tabular-nums; font-weight: 600; }

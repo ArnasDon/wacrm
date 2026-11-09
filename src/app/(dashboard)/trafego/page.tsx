@@ -536,7 +536,7 @@ export default function DashboardPage() {
       conv: convClkPct,
       cost: custoClk !== null ? formatBRL(custoClk) : null,
       costLbl: "clique",
-      color: "var(--primary)",
+      color: "var(--ouro-forte)",
       barPct: acc.impressions > 0 ? Math.max((acc.clicks / acc.impressions) * 100, 2) : 0,
     },
     {
@@ -547,7 +547,7 @@ export default function DashboardPage() {
       conv: convResPct,
       cost: custoRes !== null ? formatBRL(custoRes) : null,
       costLbl: "resultado",
-      color: "color-mix(in oklch, var(--primary) 45%, var(--card))",
+      color: "color-mix(in oklch, var(--ouro-forte) 45%, var(--card))",
       barPct: acc.impressions > 0 ? Math.max((accResultado / acc.impressions) * 100, 1.5) : 0,
     },
   ];
@@ -573,7 +573,7 @@ export default function DashboardPage() {
       value: quizFunnel.quiz_start,
       pctTotal: convSessStartPct,
       conv: convSessStartPct,
-      color: "var(--primary)",
+      color: "var(--ouro-forte)",
       barPct: qSessions && qSessions > 0 ? Math.max((quizFunnel.quiz_start / qSessions) * 100, 2) : quizFunnel.hasData ? 100 : 0,
     },
     {
@@ -582,7 +582,7 @@ export default function DashboardPage() {
       value: quizFunnel.quiz_complete,
       pctTotal: qSessions && qSessions > 0 ? (quizFunnel.quiz_complete / qSessions) * 100 : quizConvConcPct,
       conv: quizConvConcPct,
-      color: "color-mix(in oklch, var(--primary) 70%, var(--card))",
+      color: "color-mix(in oklch, var(--ouro-forte) 70%, var(--card))",
       barPct: qSessions && qSessions > 0 ? Math.max((quizFunnel.quiz_complete / qSessions) * 100, 2) : quizFunnel.quiz_start > 0 ? Math.max((quizFunnel.quiz_complete / quizFunnel.quiz_start) * 100, 2) : 0,
     },
     {
@@ -591,7 +591,7 @@ export default function DashboardPage() {
       value: quizFunnel.generate_lead,
       pctTotal: quizConvTotalPct,
       conv: quizConvLeadPct,
-      color: "color-mix(in oklch, var(--primary) 45%, var(--card))",
+      color: "color-mix(in oklch, var(--ouro-forte) 45%, var(--card))",
       barPct: qSessions && qSessions > 0 ? Math.max((quizFunnel.generate_lead / qSessions) * 100, 1.5) : quizFunnel.quiz_start > 0 ? Math.max((quizFunnel.generate_lead / quizFunnel.quiz_start) * 100, 1.5) : 0,
     },
   ];

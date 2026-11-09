@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { todosOsCarros, type CarroMini } from "@/lib/patio/carro-mini";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
@@ -65,6 +66,8 @@ export function DealForm({
   const [assignedTo, setAssignedTo] = useState("");
   const [expectedCloseDate, setExpectedCloseDate] = useState("");
   const [notes, setNotes] = useState("");
+  const [carroId, setCarroId] = useState("");
+  const [carros, setCarros] = useState<CarroMini[]>([]);
 
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -94,6 +97,7 @@ export function DealForm({
       setAssignedTo(deal.assigned_to ?? "");
       setExpectedCloseDate(deal.expected_close_date ?? "");
       setNotes(deal.notes ?? "");
+      setCarroId(deal.veiculo_site_id ?? "");
     } else {
       setTitle("");
       setValue("");
@@ -103,9 +107,20 @@ export function DealForm({
       setAssignedTo("");
       setExpectedCloseDate("");
       setNotes("");
+      setCarroId("");
     }
   }, [open, deal, defaultStageId, stages, defaultCurrency]);
   /* eslint-enable react-hooks/set-state-in-effect */
+
+  // Carros do Pátio para ligar ao negócio (os à venda primeiro).
+  useEffect(() => {
+    if (!open) return;
+    let vivo = true;
+    todosOsCarros().then((l) => {
+      if (vivo) setCarros([...l].sort((a, b) => Number(a.status === "sold") - Number(b.status === "sold") || a.nome.localeCompare(b.nome)));
+    });
+    return () => { vivo = false; };
+  }, [open]);
 
   // Load supporting data once the sheet is open
   useEffect(() => {
@@ -168,6 +183,7 @@ export function DealForm({
       assigned_to: assignedTo || null,
       notes: notes.trim() || null,
       expected_close_date: expectedCloseDate || null,
+      veiculo_site_id: carroId || null,
     };
 
     if (deal) {
@@ -324,6 +340,24 @@ export function DealForm({
                 </select>
               </div>
             </div>
+
+            {carros.length > 0 && (
+              <div className="grid gap-2">
+                <Label className="text-muted-foreground">Carro</Label>
+                <select
+                  value={carroId}
+                  onChange={(e) => setCarroId(e.target.value)}
+                  className="h-9 rounded-md border border-border bg-muted px-3 text-sm text-foreground"
+                >
+                  <option value="">O carro de interesse do cliente</option>
+                  {carros.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.nome} {c.versao} {c.ano}{c.status === "sold" ? " · vendido" : c.preco ? ` · ${c.preco.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 })}` : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             <div className="grid gap-2">
               <Label className="text-muted-foreground">{t("expectedCloseDate")}</Label>

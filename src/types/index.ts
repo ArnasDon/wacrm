@@ -480,6 +480,8 @@ export interface Deal {
   notes?: string;
   expected_close_date?: string;
   status?: DealStatus;
+  /** Carro do Pátio (id no site) ligado ao negócio — migration 053. */
+  veiculo_site_id?: string | null;
   created_at: string;
   updated_at?: string;
   contact?: Contact;

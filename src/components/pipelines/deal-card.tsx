@@ -4,6 +4,7 @@ import type { Deal, PipelineStage } from "@/types";
 import { Calendar, Check, X } from "lucide-react";
 import { formatCurrency } from "@/lib/currency";
 import { useTranslations } from "next-intl";
+import { useCarroMini } from "@/lib/patio/carro-mini";
 
 interface DealCardProps {
   deal: Deal;
@@ -30,6 +31,8 @@ export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
   const t = useTranslations("Pipelines.card");
   const contactLabel = deal.contact?.name || deal.contact?.phone || t("noContact");
   const assigneeLabel = deal.assignee?.full_name || null;
+  // Carro do negócio; sem um escolhido, o carro de interesse do cliente.
+  const carro = useCarroMini(deal.veiculo_site_id || deal.contact?.veiculo_site_id || null);
 
   return (
     <button
@@ -71,6 +74,19 @@ export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
           </span>
         )}
       </div>
+
+      {carro && (
+        <div className="mt-2 flex items-center gap-2 rounded-lg bg-card/70 p-1.5">
+          {carro.img ? (
+            // eslint-disable-next-line @next/next/no-img-element -- foto do carro no armazenamento do site
+            <img src={carro.img} alt="" className="h-9 w-12 shrink-0 rounded object-cover" loading="lazy" />
+          ) : null}
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-xs font-semibold text-foreground">{carro.nome} {carro.ano}</span>
+            <span className="block truncate text-[11px] text-muted-foreground">{carro.status === "sold" ? "Vendido" : carro.preco ? carro.preco.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 }) : carro.versao}</span>
+          </span>
+        </div>
+      )}
 
       {/* Contact row */}
       <div className="mt-2 flex items-center gap-2">

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { todosOsCarros, type CarroMini } from '@/lib/patio/carro-mini';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
 import type { Contact, Tag, ContactTag } from '@/types';
@@ -85,6 +86,11 @@ export default function ContactsPage() {
   // to support this too; left as a known gap for a follow-up rather
   // than widening this round's scope into that function.
   const [accountFilter, setAccountFilter] = useState<string | null>(null);
+  // Filtros do sistema iBox: carro de interesse e origem do cliente (migration 053).
+  const [carroFiltro, setCarroFiltro] = useState('');
+  const [origemFiltro, setOrigemFiltro] = useState('');
+  const [carrosLista, setCarrosLista] = useState<CarroMini[]>([]);
+  const [origensLista, setOrigensLista] = useState<string[]>([]);
 
   // Modals
   const [formOpen, setFormOpen] = useState(false);
@@ -159,8 +165,11 @@ export default function ContactsPage() {
         return;
       }
       const rows = (data ?? []) as { contact: Contact; total_count: number }[];
-      contactRows = rows.map((r) => r.contact);
-      count = rows.length > 0 ? Number(rows[0].total_count) : 0;
+      // Com etiqueta escolhida, carro e origem filtram dentro desta página.
+      contactRows = rows.map((r) => r.contact).filter((c) =>
+        (!carroFiltro || c.veiculo_site_id === carroFiltro) &&
+        (!origemFiltro || (origemFiltro === '__sem' ? !c.origem : c.origem === origemFiltro)));
+      count = carroFiltro || origemFiltro ? contactRows.length : rows.length > 0 ? Number(rows[0].total_count) : 0;
     } else {
       let query = supabase
         .from('contacts')
@@ -175,6 +184,9 @@ export default function ContactsPage() {
       if (accountFilter) {
         query = query.eq('account_id', accountFilter);
       }
+      if (carroFiltro) query = query.eq('veiculo_site_id', carroFiltro);
+      if (origemFiltro === '__sem') query = query.is('origem', null);
+      else if (origemFiltro) query = query.eq('origem', origemFiltro);
 
       const { data, count: exactCount, error } = await query;
       if (seq !== fetchSeq.current) return; // superseded by a newer fetch
@@ -218,7 +230,17 @@ export default function ContactsPage() {
 
     setContacts(enriched);
     setLoading(false);
-  }, [supabase, page, search, selectedTagIds, tagsMap, t, accountFilter]);
+  }, [supabase, page, search, selectedTagIds, tagsMap, t, accountFilter, carroFiltro, origemFiltro]);
+
+  // Opções dos filtros de carro e origem
+  useEffect(() => {
+    let vivo = true;
+    todosOsCarros().then((l) => vivo && setCarrosLista(l));
+    supabase.from('contacts').select('origem').not('origem', 'is', null).limit(1000).then(({ data }) => {
+      if (vivo) setOrigensLista([...new Set(((data ?? []) as { origem: string }[]).map((r) => r.origem))].sort());
+    });
+    return () => { vivo = false; };
+  }, [supabase]);
 
   // Load-once-on-mount-ish data fetches. Each setter inside runs
   // inside an async promise completion (Supabase await), not
@@ -362,6 +384,27 @@ export default function ContactsPage() {
         </div>
         <div className="flex items-center gap-2">
           <OrganizationAccountSelect value={accountFilter} onChange={setAccountFilter} />
+          {carrosLista.length > 0 && (
+            <select
+              aria-label="Filtrar por carro de interesse"
+              value={carroFiltro}
+              onChange={(e) => { setCarroFiltro(e.target.value); setPage(0); }}
+              className="h-9 max-w-[200px] rounded-md border border-border bg-card px-2 text-sm text-foreground"
+            >
+              <option value="">Qualquer carro</option>
+              {carrosLista.map((c) => <option key={c.id} value={c.id}>{c.nome} {c.ano}{c.status === 'sold' ? ' (vendido)' : ''}</option>)}
+            </select>
+          )}
+          <select
+            aria-label="Filtrar por origem"
+            value={origemFiltro}
+            onChange={(e) => { setOrigemFiltro(e.target.value); setPage(0); }}
+            className="h-9 max-w-[180px] rounded-md border border-border bg-card px-2 text-sm text-foreground"
+          >
+            <option value="">Qualquer origem</option>
+            {origensLista.map((o) => <option key={o} value={o}>{o}</option>)}
+            <option value="__sem">Sem origem</option>
+          </select>
           {canEditSettings && (
             <Button
               variant="outline"

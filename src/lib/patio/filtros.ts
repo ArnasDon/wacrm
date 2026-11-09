@@ -95,6 +95,7 @@ export const COLUNAS: Coluna[] = [
   { id: "vs_fipe", nome: "Preço × FIPE", socio: true, valor: (c) => { const f = Number(c.finance?.fipe_value); return f && preco(c) ? preco(c) - f : null; } },
   { id: "venda", nome: "Vendido por", socio: true, valor: (c) => (c.status === "sold" ? valorVenda(c) || null : null) },
   { id: "data_venda", nome: "Data da venda", socio: true, valor: (c) => (String(c.sale?.date || c.finance?.sale_date || "") || null) },
+  { id: "origem_venda", nome: "Origem da venda", socio: true, valor: (c) => (c.status === "sold" ? [c.sale?.origem, c.sale?.origem_detalhe].filter(Boolean).join(" · ") || null : null) },
   { id: "situacao", nome: "Situação", valor: (c) => c.status ?? null },
 ];
 export const COLUNAS_PADRAO = ["ano", "preco", "dias", "visitas", "conversas", "situacao"];

@@ -14,6 +14,7 @@ type Resumo = {
   periodo: { de: string; ate: string };
   patio: null | {
     aVenda: number; valorEstoque: number; capitalParado: number; parados: number; semAnuncio: number; rascunhos: number;
+    porOrigem?: { origem: string; vendas: number; receita: number }[];
     composicao?: { posse: Record<string, Record<string, number>>; categorias: Record<string, number>; faixas: { nome: string; carros: number; valor: number }[]; semPreco: number };
     vendidosPeriodo: number; vendidosSemData: number; receitaPeriodo: number; lucroPeriodo: number; vendidosAte30Dias: number;
   };
@@ -23,15 +24,15 @@ type Resumo = {
   site?: ResumoSite | null;
   siteLigado?: boolean;
 };
-type Secao = "frase" | "numeros" | "campanhas" | "atendimento" | "vendedores" | "site" | "patio" | "composicao" | "financeiro";
+type Secao = "frase" | "numeros" | "campanhas" | "atendimento" | "vendedores" | "site" | "patio" | "origem" | "composicao" | "financeiro";
 type Config = { secoes: Record<Secao, boolean>; campanhas: "todas" | "ligadas"; situacao?: "todas" | "ok" | "vendido" | "sem" | "outra"; minGasto?: number; comparar: boolean };
 type Modelo = { id: string; nome: string; config: Config };
 
 const NOMES: [Secao, string][] = [
   ["frase", "Resumo em uma frase"], ["numeros", "Números principais"], ["campanhas", "Campanhas"], ["atendimento", "Clientes e atendimento"],
-  ["vendedores", "Vendedores"], ["site", "Site (GA4)"], ["patio", "Pátio e vendas"], ["composicao", "Como está o pátio"], ["financeiro", "Financeiro (só sócios)"],
+  ["vendedores", "Vendedores"], ["site", "Site (GA4)"], ["patio", "Pátio e vendas"], ["origem", "Vendas por origem"], ["composicao", "Como está o pátio"], ["financeiro", "Financeiro (só sócios)"],
 ];
-const PADRAO: Config = { secoes: { frase: true, numeros: true, campanhas: true, atendimento: true, vendedores: true, site: true, patio: true, composicao: true, financeiro: true }, campanhas: "todas", situacao: "todas", minGasto: 0, comparar: true };
+const PADRAO: Config = { secoes: { frase: true, numeros: true, campanhas: true, atendimento: true, vendedores: true, site: true, patio: true, origem: true, composicao: true, financeiro: true }, campanhas: "todas", situacao: "todas", minGasto: 0, comparar: true };
 const STATUS_PT: Record<string, string> = { available: "À venda", reserved: "Reservado", unavailable: "Indisponível" };
 const minutos = (m: number | null | undefined) => (m == null ? "—" : m < 60 ? `${Math.round(m)} min` : m < 1440 ? `${(m / 60).toFixed(1).replace(".", ",")} h` : `${(m / 1440).toFixed(1).replace(".", ",")} dias`);
 const iso = (d: Date) => d.toISOString().slice(0, 10);
@@ -295,6 +296,26 @@ export default function ResultadosPage() {
               <dt>Parados há +45 dias</dt><dd className="dado" style={{ margin: 0 }}>{r.patio.parados}</dd>
             </dl>
             {r.patio.vendidosSemData > 0 && <p className="rot" style={{ fontSize: 13, margin: "10px 0 0" }}>{r.patio.vendidosSemData} carros vendidos estão sem data de venda e não entram no período. Preencha em Financeiro, na ficha do carro.</p>}
+          </section>
+        )}
+
+        {r?.patio?.porOrigem && ver("origem") && r.patio.vendidosPeriodo > 0 && (
+          <section className="card" style={{ padding: "18px 20px" }} aria-labelledby="or-t">
+            <h2 id="or-t" className="h2">Vendas por origem</h2>
+            <ul style={{ listStyle: "none", margin: "12px 0 0", padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+              {r.patio.porOrigem.map((o) => {
+                const max = Math.max(...r.patio!.porOrigem!.map((x) => x.vendas));
+                return (
+                  <li key={o.origem} style={{ display: "grid", gridTemplateColumns: "190px 1fr 40px 120px", gap: 10, alignItems: "center", fontSize: 14 }}>
+                    <span style={{ color: o.origem === "Não informada" ? "var(--p-mudo)" : undefined }}>{o.origem}</span>
+                    <span style={{ height: 10, background: "var(--p-linha-2)", borderRadius: 5, overflow: "hidden" }}><span style={{ display: "block", height: "100%", width: `${(o.vendas / max) * 100}%`, background: o.origem === "Não informada" ? "var(--p-linha)" : "var(--chart-1)" }} /></span>
+                    <span className="dado" style={{ textAlign: "right" }}>{o.vendas}</span>
+                    <span className="dado rot" style={{ textAlign: "right" }}>{ehSocio && o.receita ? brl(o.receita) : ""}</span>
+                  </li>
+                );
+              })}
+            </ul>
+            {r.patio.porOrigem.some((o) => o.origem === "Não informada") && <p className="rot" style={{ fontSize: 12, margin: "10px 0 0" }}>Preencha a origem na ficha do carro → Financeiro → Venda.</p>}
           </section>
         )}
 

@@ -5,6 +5,7 @@ import { use, useEffect, useMemo, useState } from "react";
 import type { AnunciosDoCarro } from "@/lib/patio/anuncios";
 import { enviarParaCloudinary } from "@/lib/patio/cloudinary";
 import { createClient } from "@/lib/supabase/client";
+import { ORIGENS_VENDA, detalheDaOrigem } from "@/lib/patio/origem-venda";
 import { brl, Foto, nomeCarro, seloDias, STATUS_NOME, STATUS_SELO, type CarroUI, type Papel } from "../comum";
 
 type Historico = { criado_em: string; quem: string | null; acao: string; campos: string[]; antes: Record<string, unknown> | null; depois: Record<string, unknown> | null };
@@ -425,7 +426,16 @@ function Financeiro({ carro, anunciosTotal, salvando, salvar }: { carro: CarroUI
     purchase_price: txt(fin.purchase_price || ""), purchase_date: txt(fin.purchase_date), fipe_value: txt(fin.fipe_value || ""), fipe_date: txt(fin.fipe_date),
     repasse_value: txt(fin.repasse_value || ""), buyer_name: txt(fin.buyer_name), notes: txt(fin.notes),
     final_price: txt(venda.final_price || ""), date: txt(venda.date || fin.sale_date), payment: txt(venda.payment || fin.payment_method), discount: txt(venda.discount || ""), sale_notes: txt(venda.notes),
+    origem: txt(venda.origem), origem_detalhe: txt(venda.origem_detalhe),
   };
+  // Opções da origem da venda (fixas + personalizadas já usadas + vendedores).
+  const [opcoes, setOpcoes] = useState<{ origens: string[]; vendedores: string[] }>({ origens: [...ORIGENS_VENDA], vendedores: [] });
+  const [novaOrigem, setNovaOrigem] = useState(false);
+  useEffect(() => {
+    let vivo = true;
+    fetch("/api/patio/origens-venda", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).then((d) => { if (vivo && d) setOpcoes(d); }).catch(() => {});
+    return () => { vivo = false; };
+  }, []);
   const custosIniciais = Array.isArray(fin.costs) ? (fin.costs as Item[]) : [];
   const trocasIniciais = Array.isArray(venda.tradeins) ? (venda.tradeins as Item[]) : [];
   const [f, setF] = useState(inicial);
@@ -462,6 +472,8 @@ function Financeiro({ carro, anunciosTotal, salvando, salvar }: { carro: CarroUI
     for (const k of ["final_price", "discount"] as const) if (f[k] !== inicial[k]) { ms[k] = num(f[k]); mudouVenda = true; }
     for (const k of ["date", "payment"] as const) if (f[k] !== inicial[k]) { ms[k] = f[k]; mudouVenda = true; }
     if (f.sale_notes !== inicial.sale_notes) { ms.notes = f.sale_notes; mudouVenda = true; }
+    if (f.origem !== inicial.origem) { ms.origem = f.origem.trim(); mudouVenda = true; }
+    if (f.origem_detalhe !== inicial.origem_detalhe) { ms.origem_detalhe = f.origem_detalhe.trim(); mudouVenda = true; }
     if (JSON.stringify(trocas) !== JSON.stringify(trocasIniciais)) { ms.tradeins = trocas; mudouVenda = true; }
     const m: Mapa = {};
     if (Object.keys(mf).length) m.finance = mf;
@@ -515,6 +527,26 @@ function Financeiro({ carro, anunciosTotal, salvando, salvar }: { carro: CarroUI
           </select>
         </label>
         <label className="campo">Desconto concedido (R$)<input value={f.discount} onChange={set("discount")} inputMode="numeric" /></label>
+        <label className="campo">Origem da venda
+          {novaOrigem ? (
+            <span style={{ display: "flex", gap: 6 }}>
+              <input autoFocus value={f.origem} placeholder="Ex.: Feirão, TikTok, Parceiro X" onChange={set("origem")} style={{ flex: 1 }} />
+              <button type="button" className="btns" style={{ padding: "6px 10px" }} onClick={() => setNovaOrigem(false)}>Lista</button>
+            </span>
+          ) : (
+            <select value={f.origem} onChange={(e) => { if (e.target.value === "__nova") { setNovaOrigem(true); setF({ ...f, origem: "" }); } else setF({ ...f, origem: e.target.value, origem_detalhe: e.target.value === f.origem ? f.origem_detalhe : "" }); }}>
+              <option value="">Escolher</option>
+              {[...opcoes.origens, ...(f.origem && !opcoes.origens.includes(f.origem) ? [f.origem] : [])].map((o) => <option key={o}>{o}</option>)}
+              <option value="__nova">+ Outra origem…</option>
+            </select>
+          )}
+        </label>
+        {detalheDaOrigem(f.origem) && (
+          <label className="campo">{detalheDaOrigem(f.origem)}
+            <input value={f.origem_detalhe} onChange={set("origem_detalhe")} list={f.origem === "Conexão de vendedor" ? "vendedores-loja" : undefined} />
+            {f.origem === "Conexão de vendedor" && <datalist id="vendedores-loja">{opcoes.vendedores.map((v) => <option key={v} value={v} />)}</datalist>}
+          </label>
+        )}
         <ListaDeValores titulo="Itens recebidos na negociação (troca, permuta)" dica="Ex.: Honda CB 500 2020" itens={trocas} setItens={setTrocas} />
         <label className="campo" style={{ gridColumn: "1 / -1" }}>Observações da venda<textarea rows={3} value={f.sale_notes} onChange={set("sale_notes")} /></label>
       </section>

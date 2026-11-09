@@ -40,6 +40,7 @@ export async function GET(req: Request) {
       patio.capitalParado = 0;
       patio.lucroPeriodo = 0;
       patio.receitaPeriodo = 0;
+      patio.porOrigem = patio.porOrigem.map((o) => ({ ...o, receita: 0 }));
     }
 
     // Clientes: o que a pessoa enxerga no CRM (as regras do banco recortam).

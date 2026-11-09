@@ -2,6 +2,7 @@
 // métricas das campanhas. Funções puras: testadas em resumo.test.ts.
 
 import type { Carro } from "./veiculo";
+import { vendasPorOrigem } from "./origem-venda";
 
 export type CarroResumo = Carro & { dias: number | null; anuncios: { gasto: number; msgs: number; campanhas: unknown[] } | null };
 
@@ -81,6 +82,7 @@ export function resumoPatio(carros: CarroResumo[], desde: number, ate: number, l
     lucroPeriodo: comCusto.reduce((s, c) => s + valorVenda(c) - custoTotal(c), 0),
     vendidosAte30Dias: vendidosPeriodo.filter((c) => c.dias != null && c.dias <= 30).length,
     composicao: composicao(aVenda),
+    porOrigem: vendasPorOrigem(vendidosPeriodo.map((c) => ({ origem: c.sale?.origem, valor: valorVenda(c) }))),
     maisConversa: [...aVenda]
       .filter((c) => (c.anuncios?.msgs ?? 0) > 0)
       .sort((a, b) => (b.anuncios?.msgs ?? 0) - (a.anuncios?.msgs ?? 0))

@@ -218,3 +218,52 @@ export function recorte(c: Carro, campos: string[]): Record<string, unknown> {
   }
   return saida;
 }
+
+export type DadosNovoCarro = {
+  cat?: string; brand?: string; model?: string; versao?: string; year?: string; mileage?: string; color?: string; plate?: string;
+  combustivel?: string; cambio?: string; description?: string; ipva?: string; chave_manual?: boolean; revisoes?: string;
+  sale_price?: number; purchase_price?: number; fipe_value?: number; laudo?: string; pneus?: string; captacao?: string; obs?: string;
+};
+
+/**
+ * Carro novo no mesmo formato que o admin do site cria: entra como
+ * "Aguardando revisão" (não aparece no site até alguém aprovar). Se veio de
+ * um card do grupo de entradas, o texto original fica guardado no privado.
+ */
+export function novoCarro(id: string, d: DadosNovoCarro, card?: string, agora = new Date()): Carro {
+  const s = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+  const n = (v: unknown) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Math.round(Number(v)) : 0);
+  const cat = ["carros", "motos", "nautico", "utv"].includes(s(d.cat)) ? s(d.cat) : "carros";
+  return {
+    id,
+    cat,
+    status: "review",
+    brand: s(d.brand),
+    model: s(d.model),
+    versao: s(d.versao),
+    year: s(d.year),
+    mileage: s(d.mileage),
+    color: s(d.color),
+    plate: s(d.plate).toUpperCase(),
+    badge: cat,
+    description: s(d.description),
+    combustivel: s(d.combustivel),
+    cambio: s(d.cambio),
+    img: "",
+    images: [],
+    video: "",
+    ownership_type: "proprio",
+    oferta: false,
+    ordem: 0,
+    checklist: {
+      ipva: s(d.ipva), chave_manual: !!d.chave_manual, revisoes: s(d.revisoes),
+      laudo: s(d.laudo), pneus: s(d.pneus), captacao: s(d.captacao),
+    },
+    finance: { sale_price: n(d.sale_price), purchase_price: n(d.purchase_price), fipe_value: n(d.fipe_value), notes: s(d.obs), costs: [] },
+    seller: {},
+    sale: {},
+    documents: [],
+    unavailable: null,
+    ...(card ? { entrada: card, origem: { canal: "sistema:colado", msg_ids: [], recebido_em: agora.toISOString() } } : {}),
+  };
+}

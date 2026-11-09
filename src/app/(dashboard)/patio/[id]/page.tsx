@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { use, useEffect, useMemo, useState } from "react";
 import type { AnunciosDoCarro } from "@/lib/patio/anuncios";
+import { enviarParaCloudinary } from "@/lib/patio/cloudinary";
 import { brl, Foto, nomeCarro, seloDias, STATUS_NOME, STATUS_SELO, type CarroUI, type Papel } from "../comum";
 
 type Historico = { criado_em: string; quem: string | null; acao: string; campos: string[]; antes: Record<string, unknown> | null; depois: Record<string, unknown> | null };
@@ -262,7 +263,27 @@ function DadosSite({ carro, podeEditar, salvando, salvar }: { carro: CarroUI; po
 
 function Fotos({ carro, podeEditar, salvando, salvar }: { carro: CarroUI; podeEditar: boolean; salvando: boolean; salvar: (m: Mapa) => void }) {
   const fotos = carro.images ?? [];
+  const [enviando, setEnviando] = useState<string | null>(null);
   const mover = (i: number) => salvar({ images: [fotos[i], ...fotos.filter((_, j) => j !== i)] });
+  async function adicionar(e: React.ChangeEvent<HTMLInputElement>) {
+    const arquivos = Array.from(e.target.files ?? []);
+    e.target.value = "";
+    if (!arquivos.length) return;
+    const novas: { url: string; ts: number }[] = [];
+    try {
+      for (const [i, arq] of arquivos.entries()) {
+        setEnviando(`Enviando foto ${i + 1} de ${arquivos.length}…`);
+        const url = await enviarParaCloudinary(arq, `media/veh_${carro.id}_${Date.now().toString(36)}${i}`);
+        novas.push({ url, ts: Date.now() });
+      }
+    } catch (err) {
+      setEnviando(`Uma foto não subiu (${(err as Error).message}). As que subiram serão salvas.`);
+    }
+    if (novas.length) {
+      setEnviando(null);
+      salvar({ images: [...fotos, ...novas] });
+    }
+  }
   const remover = (i: number) => {
     if (confirm("Tirar esta foto do anúncio? Ela some do site.")) salvar({ images: fotos.filter((_, j) => j !== i) });
   };
@@ -285,7 +306,15 @@ function Fotos({ carro, podeEditar, salvando, salvar }: { carro: CarroUI; podeEd
           ))}
         </ul>
       )}
-      <p className="rot" style={{ margin: "14px 0 0" }}>Enviar fotos novas e recortar ainda é pelo admin do site; entra aqui na próxima etapa.</p>
+      {podeEditar && (
+        <div style={{ marginTop: 16, display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+          <label className="btnp" style={{ cursor: salvando || enviando ? "default" : "pointer" }}>
+            Adicionar fotos
+            <input type="file" accept="image/*" multiple onChange={adicionar} disabled={salvando || !!enviando} className="sr-only" />
+          </label>
+          <span className="rot" style={{ fontSize: 13 }} role="status">{enviando ?? "Fotos em 1200×900 (4:3) ficam melhor no site. A primeira é a capa."}</span>
+        </div>
+      )}
     </section>
   );
 }

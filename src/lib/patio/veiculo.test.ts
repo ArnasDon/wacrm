@@ -131,3 +131,17 @@ describe("diasNoPatio e recorte", () => {
     expect(recorte(c, ["brand", "finance.purchase_price", "images"])).toEqual({ brand: "BYD", "finance.purchase_price": 180000, images: "2 fotos" });
   });
 });
+
+import { novoCarro } from "./veiculo";
+describe("novoCarro", () => {
+  it("entra como rascunho, no formato do admin, com o card no privado", () => {
+    const c = novoCarro("k1", { brand: "Toyota", model: "Hilux", plate: "rco1a97", sale_price: 190000, purchase_price: 160000, laudo: "A realizar", cat: "x" }, "*MARCA:* TOYOTA", new Date("2026-11-09T12:00:00Z"));
+    expect(c).toMatchObject({ id: "k1", status: "review", cat: "carros", plate: "RCO1A97", badge: "carros" });
+    const { publico, privado } = separarParaFirestore(c);
+    expect(publico.finance).toEqual({ sale_price: 190000 });
+    expect(publico.origem).toMatchObject({ canal: "sistema:colado" });
+    expect((privado.finance as Record<string, unknown>).purchase_price).toBe(160000);
+    expect(privado.entrada).toBe("*MARCA:* TOYOTA");
+    expect(privado.checklist).toEqual({ laudo: "A realizar", pneus: "", captacao: "" });
+  });
+});

@@ -52,11 +52,13 @@ const SECURITY_HEADERS = [
       "img-src 'self' data: blob: https:",
       // Outbound media previews (blob: from MediaRecorder + file picker)
       // and Supabase public-bucket audio/video the inbox renders.
-      "media-src 'self' blob: https://*.supabase.co",
+      "media-src 'self' blob: https://*.supabase.co https://res.cloudinary.com",
       "font-src 'self' data:",
       // Supabase REST + realtime (WSS). All Meta API calls happen
       // server-side, so graph.facebook.com does not belong here.
-      "connect-src 'self' https://*.supabase.co wss://*.supabase.co",
+      // + Cloudinary: fotos e vídeos dos carros sobem direto do navegador
+      // (mesma conta pública que o admin do site usa).
+      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.cloudinary.com",
       "frame-ancestors 'self' https://crmwga.com https://www.crmwga.com https://*.crmwga.com",
       "base-uri 'self'",
       "form-action 'self'",

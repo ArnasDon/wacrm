@@ -104,10 +104,13 @@ export default function PatioPage() {
             )}
           </p>
         </div>
-        <label className="busca">
-          <span className="sr-only">Buscar no pátio</span>
-          <input type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Modelo, versão, placa ou ano…" autoComplete="off" spellCheck={false} />
-        </label>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+          <label className="busca">
+            <span className="sr-only">Buscar no pátio</span>
+            <input type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Modelo, versão, placa ou ano…" autoComplete="off" spellCheck={false} />
+          </label>
+          {carros && papel !== "vendedor" && <Link href="/patio/novo" className="btnp">Cadastrar carro</Link>}
+        </div>
       </div>
 
       <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", alignItems: "flex-end", gap: 12 }}>

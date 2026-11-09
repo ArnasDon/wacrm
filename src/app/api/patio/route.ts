@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { quemNoPatio } from "@/lib/patio/servidor";
-import { listarPublicos, lerPrivados } from "@/lib/patio/firestore";
-import { montarCarro, filtrarParaPapel, diasNoPatio } from "@/lib/patio/veiculo";
+import { listarPublicos, lerPrivados, gravarCarro } from "@/lib/patio/firestore";
+import { montarCarro, filtrarParaPapel, diasNoPatio, novoCarro, separarParaFirestore, type DadosNovoCarro } from "@/lib/patio/veiculo";
+import { normPlaca } from "@/lib/trafego/estoqueSite";
+import { novoId } from "@/lib/patio/cloudinary";
 import { anunciosPorCarro } from "@/lib/patio/anuncios";
 import { createAdminClient } from "@/lib/trafego/admin";
 import { situacaoChave } from "@/lib/patio/google";
@@ -41,5 +43,44 @@ export async function GET() {
   } catch (e) {
     console.error("[patio] listar:", e);
     return NextResponse.json({ erro: "Não foi possível ler o estoque do site agora." }, { status: 502 });
+  }
+}
+
+// POST /api/patio — cadastra um carro novo como "Aguardando revisão"
+// (igual ao "Novo veículo" e ao "Colar card do WhatsApp" do admin).
+// Recusa placa que já existe no estoque.
+export async function POST(req: Request) {
+  const quem = await quemNoPatio();
+  if ("erro" in quem) return NextResponse.json({ erro: quem.erro }, { status: quem.status });
+  if (quem.papel === "vendedor") return NextResponse.json({ erro: "Vendedor pode consultar o pátio, mas não cadastrar." }, { status: 403 });
+  if (situacaoChave() !== "ok") return NextResponse.json({ erro: "A chave do Firebase ainda não está pronta neste projeto." }, { status: 503 });
+  let corpo: { dados?: DadosNovoCarro; card?: string };
+  try {
+    corpo = (await req.json()) as typeof corpo;
+  } catch {
+    return NextResponse.json({ erro: "pedido inválido" }, { status: 400 });
+  }
+  const dados = corpo.dados ?? {};
+  if (!dados.brand?.trim() || !dados.model?.trim()) return NextResponse.json({ erro: "Informe pelo menos marca e modelo." }, { status: 400 });
+  const card = typeof corpo.card === "string" && corpo.card.trim() ? corpo.card.slice(0, 5000) : undefined;
+  try {
+    const placa = normPlaca(dados.plate);
+    if (placa) {
+      const existentes = await listarPublicos(quem.projeto);
+      const igual = existentes.find((e) => normPlaca(String(e.dados.plate ?? "")) === placa);
+      if (igual) return NextResponse.json({ erro: "Essa placa já está no pátio.", id: igual.id }, { status: 409 });
+    }
+    const carro = novoCarro(novoId(), dados, card);
+    const { publico, privado } = separarParaFirestore(carro);
+    await gravarCarro(quem.projeto, carro.id, publico, privado);
+    await createAdminClient()
+      .from("patio_historico")
+      .insert({ org_id: quem.orgId, veiculo_site_id: carro.id, user_id: quem.userId, quem: quem.nome, acao: card ? "cadastrou colando o card" : "cadastrou", campos: [] })
+      .then(({ error }) => error && console.error("[patio] histórico:", error.message));
+    // rascunho não aparece no site: não precisa reconstruir agora
+    return NextResponse.json({ ok: true, id: carro.id });
+  } catch (e) {
+    console.error("[patio] cadastrar:", e);
+    return NextResponse.json({ erro: "Não foi possível cadastrar agora. Nada foi criado." }, { status: 502 });
   }
 }

@@ -81,7 +81,7 @@ export default function RegrasPage() {
             <legend className="rot" style={{ marginBottom: 6 }}>Então</legend>
             <label style={{ display: "flex", gap: 10, fontSize: 14 }}><input type="checkbox" checked={avisarHoje} onChange={(e) => setAvisarHoje(e.target.checked)} /> Avisar em Hoje</label>
             <label className="campo">Mandar no grupo do WhatsApp<select value={grupo} onChange={(e) => setGrupo(e.target.value)}><option value="">Não mandar</option>{GRUPOS.map((g) => <option key={g}>{g}</option>)}</select></label>
-            {grupo && <p className="rot" style={{ margin: 0 }}>O envio para grupos começa quando a verificação automática de hora em hora for ligada, na virada.</p>}
+            {grupo && <p className="rot" style={{ margin: 0 }}>O grupo recebe a lista uma vez por dia, de manhã, quando a regra tiver algo para avisar. O grupo precisa estar no WhatsApp conectado ao sistema.</p>}
           </fieldset>
           <button type="submit" className="btnp" style={{ alignSelf: "flex-start" }}>Criar regra</button>
           {aviso && <p role="status" style={{ margin: 0, fontSize: 14 }}>{aviso}</p>}

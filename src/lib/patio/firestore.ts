@@ -160,3 +160,57 @@ export async function lerDocumento(projeto: string, caminho: string): Promise<Re
     return null;
   }
 }
+
+/** Grava um documento inteiro (substitui, como o .set() do admin). */
+export async function gravarDocumento(projeto: string, caminho: string, dados: Record<string, unknown>) {
+  await chamar(`${raiz(projeto)}:commit`, {
+    method: "POST",
+    body: JSON.stringify({ writes: [{ update: { name: nomeDoc(projeto, caminho), fields: codificarCampos(dados) } }] }),
+  });
+}
+
+/**
+ * Atualiza só os campos listados (caminhos com ponto, ex.: "pagina.grupo.aberto").
+ * Os demais ficam como estão — é assim que os contadores que o site soma
+ * sozinho (vagas ocupadas, lista de espera) nunca são sobrescritos.
+ */
+export async function atualizarCampos(projeto: string, caminho: string, dados: Record<string, unknown>, campos: string[]) {
+  if (!campos.length) return;
+  await chamar(`${raiz(projeto)}:commit`, {
+    method: "POST",
+    body: JSON.stringify({
+      writes: [{ update: { name: nomeDoc(projeto, caminho), fields: codificarCampos(dados) }, updateMask: { fieldPaths: campos } }],
+    }),
+  });
+}
+
+/** Todos os documentos de uma coleção (até 3.000). */
+export async function listarColecao(projeto: string, colecao: string): Promise<DocLido[]> {
+  const saida: DocLido[] = [];
+  let pagina = "";
+  for (let i = 0; i < 10; i++) {
+    const url = `${raiz(projeto)}/${colecao}?pageSize=300${pagina ? `&pageToken=${encodeURIComponent(pagina)}` : ""}`;
+    const d = await chamar<{ documents?: DocRest[]; nextPageToken?: string }>(url);
+    for (const doc of d.documents || []) {
+      saida.push({ id: doc.name.split("/").pop() || doc.name, dados: decodificarCampos(doc.fields), criadoEm: doc.createTime ?? null, atualizadoEm: doc.updateTime ?? null });
+    }
+    if (!d.nextPageToken) break;
+    pagina = d.nextPageToken;
+  }
+  return saida;
+}
+
+/** Documentos de uma coleção com um campo de data a partir de um instante. */
+export async function consultarDesde(projeto: string, colecao: string, campoData: string, desdeISO: string, limite = 5000) {
+  const resp = await chamar<{ document?: DocRest }[]>(`${raiz(projeto)}:runQuery`, {
+    method: "POST",
+    body: JSON.stringify({
+      structuredQuery: {
+        from: [{ collectionId: colecao }],
+        where: { fieldFilter: { field: { fieldPath: campoData }, op: "GREATER_THAN_OR_EQUAL", value: { timestampValue: desdeISO } } },
+        limit: limite,
+      },
+    }),
+  });
+  return resp.filter((r) => r.document).map((r) => decodificarCampos(r.document!.fields));
+}

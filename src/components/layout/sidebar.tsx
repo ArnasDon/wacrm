@@ -161,9 +161,9 @@ const NAV_SECTIONS: NavSection[] = [
     module: "estoque",
     minRole: "admin",
     items: [
-      { href: "/site/conteudo", labelKey: "siteContent", icon: LayoutTemplate, soon: true },
-      { href: "/site/links", labelKey: "siteLinks", icon: Link2, soon: true },
-      { href: "/site/club", labelKey: "siteClub", icon: Crown, soon: true },
+      { href: "/site/conteudo", labelKey: "siteContent", icon: LayoutTemplate },
+      { href: "/site/links", labelKey: "siteLinks", icon: Link2 },
+      { href: "/site/club", labelKey: "siteClub", icon: Crown },
     ],
   },
   {

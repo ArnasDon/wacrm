@@ -1,3 +1,4 @@
+import { entradaDoGrupo, GRUPO_ENTRADAS } from '@/lib/patio/entrada-grupo'
 import { NextResponse, after } from 'next/server'
 import { extrairReferenciaDeAnuncio } from '@/lib/patio/origem-cliente'
 import crypto from 'crypto'
@@ -433,6 +434,20 @@ async function processUazapiEvent(config: UazapiConfigRow, event: UazapiWebhookE
     interactiveReplyId: data.buttonOrListid || null,
     replyToExternalId: data.quoted || null,
     adReferral: extrairReferenciaDeAnuncio(data),
+  }
+
+  // Sistema único: card ou foto no grupo de entradas → carro no Pátio
+  // (aguardando aprovação). Vale também para o que a própria loja manda.
+  if (isGroupLike && chatPhoneJid === GRUPO_ENTRADAS) {
+    await entradaDoGrupo(supabaseAdmin(), {
+      accountId: config.account_id,
+      chatJid: chatPhoneJid,
+      contentType,
+      text,
+      mediaUrl,
+      externalId,
+      timestampMs: Number(data.messageTimestamp ?? Date.now()),
+    })
   }
 
   // Sent from the agent's own phone, not through this CRM's API

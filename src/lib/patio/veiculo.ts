@@ -189,6 +189,11 @@ export function aplicarMudanca(atual: Carro, mudanca: Record<string, unknown>, p
       return { erro: `Campo não permitido: ${chave}` };
     }
   }
+  // Aprovar um carro que entrou pelo grupo (ou cadastrado) = publicar no site:
+  // sem preço de venda ele apareceria "sob consulta" por engano.
+  if (campos.includes("status") && atual.status === "review" && ["available", "reserved"].includes(String(novo.status)) && !(Number(novo.finance?.sale_price) > 0)) {
+    return { erro: "Coloque o preço de venda antes de aprovar: é ele que aparece no site." };
+  }
   // Venda: o admin antigo e o site contam as vendas pela data do Financeiro
   // (finance.sale_date). Grava nos dois lugares, como o "Marcar vendido" do admin.
   if (campos.includes("sale")) {

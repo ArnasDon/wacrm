@@ -96,6 +96,11 @@ describe("aplicarMudanca", () => {
       expect(r.carro.finance?.purchase_price).toBe(180000);
     }
   });
+  it("aprovar rascunho exige preço de venda", () => {
+    const rasc = { ...c, status: "review", finance: { ...c.finance, sale_price: 0 } };
+    expect(aplicarMudanca(rasc, { status: "available" }, "marketing")).toHaveProperty("erro");
+    expect(aplicarMudanca(rasc, { status: "available", finance: { sale_price: 99000 } }, "marketing")).not.toHaveProperty("erro");
+  });
   it("venda gravada também no Financeiro, como no admin", () => {
     const r = aplicarMudanca(c, { sale: { final_price: 205000, date: "2026-11-08", payment: "PIX" } }, "socio");
     expect(r).not.toHaveProperty("erro");

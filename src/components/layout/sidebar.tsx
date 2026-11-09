@@ -161,7 +161,7 @@ const NAV_SECTIONS: NavSection[] = [
     labelKey: "groups.site",
     module: "estoque",
     items: [
-      { href: "/site/estoque", labelKey: "siteStock", icon: Car, soon: true },
+      { href: "/patio", labelKey: "siteStock", icon: Car },
       { href: "/site/vendidos", labelKey: "siteSold", icon: BadgeCheck, minRole: "admin", soon: true },
       { href: "/site/novo-veiculo", labelKey: "siteNewVehicle", icon: CirclePlus, minRole: "admin", soon: true },
       { href: "/site/financeiro", labelKey: "siteFinance", icon: Wallet, minRole: "admin", soon: true },

@@ -1,0 +1,88 @@
+/* ============================================================
+ * Pátio — visual aprovado em 09/11 ("o pátio de dia"): concreto claro,
+ * azul da placa Mercosul para o que se clica, dourado só na etiqueta de
+ * preço. Tudo preso em .modulo-patio para não mexer no resto do sistema
+ * até a troca de visual geral.
+ * ============================================================ */
+.modulo-patio {
+  --p-ink: #17191b;
+  --p-chao: #e4e6e1;
+  --p-papel: #fbfbf9;
+  --p-linha: #cdd0c9;
+  --p-linha-2: #e1e3dd;
+  --p-suave: #eef0eb;
+  --p-mudo: #5c615c;
+  --p-azul: #1f4fa3;
+  --p-azul-2: #163a7a;
+  --p-ouro: #f8c45b;
+  --p-verde: #2e7a4f;
+  --p-ambar: #b9661a;
+  font-family: var(--font-hanken), ui-sans-serif, system-ui, sans-serif;
+  background: var(--p-chao);
+  color: var(--p-ink);
+  min-height: 100%;
+  margin: -1.5rem;
+  padding: 28px;
+  font-size: 15px;
+}
+@media (max-width: 640px) { .modulo-patio { margin: -1rem; padding: 16px; } }
+.modulo-patio a { color: var(--p-azul); }
+.modulo-patio a:hover { color: var(--p-azul-2); }
+.modulo-patio :focus-visible { outline: 2px solid var(--p-azul); outline-offset: 2px; }
+.modulo-patio .disp { font-family: var(--font-archivo), ui-sans-serif, sans-serif; font-stretch: 125%; font-weight: 800; letter-spacing: -.01em; text-wrap: balance; }
+.modulo-patio .dado { font-family: var(--font-plex-mono), ui-monospace, monospace; font-variant-numeric: tabular-nums; font-weight: 600; }
+.modulo-patio .rot { font-size: 12px; color: var(--p-mudo); }
+.modulo-patio .card { background: var(--p-papel); border: 1px solid var(--p-linha); border-radius: 14px; }
+.modulo-patio .h2 { margin: 0; font-size: 16px; font-weight: 600; }
+.modulo-patio .tag { position: relative; display: inline-block; background: var(--p-ouro); color: var(--p-ink); font-family: var(--font-plex-mono), monospace; font-weight: 600; font-variant-numeric: tabular-nums; font-size: 13px; padding: 3px 10px 3px 18px; border-radius: 3px 7px 7px 3px; white-space: nowrap; }
+.modulo-patio .tag::before { content: ""; position: absolute; left: 6px; top: 50%; width: 6px; height: 6px; margin-top: -3px; border-radius: 50%; background: var(--p-papel); box-shadow: inset 0 0 0 1px rgba(0,0,0,.25); }
+.modulo-patio .btnp { display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: var(--p-azul); color: #fff; border: 0; border-radius: 9px; padding: 10px 14px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; text-decoration: none; transition: background-color .15s; }
+.modulo-patio .btnp:hover { background: var(--p-azul-2); color: #fff; }
+.modulo-patio .btnp:disabled { opacity: .55; cursor: default; }
+.modulo-patio .btns { display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: var(--p-papel); color: var(--p-ink); border: 1px solid #bfc3bb; border-radius: 9px; padding: 9px 13px; font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; text-decoration: none; transition: border-color .15s; }
+.modulo-patio .btns:hover { border-color: var(--p-ink); color: var(--p-ink); }
+.modulo-patio .abas { display: flex; flex-wrap: wrap; gap: 2px; border-bottom: 1px solid var(--p-linha); }
+.modulo-patio .aba { border: 0; background: transparent; font: inherit; font-size: 14px; color: var(--p-mudo); padding: 10px 14px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.modulo-patio .aba:hover { color: var(--p-ink); }
+.modulo-patio .aba[aria-selected="true"] { color: var(--p-ink); font-weight: 600; border-bottom-color: var(--p-azul); }
+.modulo-patio .chip { border: 1px solid #bfc3bb; background: var(--p-papel); color: var(--p-ink); border-radius: 999px; padding: 7px 13px; font: inherit; font-size: 13px; cursor: pointer; }
+.modulo-patio .chip:hover { border-color: var(--p-ink); }
+.modulo-patio .chip[aria-pressed="true"] { background: var(--p-ink); color: var(--p-papel); border-color: var(--p-ink); }
+.modulo-patio .seg { display: flex; gap: 2px; background: #d6d9d3; padding: 3px; border-radius: 9px; }
+.modulo-patio .seg button { border: 0; border-radius: 7px; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer; background: transparent; color: #3e433f; }
+.modulo-patio .seg button[aria-pressed="true"] { background: var(--p-papel); color: var(--p-ink); font-weight: 600; }
+.modulo-patio .selo { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; border-radius: 999px; padding: 3px 9px; white-space: nowrap; }
+.modulo-patio .s-ok { background: #ddebe2; color: #1f5a39; }
+.modulo-patio .s-at { background: #f5e3d0; color: #8a4a10; }
+.modulo-patio .s-ru { background: #f3dad6; color: #8e2f22; }
+.modulo-patio .s-az { background: #dce5f5; color: #163a7a; }
+.modulo-patio .s-ne { background: #e6e8e3; color: #3e433f; }
+.modulo-patio .busca { display: flex; align-items: center; gap: 8px; background: var(--p-papel); border: 1px solid var(--p-linha); border-radius: 10px; padding: 0 12px; min-width: 240px; }
+.modulo-patio .busca input { flex: 1; min-width: 0; border: 0; background: transparent; font: inherit; font-size: 14px; padding: 9px 0; color: var(--p-ink); outline: none; }
+.modulo-patio .busca:focus-within { outline: 2px solid var(--p-azul); outline-offset: 2px; }
+.modulo-patio .tab { width: 100%; border-collapse: collapse; font-size: 14px; }
+.modulo-patio .tab th { font-size: 12px; font-weight: 500; color: var(--p-mudo); text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--p-linha); white-space: nowrap; }
+.modulo-patio .tab td { padding: 11px 12px; border-bottom: 1px solid var(--p-linha-2); vertical-align: middle; }
+.modulo-patio .campo { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--p-mudo); }
+.modulo-patio .campo input, .modulo-patio .campo select, .modulo-patio .campo textarea { font: inherit; font-size: 14px; color: var(--p-ink); background: #fff; border: 1px solid var(--p-linha); border-radius: 8px; padding: 9px 10px; }
+.modulo-patio .campo input:disabled, .modulo-patio .campo select:disabled, .modulo-patio .campo textarea:disabled { background: var(--p-suave); color: var(--p-mudo); }
+.modulo-patio .foto { position: relative; display: block; background: #d9dcd5; overflow: hidden; }
+.modulo-patio .foto img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.modulo-patio .foto .semfoto { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 12px; color: var(--p-mudo); }
+
+/* Quadro de chaves */
+.modulo-patio .quadro { background: #33363a; background-image: radial-gradient(circle, #26292c 1.5px, transparent 2px); background-size: 22px 22px; border-radius: 16px; padding: 26px 22px 30px; }
+.modulo-patio .ganchos { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 30px 18px; }
+.modulo-patio .gancho { position: relative; padding-top: 16px; }
+.modulo-patio .gancho::before { content: ""; position: absolute; left: 50%; top: 0; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; background: #b9bdb5; box-shadow: 0 1px 0 #1c1e1c; }
+.modulo-patio .chave { position: relative; display: block; width: 100%; text-align: left; background: var(--p-papel); border: 0; border-radius: 12px 12px 16px 16px; padding: 24px 12px 12px; font: inherit; color: var(--p-ink); cursor: pointer; transform-origin: 50% -10px; transition: transform .35s cubic-bezier(.3,1.6,.5,1), box-shadow .2s; box-shadow: 0 3px 0 rgba(0,0,0,.3); }
+.modulo-patio .chave::before { content: ""; position: absolute; left: 50%; top: 8px; width: 12px; height: 12px; margin-left: -6px; border-radius: 50%; background: #33363a; box-shadow: inset 0 1px 2px rgba(0,0,0,.5); }
+.modulo-patio .chave:hover { transform: rotate(-2.5deg); box-shadow: 0 10px 18px rgba(0,0,0,.35); }
+.modulo-patio .chave:focus-visible { outline: 3px solid var(--p-ouro); outline-offset: 3px; }
+.modulo-patio .placa { display: block; border: 1.5px solid var(--p-ink); border-radius: 4px; overflow: hidden; margin: 10px 0 8px; }
+.modulo-patio .placa b { display: block; background: var(--p-azul); color: #fff; font-size: 8px; letter-spacing: .2em; padding: 2px 6px; font-weight: 600; }
+.modulo-patio .placa span { display: block; padding: 5px 8px; font-family: var(--font-plex-mono), monospace; font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (prefers-reduced-motion: reduce) {
+  .modulo-patio * { transition: none !important; animation: none !important; }
+  .modulo-patio .chave:hover { transform: none; }
+}

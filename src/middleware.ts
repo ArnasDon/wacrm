@@ -80,7 +80,7 @@ export async function middleware(request: NextRequest) {
   // logged out (it's the admin panel's own entry point) — everything
   // else under /painel-a17c94fe2b6d redirects there instead of the
   // normal CRM /login, so a visitor never lands on the wrong door.
-  const protectedPaths = ['/dashboard', '/inbox', '/contacts', '/pipelines', '/broadcasts', '/automations', '/settings', '/trafego', '/site/', '/painel-a17c94fe2b6d']
+  const protectedPaths = ['/dashboard', '/inbox', '/contacts', '/pipelines', '/broadcasts', '/automations', '/settings', '/trafego', '/patio', '/site/', '/painel-a17c94fe2b6d']
   const isPlatformLoginPage = request.nextUrl.pathname === '/painel-a17c94fe2b6d/login'
   if (!user && !isPlatformLoginPage && protectedPaths.some(path => request.nextUrl.pathname.startsWith(path))) {
     const url = request.nextUrl.clone()

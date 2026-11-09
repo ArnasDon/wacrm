@@ -125,6 +125,8 @@ describe("diasNoPatio e recorte", () => {
   it("conta dias desde a criação", () => {
     expect(diasNoPatio({ criado_em: "2026-11-01T00:00:00Z" }, Date.parse("2026-11-09T12:00:00Z"))).toBe(8);
     expect(diasNoPatio({ criado_em: null })).toBeNull();
+    expect(diasNoPatio({ criado_em: "2026-11-01T00:00:00Z", finance: { purchase_date: "2026-10-30" } }, Date.parse("2026-11-09T12:00:00Z"))).toBe(10);
+    expect(diasNoPatio({ criado_em: "2026-11-01T00:00:00Z", finance: { purchase_date: "2099-01-01" } }, Date.parse("2026-11-09T12:00:00Z"))).toBe(8);
   });
   it("recorta só o que mudou e resume fotos", () => {
     const c = montarCarro("abc123", publico, privado);

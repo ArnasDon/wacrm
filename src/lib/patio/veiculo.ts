@@ -200,10 +200,13 @@ export function aplicarMudanca(atual: Carro, mudanca: Record<string, unknown>, p
   return { carro: novo, campos };
 }
 
-/** Dias desde que o carro entrou (data de criação do documento no Firestore). */
-export function diasNoPatio(c: Pick<Carro, "criado_em">, agora = Date.now()): number | null {
-  if (!c.criado_em) return null;
-  const t = Date.parse(c.criado_em);
+/**
+ * Dias desde que o carro entrou: a data de compra (Financeiro) quando houver;
+ * senão, a data em que o documento foi criado no Firestore.
+ */
+export function diasNoPatio(c: Pick<Carro, "criado_em" | "finance">, agora = Date.now()): number | null {
+  const compra = typeof c.finance?.purchase_date === "string" ? Date.parse(c.finance.purchase_date as string) : NaN;
+  const t = Number.isFinite(compra) && compra <= agora ? compra : c.criado_em ? Date.parse(c.criado_em) : NaN;
   if (!Number.isFinite(t)) return null;
   return Math.max(0, Math.floor((agora - t) / 86_400_000));
 }

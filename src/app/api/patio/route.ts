@@ -29,15 +29,14 @@ export async function GET() {
   }
   try {
     const publicos = await listarPublicos(quem.projeto);
-    // Privados (custo, dono, venda) só são lidos para sócios.
-    const privados = quem.papel === "socio" ? await lerPrivados(quem.projeto, publicos.map((p) => p.id)) : {};
+    // Privados (custo, dono, venda) são lidos no servidor para calcular os
+    // dias no pátio pela data de compra; só sócios recebem esses campos.
+    const privados = await lerPrivados(quem.projeto, publicos.map((p) => p.id));
     const anuncios = await anunciosPorCarro(createAdminClient(), quem.orgId).catch(() => ({}) as Record<string, never>);
     const carros = publicos.map((p) => {
-      const c = filtrarParaPapel(
-        montarCarro(p.id, p.dados, privados[p.id] ?? {}, { criadoEm: p.criadoEm, atualizadoEm: p.atualizadoEm }),
-        quem.papel,
-      );
-      return { ...c, dias: diasNoPatio(c), anuncios: (anuncios as Record<string, unknown>)[p.id] ?? null };
+      const completo = montarCarro(p.id, p.dados, privados[p.id] ?? {}, { criadoEm: p.criadoEm, atualizadoEm: p.atualizadoEm });
+      const c = filtrarParaPapel(completo, quem.papel);
+      return { ...c, dias: diasNoPatio(completo), anuncios: (anuncios as Record<string, unknown>)[p.id] ?? null };
     });
     return NextResponse.json({ papel: quem.papel, carros });
   } catch (e) {

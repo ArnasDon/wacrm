@@ -19,13 +19,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     const lido = await lerUm(quem.projeto, id);
     if (!lido) return NextResponse.json({ erro: "carro não encontrado" }, { status: 404 });
     const admin = createAdminClient();
-    const carro = filtrarParaPapel(
-      montarCarro(id, lido.publico.dados, quem.papel === "socio" ? lido.privado : {}, {
-        criadoEm: lido.publico.criadoEm,
-        atualizadoEm: lido.publico.atualizadoEm,
-      }),
-      quem.papel,
-    );
+    const completo = montarCarro(id, lido.publico.dados, lido.privado, {
+      criadoEm: lido.publico.criadoEm,
+      atualizadoEm: lido.publico.atualizadoEm,
+    });
+    const carro = filtrarParaPapel(completo, quem.papel);
     const porCarro = await anunciosPorCarro(admin, quem.orgId, 30, id).catch(() => ({}) as Record<string, never>);
     const anuncios = porCarro[id] ?? null;
     let historico: unknown[] = [];
@@ -39,7 +37,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
         .limit(50);
       historico = data ?? [];
     }
-    return NextResponse.json({ papel: quem.papel, carro: { ...carro, dias: diasNoPatio(carro) }, anuncios, historico });
+    return NextResponse.json({ papel: quem.papel, carro: { ...carro, dias: diasNoPatio(completo) }, anuncios, historico });
   } catch (e) {
     console.error("[patio] ler:", e);
     return NextResponse.json({ erro: "Não foi possível ler este carro agora." }, { status: 502 });

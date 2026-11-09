@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
 import { useTheme } from "@/hooks/use-theme";
-import { isThemeId } from "@/lib/themes";
+import { isThemeId, MODE_STORAGE_KEY } from "@/lib/themes";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { PresenceHeartbeat } from "@/components/presence/presence-heartbeat";
@@ -18,7 +18,7 @@ import { ShieldOff } from "lucide-react";
 
 function DashboardShellInner({ children }: { children: React.ReactNode }) {
   const { user, loading, profileLoading, suspended, signOut, branding } = useAuth();
-  const { theme, setTheme } = useTheme();
+  const { theme, setTheme, setMode } = useTheme();
 
   // Marca da loja: quando a loja tem tema próprio (ex.: "ibox"), todo
   // mundo da loja vê o sistema com ele. O tema fica salvo no navegador,
@@ -26,8 +26,15 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (branding?.theme && isThemeId(branding.theme) && branding.theme !== theme) {
       setTheme(branding.theme);
+      // iBox: o visual aprovado é claro ("o pátio de dia"). Quem nunca
+      // escolheu claro/escuro começa no claro; quem já escolheu, mantém.
+      try {
+        if (branding.theme === "ibox" && !localStorage.getItem(MODE_STORAGE_KEY)) setMode("light");
+      } catch {
+        // sem localStorage: segue o padrão
+      }
     }
-  }, [branding?.theme, theme, setTheme]);
+  }, [branding?.theme, theme, setTheme, setMode]);
   const router = useRouter();
   const t = useTranslations("AccountSuspended");
 

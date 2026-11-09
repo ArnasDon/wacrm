@@ -24,12 +24,29 @@ function chaveValida(chave: string | null) {
   return timingSafeEqual(Buffer.from(h), Buffer.from(SYNC_CHAVE_HASH));
 }
 
+// Agendador da Vercel (vercel.json → crons). Manda "Authorization: Bearer
+// CRON_SECRET" quando essa variável existe. Sem ela, aceita a chamada que se
+// identifica como vercel-cron, mas só se a última sincronização tiver mais de
+// 6 horas: no pior caso alguém força uma sync a mais, sem ler nada.
+async function cronLiberado(request: Request, admin: ReturnType<typeof createAdminClient>) {
+  const segredo = process.env.CRON_SECRET;
+  const auth = request.headers.get("authorization") ?? "";
+  if (segredo) {
+    const a = createHash("sha256").update(auth).digest();
+    const b = createHash("sha256").update(`Bearer ${segredo}`).digest();
+    return timingSafeEqual(a, b);
+  }
+  if (!(request.headers.get("user-agent") ?? "").startsWith("vercel-cron")) return false;
+  const { data } = await admin.from("tr_sync_runs").select("iniciado_em").order("iniciado_em", { ascending: false }).limit(1).maybeSingle();
+  return !data || Date.now() - Date.parse(data.iniciado_em as string) > 6 * 3_600_000;
+}
+
 export async function GET(request: Request) {
-  if (!chaveValida(request.headers.get("x-sync-chave"))) {
+  const admin = createAdminClient();
+  if (!chaveValida(request.headers.get("x-sync-chave")) && !(await cronLiberado(request, admin))) {
     return NextResponse.json({ error: "não autorizado" }, { status: 401 });
   }
   const modo = new URL(request.url).searchParams.get("modo") === "rapido" ? "rapido" : "completo";
-  const admin = createAdminClient();
 
   const { data: credentials, error } = await admin
     .from("tr_integration_credentials")

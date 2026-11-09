@@ -51,7 +51,7 @@ export default function ResetPasswordPage() {
       return;
     }
 
-    router.replace("/dashboard");
+    router.replace("/inicio");
   };
 
   return (

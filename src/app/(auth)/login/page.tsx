@@ -58,7 +58,7 @@ function LoginPageInner() {
     if (inviteToken) {
       router.push(`/join/${encodeURIComponent(inviteToken)}`);
     } else {
-      router.push("/dashboard");
+      router.push("/inicio");
     }
   };
 

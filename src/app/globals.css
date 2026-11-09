@@ -268,17 +268,41 @@ html[data-theme="ibox"][data-mode="dark"] {
   --sidebar-border: oklch(0.847 0.135 82.6 / 0.14);
 }
 
-/* No modo claro o dourado puro some no branco: usa o dourado escuro
- * do brandbook (#AB7C35) como cor principal. */
+/* iBox no modo claro = visual aprovado em 09/11 ("o pátio de dia"):
+ * concreto claro no fundo, papel nos cartões, menu lateral cor de asfalto,
+ * azul da placa Mercosul no que se clica. O dourado fica só na etiqueta de
+ * preço (telas do Pátio). Fonte de leitura: Hanken Grotesk. */
 html[data-theme="ibox"][data-mode="light"] {
-  --primary: oklch(0.62 0.105 74.7);
-  --primary-foreground: oklch(1 0 0);
-  --primary-hover: oklch(0.56 0.1 74.7);
-  --primary-soft: oklch(0.62 0.105 74.7 / 0.1);
-  --primary-soft-2: oklch(0.62 0.105 74.7 / 0.18);
-  --ring: oklch(0.62 0.105 74.7);
-  --chart-1: oklch(0.62 0.105 74.7);
-  --sidebar-primary: oklch(0.62 0.105 74.7);
-  --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-ring: oklch(0.62 0.105 74.7);
+  --background: #e4e6e1;
+  --foreground: #17191b;
+  --card: #fbfbf9;
+  --card-2: #eef0eb;
+  --card-foreground: #17191b;
+  --popover: #fbfbf9;
+  --popover-foreground: #17191b;
+  --secondary: #eef0eb;
+  --secondary-foreground: #17191b;
+  --muted: #eef0eb;
+  --muted-foreground: #5c615c;
+  --accent: #e1e3dd;
+  --accent-foreground: #17191b;
+  --border: #cdd0c9;
+  --input: #cdd0c9;
+  --primary: #1f4fa3;
+  --primary-foreground: #ffffff;
+  --primary-hover: #163a7a;
+  --primary-soft: rgb(31 79 163 / 0.1);
+  --primary-soft-2: rgb(31 79 163 / 0.18);
+  --ring: #1f4fa3;
+  --chart-1: #1f4fa3;
+  --chart-2: #b9661a;
+  --sidebar: #17191b;
+  --sidebar-foreground: #c9ccc5;
+  --sidebar-accent: #2a2e31;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #2a2e31;
+  --sidebar-primary: #7da2e8;
+  --sidebar-primary-foreground: #17191b;
+  --sidebar-ring: #7da2e8;
+  --font-sans: var(--font-hanken-global), var(--font-outfit), ui-sans-serif, system-ui, sans-serif;
 }

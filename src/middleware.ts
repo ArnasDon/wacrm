@@ -69,7 +69,7 @@ export async function middleware(request: NextRequest) {
       url.pathname = `/join/${encodeURIComponent(inviteToken)}`
       url.search = ''
     } else {
-      url.pathname = '/dashboard'
+      url.pathname = '/inicio'
       url.search = ''
     }
     return withRefreshedCookies(NextResponse.redirect(url))
@@ -80,7 +80,7 @@ export async function middleware(request: NextRequest) {
   // logged out (it's the admin panel's own entry point) — everything
   // else under /painel-a17c94fe2b6d redirects there instead of the
   // normal CRM /login, so a visitor never lands on the wrong door.
-  const protectedPaths = ['/dashboard', '/inbox', '/contacts', '/pipelines', '/broadcasts', '/automations', '/settings', '/trafego', '/patio', '/hoje', '/resultados', '/regras', '/site/', '/painel-a17c94fe2b6d']
+  const protectedPaths = ['/dashboard', '/inbox', '/contacts', '/pipelines', '/broadcasts', '/automations', '/settings', '/trafego', '/patio', '/hoje', '/inicio', '/resultados', '/regras', '/site/', '/painel-a17c94fe2b6d']
   const isPlatformLoginPage = request.nextUrl.pathname === '/painel-a17c94fe2b6d/login'
   if (!user && !isPlatformLoginPage && protectedPaths.some(path => request.nextUrl.pathname.startsWith(path))) {
     const url = request.nextUrl.clone()

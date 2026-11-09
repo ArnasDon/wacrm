@@ -15,8 +15,8 @@ import { createClient } from '@/lib/supabase/server'
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
   const tokenHash = searchParams.get('token_hash')
-  const nextParam = searchParams.get('next') ?? '/dashboard'
-  const next = nextParam.startsWith('/') && !nextParam.startsWith('//') ? nextParam : '/dashboard'
+  const nextParam = searchParams.get('next') ?? '/inicio'
+  const next = nextParam.startsWith('/') && !nextParam.startsWith('//') ? nextParam : '/inicio'
 
   if (tokenHash) {
     const supabase = await createClient()

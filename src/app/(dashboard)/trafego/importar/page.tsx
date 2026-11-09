@@ -1,5 +1,6 @@
 "use client";
 
+import { HistoricoMeta } from "./historico-meta";
 // Importação única do painel de tráfego antigo (Placa a Placa) para o
 // sistema único. Roda inteira no navegador de quem é sócio/gestor:
 //   1. entra no painel antigo com o login da própria pessoa (ou aproveita a
@@ -230,6 +231,7 @@ export default function ImportarPainelAntigo() {
           {fim && <p style={{ fontSize: 13, margin: 0 }}>{fim}</p>}
         </div>
       )}
+      <HistoricoMeta />
     </main>
   );
 }

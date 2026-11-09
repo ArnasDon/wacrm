@@ -110,7 +110,9 @@ export async function syncMeta(
   accountId: string,
   adAccountId: string,
   token: string,
-  modo: ModoSync = "rapido"
+  modo: ModoSync = "rapido",
+  // Busca de histórico: um intervalo fixo (AAAA-MM-DD), só métricas por dia.
+  intervalo?: { desde: string; ate: string },
 ): Promise<number> {
   const act = adAccountId.startsWith("act_") ? adAccountId : `act_${adAccountId}`;
   const { dias, diasHora } = JANELAS[modo];
@@ -118,8 +120,8 @@ export async function syncMeta(
   // depois das 21h daqui o UTC já está em "amanhã", e o Meta recusa data futura.
   const hojeBahia = (deltaDias: number) =>
     new Intl.DateTimeFormat("en-CA", { timeZone: "America/Bahia" }).format(new Date(Date.now() + deltaDias * 24 * 3600e3));
-  const ate = hojeBahia(0);
-  const desde = hojeBahia(-dias);
+  const ate = intervalo?.ate ?? hojeBahia(0);
+  const desde = intervalo?.desde ?? hojeBahia(-dias);
   const desdeHora = hojeBahia(-diasHora);
 
   // 1) TODAS as campanhas da conta (inclusive pausadas e sem gasto) — é isso
@@ -139,7 +141,7 @@ export async function syncMeta(
       fields: `${camposMetricas},video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p100_watched_actions`,
       limit: "500",
     }, token),
-    graphTodasPaginas(`${act}/insights`, {
+    intervalo ? Promise.resolve([] as Linha[]) : graphTodasPaginas(`${act}/insights`, {
       level: "campaign",
       time_increment: "1",
       breakdowns: "hourly_stats_aggregated_by_advertiser_time_zone",
@@ -162,7 +164,7 @@ export async function syncMeta(
 
   await upsertEmLotes(
     supabase,
-    "campaigns",
+    "tr_campaigns",
     Array.from(porId.values()).map((c) => ({
       org_id: accountId,
       external_campaign_id: String(c.id),
@@ -205,7 +207,7 @@ export async function syncMeta(
       atualizado_em: agora,
     });
   }
-  await upsertEmLotes(supabase, "campaign_metrics_daily", linhasDia, "campaign_id,data");
+  await upsertEmLotes(supabase, "tr_campaign_metrics_daily", linhasDia, "campaign_id,data");
 
   // Tipo (WhatsApp / Lead site / Outro) pelas campanhas com resultado no período.
   for (const [cid, t] of totais) {
@@ -241,7 +243,7 @@ export async function syncMeta(
   // (migration 0009 não aplicada) ou falhar, a sincronização diária, já gravada acima, vale.
   let horasGravadas = 0;
   try {
-    await upsertEmLotes(supabase, "campaign_metrics_hourly", linhasHora, "campaign_id,data,hora");
+    await upsertEmLotes(supabase, "tr_campaign_metrics_hourly", linhasHora, "campaign_id,data,hora");
     horasGravadas = linhasHora.length;
   } catch (erroHora) {
     console.error("Sync por hora não gravada (não bloqueia a diária):", erroHora);

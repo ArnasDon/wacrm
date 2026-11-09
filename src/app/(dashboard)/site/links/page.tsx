@@ -96,6 +96,7 @@ export default function PaginaLinks() {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: 18 }}>
         <section className="card" style={{ padding: 18, display: "flex", flexDirection: "column", gap: 8 }} aria-labelledby="loja-t">
           <h2 id="loja-t" className="h2">Loja e horários</h2>
+          <label style={{ display: "flex", gap: 10, alignItems: "center", fontSize: 14 }}><input type="checkbox" checked={loja.mostrar !== false} onChange={(e) => set({ loja: { ...loja, mostrar: e.target.checked } })} /> Mostrar a seção &quot;Visite a loja&quot;</label>
           <label className="campo">Endereço (para o mapa)<input value={loja.endereco ?? ""} onChange={(e) => set({ loja: { ...loja, endereco: e.target.value } })} /></label>
           <label className="campo">Linha 1<input value={loja.linha1 ?? ""} onChange={(e) => set({ loja: { ...loja, linha1: e.target.value } })} /></label>
           <label className="campo">Linha 2<input value={loja.linha2 ?? ""} onChange={(e) => set({ loja: { ...loja, linha2: e.target.value } })} /></label>
@@ -106,6 +107,15 @@ export default function PaginaLinks() {
               <input type="time" value={d.abre ?? ""} aria-label={`${DIAS[i]} abre`} disabled={!d.aberto} onChange={(e) => set({ loja: { ...loja, dias: dias.map((x, k) => (k === i ? { ...x, abre: e.target.value } : x)) } })} />
               <input type="time" value={d.fecha ?? ""} aria-label={`${DIAS[i]} fecha`} disabled={!d.aberto} onChange={(e) => set({ loja: { ...loja, dias: dias.map((x, k) => (k === i ? { ...x, fecha: e.target.value } : x)) } })} />
             </div>
+          ))}
+        </section>
+        <section className="card" style={{ padding: 18, display: "flex", flexDirection: "column", gap: 8 }} aria-labelledby="ag-t">
+          <h2 id="ag-t" className="h2">Agendar horário especial</h2>
+          <label style={{ display: "flex", gap: 10, alignItems: "center", fontSize: 14 }}><input type="checkbox" checked={loja.agendar?.mostrar !== false} onChange={(e) => set({ loja: { ...loja, agendar: { ...(loja.agendar ?? {}), mostrar: e.target.checked } } })} /> Mostrar o botão de agendamento</label>
+          {([["titulo", "Título"], ["sub", "Subtítulo"], ["msg", "Mensagem que o cliente envia"]] as [keyof Bloco, string][]).map(([c, nome]) => (
+            <label key={c} className="campo">{nome}{c === "msg"
+              ? <textarea rows={2} value={String(loja.agendar?.[c] ?? "")} onChange={(e) => set({ loja: { ...loja, agendar: { ...(loja.agendar ?? {}), [c]: e.target.value } } })} />
+              : <input value={String(loja.agendar?.[c] ?? "")} onChange={(e) => set({ loja: { ...loja, agendar: { ...(loja.agendar ?? {}), [c]: e.target.value } } })} />}</label>
           ))}
         </section>
         <section className="card" style={{ padding: 18, display: "flex", flexDirection: "column", gap: 8 }} aria-labelledby="faixa-t">

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { enviarParaCloudinary } from "@/lib/patio/cloudinary";
+import { enviarParaCloudinary, novoId } from "@/lib/patio/cloudinary";
 import { Foto } from "../../patio/comum";
 import { Cabecalho, useDocSite } from "../comum";
 
@@ -11,6 +11,7 @@ type Conteudo = {
   about?: { title?: string; text1?: string; text2?: string; mainImg?: string; floatImg?: string; stats?: { value?: string; label?: string }[] };
   experience?: { bg?: string; title?: string; text?: string };
   categories?: { bg?: string; title?: string; count?: string }[];
+  vendidosFotos?: { url: string }[];
   [k: string]: unknown;
 };
 
@@ -48,6 +49,27 @@ export default function ConteudoSite() {
     catch (e) { setEnviando(`O envio falhou (${(e as Error).message}).`); }
   }
   const ativos = slides.filter((s) => s.active && s.url).length;
+  const fotosVendidos = (c.vendidosFotos ?? []).filter((f) => f && f.url);
+  async function enviarVendidos(arqs: FileList | null) {
+    if (!arqs?.length) return;
+    const novas: { url: string }[] = [];
+    try {
+      for (let i = 0; i < arqs.length; i++) {
+        setEnviando(`Enviando foto ${i + 1} de ${arqs.length}…`);
+        novas.push({ url: await enviarParaCloudinary(arqs[i], `media/vendido_${novoId()}`) });
+      }
+      setEnviando(null);
+    } catch (e) {
+      setEnviando(`O envio falhou (${(e as Error).message}).`);
+    }
+    if (novas.length) mudar({ vendidosFotos: [...fotosVendidos, ...novas] });
+  }
+  const moverVendido = (i: number, d: number) => {
+    const l = [...fotosVendidos]; const j = i + d;
+    if (j < 0 || j >= l.length) return;
+    [l[i], l[j]] = [l[j], l[i]];
+    mudar({ vendidosFotos: l });
+  };
 
   return (
     <form onSubmit={(e) => { e.preventDefault(); salvar({ conteudo: { ...c, hero: { slides }, about: { ...about, stats }, experience: exp, categories: cats } }, "Conteúdo salvo."); }} style={{ display: "flex", flexDirection: "column", gap: 20, maxWidth: 1240 }}>
@@ -124,6 +146,27 @@ export default function ConteudoSite() {
             </div>
           ))}
         </div>
+      </section>
+      <section className="card" style={{ padding: 20 }} aria-labelledby="vf-t">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <h2 id="vf-t" className="h2">Fotos de carros vendidos <span className="rot">· {fotosVendidos.length}</span></h2>
+          <label className="btns" style={{ cursor: "pointer" }}>Adicionar fotos<input type="file" accept="image/*" multiple className="sr-only" onChange={(e) => { enviarVendidos(e.target.files); e.target.value = ""; }} /></label>
+        </div>
+        <p className="rot" style={{ margin: "6px 0 14px" }}>Passam em carrossel na página inicial, nesta ordem. Salve no fim para valer no site.</p>
+        {fotosVendidos.length === 0 ? <p style={{ fontSize: 14, margin: 0 }}>Nenhuma foto ainda.</p> : (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 12 }}>
+            {fotosVendidos.map((f, i) => (
+              <div key={f.url} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <Foto url={f.url} alt={`Vendido ${i + 1}`} style={{ height: 100, borderRadius: 8 }} />
+                <div style={{ display: "flex", gap: 4 }}>
+                  <button type="button" className="btns" style={{ padding: "4px 8px" }} disabled={i === 0} onClick={() => moverVendido(i, -1)} aria-label="Mover para antes">←</button>
+                  <button type="button" className="btns" style={{ padding: "4px 8px" }} disabled={i === fotosVendidos.length - 1} onClick={() => moverVendido(i, 1)} aria-label="Mover para depois">→</button>
+                  <button type="button" className="btns" style={{ padding: "4px 8px", marginLeft: "auto" }} onClick={() => mudar({ vendidosFotos: fotosVendidos.filter((_, k) => k !== i) })}>Remover</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
     </form>
   );

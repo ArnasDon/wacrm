@@ -120,7 +120,7 @@ export default function FichaCarroPage({ params }: { params: Promise<{ id: strin
             {carro.oferta && <span className="selo s-at">Oferta</span>}
           </div>
           <h1 className="disp" style={{ margin: 0, fontSize: 44, lineHeight: 1 }}>{nomeCarro(carro)}</h1>
-          <div style={{ fontSize: 16, color: "#3e433f" }}>
+          <div style={{ fontSize: 16, color: "var(--ne)" }}>
             {[carro.versao, carro.combustivel, carro.cambio].filter(Boolean).join(" · ")} · <span className="dado">{txt(carro.year)}</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
@@ -143,7 +143,7 @@ export default function FichaCarroPage({ params }: { params: Promise<{ id: strin
               </button>
             )}
             {ehSocio && (
-              <button type="button" className="btns" disabled={salvando} onClick={excluir} style={{ color: "#8e2f22" }}>
+              <button type="button" className="btns" disabled={salvando} onClick={excluir} style={{ color: "var(--ru)" }}>
                 Excluir carro
               </button>
             )}
@@ -474,10 +474,10 @@ function Financeiro({ carro, anunciosTotal, salvando, salvar }: { carro: CarroUI
               {sub ? <div className="rot" style={{ fontSize: 12 }}>{sub}</div> : null}
             </div>
           ))}
-          <div style={{ background: "var(--p-ink)", color: "var(--p-papel)", padding: 14 }}>
-            <div style={{ fontSize: 12, color: "#b9bdb5" }}>Lucro depois do tráfego</div>
+          <div style={{ background: "var(--destaque)", color: "var(--destaque-tinta)", padding: 14 }}>
+            <div style={{ fontSize: 12, color: "var(--destaque-mudo)" }}>Lucro depois do tráfego</div>
             <div className="dado" style={{ fontSize: 20, color: "var(--p-ouro)" }}>{lucro == null ? "—" : brl(lucro - anuncio)}</div>
-            <div style={{ fontSize: 12, color: "#b9bdb5" }}>lucro − anúncio desde o início</div>
+            <div style={{ fontSize: 12, color: "var(--destaque-mudo)" }}>lucro − anúncio desde o início</div>
           </div>
         </div>
         <p className="rot" style={{ margin: "10px 0 0" }}>
@@ -638,7 +638,7 @@ function Documentos({ carro, salvando, salvar }: { carro: CarroUI; salvando: boo
         <button type="submit" className="btnp" disabled={enviando || salvando || !nomeDoc.trim()}>{enviando ? "Enviando…" : "Adicionar documento"}</button>
       </form>
       <p className="rot" style={{ margin: "10px 0 0" }}>Os arquivos ficam guardados num armazenamento privado: só sócios da loja abrem.</p>
-      {aviso && <p role="alert" style={{ margin: "8px 0 0", color: "#8e2f22" }}>{aviso}</p>}
+      {aviso && <p role="alert" style={{ margin: "8px 0 0", color: "var(--ru)" }}>{aviso}</p>}
     </section>
   );
 }

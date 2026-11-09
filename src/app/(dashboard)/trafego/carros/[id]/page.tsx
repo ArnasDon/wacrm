@@ -296,7 +296,7 @@ export default function CarroDetalhePage() {
             style={selectStyle}
           />
           {car.status === "vendido" && (
-            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "rgba(90,169,230,.15)", color: "#5aa9e6" }}>
+            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "var(--az-fundo)", color: "var(--az)" }}>
               Vendido
             </span>
           )}
@@ -308,7 +308,7 @@ export default function CarroDetalhePage() {
             style={
               car.status === "vendido"
                 ? { background: "var(--tr-surface-2)", border: "1px solid var(--tr-border)", color: "var(--tr-text)" }
-                : { background: "var(--tr-gold-2)", color: "#2a1f04" }
+                : { background: "var(--tr-gold-2)", color: "var(--primary-foreground)" }
             }
           >
             {car.status === "vendido" ? "↺ Marcar como em estoque" : "✔ Marcar como vendido"}
@@ -317,14 +317,14 @@ export default function CarroDetalhePage() {
             <button
               onClick={() => setConfirmDelete(true)}
               className="text-xs font-semibold px-3 py-2 rounded-md"
-              style={{ background: "rgba(229,129,112,0.12)", color: "#e58170", border: "1px solid rgba(229,129,112,0.3)" }}
+              style={{ background: "var(--tr-bad-bg)", color: "var(--tr-bad)", border: "1px solid var(--tr-bad)" }}
             >
               Remover carro
             </button>
           ) : (
             <div className="flex items-center gap-2 text-xs">
               <span style={{ color: "var(--tr-text-dim)" }}>Confirma remover?</span>
-              <button onClick={excluirCarro} className="font-semibold px-2 py-1 rounded" style={{ background: "#e58170", color: "#2a1004" }}>
+              <button onClick={excluirCarro} className="font-semibold px-2 py-1 rounded" style={{ background: "var(--tr-bad)", color: "var(--card)" }}>
                 Sim, remover
               </button>
               <button onClick={() => setConfirmDelete(false)} className="px-2 py-1 rounded" style={{ border: "1px solid var(--tr-border)", color: "var(--tr-text-dim)" }}>
@@ -338,7 +338,7 @@ export default function CarroDetalhePage() {
       {/* KPIs */}
       <section className="grid gap-3 mb-6" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))" }}>
         <KpiCard label="Gasto total (tráfego)" value={formatBRL(tot.gasto)} accent="var(--tr-gold-2)" />
-        <KpiCard label="Imposto META (12%)" value={formatBRL(impostoMeta)} accent="#e0b13c" />
+        <KpiCard label="Imposto META (12%)" value={formatBRL(impostoMeta)} accent="var(--tr-warn)" />
         <KpiCard label="Custo total c/ imposto" value={formatBRL(custoComImposto)} />
         <KpiCard label="Mensagens (conversas/leads)" value={String(tot.resultados)} />
         <KpiCard label="Custo por mensagem" value={custoMedio !== null ? formatBRL(custoMedio) : "—"} />
@@ -357,7 +357,7 @@ export default function CarroDetalhePage() {
               className="text-xs font-semibold px-3 py-1.5 rounded-full"
               style={{
                 background: tipoNegocio === t ? "var(--tr-gold-2)" : "var(--tr-surface-2)",
-                color: tipoNegocio === t ? "#2a1f04" : "var(--tr-text-dim)",
+                color: tipoNegocio === t ? "var(--primary-foreground)" : "var(--tr-text-dim)",
                 border: "1px solid " + (tipoNegocio === t ? "var(--tr-gold-2)" : "var(--tr-border)"),
               }}
             >
@@ -426,11 +426,11 @@ export default function CarroDetalhePage() {
             Valor do negócio: <b>{formatBRL(valorNegocio)}</b>
           </span>
           <span>
-            Custo tráfego c/ imposto: <b style={{ color: "#e58170" }}>{formatBRL(custoComImposto)}</b>
+            Custo tráfego c/ imposto: <b style={{ color: "var(--tr-bad)" }}>{formatBRL(custoComImposto)}</b>
           </span>
           <span>
             Margem após tráfego (estimada):{" "}
-            <b style={{ color: margemAposAnuncio >= 0 ? "#5fc98c" : "#e58170" }}>{formatBRL(margemAposAnuncio)}</b>
+            <b style={{ color: margemAposAnuncio >= 0 ? "var(--tr-good)" : "var(--tr-bad)" }}>{formatBRL(margemAposAnuncio)}</b>
           </span>
         </div>
       </section>
@@ -489,7 +489,7 @@ export default function CarroDetalhePage() {
           onClick={() => setOnlyUnassigned((v) => !v)}
           style={{
             background: onlyUnassigned ? "var(--tr-gold-2)" : "var(--tr-surface-2)",
-            color: onlyUnassigned ? "#2a1f04" : "var(--tr-text-dim)",
+            color: onlyUnassigned ? "var(--primary-foreground)" : "var(--tr-text-dim)",
             border: "1px solid " + (onlyUnassigned ? "var(--tr-gold-2)" : "var(--tr-border)"),
           }}
         >
@@ -542,13 +542,13 @@ export default function CarroDetalhePage() {
             const a = aggByCampaign[camp.id] || EMPTY_AGG;
             const tipo = tipoOf(a);
             const v = vendedorOf(camp);
-            const badgeColor = tipo === "WhatsApp" ? "#5fc98c" : tipo === "Lead site" ? "#5aa9e6" : "var(--tr-text-dim)";
+            const badgeColor = tipo === "WhatsApp" ? "var(--tr-good)" : tipo === "Lead site" ? "var(--az)" : "var(--tr-text-dim)";
             return (
               <label
                 key={camp.id}
                 className="flex items-center gap-3 px-4 py-3 rounded-lg cursor-pointer flex-wrap"
                 style={{
-                  background: checked ? "rgba(248,196,91,0.08)" : "var(--tr-surface)",
+                  background: checked ? "var(--primary-soft)" : "var(--tr-surface)",
                   border: "1px solid " + (checked ? "var(--tr-gold-3)" : "var(--tr-border)"),
                 }}
               >
@@ -563,7 +563,7 @@ export default function CarroDetalhePage() {
                     </div>
                   )}
                 </div>
-                <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "rgba(255,255,255,0.06)", color: badgeColor }}>
+                <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "var(--tr-surface-2)", color: badgeColor }}>
                   {tipo}
                 </span>
                 <input

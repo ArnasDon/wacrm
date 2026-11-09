@@ -44,7 +44,7 @@ function Pill({ label, tone }: { label: string; tone: "ok" | "erro" | "espera" |
   const colors: Record<string, { bg: string; fg: string }> = {
     ok: { bg: "var(--tr-good-bg, rgba(95,201,140,.15))", fg: "var(--tr-good)" },
     erro: { bg: "var(--tr-bad-bg, rgba(224,110,110,.14))", fg: "var(--tr-bad)" },
-    espera: { bg: "rgba(248,196,91,.15)", fg: "var(--tr-gold-2)" },
+    espera: { bg: "var(--tr-warn-bg)", fg: "var(--tr-warn)" },
     embreve: { bg: "var(--tr-surface-2)", fg: "var(--tr-text-dim)" },
   };
   const c = colors[tone];

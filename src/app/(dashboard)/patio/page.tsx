@@ -284,7 +284,7 @@ export default function PatioPage() {
                         if (col.id === "preco") return <td key={col.id} style={{ textAlign: "right" }}><span className="tag">{brl(v)}</span></td>;
                         const texto = ["categoria", "posse", "placa", "cor"].includes(col.id);
                         const negativo = typeof v === "number" && v < 0;
-                        return <td key={col.id} className={texto ? undefined : "dado"} style={{ textAlign: texto ? "left" : "right", color: negativo ? "#8e2f22" : undefined }}>{celula(col.id, v)}</td>;
+                        return <td key={col.id} className={texto ? undefined : "dado"} style={{ textAlign: texto ? "left" : "right", color: negativo ? "var(--ru)" : undefined }}>{celula(col.id, v)}</td>;
                       })}
                     </tr>
                   ))}

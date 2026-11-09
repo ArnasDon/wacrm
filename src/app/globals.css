@@ -248,82 +248,145 @@ html[data-theme="ibox"] {
   --sidebar-primary: oklch(0.847 0.135 82.6);
   --sidebar-primary-foreground: oklch(0 0 0);
   --sidebar-ring: oklch(0.847 0.135 82.6);
-  --radius: 0.375rem;
+  --radius: 0.625rem;
   --font-sans: var(--font-outfit), ui-sans-serif, system-ui, sans-serif;
 }
 
-html[data-theme="ibox"][data-mode="dark"] {
-  --background: oklch(0 0 0);
-  --card: oklch(0.145 0 0);
-  --card-2: oklch(0.178 0 0);
-  --popover: oklch(0.145 0 0);
-  --secondary: oklch(0.2 0 0);
-  --muted: oklch(0.2 0 0);
-  --muted-foreground: oklch(0.732 0 0);
-  --accent: oklch(0.226 0 0);
-  --border: oklch(0.847 0.135 82.6 / 0.14);
-  --input: oklch(0.269 0 0);
-  --sidebar: oklch(0.1 0 0);
-  --sidebar-accent: oklch(0.2 0 0);
-  --sidebar-border: oklch(0.847 0.135 82.6 / 0.14);
-}
-
-/* iBox no modo claro = visual aprovado em 09/11 ("o pátio de dia"):
- * concreto claro no fundo, papel nos cartões, menu lateral cor de asfalto,
- * azul da placa Mercosul no que se clica. O dourado fica só na etiqueta de
- * preço (telas do Pátio). Fonte de leitura: Hanken Grotesk. */
+/* ============================================================
+ * Visual padrão da iBox (claro e escuro). Uma paleta só para TODAS as
+ * telas: as do CRM, as do tráfego e as novas (Pátio, Hoje, Relatório,
+ * Site, Ajustes) leem estes mesmos tokens. Claro = branco e cinza bem
+ * leve; escuro = grafite. Azul é o que se clica; o dourado fica só na
+ * etiqueta de preço. Situações (ok, atenção, problema, info, neutro)
+ * têm par de cor de fundo e de texto para cada modo.
+ * ============================================================ */
 html[data-theme="ibox"][data-mode="light"] {
-  --background: #e4e6e1;
+  --background: #f6f7f5;
   --foreground: #17191b;
-  --card: #fbfbf9;
-  --card-2: #eef0eb;
+  --card: #ffffff;
+  --card-2: #f3f4f1;
   --card-foreground: #17191b;
-  --popover: #fbfbf9;
+  --popover: #ffffff;
   --popover-foreground: #17191b;
-  --secondary: #eef0eb;
+  --secondary: #f1f2ef;
   --secondary-foreground: #17191b;
-  --muted: #eef0eb;
-  --muted-foreground: #5c615c;
-  --accent: #e1e3dd;
+  --muted: #f1f2ef;
+  --muted-foreground: #5d625d;
+  --accent: #eef0ec;
   --accent-foreground: #17191b;
-  --border: #cdd0c9;
-  --input: #cdd0c9;
+  --border: #e2e4df;
+  --input: #d5d8d1;
   --primary: #1f4fa3;
   --primary-foreground: #ffffff;
   --primary-hover: #163a7a;
-  --primary-soft: rgb(31 79 163 / 0.1);
-  --primary-soft-2: rgb(31 79 163 / 0.18);
+  --primary-soft: rgb(31 79 163 / 0.08);
+  --primary-soft-2: rgb(31 79 163 / 0.15);
   --ring: #1f4fa3;
   --chart-1: #1f4fa3;
   --chart-2: #b9661a;
-  --sidebar: #17191b;
-  --sidebar-foreground: #c9ccc5;
-  --sidebar-accent: #2a2e31;
-  --sidebar-accent-foreground: #ffffff;
-  --sidebar-border: #2a2e31;
-  --sidebar-primary: #7da2e8;
-  --sidebar-primary-foreground: #17191b;
-  --sidebar-ring: #7da2e8;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #3b403c;
+  --sidebar-accent: #eef2fa;
+  --sidebar-accent-foreground: #163a7a;
+  --sidebar-border: #e2e4df;
+  --sidebar-primary: #1f4fa3;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-ring: #1f4fa3;
+  --linha-2: #eceee9;
+  --campo: #ffffff;
+  --foto: #e6e8e3;
+  --seg: #eceee9;
+  --ouro: #f8c45b;
+  --ouro-tinta: #17191b;
+  --destaque: #17191b;
+  --destaque-tinta: #fbfbf9;
+  --destaque-mudo: #b9bdb5;
+  --ok-fundo: #ddebe2; --ok: #1f5a39;
+  --at-fundo: #f5e3d0; --at: #8a4a10;
+  --ru-fundo: #f3dad6; --ru: #8e2f22;
+  --az-fundo: #dce5f5; --az: #163a7a;
+  --ne-fundo: #eceee9; --ne: #3e433f;
+  --sombra: 0 1px 2px rgb(23 25 27 / 0.06), 0 1px 1px rgb(23 25 27 / 0.04);
   --font-sans: var(--font-hanken-global), var(--font-outfit), ui-sans-serif, system-ui, sans-serif;
 }
 
-/* Visual padrão da iBox nas telas que vieram do CRM e do painel de tráfego:
-   mesmos títulos (Archivo largo), números em fonte de dados e cores de
-   situação legíveis no fundo claro (as do painel antigo eram para fundo escuro). */
-html[data-theme="ibox"][data-mode="light"] .modulo-trafego {
-  --tr-good: #1f5a39; --tr-good-bg: #ddebe2;
-  --tr-warn: #8a4a10; --tr-warn-bg: #f5e3d0;
-  --tr-bad: #8e2f22; --tr-bad-bg: #f3dad6;
-  --tr-whatsapp: #1f7a46; --tr-whatsapp-bg: #ddf0e4;
-  --tr-gold-1: #163a7a; --tr-gold-2: #1f4fa3; --tr-gold-3: #163a7a;
-  --tr-shadow-float: 0 10px 30px -14px rgb(23 25 27 / 0.35), 0 2px 6px -2px rgb(23 25 27 / 0.15);
+html[data-theme="ibox"][data-mode="dark"] {
+  --background: #0f1113;
+  --foreground: #eceee9;
+  --card: #181b1e;
+  --card-2: #1e2125;
+  --card-foreground: #eceee9;
+  --popover: #1b1e22;
+  --popover-foreground: #eceee9;
+  --secondary: #1e2125;
+  --secondary-foreground: #eceee9;
+  --muted: #1e2125;
+  --muted-foreground: #a3a8a2;
+  --accent: #23272b;
+  --accent-foreground: #eceee9;
+  --border: #2a2e33;
+  --input: #363b41;
+  --primary: #7da2e8;
+  --primary-foreground: #0f1113;
+  --primary-hover: #a3bdf0;
+  --primary-soft: rgb(125 162 232 / 0.12);
+  --primary-soft-2: rgb(125 162 232 / 0.2);
+  --ring: #7da2e8;
+  --chart-1: #7da2e8;
+  --chart-2: #f0b878;
+  --sidebar: #0b0d0f;
+  --sidebar-foreground: #c9ccc5;
+  --sidebar-accent: #1c2128;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #22262b;
+  --sidebar-primary: #7da2e8;
+  --sidebar-primary-foreground: #0f1113;
+  --sidebar-ring: #7da2e8;
+  --linha-2: #23272b;
+  --campo: #121417;
+  --foto: #23272b;
+  --seg: #23272b;
+  --ouro: #f8c45b;
+  --ouro-tinta: #17191b;
+  --destaque: #23272b;
+  --destaque-tinta: #eceee9;
+  --destaque-mudo: #a3a8a2;
+  --ok-fundo: #183526; --ok: #8fd3a8;
+  --at-fundo: #3a2a14; --at: #f0b878;
+  --ru-fundo: #3d1d19; --ru: #f19a8e;
+  --az-fundo: #1a2a4a; --az: #a9c2f2;
+  --ne-fundo: #262a2e; --ne: #c3c7c1;
+  --sombra: 0 1px 2px rgb(0 0 0 / 0.4);
+  --font-sans: var(--font-hanken-global), var(--font-outfit), ui-sans-serif, system-ui, sans-serif;
 }
-html[data-theme="ibox"][data-mode="light"] .modulo-trafego .display,
-html[data-theme="ibox"][data-mode="light"] main h1 {
+
+/* Telas que vieram do painel de tráfego: mesmas cores de situação. */
+html[data-theme="ibox"] .modulo-trafego {
+  --tr-good: var(--ok); --tr-good-bg: var(--ok-fundo);
+  --tr-warn: var(--at); --tr-warn-bg: var(--at-fundo);
+  --tr-bad: var(--ru); --tr-bad-bg: var(--ru-fundo);
+  --tr-whatsapp: var(--ok); --tr-whatsapp-bg: var(--ok-fundo);
+  --tr-gold-1: var(--primary-hover); --tr-gold-2: var(--primary); --tr-gold-3: var(--primary-hover);
+  --tr-shadow-float: 0 10px 30px -14px rgb(0 0 0 / 0.35), 0 2px 6px -2px rgb(0 0 0 / 0.15);
+}
+html[data-theme="ibox"] .modulo-trafego .num {
+  font-family: var(--font-plex-global), ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+
+/* Títulos de todas as telas: mesma fonte (Archivo largo), mesmo tamanho e
+   mesmo peso, venham do CRM, do tráfego ou das telas novas. */
+html[data-theme="ibox"] main h1,
+html[data-theme="ibox"] .modulo-trafego .display {
   font-family: var(--font-archivo-global), var(--font-sans);
   font-stretch: 125%;
   letter-spacing: -0.01em;
 }
-html[data-theme="ibox"][data-mode="light"] .modulo-trafego .num {
-  font-family: var(--font-plex-global), ui-monospace, "SFMono-Regular", Menlo, monospace;
+html[data-theme="ibox"] main h1 {
+  font-size: clamp(26px, 2.4vw, 32px) !important;
+  line-height: 1.1 !important;
+  font-weight: 800 !important;
+  color: var(--foreground);
 }
+html[data-theme="ibox"] main h1.gold-text { color: transparent; }
+/* Cartões do CRM com a mesma sombra leve dos cartões novos */
+html[data-theme="ibox"] main [data-slot="card"] { box-shadow: var(--sombra); }

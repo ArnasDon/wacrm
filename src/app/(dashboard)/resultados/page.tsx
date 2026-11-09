@@ -145,8 +145,8 @@ export default function ResultadosPage() {
         {erro && <div className="card" style={{ padding: 16 }}>{erro}</div>}
 
         {r && ver("frase") && (
-          <section className="card" style={{ padding: "22px 24px", background: "var(--p-ink)", color: "var(--p-papel)", borderColor: "var(--p-ink)" }}>
-            <h2 style={{ margin: 0, fontSize: 13, fontWeight: 500, color: "#b9bdb5" }}>Em uma frase</h2>
+          <section className="card" style={{ padding: "22px 24px", background: "var(--destaque)", color: "var(--destaque-tinta)", borderColor: "var(--destaque)" }}>
+            <h2 style={{ margin: 0, fontSize: 13, fontWeight: 500, color: "var(--destaque-mudo)" }}>Em uma frase</h2>
             <p className="disp" style={{ margin: "8px 0 0", fontSize: 24, lineHeight: 1.3, fontWeight: 700 }}>
               {investido ? <>{brl(investido)} em anúncios geraram {msgs} conversas{msgs ? ` a ${brl(investido / msgs, 2)} cada` : ""}. </> : <>Sem dados de anúncio no período. </>}
               A loja vendeu {vendas} {vendas === 1 ? "carro" : "carros"}{investido && vendas ? `, com ${brl(investido / vendas)} de tráfego por venda` : ""}.

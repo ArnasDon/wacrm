@@ -536,7 +536,7 @@ export default function DashboardPage() {
       conv: convClkPct,
       cost: custoClk !== null ? formatBRL(custoClk) : null,
       costLbl: "clique",
-      color: "#F8C45B",
+      color: "var(--primary)",
       barPct: acc.impressions > 0 ? Math.max((acc.clicks / acc.impressions) * 100, 2) : 0,
     },
     {
@@ -547,7 +547,7 @@ export default function DashboardPage() {
       conv: convResPct,
       cost: custoRes !== null ? formatBRL(custoRes) : null,
       costLbl: "resultado",
-      color: "#AB7C35",
+      color: "color-mix(in oklch, var(--primary) 45%, var(--card))",
       barPct: acc.impressions > 0 ? Math.max((accResultado / acc.impressions) * 100, 1.5) : 0,
     },
   ];
@@ -573,7 +573,7 @@ export default function DashboardPage() {
       value: quizFunnel.quiz_start,
       pctTotal: convSessStartPct,
       conv: convSessStartPct,
-      color: "#F8C45B",
+      color: "var(--primary)",
       barPct: qSessions && qSessions > 0 ? Math.max((quizFunnel.quiz_start / qSessions) * 100, 2) : quizFunnel.hasData ? 100 : 0,
     },
     {
@@ -582,7 +582,7 @@ export default function DashboardPage() {
       value: quizFunnel.quiz_complete,
       pctTotal: qSessions && qSessions > 0 ? (quizFunnel.quiz_complete / qSessions) * 100 : quizConvConcPct,
       conv: quizConvConcPct,
-      color: "#D9A441",
+      color: "color-mix(in oklch, var(--primary) 70%, var(--card))",
       barPct: qSessions && qSessions > 0 ? Math.max((quizFunnel.quiz_complete / qSessions) * 100, 2) : quizFunnel.quiz_start > 0 ? Math.max((quizFunnel.quiz_complete / quizFunnel.quiz_start) * 100, 2) : 0,
     },
     {
@@ -591,7 +591,7 @@ export default function DashboardPage() {
       value: quizFunnel.generate_lead,
       pctTotal: quizConvTotalPct,
       conv: quizConvLeadPct,
-      color: "#AB7C35",
+      color: "color-mix(in oklch, var(--primary) 45%, var(--card))",
       barPct: qSessions && qSessions > 0 ? Math.max((quizFunnel.generate_lead / qSessions) * 100, 1.5) : quizFunnel.quiz_start > 0 ? Math.max((quizFunnel.generate_lead / quizFunnel.quiz_start) * 100, 1.5) : 0,
     },
   ];
@@ -780,14 +780,14 @@ export default function DashboardPage() {
           </h1>
           <p className="text-[11px] mt-1" style={{ color: "var(--tr-text-dim)" }}>
             {lastSyncAt ? `Última sincronização: ${new Date(lastSyncAt).toLocaleString("pt-BR")}` : "Ainda sem sincronização registrada"}
-            {syncError && <span style={{ color: "#e58170" }}> · {syncError}</span>}
+            {syncError && <span style={{ color: "var(--tr-bad)" }}> · {syncError}</span>}
           </p>
         </div>
         <button
           onClick={sincronizarAgora}
           disabled={syncing}
           className="text-xs font-semibold px-4 py-2 rounded-md disabled:opacity-50"
-          style={{ background: "var(--tr-gold-2)", color: "#2a1f04" }}
+          style={{ background: "var(--tr-gold-2)", color: "var(--primary-foreground)" }}
         >
           {syncing ? "Sincronizando…" : "↻ Atualizar agora"}
         </button>
@@ -1143,7 +1143,7 @@ export default function DashboardPage() {
                   <td className="px-3 py-2 text-right tabular-nums">{formatBRL(r.gasto)}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{r.roas !== null ? formatRoas(r.roas) : "—"}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{formatBRL(r.margemLucro)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums" style={{ color: r.margemAposAnuncio >= 0 ? "#5fc98c" : "#e58170" }}>
+                  <td className="px-3 py-2 text-right tabular-nums" style={{ color: r.margemAposAnuncio >= 0 ? "var(--tr-good)" : "var(--tr-bad)" }}>
                     {formatBRL(r.margemAposAnuncio)}
                   </td>
                 </tr>
@@ -1175,13 +1175,13 @@ export default function DashboardPage() {
           <div className="grid gap-4 mb-6" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
             {objBreakdown.map((o) => {
               const rank = objetivoRank(o.lbl);
-              const tierColor = rank <= 1 ? "#5fc98c" : rank <= 3 ? "var(--tr-gold-2)" : "var(--tr-text-dim)";
+              const tierColor = rank <= 1 ? "var(--tr-good)" : rank <= 3 ? "var(--tr-gold-2)" : "var(--tr-text-dim)";
               const tierTag = rank <= 1 ? "Prioridade alta" : rank <= 3 ? "Prioridade média" : "Prioridade baixa";
               return (
                 <div key={o.lbl} className="rounded-xl p-4" style={{ background: "var(--tr-surface)", border: "1px solid var(--tr-border)", borderLeft: `3px solid ${tierColor}` }}>
                   <div className="flex items-center justify-between mb-2">
                     <span className="font-semibold text-sm">{o.lbl}</span>
-                    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full" style={{ color: tierColor, background: "rgba(255,255,255,0.06)" }}>
+                    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full" style={{ color: tierColor, background: "var(--tr-surface-2)" }}>
                       {tierTag}
                     </span>
                   </div>
@@ -1339,8 +1339,8 @@ export default function DashboardPage() {
                           {PROJETOS[campProjeto(r.camp)]}
                         </span>
                       </td>
-                      <td className="px-3 py-2">{vinculoTxt ?? <span style={{ color: "#e58170" }}>sem vínculo</span>}</td>
-                      <td className="px-3 py-2">{r.vendedor === "Sem vendedor" ? <span style={{ color: "#e58170" }}>{r.vendedor}</span> : r.vendedor}</td>
+                      <td className="px-3 py-2">{vinculoTxt ?? <span style={{ color: "var(--tr-bad)" }}>sem vínculo</span>}</td>
+                      <td className="px-3 py-2">{r.vendedor === "Sem vendedor" ? <span style={{ color: "var(--tr-bad)" }}>{r.vendedor}</span> : r.vendedor}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{formatInt(r.impressions)}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{formatInt(r.clicks)}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{formatPercent(r.ctr, 2)}</td>
@@ -1488,12 +1488,12 @@ function Sparkline({ series }: { series: { date: string; gasto: number; resultad
           </linearGradient>
         </defs>
         <polygon points={areaPts} fill="url(#dashSparkArea)" />
-        <polyline points={pts("gasto", maxGasto)} fill="none" stroke="#5aa9e6" strokeWidth={2} />
+        <polyline points={pts("gasto", maxGasto)} fill="none" stroke="var(--az)" strokeWidth={2} />
         <polyline points={resPts} fill="none" stroke="var(--tr-gold-2)" strokeWidth={2} />
       </svg>
       <div className="flex gap-4 flex-wrap text-[11px] mt-2" style={{ color: "var(--tr-text-dim)" }}>
         <span>
-          <i className="inline-block w-2 h-2 rounded-full mr-1" style={{ background: "#5aa9e6" }} />
+          <i className="inline-block w-2 h-2 rounded-full mr-1" style={{ background: "var(--az)" }} />
           Gasto (máx {formatBRL(maxGasto)})
         </span>
         <span>

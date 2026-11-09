@@ -110,7 +110,7 @@ export default function NovoCarroPage() {
           <button type="submit" className="btnp" disabled={salvando}>{salvando ? "Cadastrando…" : "Cadastrar e adicionar fotos"}</button>
         </div>
         {aviso && (
-          <p role="alert" style={{ gridColumn: "1 / -1", margin: 0, color: "#8e2f22" }}>
+          <p role="alert" style={{ gridColumn: "1 / -1", margin: 0, color: "var(--ru)" }}>
             {aviso.texto} {aviso.id && <Link href={`/patio/${aviso.id}`}>Abrir o carro que já existe</Link>}
           </p>
         )}

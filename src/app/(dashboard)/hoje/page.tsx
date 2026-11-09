@@ -52,12 +52,12 @@ export default function HojePage() {
 
   const alertas: { n: string; titulo: string; texto: string; href: string; acao: string; cor: string }[] = [];
   if (r) {
-    if (t && t.qtdForaDoPatio > 0) alertas.push({ n: String(t.qtdForaDoPatio), titulo: "Campanhas de carros que já saíram do pátio", texto: `${brl(t.gastoForaDoPatio)} no período`, href: "/trafego/campanhas", acao: "Revisar", cor: "#8e2f22" });
-    if (r.clientes.esperando > 0) alertas.push({ n: String(r.clientes.esperando), titulo: "Conversas esperando resposta", texto: "Com mensagens não lidas", href: "/inbox", acao: "Abrir", cor: "#8a4a10" });
-    if (p && p.rascunhos > 0) alertas.push({ n: String(p.rascunhos), titulo: "Carros do grupo de entradas para aprovar", texto: "Ainda não aparecem no site", href: "/patio", acao: "Revisar", cor: "#8a4a10" });
-    if (p && p.parados > 0) alertas.push({ n: String(p.parados), titulo: "Carros há mais de 45 dias no pátio", texto: "Anunciar, rever o preço ou repassar", href: "/patio", acao: "Ver", cor: "#8a4a10" });
-    if (p && temTrafego && p.semAnuncio > 0) alertas.push({ n: String(p.semAnuncio), titulo: "Carros sem anúncio ligado", texto: "Ligue campanhas aos carros em Campanhas", href: "/trafego/campanhas", acao: "Ligar", cor: "#3e433f" });
-    if (t && t.qtdSemCarro > 0) alertas.push({ n: String(t.qtdSemCarro), titulo: "Campanhas sem carro ligado", texto: `${brl(t.gastoSemCarro)} sem saber qual carro vendeu`, href: "/trafego/campanhas", acao: "Ligar", cor: "#3e433f" });
+    if (t && t.qtdForaDoPatio > 0) alertas.push({ n: String(t.qtdForaDoPatio), titulo: "Campanhas de carros que já saíram do pátio", texto: `${brl(t.gastoForaDoPatio)} no período`, href: "/trafego/campanhas", acao: "Revisar", cor: "var(--ru)" });
+    if (r.clientes.esperando > 0) alertas.push({ n: String(r.clientes.esperando), titulo: "Conversas esperando resposta", texto: "Com mensagens não lidas", href: "/inbox", acao: "Abrir", cor: "var(--at)" });
+    if (p && p.rascunhos > 0) alertas.push({ n: String(p.rascunhos), titulo: "Carros do grupo de entradas para aprovar", texto: "Ainda não aparecem no site", href: "/patio", acao: "Revisar", cor: "var(--at)" });
+    if (p && p.parados > 0) alertas.push({ n: String(p.parados), titulo: "Carros há mais de 45 dias no pátio", texto: "Anunciar, rever o preço ou repassar", href: "/patio", acao: "Ver", cor: "var(--at)" });
+    if (p && temTrafego && p.semAnuncio > 0) alertas.push({ n: String(p.semAnuncio), titulo: "Carros sem anúncio ligado", texto: "Ligue campanhas aos carros em Campanhas", href: "/trafego/campanhas", acao: "Ligar", cor: "var(--ne)" });
+    if (t && t.qtdSemCarro > 0) alertas.push({ n: String(t.qtdSemCarro), titulo: "Campanhas sem carro ligado", texto: `${brl(t.gastoSemCarro)} sem saber qual carro vendeu`, href: "/trafego/campanhas", acao: "Ligar", cor: "var(--ne)" });
   }
 
   return (
@@ -90,10 +90,10 @@ export default function HojePage() {
             <div className="rot" style={{ marginTop: 4 }}>{sub}</div>
           </div>
         ))}
-        <div style={{ padding: "18px 20px", background: "var(--p-ink)", color: "var(--p-papel)" }}>
-          <div style={{ fontSize: 12, color: "#b9bdb5" }}>Tráfego por carro vendido</div>
+        <div style={{ padding: "18px 20px", background: "var(--destaque)", color: "var(--destaque-tinta)" }}>
+          <div style={{ fontSize: 12, color: "var(--destaque-mudo)" }}>Tráfego por carro vendido</div>
           <div className="dado" style={{ fontSize: 28, marginTop: 6, color: "var(--p-ouro)" }}>{t && vendas ? brl(t.investido / vendas) : "—"}</div>
-          <div style={{ fontSize: 12, color: "#b9bdb5", marginTop: 4 }}>investido ÷ vendas</div>
+          <div style={{ fontSize: 12, color: "var(--destaque-mudo)", marginTop: 4 }}>investido ÷ vendas</div>
         </div>
       </section>
 
@@ -103,7 +103,7 @@ export default function HojePage() {
           {r?.alertas?.map((a) => (
             <div key={a.regraId} className="card" style={{ padding: "14px 16px" }}>
               <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
-                <span className="dado" style={{ fontSize: 22, color: "#163a7a", minWidth: 40 }}>{a.itens.length}</span>
+                <span className="dado" style={{ fontSize: 22, color: "var(--az)", minWidth: 40 }}>{a.itens.length}</span>
                 <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 600 }}>{a.regra}</div><div className="rot" style={{ fontSize: 13 }}>Sua regra</div></div>
               </div>
               <ul style={{ listStyle: "none", margin: "8px 0 0 54px", padding: 0, fontSize: 13 }}>

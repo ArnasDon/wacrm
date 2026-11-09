@@ -38,7 +38,7 @@ export default function ConexoesPage() {
       {lista && (
         <div className="card" style={{ padding: "14px 18px", display: "flex", gap: 24, flexWrap: "wrap", fontSize: 14 }}>
           <span><span className="dado" style={{ fontSize: 22 }}>{ligadas}</span> ligadas</span>
-          <span><span className="dado" style={{ fontSize: 22, color: problemas ? "#8e2f22" : undefined }}>{problemas}</span> com problema</span>
+          <span><span className="dado" style={{ fontSize: 22, color: problemas ? "var(--ru)" : undefined }}>{problemas}</span> com problema</span>
         </div>
       )}
       {!lista && !erro && <div className="rot">Conferindo cada conexão…</div>}

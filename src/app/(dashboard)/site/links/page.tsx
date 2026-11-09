@@ -78,7 +78,7 @@ export default function PaginaLinks() {
                 {c.foto ? (
                   // eslint-disable-next-line @next/next/no-img-element -- foto do consultor no Cloudinary
                   <img src={c.foto} alt="" style={{ width: 48, height: 48, borderRadius: "50%", objectFit: "cover" }} />
-                ) : <span style={{ width: 48, height: 48, borderRadius: "50%", background: "#d9dcd5" }} />}
+                ) : <span style={{ width: 48, height: 48, borderRadius: "50%", background: "var(--foto)" }} />}
                 <label className="btns" style={{ cursor: "pointer" }}>Foto<input type="file" accept="image/*" className="sr-only" onChange={async (e) => { const f = e.target.files?.[0]; if (f) { const url = await enviarParaCloudinary(f, `media/consultor_${i}`); setCons(consultores.map((x, k) => (k === i ? { ...x, foto: url } : x))); } }} /></label>
               </div>
               <label className="campo">Nome<input value={c.nome ?? ""} onChange={(e) => setCons(consultores.map((x, k) => (k === i ? { ...x, nome: e.target.value } : x)))} /></label>

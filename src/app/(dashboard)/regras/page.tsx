@@ -52,7 +52,7 @@ export default function RegrasPage() {
     if (!error) setRegras(regras.filter((x) => x.id !== r.id));
   }
 
-  const sel = { font: "inherit", fontSize: 14, border: "1px solid var(--p-linha)", borderRadius: 8, padding: "9px 10px", background: "#fff" } as const;
+  const sel = { font: "inherit", fontSize: 14, border: "1px solid var(--input)", borderRadius: 8, padding: "9px 10px", background: "var(--campo)", color: "var(--foreground)" } as const;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20, maxWidth: 1240 }}>

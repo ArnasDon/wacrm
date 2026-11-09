@@ -81,7 +81,8 @@
     "lot": "Lot",
     "crmPanel": "CRM dashboard",
     "report": "Report",
-    "importData": "Import data"
+    "importData": "Import data",
+    "rules": "Rules and alerts"
   },
   "Header": {
     "dashboard": "Dashboard",

@@ -180,6 +180,7 @@ const NAV_SECTIONS: NavSection[] = [
     labelKey: "groups.ajustes",
     items: [
       { href: "/settings", labelKey: "settings", icon: Settings },
+      { href: "/regras", labelKey: "rules", icon: BellRing, minRole: "admin" },
       { href: "/trafego/conexoes", labelKey: "trafficConnections", icon: Plug, module: "trafego", minRole: "admin" },
       { href: "/trafego/importar", labelKey: "importData", icon: CirclePlus, module: "trafego", minRole: "admin" },
     ],

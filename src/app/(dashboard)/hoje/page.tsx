@@ -15,6 +15,7 @@ type Resumo = {
   trafego: { investido: number; msgs: number; custoPorConversa: number; gastoForaDoPatio: number; qtdForaDoPatio: number; gastoSemCarro: number; qtdSemCarro: number; campanhas: unknown[] };
   clientes: { esperando: number; novos: number };
   avisos: string[];
+  alertas: { regraId: string; regra: string; itens: { id: string; nome: string; href: string }[] }[];
 };
 
 const PERIODOS: [number, string][] = [[7, "7 dias"], [30, "30 dias"], [90, "90 dias"]];
@@ -99,7 +100,19 @@ export default function HojePage() {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: 20, alignItems: "start" }}>
         <section aria-labelledby="voce-t" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <h2 id="voce-t" className="h2">Precisa de você</h2>
-          {r && alertas.length === 0 && <div className="card" style={{ padding: 16, fontSize: 14 }}>Nada pendente agora.</div>}
+          {r?.alertas?.map((a) => (
+            <div key={a.regraId} className="card" style={{ padding: "14px 16px" }}>
+              <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
+                <span className="dado" style={{ fontSize: 22, color: "#163a7a", minWidth: 40 }}>{a.itens.length}</span>
+                <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 600 }}>{a.regra}</div><div className="rot" style={{ fontSize: 13 }}>Sua regra</div></div>
+              </div>
+              <ul style={{ listStyle: "none", margin: "8px 0 0 54px", padding: 0, fontSize: 13 }}>
+                {a.itens.slice(0, 5).map((it) => <li key={it.id}><Link href={it.href}>{it.nome}</Link></li>)}
+                {a.itens.length > 5 && <li className="rot">e mais {a.itens.length - 5}</li>}
+              </ul>
+            </div>
+          ))}
+          {r && alertas.length === 0 && !r.alertas?.length && <div className="card" style={{ padding: 16, fontSize: 14 }}>Nada pendente agora. Crie seus próprios alertas em <Link href="/regras">Regras e alertas</Link>.</div>}
           {alertas.map((a) => (
             <div key={a.titulo} className="card" style={{ padding: "14px 16px", display: "flex", gap: 14, alignItems: "center" }}>
               <span className="dado" style={{ fontSize: 22, color: a.cor, minWidth: 40 }}>{a.n}</span>

@@ -81,7 +81,8 @@
     "lot": "Pátio",
     "crmPanel": "Painel do CRM",
     "report": "Relatório",
-    "importData": "Importar dados"
+    "importData": "Importar dados",
+    "rules": "Regras e alertas"
   },
   "Header": {
     "dashboard": "Painel",

@@ -306,3 +306,24 @@ html[data-theme="ibox"][data-mode="light"] {
   --sidebar-ring: #7da2e8;
   --font-sans: var(--font-hanken-global), var(--font-outfit), ui-sans-serif, system-ui, sans-serif;
 }
+
+/* Visual padrão da iBox nas telas que vieram do CRM e do painel de tráfego:
+   mesmos títulos (Archivo largo), números em fonte de dados e cores de
+   situação legíveis no fundo claro (as do painel antigo eram para fundo escuro). */
+html[data-theme="ibox"][data-mode="light"] .modulo-trafego {
+  --tr-good: #1f5a39; --tr-good-bg: #ddebe2;
+  --tr-warn: #8a4a10; --tr-warn-bg: #f5e3d0;
+  --tr-bad: #8e2f22; --tr-bad-bg: #f3dad6;
+  --tr-whatsapp: #1f7a46; --tr-whatsapp-bg: #ddf0e4;
+  --tr-gold-1: #163a7a; --tr-gold-2: #1f4fa3; --tr-gold-3: #163a7a;
+  --tr-shadow-float: 0 10px 30px -14px rgb(23 25 27 / 0.35), 0 2px 6px -2px rgb(23 25 27 / 0.15);
+}
+html[data-theme="ibox"][data-mode="light"] .modulo-trafego .display,
+html[data-theme="ibox"][data-mode="light"] main h1 {
+  font-family: var(--font-archivo-global), var(--font-sans);
+  font-stretch: 125%;
+  letter-spacing: -0.01em;
+}
+html[data-theme="ibox"][data-mode="light"] .modulo-trafego .num {
+  font-family: var(--font-plex-global), ui-monospace, "SFMono-Regular", Menlo, monospace;
+}

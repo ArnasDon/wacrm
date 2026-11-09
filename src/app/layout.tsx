@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { NextIntlClientProvider } from 'next-intl';
 import { getLocale, getMessages } from 'next-intl/server';
-import { Hanken_Grotesk, Inter, Outfit } from "next/font/google";
+import { Archivo, Hanken_Grotesk, IBM_Plex_Mono, Inter, Outfit } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
 import { ThemeProvider } from "@/hooks/use-theme";
@@ -35,6 +35,10 @@ const hanken = Hanken_Grotesk({
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
 });
+
+// Títulos do visual aprovado (Archivo largo), para as telas fora do Pátio.
+const archivo = Archivo({ variable: "--font-archivo-global", subsets: ["latin"], axes: ["wdth"] });
+const plexMono = IBM_Plex_Mono({ variable: "--font-plex-global", subsets: ["latin"], weight: ["500", "600"] });
 
 export const metadata: Metadata = {
   title: {
@@ -106,7 +110,7 @@ export default async function RootLayout({
       lang={locale}
       data-theme={DEFAULT_THEME}
       data-mode={DEFAULT_MODE}
-      className={`${inter.variable} ${outfit.variable} ${hanken.variable} h-full antialiased`}
+      className={`${inter.variable} ${outfit.variable} ${hanken.variable} ${archivo.variable} ${plexMono.variable} h-full antialiased`}
       // The `theme-boot` script below rewrites `data-theme` and
       // `data-mode` on <html> from localStorage before React hydrates,
       // so for any non-default choice the client DOM intentionally

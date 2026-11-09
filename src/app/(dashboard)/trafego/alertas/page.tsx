@@ -260,7 +260,14 @@ export default function AutomacoesPage() {
   }
 
   async function pedirExecucaoAgora(a: Automation) {
-    await supabase.from("tr_automations").update({ run_requested: true, run_requested_at: new Date().toISOString() }).eq("id", a.id);
+    // Envia na hora pelo servidor (antes só marcava o pedido e esperava o agendador).
+    if (a.tipo === "sistema") {
+      await supabase.from("tr_automations").update({ run_requested: true, run_requested_at: new Date().toISOString() }).eq("id", a.id);
+    } else {
+      const r = await fetch("/api/automacoes/rodar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: a.id }) });
+      const d = await r.json().catch(() => ({}));
+      window.alert(r.ok && d.ok ? `"${a.nome}" enviada para o grupo.` : `Não foi enviada: ${d.resultado?.resumo || d.erro || "erro desconhecido"}`);
+    }
     carregarTudo();
   }
 
@@ -425,7 +432,7 @@ export default function AutomacoesPage() {
       <div className="section-lbl">Suas automações</div>
       {customAutomations.length > 0 && (
         <p className="auto-pending" style={{ marginBottom: 14 }}>
-          ⚠ Essas automações ficam salvas aqui, mas o motor que dispara as mensagens de verdade ainda não foi migrado pra este painel (Fase 4 do plano) — por enquanto elas não enviam nada sozinhas.
+          “Disparar agora” envia para o grupo na hora. Na hora marcada, elas saem sozinhas pelo agendador de hora em hora do sistema (alertas de gasto conferem o gasto de hoje direto no Meta).
         </p>
       )}
       {loading ? (

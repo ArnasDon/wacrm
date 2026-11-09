@@ -5,6 +5,7 @@ import { syncCredentials, type CredentialRow } from "@/lib/trafego/windsor-sync"
 import { syncEstoqueTodas } from "@/lib/trafego/estoque-sync";
 import { tokensMetaDasLojas, chavesWindsorDasLojas } from "@/lib/trafego/servidor";
 import { regrasNosGrupos } from "@/lib/patio/alertas-servidor";
+import { rodarAutomacoes } from "@/lib/patio/automacoes-servidor";
 
 // Sincronização automática do módulo Tráfego (todas as lojas):
 // campanhas do Meta (diária + por hora) e estoque do site → veículos.
@@ -79,6 +80,15 @@ export async function GET(request: Request) {
     estoque = { erro: err instanceof Error ? err.message : String(err) };
   }
 
+  // Automações da equipe (mensagens, relatórios, lembretes, alertas de gasto):
+  // em toda chamada; cada uma só sai na hora marcada e 1x por dia.
+  let automacoes: unknown = null;
+  try {
+    automacoes = await rodarAutomacoes(admin);
+  } catch (err) {
+    automacoes = { erro: err instanceof Error ? err.message : String(err) };
+  }
+
   // Regras da loja com "mandar no grupo": só na rodada completa (1x por dia).
   let grupos: unknown = null;
   if (modo === "completo") {
@@ -89,5 +99,5 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.json({ ok: true, modo, results, estoque, grupos });
+  return NextResponse.json({ ok: true, modo, results, estoque, grupos, automacoes });
 }

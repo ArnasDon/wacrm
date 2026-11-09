@@ -57,7 +57,7 @@ export default function HojePage() {
     if (p && p.rascunhos > 0) alertas.push({ n: String(p.rascunhos), titulo: "Carros do grupo de entradas para aprovar", texto: "Ainda não aparecem no site", href: "/patio", acao: "Revisar", cor: "var(--at)" });
     if (p && p.parados > 0) alertas.push({ n: String(p.parados), titulo: "Carros há mais de 45 dias no pátio", texto: "Anunciar, rever o preço ou repassar", href: "/patio", acao: "Ver", cor: "var(--at)" });
     if (p && temTrafego && p.semAnuncio > 0) alertas.push({ n: String(p.semAnuncio), titulo: "Carros sem anúncio ligado", texto: "Ligue campanhas aos carros em Campanhas", href: "/trafego/campanhas", acao: "Ligar", cor: "var(--ne)" });
-    if (t && t.qtdSemCarro > 0) alertas.push({ n: String(t.qtdSemCarro), titulo: "Campanhas sem carro ligado", texto: `${brl(t.gastoSemCarro)} sem saber qual carro vendeu`, href: "/trafego/campanhas", acao: "Ligar", cor: "var(--ne)" });
+    if (t && t.qtdSemCarro > 0) alertas.push({ n: String(t.qtdSemCarro), titulo: "Campanhas sem vínculo", texto: `${brl(t.gastoSemCarro)} sem carro nem finalidade — o sistema já sugere`, href: "/trafego/campanhas", acao: "Ver sugestões", cor: "var(--ne)" });
   }
 
   return (

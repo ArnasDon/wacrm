@@ -19,8 +19,8 @@ export async function carrosCompletos(quem: Quem, admin: SupabaseClient): Promis
 
 /** Gasto e conversas por campanha num período, com a situação do carro ligado. */
 export async function campanhasNoPeriodo(admin: SupabaseClient, orgId: string, desde: string, ate: string): Promise<CampanhaPeriodo[]> {
-  const { data: camps } = await admin.from("tr_campaigns").select("id, nome, status, car_id").eq("org_id", orgId);
-  const lista = (camps ?? []) as { id: string; nome: string; status: string | null; car_id: string | null }[];
+  const { data: camps } = await admin.from("tr_campaigns").select("id, nome, status, car_id, categoria_objetivo, destino_id").eq("org_id", orgId);
+  const lista = (camps ?? []) as { id: string; nome: string; status: string | null; car_id: string | null; categoria_objetivo: string | null; destino_id: string | null }[];
   if (!lista.length) return [];
   // Paginado: uma linha por campanha por dia passa fácil de 1.000 linhas,
   // e o Supabase corta em silêncio no milésimo (mesmo bug corrigido no painel em 08/10).
@@ -48,6 +48,7 @@ export async function campanhasNoPeriodo(admin: SupabaseClient, orgId: string, d
     status: c.status,
     gasto: soma.get(c.id)?.gasto ?? 0,
     msgs: soma.get(c.id)?.msgs ?? 0,
-    carro: !c.car_id ? "sem" : situacao.get(c.car_id) ? "vendido" : "ok",
+    // "outra": campanha com finalidade sem carro (Instagram, site, marca…) — não é pendência.
+    carro: !c.car_id ? (c.categoria_objetivo || c.destino_id ? "outra" : "sem") : situacao.get(c.car_id) ? "vendido" : "ok",
   }));
 }

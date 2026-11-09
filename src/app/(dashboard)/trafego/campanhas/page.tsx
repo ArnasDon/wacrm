@@ -13,6 +13,7 @@
 // cadastrado (Site/WhatsApp/Instagram/etc, tabela link_destinos) — nunca
 // mais de um ao mesmo tempo. Trocar pra um limpa os outros dois.
 
+import { FINALIDADES, sugerirFinalidade } from "@/lib/trafego/finalidades";
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { orgIdAtual } from "@/lib/trafego/org";
@@ -75,14 +76,7 @@ const PROJETOS: Record<string, string> = { ibox: "iBox Prime", ix: "IX Consultas
 
 // Categorias fixas de objetivo de negócio, pra vincular campanhas que não
 // são sobre um carro específico — lista idêntica à do Artifact original.
-const CATEGORIAS_OBJETIVO = [
-  { key: "vendas", label: "Vendas" },
-  { key: "engajamento", label: "Engajamento" },
-  { key: "reconhecimento", label: "Reconhecimento / Branding" },
-  { key: "institucional", label: "Institucional" },
-  { key: "trafego_geral", label: "Tráfego geral" },
-  { key: "outro", label: "Outro" },
-];
+const CATEGORIAS_OBJETIVO = FINALIDADES;
 
 // Taxonomia completa de objetivos do Meta Ads (ODAX atual + nomes legados
 // pré-2022) — todos convergem pro mesmo rótulo em português.
@@ -637,6 +631,9 @@ export default function CampanhasPage() {
   const { visible, hasMore, buttonLabel, toggle } = useVerMais(filteredSorted);
 
   // Sugestão de carro para campanhas sem vínculo, pelo nome (modelo, ano, final da placa).
+  // Sugestão para campanhas sem vínculo: primeiro o carro pelo nome (modelo,
+  // ano, final da placa); se não for de carro, a finalidade pelo objetivo do
+  // Meta e pelo nome (Instagram, site, marca, alcance).
   const sugestoes = useMemo(() => {
     const opcoes = cars.map((c) => ({ ...c, nomeSite: c.nome_site ?? null, modeloSite: c.modelo_site ?? null }));
     const m: Record<string, Car> = {};
@@ -647,9 +644,19 @@ export default function CampanhasPage() {
     }
     return m;
   }, [campaigns, cars]);
-  const qtdSugestoes = Object.keys(sugestoes).length;
+  const sugestoesFinalidade = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const c of campaigns) {
+      if (c.car_id || c.categoria_objetivo || c.destino_id || sugestoes[c.id]) continue;
+      const f = sugerirFinalidade(c.objetivo, c.nome || "");
+      if (f) m[c.id] = f;
+    }
+    return m;
+  }, [campaigns, sugestoes]);
+  const qtdSugestoes = Object.keys(sugestoes).length + Object.keys(sugestoesFinalidade).length;
   async function aplicarTodasSugestoes() {
     for (const [campId, car] of Object.entries(sugestoes)) await setVinculo(campId, `carro:${car.id}`);
+    for (const [campId, f] of Object.entries(sugestoesFinalidade)) await setVinculo(campId, `categoria:${f}`);
   }
 
   const filtersActive =
@@ -721,8 +728,9 @@ export default function CampanhasPage() {
         <AtualizarAgoraButton syncing={syncing} onClick={sincronizarAgora} />
       </div>
       <p className="text-sm mb-3 mt-2" style={{ color: "var(--tr-text-dim)" }}>
-        Todas as campanhas da conta (ativas e pausadas) — inclusive as que ainda não têm carro, categoria nem
-        destino vinculados. Vínculo é sempre um dos três: carro, categoria de negócio OU um destino cadastrado.
+        Todas as campanhas da conta (ativas e pausadas). Cada uma é de um carro do pátio, OU tem uma finalidade sem
+        carro (Instagram, site, marca, alcance…), OU vai para um destino cadastrado. O sistema sugere sozinho pelo nome e
+        pelo objetivo do Meta: é só aceitar.
       </p>
 
       {/* Painel "Gerenciar destinos" — categoria do vínculo pra tráfego que não
@@ -1212,7 +1220,7 @@ export default function CampanhasPage() {
               <>
                 {" · "}
                 <button type="button" className="btn btn-accent" style={{ marginLeft: 6 }} onClick={aplicarTodasSugestoes}>
-                  Vincular {qtdSugestoes} sugest{qtdSugestoes === 1 ? "ão" : "ões"} de carro
+                  Aceitar {qtdSugestoes} sugest{qtdSugestoes === 1 ? "ão" : "ões"} (carro ou finalidade)
                 </button>
               </>
             )}
@@ -1288,7 +1296,7 @@ export default function CampanhasPage() {
                             >
                               <option value="">— sem vínculo —</option>
                               <option value="carro">Carro</option>
-                              <option value="categoria">Categoria de negócio</option>
+                              <option value="categoria">Finalidade (sem carro)</option>
                               {tiposDestinoConhecidos.map((t) => (
                                 <option key={t} value={t}>
                                   {t}
@@ -1353,7 +1361,7 @@ export default function CampanhasPage() {
                                 value={categoriaPendente ? "" : camp.categoria_objetivo ?? ""}
                                 onChange={(e) => selecionarValorVinculo(camp.id, e.target.value ? `categoria:${e.target.value}` : "")}
                               >
-                                <option value="">— selecione a categoria —</option>
+                                <option value="">— selecione a finalidade —</option>
                                 {CATEGORIAS_OBJETIVO.map((cat) => (
                                   <option key={cat.key} value={cat.key}>
                                     {cat.label}
@@ -1389,6 +1397,17 @@ export default function CampanhasPage() {
                                 onClick={() => setVinculo(camp.id, `carro:${sugestoes[camp.id].id}`)}
                               >
                                 Sugerido: {sugestoes[camp.id].nome_site || sugestoes[camp.id].modelo} — vincular
+                              </button>
+                            )}
+                            {vt === null && !sugestoes[camp.id] && sugestoesFinalidade[camp.id] && (
+                              <button
+                                type="button"
+                                className="btn"
+                                style={{ fontSize: 12, padding: "4px 8px" }}
+                                title="Sugestão pelo objetivo do Meta e pelo nome da campanha"
+                                onClick={() => setVinculo(camp.id, `categoria:${sugestoesFinalidade[camp.id]}`)}
+                              >
+                                Sugerido: {FINALIDADES.find((f) => f.key === sugestoesFinalidade[camp.id])?.label} — aplicar
                               </button>
                             )}
                           </div>

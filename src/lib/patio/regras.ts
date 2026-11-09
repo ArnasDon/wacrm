@@ -21,7 +21,7 @@ export const CAMPOS: Record<Gatilho, { id: string; nome: string; unidade: string
     { id: "gasto", nome: "Gasto no período", unidade: "R$" },
     { id: "conversas", nome: "Conversas no período", unidade: "conversas" },
     { id: "carro_vendido", nome: "Carro já vendido (1 = sim, 0 = não)", unidade: "" },
-    { id: "sem_carro", nome: "Sem carro ligado (1 = sim, 0 = não)", unidade: "" },
+    { id: "sem_carro", nome: "Sem vínculo: nem carro nem finalidade (1 = sim, 0 = não)", unidade: "" },
   ],
   conversa: [{ id: "minutos_sem_resposta", nome: "Minutos esperando resposta", unidade: "min" }],
 };

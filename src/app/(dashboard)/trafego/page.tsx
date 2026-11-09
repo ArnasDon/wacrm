@@ -10,6 +10,7 @@
 // não deve impedir o resto de aparecer (mesmo espírito do render() original,
 // que isola cada renderX() em try/catch).
 
+import { FINALIDADES } from "@/lib/trafego/finalidades";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -62,14 +63,7 @@ type MetricRow = {
 type AccMetricRow = { fonte: string; data: string; campos: Record<string, number> };
 
 const PROJETOS: Record<string, string> = { ibox: "iBox Prime", ix: "IX Consultas" };
-const CATEGORIAS_OBJETIVO = [
-  { key: "vendas", label: "Vendas" },
-  { key: "engajamento", label: "Engajamento" },
-  { key: "reconhecimento", label: "Reconhecimento / Branding" },
-  { key: "institucional", label: "Institucional" },
-  { key: "trafego_geral", label: "Tráfego geral" },
-  { key: "outro", label: "Outro" },
-];
+const CATEGORIAS_OBJETIVO = FINALIDADES;
 const OBJETIVO_LABELS: Record<string, string> = {
   OUTCOME_LEADS: "Leads",
   OUTCOME_SALES: "Vendas",

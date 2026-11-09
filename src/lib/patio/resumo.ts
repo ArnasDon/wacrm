@@ -94,7 +94,7 @@ export function resumoPatio(carros: CarroResumo[], desde: number, ate: number, l
   };
 }
 
-export type CampanhaPeriodo = { id: string; nome: string; status: string | null; gasto: number; msgs: number; carro: "ok" | "vendido" | "sem" };
+export type CampanhaPeriodo = { id: string; nome: string; status: string | null; gasto: number; msgs: number; carro: "ok" | "vendido" | "sem" | "outra" };
 
 /** Imposto do Meta sobre o gasto (o painel antigo já somava 12%). */
 export const IMPOSTO_META = 0.12;

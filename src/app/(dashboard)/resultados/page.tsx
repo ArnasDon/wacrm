@@ -8,7 +8,7 @@ import type { ResumoCrm } from "@/lib/patio/crm-resumo";
 import type { ResumoSite } from "@/lib/patio/ga4";
 import { CATEGORIAS, POSSE } from "@/lib/patio/filtros";
 
-type Campanha = { id: string; nome: string; status: string | null; gasto: number; msgs: number; carro: "ok" | "vendido" | "sem" };
+type Campanha = { id: string; nome: string; status: string | null; gasto: number; msgs: number; carro: "ok" | "vendido" | "sem" | "outra" };
 type Resumo = {
   papel: "socio" | "marketing" | "vendedor";
   periodo: { de: string; ate: string };
@@ -24,7 +24,7 @@ type Resumo = {
   siteLigado?: boolean;
 };
 type Secao = "frase" | "numeros" | "campanhas" | "atendimento" | "vendedores" | "site" | "patio" | "composicao" | "financeiro";
-type Config = { secoes: Record<Secao, boolean>; campanhas: "todas" | "ligadas"; situacao?: "todas" | "ok" | "vendido" | "sem"; minGasto?: number; comparar: boolean };
+type Config = { secoes: Record<Secao, boolean>; campanhas: "todas" | "ligadas"; situacao?: "todas" | "ok" | "vendido" | "sem" | "outra"; minGasto?: number; comparar: boolean };
 type Modelo = { id: string; nome: string; config: Config };
 
 const NOMES: [Secao, string][] = [
@@ -121,8 +121,8 @@ export default function ResultadosPage() {
             </label>
           ))}
         </fieldset>
-        <label className="campo">Campanhas<select value={cfg.campanhas} onChange={(e) => setCfg({ ...cfg, campanhas: e.target.value as Config["campanhas"] })}><option value="todas">Todas</option><option value="ligadas">Só as ligadas a um carro</option></select></label>
-        <label className="campo">Carro da campanha<select value={cfg.situacao ?? "todas"} onChange={(e) => setCfg({ ...cfg, situacao: e.target.value as Config["situacao"] })}><option value="todas">Qualquer</option><option value="ok">No pátio</option><option value="vendido">Fora do pátio</option><option value="sem">Sem carro ligado</option></select></label>
+        <label className="campo">Campanhas<select value={cfg.campanhas} onChange={(e) => setCfg({ ...cfg, campanhas: e.target.value as Config["campanhas"] })}><option value="todas">Todas</option><option value="ligadas">Só as que têm vínculo</option></select></label>
+        <label className="campo">Carro da campanha<select value={cfg.situacao ?? "todas"} onChange={(e) => setCfg({ ...cfg, situacao: e.target.value as Config["situacao"] })}><option value="todas">Qualquer</option><option value="ok">No pátio</option><option value="vendido">Fora do pátio</option><option value="outra">Finalidade sem carro (Instagram, site, marca)</option><option value="sem">Sem vínculo nenhum</option></select></label>
         <label className="campo">Gasto mínimo por campanha (R$)<input inputMode="numeric" value={cfg.minGasto ? String(cfg.minGasto) : ""} placeholder="0" onChange={(e) => setCfg({ ...cfg, minGasto: Number(e.target.value.replace(/\D/g, "")) || 0 })} /></label>
         <label style={{ display: "flex", gap: 10, alignItems: "center", fontSize: 14 }}><input type="checkbox" checked={cfg.comparar} onChange={() => setCfg({ ...cfg, comparar: !cfg.comparar })} /> Comparar com o período anterior</label>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -181,7 +181,7 @@ export default function ResultadosPage() {
                   {campanhas.map((c) => (
                     <tr key={c.id}>
                       <td>{c.nome}</td>
-                      <td>{c.carro === "ok" ? <span className="selo s-ok">no pátio</span> : c.carro === "vendido" ? <span className="selo s-at">fora do pátio</span> : <span className="selo s-ne">sem carro</span>}</td>
+                      <td>{c.carro === "ok" ? <span className="selo s-ok">no pátio</span> : c.carro === "vendido" ? <span className="selo s-at">fora do pátio</span> : c.carro === "outra" ? <span className="selo s-ne">sem carro (finalidade)</span> : <span className="selo s-ru">sem vínculo</span>}</td>
                       <td className="dado" style={{ textAlign: "right" }}>{brl(c.gasto * IMPOSTO, 2)}</td>
                       <td className="dado" style={{ textAlign: "right" }}>{c.msgs}</td>
                       <td className="dado" style={{ textAlign: "right" }}>{c.msgs ? brl((c.gasto * IMPOSTO) / c.msgs, 2) : "—"}</td>

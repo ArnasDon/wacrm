@@ -5,6 +5,9 @@
  * até a troca de visual geral.
  * ============================================================ */
 .modulo-patio {
+  --font-archivo: var(--font-archivo-global);
+  --font-hanken: var(--font-hanken-global);
+  --font-plex-mono: var(--font-plex-global);
   /* Lê o tema do sistema (claro ou escuro): ver globals.css, "Visual padrão da iBox". */
   --p-ink: var(--foreground);
   --p-chao: var(--background);

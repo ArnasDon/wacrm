@@ -8,7 +8,6 @@ import { useAuth } from "@/hooks/use-auth";
 import { useTotalUnread } from "@/hooks/use-total-unread";
 import { useUnreadNotifications } from "@/hooks/use-unread-notifications";
 import {
-  BadgeCheck,
   BarChart3,
   Bell,
   BellRing,
@@ -17,13 +16,10 @@ import {
   ChevronDown,
   CirclePlus,
   FileBarChart,
-  FileText,
   LayoutTemplate,
   Link2,
   Megaphone,
   Plug,
-  SlidersHorizontal,
-  Wallet,
   Crown,
   GitBranch,
   LayoutDashboard,
@@ -39,6 +35,7 @@ import {
   Workflow,
   X,
   Zap,
+  Sun,
 } from "lucide-react";
 import { hasMinRole, type AccountRole } from "@/lib/auth/roles";
 
@@ -110,6 +107,8 @@ interface NavItem {
   minRole?: AccountRole;
   /** Tela ainda em construção: mostra o rótulo "Em breve". */
   soon?: boolean;
+  /** Só aparece quando a loja tem este módulo ligado. */
+  module?: ModuleKey;
 }
 
 interface NavSection {
@@ -125,59 +124,65 @@ const NAV_SECTIONS: NavSection[] = [
   {
     id: "top",
     labelKey: null,
-    items: [{ href: "/dashboard", labelKey: "home", icon: LayoutDashboard }],
-  },
-  {
-    id: "crm",
-    labelKey: "groups.crm",
     items: [
-      { href: "/inbox", labelKey: "inbox", icon: MessageSquare },
-      { href: "/notifications", labelKey: "notifications", icon: Bell },
-      { href: "/contacts", labelKey: "contacts", icon: Users },
-      { href: "/pipelines", labelKey: "pipelines", icon: GitBranch },
-      { href: "/broadcasts", labelKey: "broadcasts", icon: Radio },
-      { href: "/automations", labelKey: "automations", icon: Zap },
-      { href: "/flows", labelKey: "flows", icon: Workflow, beta: true },
-      { href: "/agents", labelKey: "aiAgents", icon: Bot },
+      { href: "/hoje", labelKey: "today", icon: Sun },
+      { href: "/patio", labelKey: "lot", icon: Car, module: "estoque" },
     ],
   },
   {
-    id: "trafego",
-    labelKey: "groups.trafego",
-    module: "trafego",
-    minRole: "admin",
+    id: "clientes",
+    labelKey: "groups.clientes",
     items: [
-      { href: "/trafego", labelKey: "trafficOverview", icon: BarChart3 },
-      { href: "/trafego/campanhas", labelKey: "trafficCampaigns", icon: Megaphone },
-      { href: "/trafego/carros", labelKey: "trafficCars", icon: Car },
-      { href: "/trafego/vendedores", labelKey: "trafficSellers", icon: UsersRound },
-      { href: "/trafego/links-utm", labelKey: "trafficUtm", icon: Link2 },
-      { href: "/trafego/alertas", labelKey: "trafficAlerts", icon: BellRing },
-      { href: "/trafego/conexoes", labelKey: "trafficConnections", icon: Plug },
+      { href: "/inbox", labelKey: "inbox", icon: MessageSquare },
+      { href: "/pipelines", labelKey: "pipelines", icon: GitBranch },
+      { href: "/contacts", labelKey: "contacts", icon: Users },
+      { href: "/notifications", labelKey: "notifications", icon: Bell },
+      { href: "/agents", labelKey: "aiAgents", icon: Bot },
+      { href: "/dashboard", labelKey: "crmPanel", icon: LayoutDashboard },
+    ],
+  },
+  {
+    id: "marketing",
+    labelKey: "groups.marketing",
+    items: [
+      { href: "/trafego", labelKey: "trafficOverview", icon: BarChart3, module: "trafego", minRole: "admin" },
+      { href: "/trafego/campanhas", labelKey: "trafficCampaigns", icon: Megaphone, module: "trafego", minRole: "admin" },
+      { href: "/trafego/carros", labelKey: "trafficCars", icon: Car, module: "trafego", minRole: "admin" },
+      { href: "/trafego/links-utm", labelKey: "trafficUtm", icon: Link2, module: "trafego", minRole: "admin" },
+      { href: "/broadcasts", labelKey: "broadcasts", icon: Radio },
+      { href: "/automations", labelKey: "automations", icon: Zap },
+      { href: "/flows", labelKey: "flows", icon: Workflow, beta: true },
+      { href: "/trafego/alertas", labelKey: "trafficAlerts", icon: BellRing, module: "trafego", minRole: "admin" },
     ],
   },
   {
     id: "site",
     labelKey: "groups.site",
     module: "estoque",
+    minRole: "admin",
     items: [
-      { href: "/patio", labelKey: "siteStock", icon: Car },
-      { href: "/site/vendidos", labelKey: "siteSold", icon: BadgeCheck, minRole: "admin", soon: true },
-      { href: "/site/novo-veiculo", labelKey: "siteNewVehicle", icon: CirclePlus, minRole: "admin", soon: true },
-      { href: "/site/financeiro", labelKey: "siteFinance", icon: Wallet, minRole: "admin", soon: true },
-      { href: "/site/documentos", labelKey: "siteDocuments", icon: FileText, minRole: "admin", soon: true },
-      { href: "/site/relatorios", labelKey: "siteReports", icon: FileBarChart, minRole: "admin", soon: true },
-      { href: "/site/conteudo", labelKey: "siteContent", icon: LayoutTemplate, minRole: "admin", soon: true },
-      { href: "/site/links", labelKey: "siteLinks", icon: Link2, minRole: "admin", soon: true },
-      { href: "/site/club", labelKey: "siteClub", icon: Crown, minRole: "admin", soon: true },
-      { href: "/site/configuracoes", labelKey: "siteSettings", icon: SlidersHorizontal, minRole: "owner", soon: true },
-      { href: "/site/usuarios", labelKey: "siteUsers", icon: UserCog, minRole: "owner", soon: true },
+      { href: "/site/conteudo", labelKey: "siteContent", icon: LayoutTemplate, soon: true },
+      { href: "/site/links", labelKey: "siteLinks", icon: Link2, soon: true },
+      { href: "/site/club", labelKey: "siteClub", icon: Crown, soon: true },
     ],
   },
   {
-    id: "sistema",
-    labelKey: "groups.sistema",
-    items: [{ href: "/settings", labelKey: "settings", icon: Settings }],
+    id: "resultados",
+    labelKey: "groups.resultados",
+    minRole: "admin",
+    items: [
+      { href: "/resultados", labelKey: "report", icon: FileBarChart },
+      { href: "/trafego/vendedores", labelKey: "trafficSellers", icon: UsersRound, module: "trafego" },
+    ],
+  },
+  {
+    id: "ajustes",
+    labelKey: "groups.ajustes",
+    items: [
+      { href: "/settings", labelKey: "settings", icon: Settings },
+      { href: "/trafego/conexoes", labelKey: "trafficConnections", icon: Plug, module: "trafego", minRole: "admin" },
+      { href: "/trafego/importar", labelKey: "importData", icon: CirclePlus, module: "trafego", minRole: "admin" },
+    ],
   },
 ];
 
@@ -205,7 +210,9 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
       (!section.minRole || (accountRole !== null && hasMinRole(accountRole, section.minRole)));
     if (!podeSecao) return null;
     const items = section.items.filter(
-      (item) => !item.minRole || (accountRole !== null && hasMinRole(accountRole, item.minRole)),
+      (item) =>
+        (!item.module || branding?.modules?.[item.module] === true) &&
+        (!item.minRole || (accountRole !== null && hasMinRole(accountRole, item.minRole))),
     );
     return items.length ? { ...section, items } : null;
   }).filter((s): s is NavSection => s !== null);

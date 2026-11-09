@@ -51,7 +51,11 @@
       "crm": "CRM",
       "trafego": "Traffic",
       "site": "Site",
-      "sistema": "System"
+      "sistema": "System",
+      "clientes": "Customers",
+      "marketing": "Marketing",
+      "resultados": "Results",
+      "ajustes": "Settings"
     },
     "home": "Home",
     "trafficOverview": "Overview",
@@ -72,7 +76,12 @@
     "siteClub": "Club leads",
     "siteSettings": "Site settings",
     "siteUsers": "Site users",
-    "soon": "Soon"
+    "soon": "Soon",
+    "today": "Today",
+    "lot": "Lot",
+    "crmPanel": "CRM dashboard",
+    "report": "Report",
+    "importData": "Import data"
   },
   "Header": {
     "dashboard": "Dashboard",

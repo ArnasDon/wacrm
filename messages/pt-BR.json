@@ -51,7 +51,11 @@
       "crm": "CRM",
       "trafego": "Tráfego",
       "site": "Site",
-      "sistema": "Sistema"
+      "sistema": "Sistema",
+      "clientes": "Clientes",
+      "marketing": "Marketing",
+      "resultados": "Resultados",
+      "ajustes": "Ajustes"
     },
     "home": "Início",
     "trafficOverview": "Visão geral",
@@ -72,7 +76,12 @@
     "siteClub": "Leads do Club",
     "siteSettings": "Configurações do site",
     "siteUsers": "Usuários do site",
-    "soon": "Em breve"
+    "soon": "Em breve",
+    "today": "Hoje",
+    "lot": "Pátio",
+    "crmPanel": "Painel do CRM",
+    "report": "Relatório",
+    "importData": "Importar dados"
   },
   "Header": {
     "dashboard": "Painel",

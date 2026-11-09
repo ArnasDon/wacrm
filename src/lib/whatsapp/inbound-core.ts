@@ -24,6 +24,8 @@ import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
+import { ligarClienteAoCarro, type ReferenciaAnuncio } from '@/lib/patio/origem-cliente'
+import { tokensMetaDasLojas } from '@/lib/trafego/servidor'
 
 export type NormalizedContentType =
   | 'text'
@@ -50,6 +52,8 @@ export interface NormalizedInboundMessage {
   replyToExternalId: string | null
   /** Only set when contentType === 'reaction'. */
   reaction?: { targetExternalId: string; emoji: string }
+  /** Anúncio de clique para WhatsApp de onde a conversa veio (Meta, uazapi, Z-API). */
+  adReferral?: ReferenciaAnuncio | null
 }
 
 // ============================================================
@@ -430,6 +434,19 @@ export async function processInboundMessage(params: ProcessInboundMessageParams)
   if (msgError) {
     console.error('[inbound-core] error inserting message:', msgError)
     return
+  }
+
+  // Sistema único: liga o cliente novo ao carro e ao anúncio de onde veio
+  // (só na primeira mensagem ou quando veio de um anúncio; nunca troca um
+  // carro escolhido à mão). Falha aqui não atrapalha a mensagem.
+  if (!isGroupChat && (isFirstInboundMessage || message.adReferral)) {
+    await ligarClienteAoCarro(supabaseAdmin(), {
+      accountId,
+      contactId: contactRecord.id,
+      texto: message.text,
+      referencia: message.adReferral ?? null,
+      tokenMeta: async (orgId) => (await tokensMetaDasLojas(supabaseAdmin(), [orgId]).catch(() => ({}) as Record<string, string>))[orgId] ?? null,
+    })
   }
 
   const { error: convError } = await supabaseAdmin()

@@ -1,4 +1,5 @@
 import { NextResponse, after } from 'next/server'
+import { extrairReferenciaDeAnuncio } from '@/lib/patio/origem-cliente'
 import { createClient } from '@supabase/supabase-js'
 import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption'
 import { getMediaUrl, downloadMedia } from '@/lib/whatsapp/meta-api'
@@ -403,6 +404,7 @@ async function processMessage(
       mediaUrl,
       interactiveReplyId,
       replyToExternalId: message.context?.id ?? null,
+      adReferral: extrairReferenciaDeAnuncio(message),
     },
   })
 }

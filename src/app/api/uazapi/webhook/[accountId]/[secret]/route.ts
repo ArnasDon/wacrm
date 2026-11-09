@@ -1,4 +1,5 @@
 import { NextResponse, after } from 'next/server'
+import { extrairReferenciaDeAnuncio } from '@/lib/patio/origem-cliente'
 import crypto from 'crypto'
 import { createClient } from '@supabase/supabase-js'
 import { decrypt } from '@/lib/whatsapp/encryption'
@@ -431,6 +432,7 @@ async function processUazapiEvent(config: UazapiConfigRow, event: UazapiWebhookE
     mediaUrl,
     interactiveReplyId: data.buttonOrListid || null,
     replyToExternalId: data.quoted || null,
+    adReferral: extrairReferenciaDeAnuncio(data),
   }
 
   // Sent from the agent's own phone, not through this CRM's API

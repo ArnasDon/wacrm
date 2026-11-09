@@ -1,8 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { IMPOSTO_META } from "./resumo";
 
 // Liga o carro do Pátio (id do documento no Firestore) às campanhas do
 // módulo Tráfego: veiculos.site_vehicle_id → tr_campaigns.car_id →
-// métricas diárias. Só leitura.
+// métricas diárias. Só leitura. O gasto já sai COM o imposto de 12% do Meta,
+// igual aos números de Hoje e do Relatório.
 
 export type CampanhaDoCarro = { id: string; nome: string; status: string | null; gasto: number; msgs: number };
 export type AnunciosDoCarro = { gasto: number; msgs: number; campanhas: CampanhaDoCarro[] };
@@ -47,7 +49,8 @@ export async function anunciosPorCarro(
   for (const c of campanhas) {
     const site = siteDoVeiculo.get(c.car_id);
     if (!site) continue;
-    const s = soma.get(c.id) ?? { gasto: 0, msgs: 0 };
+    const bruto = soma.get(c.id) ?? { gasto: 0, msgs: 0 };
+    const s = { gasto: bruto.gasto * (1 + IMPOSTO_META), msgs: bruto.msgs };
     const alvo = (saida[site] ??= { gasto: 0, msgs: 0, campanhas: [] });
     alvo.gasto += s.gasto;
     alvo.msgs += s.msgs;

@@ -18,7 +18,7 @@ export function itensDeCarros(carros: CarroResumo[]): Item[] {
       valores: {
         ...(c.dias != null ? { dias_no_patio: c.dias } : {}),
         conversas_30d: c.anuncios?.msgs ?? 0,
-        gasto_30d: (c.anuncios?.gasto ?? 0) * IMP,
+        gasto_30d: c.anuncios?.gasto ?? 0, // já com imposto
         preco: Number(c.finance?.sale_price) || 0,
         tem_anuncio: c.anuncios?.campanhas.length ? 1 : 0,
       },

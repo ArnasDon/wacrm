@@ -189,6 +189,20 @@ export function aplicarMudanca(atual: Carro, mudanca: Record<string, unknown>, p
       return { erro: `Campo não permitido: ${chave}` };
     }
   }
+  // Venda: o admin antigo e o site contam as vendas pela data do Financeiro
+  // (finance.sale_date). Grava nos dois lugares, como o "Marcar vendido" do admin.
+  if (campos.includes("sale")) {
+    const v = (novo.sale ?? {}) as Record<string, unknown>;
+    const fin = { ...(novo.finance || {}) } as Record<string, unknown>;
+    const espelho: [string, unknown][] = [["sale_date", v.date], ["payment_method", v.payment]];
+    if (!(Number(fin.sale_price) > 0) && Number(v.final_price) > 0) espelho.push(["sale_price", Number(v.final_price)]);
+    for (const [k, val] of espelho) {
+      if (val === undefined || val === null || val === "" || igual(fin[k], val)) continue;
+      fin[k] = val;
+      campos.push(`finance.${k}`);
+    }
+    novo.finance = fin as Carro["finance"];
+  }
   // a foto de capa acompanha a primeira foto, como no admin
   if (campos.includes("images") && !campos.includes("img")) {
     const capa = novo.images?.[0]?.url || "";

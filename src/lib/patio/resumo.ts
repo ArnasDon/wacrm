@@ -18,9 +18,23 @@ export function valorVenda(c: Carro): number {
   return Number(c.sale?.final_price) || Number(c.finance?.sale_price) || 0;
 }
 
+const extras = (c: Carro) =>
+  (Array.isArray(c.finance?.costs) ? (c.finance!.costs as { value?: number }[]) : []).reduce((s, x) => s + (Number(x.value) || 0), 0);
+const consignado = (c: Carro) => c.ownership_type === "consignado";
+
+/** Custo do carro, como no admin do site: próprio = compra + custos; consignado = valor combinado com o dono + custos. */
 export function custoTotal(c: Carro): number {
-  const custos = Array.isArray(c.finance?.costs) ? (c.finance!.costs as { value?: number }[]) : [];
-  return (Number(c.finance?.purchase_price) || 0) + custos.reduce((s, x) => s + (Number(x.value) || 0), 0);
+  return (Number(consignado(c) ? c.finance?.repasse_value : c.finance?.purchase_price) || 0) + extras(c);
+}
+
+/** Dinheiro da loja parado no carro: no consignado, só os custos (o carro não foi pago). */
+export function investido(c: Carro): number {
+  return (consignado(c) ? 0 : Number(c.finance?.purchase_price) || 0) + extras(c);
+}
+
+/** Tem custo lançado? Sem isso o lucro sairia igual ao preço. */
+export function temCusto(c: Carro): boolean {
+  return consignado(c) ? Number(c.finance?.repasse_value) > 0 || extras(c) > 0 : Number(c.finance?.purchase_price) > 0;
 }
 
 export function resumoPatio(carros: CarroResumo[], desde: number, ate: number, limiteParado = 45) {
@@ -30,11 +44,11 @@ export function resumoPatio(carros: CarroResumo[], desde: number, ate: number, l
     const t = dataVenda(c);
     return t != null && t >= desde && t <= ate;
   });
-  const comCusto = vendidosPeriodo.filter((c) => custoTotal(c) > 0);
+  const comCusto = vendidosPeriodo.filter(temCusto);
   return {
     aVenda: aVenda.length,
     valorEstoque: aVenda.reduce((s, c) => s + preco(c), 0),
-    capitalParado: aVenda.reduce((s, c) => s + custoTotal(c), 0),
+    capitalParado: aVenda.reduce((s, c) => s + investido(c), 0),
     parados: aVenda.filter((c) => (c.dias ?? 0) > limiteParado).length,
     semAnuncio: aVenda.filter((c) => !c.anuncios?.campanhas.length).length,
     rascunhos: carros.filter((c) => c.status === "review").length,

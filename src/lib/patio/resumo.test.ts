@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resumoPatio, resumoTrafego, dataVenda, custoTotal, type CarroResumo } from "./resumo";
+import { resumoPatio, resumoTrafego, dataVenda, custoTotal, investido, temCusto, type CarroResumo } from "./resumo";
 
 const c = (o: Partial<CarroResumo>): CarroResumo => ({ id: o.id ?? "x", dias: null, anuncios: null, ...o }) as CarroResumo;
 const D = (s: string) => Date.parse(s);
@@ -27,6 +27,14 @@ describe("resumoPatio", () => {
   it("auxiliares", () => {
     expect(dataVenda(c({ finance: { sale_date: "2026-01-02" } }))).toBe(D("2026-01-02"));
     expect(custoTotal(c({ finance: { purchase_price: 10, costs: [{ value: 5 }, { value: "x" }] } }))).toBe(15);
+  });
+  it("consignado: custo = valor combinado + custos; investido = só os custos (igual ao admin)", () => {
+    const cons = c({ ownership_type: "consignado", finance: { purchase_price: 0, repasse_value: 80000, costs: [{ value: 1500 }] } });
+    expect(custoTotal(cons)).toBe(81500);
+    expect(investido(cons)).toBe(1500);
+    expect(temCusto(cons)).toBe(true);
+    expect(temCusto(c({ ownership_type: "consignado", finance: {} }))).toBe(false);
+    expect(temCusto(c({ finance: { purchase_price: 0, costs: [{ value: 100 }] } }))).toBe(false);
   });
 });
 

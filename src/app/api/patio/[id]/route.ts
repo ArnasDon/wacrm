@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { quemNoPatio, reconstruirSite } from "@/lib/patio/servidor";
-import { lerUm, gravarCarro } from "@/lib/patio/firestore";
+import { lerUm, gravarCarro, apagarCarro } from "@/lib/patio/firestore";
 import { montarCarro, filtrarParaPapel, aplicarMudanca, separarParaFirestore, diasNoPatio, recorte } from "@/lib/patio/veiculo";
 import { anunciosPorCarro } from "@/lib/patio/anuncios";
 import { createAdminClient } from "@/lib/trafego/admin";
@@ -24,8 +24,12 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       atualizadoEm: lido.publico.atualizadoEm,
     });
     const carro = filtrarParaPapel(completo, quem.papel);
-    const porCarro = await anunciosPorCarro(admin, quem.orgId, 30, id).catch(() => ({}) as Record<string, never>);
+    const [porCarro, porCarroTotal] = await Promise.all([
+      anunciosPorCarro(admin, quem.orgId, 30, id).catch(() => ({}) as Record<string, never>),
+      anunciosPorCarro(admin, quem.orgId, 3650, id).catch(() => ({}) as Record<string, never>),
+    ]);
     const anuncios = porCarro[id] ?? null;
+    const anunciosTotal = porCarroTotal[id] ?? null;
     let historico: unknown[] = [];
     if (quem.papel === "socio") {
       const { data } = await admin
@@ -60,7 +64,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
         .limit(100);
       visitas = vs ?? [];
     }
-    return NextResponse.json({ papel: quem.papel, carro: { ...carro, dias: diasNoPatio(completo) }, anuncios, historico, clientes, visitas });
+    return NextResponse.json({ papel: quem.papel, carro: { ...carro, dias: diasNoPatio(completo) }, anuncios, anunciosTotal, historico, clientes, visitas });
   } catch (e) {
     console.error("[patio] ler:", e);
     return NextResponse.json({ erro: "Não foi possível ler este carro agora." }, { status: 502 });
@@ -121,5 +125,37 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   } catch (e) {
     console.error("[patio] gravar:", e);
     return NextResponse.json({ erro: "Não foi possível salvar agora. Nada foi alterado." }, { status: 502 });
+  }
+}
+
+// DELETE /api/patio/:id — só sócio. A ficha inteira fica guardada no histórico
+// do pátio antes de apagar, para dar para recuperar.
+export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  if (!ID_VALIDO.test(id)) return NextResponse.json({ erro: "carro inválido" }, { status: 400 });
+  const quem = await quemNoPatio();
+  if ("erro" in quem) return NextResponse.json({ erro: quem.erro }, { status: quem.status });
+  if (quem.papel !== "socio") return NextResponse.json({ erro: "Só sócio exclui um carro." }, { status: 403 });
+  try {
+    const lido = await lerUm(quem.projeto, id);
+    if (!lido) return NextResponse.json({ erro: "carro não encontrado" }, { status: 404 });
+    const atual = montarCarro(id, lido.publico.dados, lido.privado, { criadoEm: lido.publico.criadoEm, atualizadoEm: lido.publico.atualizadoEm });
+    const { error } = await createAdminClient().from("patio_historico").insert({
+      org_id: quem.orgId,
+      veiculo_site_id: id,
+      user_id: quem.userId,
+      quem: quem.nome,
+      acao: "excluiu",
+      campos: ["*"],
+      antes: atual as unknown as Record<string, unknown>,
+      depois: null,
+    });
+    if (error) return NextResponse.json({ erro: "Não foi possível guardar a cópia antes de excluir. Nada foi apagado." }, { status: 502 });
+    await apagarCarro(quem.projeto, id);
+    const siteAtualizando = await reconstruirSite(quem.projeto).catch(() => false);
+    return NextResponse.json({ ok: true, siteAtualizando });
+  } catch (e) {
+    console.error("[patio] excluir:", e);
+    return NextResponse.json({ erro: "Não foi possível excluir agora." }, { status: 502 });
   }
 }

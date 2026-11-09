@@ -20,6 +20,7 @@ export default function FichaCarroPage({ params }: { params: Promise<{ id: strin
   const { id } = use(params);
   const [carro, setCarro] = useState<CarroUI | null>(null);
   const [anuncios, setAnuncios] = useState<AnunciosDoCarro | null>(null);
+  const [anunciosTotal, setAnunciosTotal] = useState<AnunciosDoCarro | null>(null);
   const [historico, setHistorico] = useState<Historico[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [visitas, setVisitas] = useState<VisitaCarro[]>([]);
@@ -29,12 +30,23 @@ export default function FichaCarroPage({ params }: { params: Promise<{ id: strin
   const [salvando, setSalvando] = useState(false);
   const [aba, setAba] = useState<Aba>("geral");
 
+  async function excluir() {
+    if (!confirm("Excluir este carro do pátio e do site? Uma cópia da ficha fica guardada no histórico.")) return;
+    setSalvando(true);
+    const r = await fetch(`/api/patio/${id}`, { method: "DELETE" });
+    const d = await r.json().catch(() => ({}));
+    setSalvando(false);
+    if (!r.ok) { setAviso(d.erro || "Não foi possível excluir."); return; }
+    window.location.href = "/patio";
+  }
+
   async function carregar() {
     const r = await fetch(`/api/patio/${id}`, { cache: "no-store" });
     const d = await r.json();
     if (!r.ok) throw new Error(d.erro || "Não foi possível abrir este carro.");
     setCarro(d.carro);
     setAnuncios(d.anuncios);
+    setAnunciosTotal(d.anunciosTotal ?? null);
     setHistorico(d.historico ?? []);
     setClientes(d.clientes ?? []);
     setVisitas(d.visitas ?? []);
@@ -130,6 +142,11 @@ export default function FichaCarroPage({ params }: { params: Promise<{ id: strin
                 Marcar como vendido
               </button>
             )}
+            {ehSocio && (
+              <button type="button" className="btns" disabled={salvando} onClick={excluir} style={{ color: "#8e2f22" }}>
+                Excluir carro
+              </button>
+            )}
           </div>
           {aviso && <p role="status" style={{ margin: 0, fontSize: 14, color: "var(--p-azul-2)" }}>{aviso}</p>}
         </div>
@@ -146,7 +163,7 @@ export default function FichaCarroPage({ params }: { params: Promise<{ id: strin
       {aba === "fotos" && <Fotos carro={carro} podeEditar={podeEditar} salvando={salvando} salvar={salvar} />}
       {aba === "anuncios" && <Anuncios anuncios={anuncios} />}
       {aba === "clientes" && <ClientesDoCarro clientes={clientes} visitas={visitas} />}
-      {aba === "financeiro" && ehSocio && <Financeiro key={carro.atualizado_em ?? "novo"} carro={carro} anuncios={anuncios} salvando={salvando} salvar={salvar} />}
+      {aba === "financeiro" && ehSocio && <Financeiro key={carro.atualizado_em ?? "novo"} carro={carro} anunciosTotal={anunciosTotal} salvando={salvando} salvar={salvar} />}
       {aba === "dono" && ehSocio && <Dono key={carro.atualizado_em ?? "novo"} carro={carro} salvando={salvando} salvar={salvar} />}
       {aba === "docs" && ehSocio && <Documentos carro={carro} salvando={salvando} salvar={salvar} />}
       {aba === "historico" && ehSocio && <HistoricoTab itens={historico} />}
@@ -350,75 +367,156 @@ function Anuncios({ anuncios }: { anuncios: AnunciosDoCarro | null }) {
   );
 }
 
-function Financeiro({ carro, anuncios, salvando, salvar }: { carro: CarroUI; anuncios: AnunciosDoCarro | null; salvando: boolean; salvar: (m: Mapa) => void }) {
+const PAGAMENTOS = ["À vista", "Financiamento", "Consórcio", "PIX", "Transferência bancária", "Permuta / troca", "Misto"];
+type Item = { id?: string; description?: string; value?: number; date?: string };
+const novoId = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+
+function ListaDeValores({ titulo, dica, itens, setItens, comData }: { titulo: string; dica: string; itens: Item[]; setItens: (i: Item[]) => void; comData?: boolean }) {
+  const [desc, setDesc] = useState("");
+  const [valor, setValor] = useState("");
+  const [data, setData] = useState("");
+  const soma = itens.reduce((s, c) => s + (Number(c.value) || 0), 0);
+  function adicionar() {
+    if (!desc.trim() || !(num(valor) > 0)) return;
+    setItens([...itens, { id: novoId(), description: desc.trim(), value: num(valor), ...(comData ? { date: data } : {}) }]);
+    setDesc(""); setValor(""); setData("");
+  }
+  return (
+    <div style={{ gridColumn: "1 / -1", display: "flex", flexDirection: "column", gap: 8 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+        <span style={{ fontWeight: 600 }}>{titulo}</span>
+        <span className="rot">{itens.length} · <span className="dado">{brl(soma)}</span></span>
+      </div>
+      {itens.length > 0 && (
+        <table className="tab" style={{ fontSize: 14 }}>
+          <tbody>
+            {itens.map((c, i) => (
+              <tr key={c.id ?? i}>
+                <td>{c.description || "—"}</td>
+                {comData && <td className="rot">{c.date ? new Date(c.date + "T12:00:00").toLocaleDateString("pt-BR") : ""}</td>}
+                <td className="dado" style={{ textAlign: "right" }}>{brl(c.value)}</td>
+                <td style={{ width: 1 }}><button type="button" className="btns" onClick={() => setItens(itens.filter((_, k) => k !== i))} aria-label={`Remover ${c.description ?? "item"}`}>Remover</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <div style={{ display: "grid", gridTemplateColumns: comData ? "2fr 1fr 1fr auto" : "2fr 1fr auto", gap: 8, alignItems: "end" }}>
+        <label className="campo">Descrição<input value={desc} onChange={(e) => setDesc(e.target.value)} placeholder={dica} /></label>
+        <label className="campo">Valor (R$)<input value={valor} onChange={(e) => setValor(e.target.value)} inputMode="numeric" /></label>
+        {comData && <label className="campo">Data<input type="date" value={data} onChange={(e) => setData(e.target.value)} /></label>}
+        <button type="button" className="btns" onClick={adicionar} disabled={!desc.trim() || !(num(valor) > 0)}>Adicionar</button>
+      </div>
+    </div>
+  );
+}
+
+function Financeiro({ carro, anunciosTotal, salvando, salvar }: { carro: CarroUI; anunciosTotal: AnunciosDoCarro | null; salvando: boolean; salvar: (m: Mapa) => void }) {
   const fin = (carro.finance ?? {}) as Mapa;
   const venda = (carro.sale ?? {}) as Mapa;
-  const custos = Array.isArray(fin.costs) ? (fin.costs as { description?: string; value?: number }[]) : [];
-  const somaCustos = custos.reduce((s, c) => s + (Number(c.value) || 0), 0);
+  const consignado = carro.ownership_type === "consignado";
   const inicial = {
     purchase_price: txt(fin.purchase_price || ""), purchase_date: txt(fin.purchase_date), fipe_value: txt(fin.fipe_value || ""), fipe_date: txt(fin.fipe_date),
     repasse_value: txt(fin.repasse_value || ""), buyer_name: txt(fin.buyer_name), notes: txt(fin.notes),
-    final_price: txt(venda.final_price || ""), date: txt(venda.date), payment: txt(venda.payment), discount: txt(venda.discount || ""),
+    final_price: txt(venda.final_price || ""), date: txt(venda.date || fin.sale_date), payment: txt(venda.payment || fin.payment_method), discount: txt(venda.discount || ""), sale_notes: txt(venda.notes),
   };
+  const custosIniciais = Array.isArray(fin.costs) ? (fin.costs as Item[]) : [];
+  const trocasIniciais = Array.isArray(venda.tradeins) ? (venda.tradeins as Item[]) : [];
   const [f, setF] = useState(inicial);
-  const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setF({ ...f, [k]: e.target.value });
+  const [custos, setCustos] = useState<Item[]>(custosIniciais);
+  const [trocas, setTrocas] = useState<Item[]>(trocasIniciais);
+  const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value });
 
-  const compra = Number(fin.purchase_price) || 0;
-  const precoVenda = Number(venda.final_price) || Number(fin.sale_price) || 0;
-  const gastoAnuncio = anuncios?.gasto ?? 0;
-  const margem = compra && precoVenda ? precoVenda - compra - somaCustos - gastoAnuncio : 0;
+  // Contas com o que está na tela (antes de salvar), pelas mesmas regras do admin do site.
+  const extras = custos.reduce((s, c) => s + (Number(c.value) || 0), 0);
+  const base = consignado ? num(f.repasse_value) : num(f.purchase_price);
+  const custo = base + extras;
+  const preco = num(f.final_price) || Number(fin.sale_price) || 0;
+  const temCusto = base > 0;
+  const lucro = temCusto && preco ? preco - custo : null;
+  const anuncio = anunciosTotal?.gasto ?? 0;
+  const fipe = num(f.fipe_value);
+  const cartoes: [string, string, string?][] = [
+    [consignado ? "Combinado com o dono" : "Compra", brl(base)],
+    [`Custos extras (${custos.length})`, brl(extras)],
+    [num(f.final_price) ? "Vendido por" : "Preço", brl(preco)],
+    ["Lucro", lucro == null ? "—" : brl(lucro), lucro != null && preco ? `${((lucro / preco) * 100).toFixed(1)}% do preço` : temCusto ? "" : consignado ? "falta o valor combinado" : "falta o valor de compra"],
+    ["Anúncio desde o início", brl(anuncio, 2), "com imposto de 12%"],
+    ["Preço × FIPE", fipe && preco ? brl(preco - fipe) : "—", fipe && preco ? `${(((preco - fipe) / fipe) * 100).toFixed(1)}%` : ""],
+  ];
 
   function enviar(e: React.FormEvent) {
     e.preventDefault();
     const mf: Mapa = {};
     for (const k of ["purchase_price", "fipe_value", "repasse_value"] as const) if (f[k] !== inicial[k]) mf[k] = num(f[k]);
     for (const k of ["purchase_date", "fipe_date", "buyer_name", "notes"] as const) if (f[k] !== inicial[k]) mf[k] = f[k];
+    if (JSON.stringify(custos) !== JSON.stringify(custosIniciais)) mf.costs = custos;
     const ms: Mapa = { ...venda };
     let mudouVenda = false;
     for (const k of ["final_price", "discount"] as const) if (f[k] !== inicial[k]) { ms[k] = num(f[k]); mudouVenda = true; }
     for (const k of ["date", "payment"] as const) if (f[k] !== inicial[k]) { ms[k] = f[k]; mudouVenda = true; }
+    if (f.sale_notes !== inicial.sale_notes) { ms.notes = f.sale_notes; mudouVenda = true; }
+    if (JSON.stringify(trocas) !== JSON.stringify(trocasIniciais)) { ms.tradeins = trocas; mudouVenda = true; }
     const m: Mapa = {};
     if (Object.keys(mf).length) m.finance = mf;
     if (mudouVenda) m.sale = ms;
-    salvar(m);
+    if (Object.keys(m).length) salvar(m);
   }
 
   return (
     <form onSubmit={enviar} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <section className="card" style={{ padding: 20 }}>
+      <section className="card" style={{ padding: 20 }} aria-label="Contas do carro">
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 1, background: "var(--p-linha-2)", border: "1px solid var(--p-linha-2)", borderRadius: 10, overflow: "hidden" }}>
-          <div style={{ background: "var(--p-papel)", padding: 14 }}><div className="rot">Compra</div><div className="dado" style={{ fontSize: 20 }}>{brl(compra)}</div></div>
-          <div style={{ background: "var(--p-papel)", padding: 14 }}><div className="rot">Custos ({custos.length})</div><div className="dado" style={{ fontSize: 20 }}>{brl(somaCustos)}</div></div>
-          <div style={{ background: "var(--p-papel)", padding: 14 }}><div className="rot">Anúncio (30 dias)</div><div className="dado" style={{ fontSize: 20 }}>{brl(gastoAnuncio, 2)}</div></div>
-          <div style={{ background: "var(--p-papel)", padding: 14 }}><div className="rot">FIPE</div><div className="dado" style={{ fontSize: 20 }}>{brl(fin.fipe_value)}</div></div>
-          <div style={{ background: "var(--p-papel)", padding: 14 }}><div className="rot">{venda.final_price ? "Vendido por" : "Preço"}</div><div className="dado" style={{ fontSize: 20 }}>{brl(precoVenda)}</div></div>
-          <div style={{ background: "var(--p-ink)", color: "var(--p-papel)", padding: 14 }}><div style={{ fontSize: 12, color: "#b9bdb5" }}>Margem após tráfego</div><div className="dado" style={{ fontSize: 20, color: "var(--p-ouro)" }}>{margem ? brl(margem) : "—"}</div></div>
+          {cartoes.map(([rot, val, sub]) => (
+            <div key={rot} style={{ background: "var(--p-papel)", padding: 14 }}>
+              <div className="rot">{rot}</div>
+              <div className="dado" style={{ fontSize: 20 }}>{val}</div>
+              {sub ? <div className="rot" style={{ fontSize: 12 }}>{sub}</div> : null}
+            </div>
+          ))}
+          <div style={{ background: "var(--p-ink)", color: "var(--p-papel)", padding: 14 }}>
+            <div style={{ fontSize: 12, color: "#b9bdb5" }}>Lucro depois do tráfego</div>
+            <div className="dado" style={{ fontSize: 20, color: "var(--p-ouro)" }}>{lucro == null ? "—" : brl(lucro - anuncio)}</div>
+            <div style={{ fontSize: 12, color: "#b9bdb5" }}>lucro − anúncio desde o início</div>
+          </div>
         </div>
-        <p className="rot" style={{ margin: "10px 0 0" }}>Margem = preço (ou valor final da venda) − compra − custos − gasto em anúncio dos últimos 30 dias.</p>
+        <p className="rot" style={{ margin: "10px 0 0" }}>
+          {consignado ? "Consignado: custo = valor combinado com o dono + custos extras." : "Próprio: custo = valor de compra + custos extras."} Lucro = preço (ou valor final da venda) − custo, igual ao admin do site.
+        </p>
       </section>
-      <section className="card" style={{ padding: 20, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14 }}>
-        <label className="campo">Valor de compra (R$)<input value={f.purchase_price} onChange={set("purchase_price")} inputMode="numeric" /></label>
-        <label className="campo">Data de compra<input type="date" value={f.purchase_date} onChange={set("purchase_date")} /></label>
+
+      <section className="card" style={{ padding: 20, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14 }} aria-labelledby="compra-t">
+        <h2 id="compra-t" className="h2" style={{ gridColumn: "1 / -1", margin: 0 }}>Compra e custos</h2>
+        {consignado
+          ? <label className="campo">Valor combinado com o dono (R$)<input value={f.repasse_value} onChange={set("repasse_value")} inputMode="numeric" /></label>
+          : <label className="campo">Valor de compra (R$)<input value={f.purchase_price} onChange={set("purchase_price")} inputMode="numeric" /></label>}
+        <label className="campo">Data de compra / entrada<input type="date" value={f.purchase_date} onChange={set("purchase_date")} /></label>
         <label className="campo">FIPE (R$)<input value={f.fipe_value} onChange={set("fipe_value")} inputMode="numeric" /></label>
         <label className="campo">Data da consulta FIPE<input type="date" value={f.fipe_date} onChange={set("fipe_date")} /></label>
-        <label className="campo">Valor combinado com o consignante (R$)<input value={f.repasse_value} onChange={set("repasse_value")} inputMode="numeric" /></label>
+        <ListaDeValores titulo="Custos extras" dica="Ex.: funilaria, pneus, documentação" itens={custos} setItens={setCustos} comData />
+        <label className="campo" style={{ gridColumn: "1 / -1" }}>Observações da compra<textarea rows={2} value={f.notes} onChange={set("notes")} /></label>
+      </section>
+
+      <section className="card" style={{ padding: 20, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14 }} aria-labelledby="venda-t">
+        <h2 id="venda-t" className="h2" style={{ gridColumn: "1 / -1", margin: 0 }}>Venda</h2>
         <label className="campo">Comprador<input value={f.buyer_name} onChange={set("buyer_name")} /></label>
         <label className="campo">Valor final vendido (R$)<input value={f.final_price} onChange={set("final_price")} inputMode="numeric" /></label>
         <label className="campo">Data da venda<input type="date" value={f.date} onChange={set("date")} /></label>
-        <label className="campo">Forma de pagamento<input value={f.payment} onChange={set("payment")} /></label>
+        <label className="campo">Forma de pagamento
+          <select value={f.payment} onChange={set("payment")}>
+            <option value="">Escolher</option>
+            {[...PAGAMENTOS, ...(f.payment && !PAGAMENTOS.includes(f.payment) ? [f.payment] : [])].map((p) => <option key={p}>{p}</option>)}
+          </select>
+        </label>
         <label className="campo">Desconto concedido (R$)<input value={f.discount} onChange={set("discount")} inputMode="numeric" /></label>
-        <label className="campo" style={{ gridColumn: "1 / -1" }}>Observações da negociação<textarea rows={3} value={f.notes} onChange={set("notes")} /></label>
-        {custos.length > 0 && (
-          <div style={{ gridColumn: "1 / -1" }}>
-            <div className="rot" style={{ marginBottom: 6 }}>Custos lançados</div>
-            <ul style={{ margin: 0, paddingLeft: 18, fontSize: 14 }}>{custos.map((c, i) => <li key={i}>{c.description || "Custo"}: <span className="dado">{brl(c.value)}</span></li>)}</ul>
-          </div>
-        )}
-        <div style={{ gridColumn: "1 / -1", display: "flex", justifyContent: "flex-end", gap: 8 }}>
-          <button type="button" className="btns" onClick={() => setF(inicial)} disabled={salvando}>Desfazer</button>
-          <button type="submit" className="btnp" disabled={salvando}>{salvando ? "Salvando…" : "Salvar financeiro"}</button>
-        </div>
+        <ListaDeValores titulo="Itens recebidos na negociação (troca, permuta)" dica="Ex.: Honda CB 500 2020" itens={trocas} setItens={setTrocas} />
+        <label className="campo" style={{ gridColumn: "1 / -1" }}>Observações da venda<textarea rows={3} value={f.sale_notes} onChange={set("sale_notes")} /></label>
       </section>
+
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+        <button type="button" className="btns" onClick={() => { setF(inicial); setCustos(custosIniciais); setTrocas(trocasIniciais); }} disabled={salvando}>Desfazer</button>
+        <button type="submit" className="btnp" disabled={salvando}>{salvando ? "Salvando…" : "Salvar financeiro"}</button>
+      </div>
     </form>
   );
 }

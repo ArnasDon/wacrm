@@ -96,6 +96,14 @@ describe("aplicarMudanca", () => {
       expect(r.carro.finance?.purchase_price).toBe(180000);
     }
   });
+  it("venda gravada também no Financeiro, como no admin", () => {
+    const r = aplicarMudanca(c, { sale: { final_price: 205000, date: "2026-11-08", payment: "PIX" } }, "socio");
+    expect(r).not.toHaveProperty("erro");
+    if ("carro" in r) {
+      expect(r.carro.finance).toMatchObject({ sale_date: "2026-11-08", payment_method: "PIX", purchase_price: 180000 });
+      expect(r.campos).toEqual(expect.arrayContaining(["sale", "finance.sale_date", "finance.payment_method"]));
+    }
+  });
   it("marketing não altera custo, dono nem marca como vendido", () => {
     expect(aplicarMudanca(c, { finance: { purchase_price: 1 } }, "marketing")).toHaveProperty("erro");
     expect(aplicarMudanca(c, { seller: { name: "x" } }, "marketing")).toHaveProperty("erro");

@@ -151,6 +151,14 @@ export async function gravarCarro(projeto: string, id: string, publico: Record<s
   });
 }
 
+/** Apaga o carro (documento público e o privado), numa gravação só. */
+export async function apagarCarro(projeto: string, id: string) {
+  await chamar(`${raiz(projeto)}:commit`, {
+    method: "POST",
+    body: JSON.stringify({ writes: [{ delete: nomeDoc(projeto, `vehicles/${id}/private/data`) }, { delete: nomeDoc(projeto, `vehicles/${id}`) }] }),
+  });
+}
+
 /** Lê um documento avulso (ex.: "site/config"). */
 export async function lerDocumento(projeto: string, caminho: string): Promise<Record<string, unknown> | null> {
   try {

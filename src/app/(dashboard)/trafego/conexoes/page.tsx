@@ -10,6 +10,7 @@
 
 import { useEffect, useState } from "react";
 import { ConexaoMeta } from "./conexao-meta";
+import { ConexoesOpcionais } from "./conexoes-opcionais";
 import { createClient } from "@/lib/supabase/client";
 import { orgIdAtual } from "@/lib/trafego/org";
 
@@ -216,6 +217,7 @@ export default function ConexoesPage() {
       {syncMessage && <p style={{ fontSize: 13, marginTop: -12, color: "var(--tr-text-dim)" }}>{syncMessage}</p>}
 
       <ConexaoMeta aoSalvar={carregarTudo} />
+      <ConexoesOpcionais />
 
       <a
         href="/trafego/importar"

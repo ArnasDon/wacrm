@@ -170,6 +170,7 @@ export default function PatioPage() {
                       </span>
                       <span style={{ display: "block", marginTop: 8, fontSize: 12, color: "var(--p-mudo)" }}>
                         {c.anuncios?.campanhas.length ? `${c.anuncios.msgs} conversas em 30 dias` : c.status !== "available" ? STATUS_NOME[c.status ?? ""] : "Sem anúncio ligado"}
+                        {c.visitas != null && ` · ${c.visitas} visitas`}
                       </span>
                     </button>
                   </div>
@@ -180,7 +181,7 @@ export default function PatioPage() {
             <section className="card" aria-label="Lista de carros" style={{ overflowX: "auto" }}>
               <table className="tab">
                 <thead>
-                  <tr><th scope="col">Carro</th><th scope="col">Ano</th><th scope="col">Preço</th><th scope="col">No pátio</th><th scope="col">Conversas (30 dias)</th><th scope="col">Situação</th></tr>
+                  <tr><th scope="col">Carro</th><th scope="col">Ano</th><th scope="col">Preço</th><th scope="col">No pátio</th><th scope="col">Visitas no site (30 dias)</th><th scope="col">Conversas (30 dias)</th><th scope="col">Situação</th></tr>
                 </thead>
                 <tbody>
                   {visiveis.map((c) => (
@@ -189,6 +190,7 @@ export default function PatioPage() {
                       <td className="dado">{String(c.year ?? "")}</td>
                       <td><span className="tag">{brl(preco(c))}</span></td>
                       <td>{c.dias != null ? <span className={seloDias(c.dias)}>{c.dias} dias</span> : "—"}</td>
+                      <td className="dado">{c.visitas ?? "—"}</td>
                       <td className="dado">{c.anuncios?.campanhas.length ? c.anuncios.msgs : "—"}</td>
                       <td><span className={`selo ${STATUS_SELO[c.status ?? ""] ?? "s-ne"}`}>{STATUS_NOME[c.status ?? ""] ?? c.status}</span></td>
                     </tr>
@@ -221,6 +223,7 @@ export default function PatioPage() {
               <dt className="rot" style={{ fontSize: 13 }}>Situação</dt><dd style={{ margin: 0 }}>{STATUS_NOME[sel.status ?? ""] ?? sel.status}</dd>
               <dt className="rot" style={{ fontSize: 13 }}>Anúncio</dt>
               <dd style={{ margin: 0 }}>{sel.anuncios?.campanhas.length ? `${sel.anuncios.campanhas.length} campanha(s) · ${brl(sel.anuncios.gasto, 2)} em 30 dias` : "Nenhum ligado"}</dd>
+              <dt className="rot" style={{ fontSize: 13 }}>Visitas no site</dt><dd style={{ margin: 0 }} className="dado">{sel.visitas ?? "—"}</dd>
               <dt className="rot" style={{ fontSize: 13 }}>Conversas</dt><dd style={{ margin: 0 }} className="dado">{sel.anuncios?.msgs || "—"}</dd>
               <dt className="rot" style={{ fontSize: 13 }}>Custo por conversa</dt>
               <dd style={{ margin: 0 }} className="dado">{sel.anuncios?.msgs ? brl(sel.anuncios.gasto / sel.anuncios.msgs, 2) : "—"}</dd>

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/trafego/admin";
 import { syncCredentials, type CredentialRow } from "@/lib/trafego/windsor-sync";
-import { gestorDaLoja, tokensMetaDasLojas } from "@/lib/trafego/servidor";
+import { gestorDaLoja, tokensMetaDasLojas, chavesWindsorDasLojas } from "@/lib/trafego/servidor";
 
 // Botão "Sincronizar agora" (Tráfego → Conexões e barra de sincronização).
 // Só sócio/gestor, e só a loja de quem clicou.
@@ -22,10 +22,11 @@ export async function POST() {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   const tokens = await tokensMetaDasLojas(admin, [quem.orgId]);
+  const windsor = await chavesWindsorDasLojas(admin).catch(() => ({}) as Record<string, string>);
   const results = await syncCredentials(
     admin,
     (credentials ?? []) as CredentialRow[],
-    process.env.WINDSOR_API_KEY || "",
+    windsor[quem.orgId] || process.env.WINDSOR_API_KEY || "",
     "rapido",
     tokens,
   );

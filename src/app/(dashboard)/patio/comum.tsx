@@ -3,7 +3,7 @@
 import type { Carro, Papel } from "@/lib/patio/veiculo";
 import type { AnunciosDoCarro } from "@/lib/patio/anuncios";
 
-export type CarroUI = Carro & { dias: number | null; anuncios: AnunciosDoCarro | null };
+export type CarroUI = Carro & { dias: number | null; anuncios: AnunciosDoCarro | null; visitas?: number | null };
 export type { Papel };
 
 export const STATUS_NOME: Record<string, string> = {

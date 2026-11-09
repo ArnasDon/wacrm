@@ -7,6 +7,7 @@ import { novoId } from "@/lib/patio/cloudinary";
 import { anunciosPorCarro } from "@/lib/patio/anuncios";
 import { createAdminClient } from "@/lib/trafego/admin";
 import { situacaoChave } from "@/lib/patio/google";
+import { visitasDoSite } from "@/lib/patio/ga4";
 
 export const dynamic = "force-dynamic";
 
@@ -32,13 +33,16 @@ export async function GET() {
     // Privados (custo, dono, venda) são lidos no servidor para calcular os
     // dias no pátio pela data de compra; só sócios recebem esses campos.
     const privados = await lerPrivados(quem.projeto, publicos.map((p) => p.id));
-    const anuncios = await anunciosPorCarro(createAdminClient(), quem.orgId).catch(() => ({}) as Record<string, never>);
+    const [anuncios, visitas] = await Promise.all([
+      anunciosPorCarro(createAdminClient(), quem.orgId).catch(() => ({}) as Record<string, never>),
+      quem.ga4 ? visitasDoSite(quem.ga4).catch((e) => (console.error("[patio] GA4:", e), null)) : Promise.resolve(null),
+    ]);
     const carros = publicos.map((p) => {
       const completo = montarCarro(p.id, p.dados, privados[p.id] ?? {}, { criadoEm: p.criadoEm, atualizadoEm: p.atualizadoEm });
       const c = filtrarParaPapel(completo, quem.papel);
-      return { ...c, dias: diasNoPatio(completo), anuncios: (anuncios as Record<string, unknown>)[p.id] ?? null };
+      return { ...c, dias: diasNoPatio(completo), anuncios: (anuncios as Record<string, unknown>)[p.id] ?? null, visitas: visitas ? (visitas.porCarro[p.id] ?? 0) : null };
     });
-    return NextResponse.json({ papel: quem.papel, carros });
+    return NextResponse.json({ papel: quem.papel, carros, visitasSite: visitas?.total ?? null });
   } catch (e) {
     console.error("[patio] listar:", e);
     return NextResponse.json({ erro: "Não foi possível ler o estoque do site agora." }, { status: 502 });

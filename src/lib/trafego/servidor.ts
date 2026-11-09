@@ -38,3 +38,17 @@ export async function tokensMetaDasLojas(
   }
   return saida;
 }
+
+/** Chave do Windsor de cada loja (descriptografada); sem chave própria, usa a do ambiente. */
+export async function chavesWindsorDasLojas(admin: SupabaseClient): Promise<Record<string, string>> {
+  const { data } = await admin.from("tr_config").select("org_id, windsor_api_key").not("windsor_api_key", "is", null);
+  const saida: Record<string, string> = {};
+  for (const l of (data ?? []) as { org_id: string; windsor_api_key: string }[]) {
+    try {
+      saida[l.org_id] = decrypt(l.windsor_api_key);
+    } catch (e) {
+      console.error("[trafego] chave do Windsor não abriu para a loja", l.org_id, e);
+    }
+  }
+  return saida;
+}

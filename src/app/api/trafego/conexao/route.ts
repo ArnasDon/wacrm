@@ -15,7 +15,7 @@ export async function GET() {
   if ("erro" in quem) return NextResponse.json({ error: quem.erro }, { status: quem.status });
   const admin = createAdminClient();
   const [{ data: cfg }, { data: cred }] = await Promise.all([
-    admin.from("tr_config").select("meta_access_token, estoque_firestore_projeto, atualizado_em").eq("org_id", quem.orgId).maybeSingle(),
+    admin.from("tr_config").select("meta_access_token, estoque_firestore_projeto, windsor_api_key, ga4_property_id, atualizado_em").eq("org_id", quem.orgId).maybeSingle(),
     admin
       .from("tr_integration_credentials")
       .select("referencia_externa")
@@ -29,13 +29,15 @@ export async function GET() {
     tokenAtualizadoEm: cfg?.atualizado_em ?? null,
     contaAnuncios: cred?.referencia_externa ?? null,
     estoqueProjeto: cfg?.estoque_firestore_projeto ?? null,
+    temWindsor: !!cfg?.windsor_api_key,
+    ga4Propriedade: cfg?.ga4_property_id ?? null,
   });
 }
 
 export async function POST(request: Request) {
   const quem = await gestorDaLoja();
   if ("erro" in quem) return NextResponse.json({ error: quem.erro }, { status: quem.status });
-  const corpo = (await request.json().catch(() => ({}))) as { contaAnuncios?: string; token?: string; estoqueProjeto?: string };
+  const corpo = (await request.json().catch(() => ({}))) as { contaAnuncios?: string; token?: string; estoqueProjeto?: string; windsorChave?: string; ga4Propriedade?: string; removerWindsor?: boolean };
   const admin = createAdminClient();
 
   const conta = (corpo.contaAnuncios ?? "").replace(/^act_/, "").trim();
@@ -76,6 +78,30 @@ export async function POST(request: Request) {
     const { error } = await admin
       .from("tr_config")
       .upsert({ org_id: quem.orgId, estoque_firestore_projeto: projeto, atualizado_em: new Date().toISOString() }, { onConflict: "org_id" });
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  // Windsor.ai (opcional): métricas do Instagram e outras fontes.
+  const chaveWindsor = (corpo.windsorChave ?? "").trim();
+  if (chaveWindsor || corpo.removerWindsor) {
+    if (chaveWindsor && chaveWindsor.length < 20) return NextResponse.json({ error: "Chave do Windsor parece incompleta." }, { status: 400 });
+    if (chaveWindsor) {
+      const teste = await fetch(`https://connectors.windsor.ai/all?api_key=${encodeURIComponent(chaveWindsor)}&date_preset=last_7d&fields=date&_renderer=json`, { cache: "no-store" });
+      if (teste.status === 401 || teste.status === 403) return NextResponse.json({ error: "O Windsor recusou essa chave." }, { status: 400 });
+    }
+    const { error } = await admin
+      .from("tr_config")
+      .upsert({ org_id: quem.orgId, windsor_api_key: chaveWindsor ? encrypt(chaveWindsor) : null, atualizado_em: new Date().toISOString() }, { onConflict: "org_id" });
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  // Google Analytics 4 (opcional): visitas do site e de cada carro.
+  if (typeof corpo.ga4Propriedade === "string") {
+    const prop = corpo.ga4Propriedade.replace(/^properties\//, "").trim();
+    if (prop && !/^\d{6,15}$/.test(prop)) return NextResponse.json({ error: "ID da propriedade do GA4 inválido (só números)." }, { status: 400 });
+    const { error } = await admin
+      .from("tr_config")
+      .upsert({ org_id: quem.orgId, ga4_property_id: prop || null, atualizado_em: new Date().toISOString() }, { onConflict: "org_id" });
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   }
 

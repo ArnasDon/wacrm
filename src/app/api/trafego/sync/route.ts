@@ -3,7 +3,7 @@ import { createHash, timingSafeEqual } from "crypto";
 import { createAdminClient } from "@/lib/trafego/admin";
 import { syncCredentials, type CredentialRow } from "@/lib/trafego/windsor-sync";
 import { syncEstoqueTodas } from "@/lib/trafego/estoque-sync";
-import { tokensMetaDasLojas } from "@/lib/trafego/servidor";
+import { tokensMetaDasLojas, chavesWindsorDasLojas } from "@/lib/trafego/servidor";
 
 // Sincronização automática do módulo Tráfego (todas as lojas):
 // campanhas do Meta (diária + por hora) e estoque do site → veículos.
@@ -44,13 +44,14 @@ export async function GET(request: Request) {
     console.error("[trafego/sync] tokens:", e);
   }
 
-  const results = await syncCredentials(
-    admin,
-    (credentials ?? []) as CredentialRow[],
-    process.env.WINDSOR_API_KEY || "",
-    modo,
-    tokens,
-  );
+  // Cada loja usa a própria chave do Windsor (Ajustes → Conexões); sem ela, a do ambiente.
+  const windsor = await chavesWindsorDasLojas(admin).catch(() => ({}) as Record<string, string>);
+  const porLoja = new Map<string, CredentialRow[]>();
+  for (const c of (credentials ?? []) as CredentialRow[]) porLoja.set(c.org_id, [...(porLoja.get(c.org_id) ?? []), c]);
+  const results = [];
+  for (const [org, creds] of porLoja) {
+    results.push(...(await syncCredentials(admin, creds, windsor[org] || process.env.WINDSOR_API_KEY || "", modo, tokens)));
+  }
 
   // Estoque do site → veículos. Falha aqui não derruba a sync das campanhas.
   let estoque: unknown = null;

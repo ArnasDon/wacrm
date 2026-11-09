@@ -5,7 +5,7 @@ import { FIRESTORE_PROJETO_PADRAO } from "@/lib/trafego/estoqueSite";
 import { lerDocumento } from "./firestore";
 import type { Papel } from "./veiculo";
 
-export type Quem = { userId: string; nome: string; orgId: string; papel: Papel; projeto: string };
+export type Quem = { userId: string; nome: string; orgId: string; papel: Papel; projeto: string; ga4: string | null };
 
 /** Quem está chamando, de qual loja, com qual papel e qual Firestore é o estoque dessa loja. */
 export async function quemNoPatio(): Promise<Quem | { erro: string; status: number }> {
@@ -21,7 +21,7 @@ export async function quemNoPatio(): Promise<Quem | { erro: string; status: numb
   if (papel !== "socio" && papel !== "marketing" && papel !== "vendedor") return { erro: "sem acesso a esta loja", status: 403 };
 
   const admin = createAdminClient();
-  const { data: cfg } = await admin.from("tr_config").select("estoque_firestore_projeto").eq("org_id", orgId).maybeSingle();
+  const { data: cfg } = await admin.from("tr_config").select("estoque_firestore_projeto, ga4_property_id").eq("org_id", orgId).maybeSingle();
   const { data: perfil } = await admin.from("profiles").select("full_name, email").eq("user_id", user.id).maybeSingle();
   return {
     userId: user.id,
@@ -29,6 +29,7 @@ export async function quemNoPatio(): Promise<Quem | { erro: string; status: numb
     orgId,
     papel,
     projeto: (cfg?.estoque_firestore_projeto as string) || FIRESTORE_PROJETO_PADRAO,
+    ga4: (cfg?.ga4_property_id as string) || null,
   };
 }
 

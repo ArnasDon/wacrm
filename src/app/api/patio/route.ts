@@ -4,7 +4,7 @@ import { listarPublicos, lerPrivados } from "@/lib/patio/firestore";
 import { montarCarro, filtrarParaPapel, diasNoPatio } from "@/lib/patio/veiculo";
 import { anunciosPorCarro } from "@/lib/patio/anuncios";
 import { createAdminClient } from "@/lib/trafego/admin";
-import { chaveServico } from "@/lib/patio/google";
+import { situacaoChave } from "@/lib/patio/google";
 
 export const dynamic = "force-dynamic";
 
@@ -13,9 +13,15 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const quem = await quemNoPatio();
   if ("erro" in quem) return NextResponse.json({ erro: quem.erro }, { status: quem.status });
-  if (!chaveServico()) {
+  const chave = situacaoChave();
+  if (chave !== "ok") {
     return NextResponse.json(
-      { erro: "Falta configurar a chave de serviço do Firebase (FIREBASE_SERVICE_ACCOUNT) neste projeto na Vercel." },
+      {
+        erro:
+          chave === "ausente"
+            ? "Falta configurar a chave de serviço do Firebase (FIREBASE_SERVICE_ACCOUNT) neste projeto na Vercel."
+            : "A chave de serviço do Firebase (FIREBASE_SERVICE_ACCOUNT) está na Vercel, mas o conteúdo não é o JSON da chave. Copie de novo o valor inteiro, começando em { e terminando em }.",
+      },
       { status: 503 },
     );
   }

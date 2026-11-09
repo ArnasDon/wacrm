@@ -10,18 +10,57 @@ type ChaveServico = { client_email: string; private_key: string; project_id?: st
 let chaveEmCache: ChaveServico | null = null;
 const tokens = new Map<string, { token: string; expira: number }>();
 
+/** Quebras de linha reais dentro de textos viram "\n" (o JSON colado com a chave em várias linhas). */
+function escaparQuebrasEmTextos(s: string): string {
+  let saida = "";
+  let emTexto = false;
+  let escapando = false;
+  for (const ch of s) {
+    if (emTexto) {
+      if (escapando) escapando = false;
+      else if (ch === "\\") escapando = true;
+      else if (ch === '"') emTexto = false;
+      else if (ch === "\n") { saida += "\\n"; continue; }
+      else if (ch === "\r") continue;
+    } else if (ch === '"') emTexto = true;
+    saida += ch;
+  }
+  return saida;
+}
+
+/**
+ * Lê o JSON da chave de serviço aceitando os jeitos comuns de colar na
+ * Vercel: JSON puro, entre aspas, com a chave privada em várias linhas ou
+ * codificado em base64.
+ */
+export function lerChaveServico(bruto: string | undefined): ChaveServico | null {
+  if (!bruto) return null;
+  let s = bruto.trim();
+  if ((s.startsWith("'") && s.endsWith("'")) || (s.startsWith('"') && s.endsWith('"') && !s.startsWith('"{'))) s = s.slice(1, -1).trim();
+  if (s.startsWith('"{')) {
+    try { s = JSON.parse(s) as string; } catch { /* segue */ }
+  }
+  if (!s.startsWith("{")) {
+    try { s = Buffer.from(s, "base64").toString("utf8").trim(); } catch { return null; }
+  }
+  for (const tentativa of [s, escaparQuebrasEmTextos(s)]) {
+    try {
+      const c = JSON.parse(tentativa) as ChaveServico;
+      if (c && c.client_email && c.private_key) return { ...c, private_key: c.private_key.replace(/\\n/g, "\n") };
+    } catch { /* próxima */ }
+  }
+  return null;
+}
+
+export function situacaoChave(): "ok" | "ausente" | "invalida" {
+  if (!process.env.FIREBASE_SERVICE_ACCOUNT) return "ausente";
+  return chaveServico() ? "ok" : "invalida";
+}
+
 export function chaveServico(): ChaveServico | null {
   if (chaveEmCache) return chaveEmCache;
-  const bruto = process.env.FIREBASE_SERVICE_ACCOUNT;
-  if (!bruto) return null;
-  try {
-    const c = JSON.parse(bruto) as ChaveServico;
-    if (!c.client_email || !c.private_key) return null;
-    chaveEmCache = { ...c, private_key: c.private_key.replace(/\\n/g, "\n") };
-    return chaveEmCache;
-  } catch {
-    return null;
-  }
+  chaveEmCache = lerChaveServico(process.env.FIREBASE_SERVICE_ACCOUNT);
+  return chaveEmCache;
 }
 
 const b64url = (s: string | Buffer) =>

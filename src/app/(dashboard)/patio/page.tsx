@@ -3,32 +3,39 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { brl, Foto, nomeCarro, seloDias, STATUS_NOME, STATUS_SELO, type CarroUI, type Papel } from "./comum";
+import { CATEGORIAS, COLUNAS, COLUNAS_PADRAO, COLUNAS_RENTABILIDADE, FILTROS_VAZIOS, ORDENS, POSSE, buscaCasa, ordenar, passaFiltros, planilha, type Filtros, type Ordem } from "@/lib/patio/filtros";
+import { createClient } from "@/lib/supabase/client";
 
-type Aba = "venda" | "rascunho" | "vendidos";
-type Filtro = "todos" | "parado" | "anuncio" | "sem" | "ate80" | "80a150" | "acima150";
-
-const FILTROS: [Filtro, string][] = [
-  ["todos", "Todos"],
-  ["parado", "Parados há +45 dias"],
-  ["anuncio", "Com anúncio"],
-  ["sem", "Sem anúncio"],
-  ["ate80", "Até R$ 80 mil"],
-  ["80a150", "R$ 80–150 mil"],
-  ["acima150", "Acima de R$ 150 mil"],
-];
+type Aba = "venda" | "rascunho" | "vendidos" | "documentos";
+type Doc = { id?: string; name?: string; type?: string; date?: string; url?: string; file_url?: string; storage_path?: string };
 
 const preco = (c: CarroUI) => Number(c.finance?.sale_price) || 0;
+const CHAVE_FILTROS = "ibox.patio.filtros";
+const CHAVE_COLUNAS = "ibox.patio.colunas";
 
-function passa(c: CarroUI, f: Filtro): boolean {
-  switch (f) {
-    case "parado": return (c.dias ?? 0) > 45;
-    case "anuncio": return !!c.anuncios?.campanhas.length;
-    case "sem": return !c.anuncios?.campanhas.length;
-    case "ate80": return preco(c) > 0 && preco(c) <= 80_000;
-    case "80a150": return preco(c) > 80_000 && preco(c) <= 150_000;
-    case "acima150": return preco(c) > 150_000;
-    default: return true;
-  }
+function ler<T>(chave: string, padrao: T): T {
+  try { const v = localStorage.getItem(chave); return v ? { ...padrao, ...JSON.parse(v) } : padrao; } catch { return padrao; }
+}
+function lerLista(chave: string, padrao: string[]): string[] {
+  try { const v = JSON.parse(localStorage.getItem(chave) || "null"); return Array.isArray(v) ? v : padrao; } catch { return padrao; }
+}
+function guardar(chave: string, v: unknown) { try { localStorage.setItem(chave, JSON.stringify(v)); } catch { /* sem armazenamento */ } }
+
+function baixar(nome: string, conteudo: string, tipo: string) {
+  const url = URL.createObjectURL(new Blob([conteudo], { type: tipo }));
+  const a = document.createElement("a");
+  a.href = url; a.download = nome; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+function celula(col: string, v: string | number | null) {
+  if (v == null || v === "") return "—";
+  if (["preco", "compra", "custo", "fipe", "lucro", "vs_fipe", "venda"].includes(col)) return brl(v);
+  if (["gasto", "cpc"].includes(col)) return brl(v, 2);
+  if (col === "margem") return `${String(v).replace(".", ",")}%`;
+  if (col === "situacao") return STATUS_NOME[String(v)] ?? String(v);
+  if (col === "data_venda") return new Date(String(v) + "T12:00:00").toLocaleDateString("pt-BR");
+  return String(v);
 }
 
 export default function PatioPage() {
@@ -37,7 +44,17 @@ export default function PatioPage() {
   const [erro, setErro] = useState<string | null>(null);
   const [aba, setAba] = useState<Aba>("venda");
   const [modo, setModo] = useState<"quadro" | "lista">("quadro");
-  const [filtro, setFiltro] = useState<Filtro>("todos");
+  const [f, setF] = useState<Filtros>(FILTROS_VAZIOS);
+  const [colunas, setColunas] = useState<string[]>(COLUNAS_PADRAO);
+  const [verColunas, setVerColunas] = useState(false);
+  useEffect(() => {
+    // Preferências deste aparelho (filtros e colunas escolhidos por último).
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- lê o localStorage só depois de montar, para não divergir do HTML do servidor
+    setF(ler(CHAVE_FILTROS, FILTROS_VAZIOS));
+    setColunas(lerLista(CHAVE_COLUNAS, COLUNAS_PADRAO));
+  }, []);
+  const mudarF = (m: Partial<Filtros>) => { const n = { ...f, ...m }; setF(n); guardar(CHAVE_FILTROS, n); };
+  const mudarColunas = (n: string[]) => { setColunas(n); guardar(CHAVE_COLUNAS, n); };
   const [busca, setBusca] = useState("");
   const [aberto, setAberto] = useState<string | null>(null);
 
@@ -67,12 +84,23 @@ export default function PatioPage() {
   }, [carros]);
 
   const visiveis = useMemo(() => {
-    const q = busca.trim().toLowerCase();
-    return porAba[aba]
-      .filter((c) => passa(c, filtro))
-      .filter((c) => !q || [c.brand, c.model, c.versao, c.plate, c.year].join(" ").toLowerCase().includes(q))
-      .sort((a, b) => (Number(a.ordem) || 999) - (Number(b.ordem) || 999) || (b.dias ?? 0) - (a.dias ?? 0));
-  }, [porAba, aba, filtro, busca]);
+    if (aba === "documentos") return [];
+    const base = porAba[aba].filter((c) => passaFiltros(c, f) && buscaCasa(c, busca));
+    return ordenar(base, aba === "vendidos" && f.ordem === "vitrine" ? "recentes" : f.ordem);
+  }, [porAba, aba, f, busca]);
+  const filtrosAtivos = (Object.keys(FILTROS_VAZIOS) as (keyof Filtros)[]).filter((k) => k !== "ordem" && f[k]).length;
+  const socio = papel === "socio";
+  const colsVisiveis = COLUNAS.filter((c) => colunas.includes(c.id) && (socio || !c.socio));
+  const documentos = useMemo(
+    () => (carros ?? []).flatMap((c) => ((c.documents ?? []) as Doc[]).map((d) => ({ ...d, carro: c }))).filter((d) => buscaCasa(d.carro, busca) || (d.name ?? "").toLowerCase().includes(busca.trim().toLowerCase())),
+    [carros, busca],
+  );
+  async function abrirDoc(d: Doc) {
+    if (d.url || d.file_url) { window.open(d.url || d.file_url, "_blank", "noopener"); return; }
+    if (!d.storage_path) return;
+    const { data } = await createClient().storage.from("patio-docs").createSignedUrl(d.storage_path, 120);
+    if (data?.signedUrl) window.open(data.signedUrl, "_blank", "noopener");
+  }
 
   const aVenda = porAba.venda;
   const totalEstoque = aVenda.reduce((s, c) => s + preco(c), 0);
@@ -107,7 +135,7 @@ export default function PatioPage() {
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
           <label className="busca">
             <span className="sr-only">Buscar no pátio</span>
-            <input type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Modelo, versão, placa ou ano…" autoComplete="off" spellCheck={false} />
+            <input type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Modelo, versão, placa, ano ou cor…" autoComplete="off" spellCheck={false} />
           </label>
           {carros && papel !== "vendedor" && <Link href="/patio/novo" className="btnp">Cadastrar carro</Link>}
         </div>
@@ -119,6 +147,7 @@ export default function PatioPage() {
             ["venda", `À venda · ${porAba.venda.length}`],
             ["rascunho", `Do grupo de entradas · ${porAba.rascunho.length}`],
             ["vendidos", `Vendidos · ${porAba.vendidos.length}`],
+            ...(socio ? [["documentos", "Documentos"] as [Aba, string]] : []),
           ] as [Aba, string][]).map(([id, nome]) => (
             <button key={id} type="button" role="tab" className="aba" aria-selected={aba === id} onClick={() => setAba(id)}>
               {nome}
@@ -131,22 +160,83 @@ export default function PatioPage() {
         </div>
       </div>
 
-      <div role="group" aria-label="Filtrar carros" style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-        {FILTROS.map(([id, nome]) => (
-          <button key={id} type="button" className="chip" aria-pressed={filtro === id} onClick={() => setFiltro(id)}>
-            {nome} <span className="dado" style={{ fontSize: 12, opacity: 0.7 }}>{porAba[aba].filter((c) => passa(c, id)).length}</span>
-          </button>
-        ))}
-      </div>
+      {aba !== "documentos" && (
+        <section className="card filtros" aria-label="Filtros" style={{ padding: "12px 14px", display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end" }}>
+          <label className="campo mini">Categoria
+            <select value={f.categoria} onChange={(e) => mudarF({ categoria: e.target.value })}><option value="">Todas</option>{Object.entries(CATEGORIAS).map(([k, n]) => <option key={k} value={k}>{n}</option>)}</select>
+          </label>
+          <label className="campo mini">Posse
+            <select value={f.posse} onChange={(e) => mudarF({ posse: e.target.value })}><option value="">Todas</option>{Object.entries(POSSE).map(([k, n]) => <option key={k} value={k}>{n}</option>)}</select>
+          </label>
+          {aba === "venda" && (
+            <label className="campo mini">Situação
+              <select value={f.situacao} onChange={(e) => mudarF({ situacao: e.target.value })}><option value="">Todas</option>{["available", "reserved", "unavailable"].map((k) => <option key={k} value={k}>{STATUS_NOME[k]}</option>)}</select>
+            </label>
+          )}
+          <label className="campo mini">Preço de<input value={f.precoMin} onChange={(e) => mudarF({ precoMin: e.target.value })} inputMode="numeric" placeholder="R$" style={{ width: 110 }} /></label>
+          <label className="campo mini">até<input value={f.precoMax} onChange={(e) => mudarF({ precoMax: e.target.value })} inputMode="numeric" placeholder="R$" style={{ width: 110 }} /></label>
+          <label className="campo mini">Dias no pátio
+            <select value={f.dias} onChange={(e) => mudarF({ dias: e.target.value })}><option value="">Todos</option><option value="30">Até 30</option><option value="31-60">31 a 60</option><option value="45+">Mais de 45</option><option value="60+">Mais de 60</option></select>
+          </label>
+          <label className="campo mini">Anúncio
+            <select value={f.anuncio} onChange={(e) => mudarF({ anuncio: e.target.value })}><option value="">Todos</option><option value="com">Com anúncio</option><option value="sem">Sem anúncio</option></select>
+          </label>
+          <label className="campo mini">Ordenar
+            <select value={f.ordem} onChange={(e) => mudarF({ ordem: e.target.value as Ordem })}>{(Object.keys(ORDENS) as Ordem[]).filter((k) => socio || k !== "maior_lucro").map((k) => <option key={k} value={k}>{ORDENS[k]}</option>)}</select>
+          </label>
+          <span className="rot" style={{ marginLeft: "auto", fontSize: 13 }}><span className="dado">{visiveis.length}</span> de {porAba[aba].length}</span>
+          {filtrosAtivos > 0 && <button type="button" className="btns" onClick={() => mudarF({ ...FILTROS_VAZIOS, ordem: f.ordem })}>Limpar {filtrosAtivos} filtro{filtrosAtivos > 1 ? "s" : ""}</button>}
+        </section>
+      )}
+
+      {aba !== "documentos" && modo === "lista" && (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <button type="button" className="btns" aria-expanded={verColunas} onClick={() => setVerColunas(!verColunas)}>Colunas · {colsVisiveis.length}</button>
+          {socio && <button type="button" className="btns" onClick={() => mudarColunas(COLUNAS_RENTABILIDADE)}>Ver rentabilidade</button>}
+          <button type="button" className="btns" onClick={() => mudarColunas(COLUNAS_PADRAO)}>Colunas padrão</button>
+          <span style={{ flex: 1 }} />
+          <button type="button" className="btns" disabled={!visiveis.length} onClick={() => baixar(`patio-${aba}-${new Date().toISOString().slice(0, 10)}.csv`, planilha(visiveis, colunas, socio), "text/csv;charset=utf-8")}>Baixar planilha</button>
+          {socio && <button type="button" className="btns" disabled={!carros?.length} onClick={() => baixar(`copia-estoque-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify({ geradoEm: new Date().toISOString(), carros }, null, 2), "application/json")}>Cópia de segurança</button>}
+        </div>
+      )}
+      {verColunas && modo === "lista" && aba !== "documentos" && (
+        <fieldset className="card" style={{ padding: 14, display: "flex", flexWrap: "wrap", gap: "8px 18px", border: 0 }}>
+          <legend className="sr-only">Colunas da lista</legend>
+          {COLUNAS.filter((c) => socio || !c.socio).map((c) => (
+            <label key={c.id} style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 14 }}>
+              <input type="checkbox" checked={colunas.includes(c.id)} onChange={(e) => mudarColunas(e.target.checked ? COLUNAS.map((x) => x.id).filter((id) => id === c.id || colunas.includes(id)) : colunas.filter((x) => x !== c.id))} />
+              {c.nome}
+            </label>
+          ))}
+        </fieldset>
+      )}
 
       <div style={{ display: "flex", gap: 20, alignItems: "flex-start", flexWrap: "wrap" }}>
         <div style={{ flex: "999 1 560px", minWidth: 0 }}>
-          {!carros ? (
+          {aba === "documentos" ? (
+            <section className="card" aria-label="Documentos de todos os carros" style={{ overflowX: "auto" }}>
+              <table className="tab">
+                <thead><tr><th scope="col">Documento</th><th scope="col">Tipo</th><th scope="col">Carro</th><th scope="col">Data</th><th scope="col"><span className="sr-only">Abrir</span></th></tr></thead>
+                <tbody>
+                  {documentos.map((d, i) => (
+                    <tr key={`${d.carro.id}-${d.id ?? i}`}>
+                      <td><b>{d.name || "Sem nome"}</b></td>
+                      <td className="rot">{d.type || "—"}</td>
+                      <td><Link href={`/patio/${d.carro.id}`}>{nomeCarro(d.carro)} {d.carro.versao}</Link> <span className="rot">{d.carro.plate}</span></td>
+                      <td className="dado">{d.date ? new Date(d.date + "T12:00:00").toLocaleDateString("pt-BR") : "—"}</td>
+                      <td>{(d.url || d.file_url || d.storage_path) ? <button type="button" className="btns" onClick={() => abrirDoc(d)}>Abrir</button> : <span className="rot">sem arquivo</span>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {carros && !documentos.length && <p style={{ padding: 16, margin: 0 }}>Nenhum documento{busca ? " com essa busca" : " lançado ainda"}. Os documentos entram pela aba Documentos de cada carro.</p>}
+            </section>
+          ) : !carros ? (
             <div className="quadro" aria-busy="true" style={{ minHeight: 320 }} />
           ) : visiveis.length === 0 ? (
             <div className="card" style={{ padding: 24 }}>
               Nenhum carro aqui com esse filtro.{" "}
-              <button type="button" className="btns" onClick={() => { setFiltro("todos"); setBusca(""); }}>Limpar filtros</button>
+              <button type="button" className="btns" onClick={() => { mudarF({ ...FILTROS_VAZIOS, ordem: f.ordem }); setBusca(""); }}>Limpar filtros</button>
             </div>
           ) : modo === "quadro" ? (
             <section className="quadro" aria-label="Quadro de chaves">
@@ -181,18 +271,21 @@ export default function PatioPage() {
             <section className="card" aria-label="Lista de carros" style={{ overflowX: "auto" }}>
               <table className="tab">
                 <thead>
-                  <tr><th scope="col">Carro</th><th scope="col">Ano</th><th scope="col">Preço</th><th scope="col">No pátio</th><th scope="col">Visitas no site (30 dias)</th><th scope="col">Conversas (30 dias)</th><th scope="col">Situação</th></tr>
+                  <tr><th scope="col">Carro</th>{colsVisiveis.map((c) => <th key={c.id} scope="col" style={{ textAlign: c.id === "situacao" || c.id === "posse" || c.id === "categoria" ? "left" : "right" }}>{c.nome}</th>)}</tr>
                 </thead>
                 <tbody>
                   {visiveis.map((c) => (
                     <tr key={c.id}>
                       <td><Link href={`/patio/${c.id}`}><b style={{ color: "var(--p-ink)" }}>{nomeCarro(c)}</b> {c.versao}</Link></td>
-                      <td className="dado">{String(c.year ?? "")}</td>
-                      <td><span className="tag">{brl(preco(c))}</span></td>
-                      <td>{c.dias != null ? <span className={seloDias(c.dias)}>{c.dias} dias</span> : "—"}</td>
-                      <td className="dado">{c.visitas ?? "—"}</td>
-                      <td className="dado">{c.anuncios?.campanhas.length ? c.anuncios.msgs : "—"}</td>
-                      <td><span className={`selo ${STATUS_SELO[c.status ?? ""] ?? "s-ne"}`}>{STATUS_NOME[c.status ?? ""] ?? c.status}</span></td>
+                      {colsVisiveis.map((col) => {
+                        const v = col.valor(c);
+                        if (col.id === "situacao") return <td key={col.id}><span className={`selo ${STATUS_SELO[c.status ?? ""] ?? "s-ne"}`}>{STATUS_NOME[c.status ?? ""] ?? c.status}</span></td>;
+                        if (col.id === "dias") return <td key={col.id} style={{ textAlign: "right" }}>{c.dias != null ? <span className={seloDias(c.dias)}>{c.dias} dias</span> : "—"}</td>;
+                        if (col.id === "preco") return <td key={col.id} style={{ textAlign: "right" }}><span className="tag">{brl(v)}</span></td>;
+                        const texto = ["categoria", "posse", "placa", "cor"].includes(col.id);
+                        const negativo = typeof v === "number" && v < 0;
+                        return <td key={col.id} className={texto ? undefined : "dado"} style={{ textAlign: texto ? "left" : "right", color: negativo ? "#8e2f22" : undefined }}>{celula(col.id, v)}</td>;
+                      })}
                     </tr>
                   ))}
                 </tbody>
@@ -200,7 +293,7 @@ export default function PatioPage() {
             </section>
           )}
           <p className="rot" style={{ margin: "12px 0 0" }}>
-            Dias no pátio contam desde o cadastro no site. Selo verde até 30 dias, âmbar até 60, vermelho acima.
+            Dias no pátio contam da data de compra/entrada (Financeiro); sem ela, do cadastro no site. Selo verde até 30 dias, âmbar até 60, vermelho acima. Anúncio já com o imposto de 12%.
           </p>
         </div>
 

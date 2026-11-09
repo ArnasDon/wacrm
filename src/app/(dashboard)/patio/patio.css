@@ -86,3 +86,8 @@
   .modulo-patio * { transition: none !important; animation: none !important; }
   .modulo-patio .chave:hover { transform: none; }
 }
+/* Barra de filtros: campos compactos lado a lado */
+.modulo-patio .campo.mini { gap: 4px; }
+.modulo-patio .campo.mini input, .modulo-patio .campo.mini select { padding: 7px 9px; font-size: 13px; min-width: 0; }
+.modulo-patio .campo.mini select { min-width: 120px; }
+@media (max-width: 640px) { .modulo-patio .filtros .campo.mini { flex: 1 1 140px; } .modulo-patio .filtros .campo.mini select, .modulo-patio .filtros .campo.mini input { width: 100% !important; } }

@@ -6,6 +6,8 @@ import { situacaoChave } from "@/lib/patio/google";
 import { carrosCompletos, campanhasNoPeriodo } from "@/lib/patio/dados";
 import { resumoPatio, resumoTrafego } from "@/lib/patio/resumo";
 import { avaliar, type Regra } from "@/lib/patio/regras";
+import { resumoCrm, type ResumoCrm } from "@/lib/patio/crm-resumo";
+import { resumoSite, type ResumoSite } from "@/lib/patio/ga4";
 import { itensDeCarros, itensDeCampanhas, itensDeConversas, type ConversaAberta } from "@/lib/patio/alertas";
 
 export const dynamic = "force-dynamic";
@@ -13,7 +15,7 @@ export const dynamic = "force-dynamic";
 const DIA = 86_400_000;
 const dataISO = (t: number) => new Date(t).toISOString().slice(0, 10);
 
-// GET /api/resumo?de=2026-10-10&ate=2026-11-09 (ou ?dias=30)
+// GET /api/resumo?de=2026-10-10&ate=2026-11-09 (ou ?dias=30)[&com=crm,site]
 // Números da tela Hoje e do Relatório: pátio, tráfego e clientes, já
 // recortados pelo papel de quem pede (financeiro só para sócios).
 export async function GET(req: Request) {
@@ -59,7 +61,18 @@ export async function GET(req: Request) {
       });
     }
 
+    // Blocos extras do Relatório (pedidos com ?com=crm,site): mais pesados, fora de Hoje.
+    const com = new Set((url.searchParams.get("com") ?? "").split(",").map((x) => x.trim()));
+    const [crm, site] = await Promise.all([
+      com.has("crm") ? resumoCrm(supabase, new Date(de).toISOString(), new Date(ate).toISOString()).catch((e) => (console.error("[resumo] crm:", e), null as ResumoCrm | null)) : Promise.resolve(undefined),
+      com.has("site") && quem.ga4 && situacaoChave() === "ok"
+        ? resumoSite(quem.ga4, dataISO(de), dataISO(ate)).catch((e) => (console.error("[resumo] site:", e), null as ResumoSite | null))
+        : Promise.resolve(com.has("site") ? null : undefined),
+    ]);
+
     return NextResponse.json({
+      ...(crm !== undefined ? { crm } : {}),
+      ...(site !== undefined ? { site, siteLigado: !!quem.ga4 } : {}),
       alertas,
       papel: quem.papel,
       periodo: { de: dataISO(de), ate: dataISO(ate) },

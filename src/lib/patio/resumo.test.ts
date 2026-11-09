@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resumoPatio, resumoTrafego, dataVenda, custoTotal, investido, temCusto, type CarroResumo } from "./resumo";
+import { resumoPatio, resumoTrafego, dataVenda, custoTotal, investido, temCusto, composicao, type CarroResumo } from "./resumo";
 
 const c = (o: Partial<CarroResumo>): CarroResumo => ({ id: o.id ?? "x", dias: null, anuncios: null, ...o }) as CarroResumo;
 const D = (s: string) => Date.parse(s);
@@ -35,6 +35,21 @@ describe("resumoPatio", () => {
     expect(temCusto(cons)).toBe(true);
     expect(temCusto(c({ ownership_type: "consignado", finance: {} }))).toBe(false);
     expect(temCusto(c({ finance: { purchase_price: 0, costs: [{ value: 100 }] } }))).toBe(false);
+  });
+});
+
+describe("composicao", () => {
+  it("posse × situação, categorias e faixas", () => {
+    const r = composicao([
+      c({ ownership_type: "consignado", status: "reserved", cat: "motos", finance: { sale_price: 30000 } }),
+      c({ status: "available", finance: { sale_price: 90000 } }),
+      c({ status: "available", finance: {} }),
+    ]);
+    expect(r.posse).toEqual({ consignado: { reserved: 1 }, proprio: { available: 2 } });
+    expect(r.categorias).toEqual({ motos: 1, carros: 2 });
+    expect(r.faixas[0]).toMatchObject({ carros: 1, valor: 30000 });
+    expect(r.faixas[2]).toMatchObject({ carros: 1, valor: 90000 });
+    expect(r.semPreco).toBe(1);
   });
 });
 

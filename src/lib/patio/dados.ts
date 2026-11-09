@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { listarPublicos, lerPrivados } from "./firestore";
 import { montarCarro, diasNoPatio } from "./veiculo";
 import { anunciosPorCarro } from "./anuncios";
+import { fetchAll } from "@/lib/trafego/fetchAll";
 import type { CarroResumo, CampanhaPeriodo } from "./resumo";
 import type { Quem } from "./servidor";
 
@@ -21,12 +22,11 @@ export async function campanhasNoPeriodo(admin: SupabaseClient, orgId: string, d
   const { data: camps } = await admin.from("tr_campaigns").select("id, nome, status, car_id").eq("org_id", orgId);
   const lista = (camps ?? []) as { id: string; nome: string; status: string | null; car_id: string | null }[];
   if (!lista.length) return [];
-  const { data: metricas } = await admin
-    .from("tr_campaign_metrics_daily")
-    .select("campaign_id, gasto, msgs")
-    .eq("org_id", orgId)
-    .gte("data", desde)
-    .lte("data", ate);
+  // Paginado: uma linha por campanha por dia passa fácil de 1.000 linhas,
+  // e o Supabase corta em silêncio no milésimo (mesmo bug corrigido no painel em 08/10).
+  const { data: metricas } = await fetchAll((de, fim) =>
+    admin.from("tr_campaign_metrics_daily").select("id, campaign_id, gasto, msgs").eq("org_id", orgId).gte("data", desde).lte("data", ate).order("id").range(de, fim),
+  );
   const soma = new Map<string, { gasto: number; msgs: number }>();
   for (const m of (metricas ?? []) as { campaign_id: string; gasto: number | string; msgs: number }[]) {
     const s = soma.get(m.campaign_id) ?? { gasto: 0, msgs: 0 };

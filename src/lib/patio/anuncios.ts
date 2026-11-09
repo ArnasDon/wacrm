@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { IMPOSTO_META } from "./resumo";
+import { fetchAll } from "@/lib/trafego/fetchAll";
 
 // Liga o carro do Pátio (id do documento no Firestore) às campanhas do
 // módulo Tráfego: veiculos.site_vehicle_id → tr_campaigns.car_id →
@@ -31,12 +32,10 @@ export async function anunciosPorCarro(
   if (!campanhas.length) return {};
 
   const desde = new Date(Date.now() - dias * 86_400_000).toISOString().slice(0, 10);
-  const { data: metricas } = await admin
-    .from("tr_campaign_metrics_daily")
-    .select("campaign_id, gasto, msgs")
-    .eq("org_id", orgId)
-    .gte("data", desde)
-    .in("campaign_id", campanhas.map((c) => c.id));
+  // Paginado: sem isso o Supabase corta em 1.000 linhas e o gasto sai menor.
+  const { data: metricas } = await fetchAll((de, fim) =>
+    admin.from("tr_campaign_metrics_daily").select("id, campaign_id, gasto, msgs").eq("org_id", orgId).gte("data", desde).in("campaign_id", campanhas.map((c) => c.id)).order("id").range(de, fim),
+  );
   const soma = new Map<string, { gasto: number; msgs: number }>();
   for (const m of (metricas ?? []) as { campaign_id: string; gasto: number | string; msgs: number }[]) {
     const s = soma.get(m.campaign_id) ?? { gasto: 0, msgs: 0 };

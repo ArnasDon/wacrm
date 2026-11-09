@@ -37,6 +37,28 @@ export function temCusto(c: Carro): boolean {
   return consignado(c) ? Number(c.finance?.repasse_value) > 0 || extras(c) > 0 : Number(c.finance?.purchase_price) > 0;
 }
 
+const FAIXAS: [string, number][] = [["Até R$ 50 mil", 50_000], ["R$ 50–80 mil", 80_000], ["R$ 80–120 mil", 120_000], ["R$ 120–200 mil", 200_000], ["Acima de R$ 200 mil", Infinity]];
+
+/** Como está o pátio: posse × situação, categorias e faixas de preço (o que o painel do admin mostrava). */
+export function composicao(carros: Carro[]) {
+  const posse: Record<string, Record<string, number>> = {};
+  const categorias: Record<string, number> = {};
+  const faixas = FAIXAS.map(([nome]) => ({ nome, carros: 0, valor: 0 }));
+  let semPreco = 0;
+  for (const c of carros) {
+    const p = c.ownership_type || "proprio";
+    const st = c.status || "available";
+    (posse[p] ??= {})[st] = (posse[p][st] ?? 0) + 1;
+    const cat = c.cat || "carros";
+    categorias[cat] = (categorias[cat] ?? 0) + 1;
+    const v = preco(c);
+    if (!v) { semPreco++; continue; }
+    const i = FAIXAS.findIndex(([, max]) => v <= max);
+    faixas[i].carros++; faixas[i].valor += v;
+  }
+  return { posse, categorias, faixas, semPreco };
+}
+
 export function resumoPatio(carros: CarroResumo[], desde: number, ate: number, limiteParado = 45) {
   const aVenda = carros.filter((c) => ["available", "reserved", "unavailable"].includes(c.status ?? "available"));
   const vendidos = carros.filter((c) => c.status === "sold");
@@ -58,6 +80,7 @@ export function resumoPatio(carros: CarroResumo[], desde: number, ate: number, l
     receitaPeriodo: vendidosPeriodo.reduce((s, c) => s + valorVenda(c), 0),
     lucroPeriodo: comCusto.reduce((s, c) => s + valorVenda(c) - custoTotal(c), 0),
     vendidosAte30Dias: vendidosPeriodo.filter((c) => c.dias != null && c.dias <= 30).length,
+    composicao: composicao(aVenda),
     maisConversa: [...aVenda]
       .filter((c) => (c.anuncios?.msgs ?? 0) > 0)
       .sort((a, b) => (b.anuncios?.msgs ?? 0) - (a.anuncios?.msgs ?? 0))

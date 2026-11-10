@@ -10,11 +10,12 @@ import { sugerirFinalidade, rotuloFinalidade } from "./finalidades";
 export const IMPOSTO = 0.12;
 
 export type CarroDoPatio = { id: string; nome: string; placa: string | null; ano: number | null; status: string; img: string | null; modelo: string | null; preco?: number | null };
-export type CampanhaCrua = { id: string; nome: string; objetivo: string | null; status: string | null; car_id: string | null; categoria_objetivo: string | null; destino_id: string | null };
+export type CampanhaCrua = { id: string; nome: string; objetivo: string | null; status: string | null; car_id: string | null; categoria_objetivo: string | null; destino_id: string | null; divisao?: string | null };
 export type VeiculoCru = { id: string; modelo: string | null; placa: string | null; site_vehicle_id: string | null };
 export type Metrica = { campaign_id: string; data: string; gasto: number; msgs: number };
 
-export type Situacao = "sem" | "fora" | "carro" | "finalidade";
+export type Situacao = "sem" | "fora" | "carro" | "finalidade" | "dividida";
+export type Parte = { patioId: string; investido: number; msgs: number };
 export type Sugestao = { tipo: "carro"; patioId: string; rotulo: string } | { tipo: "finalidade"; chave: string; rotulo: string };
 
 export type LinhaLigacao = {
@@ -34,6 +35,8 @@ export type LinhaLigacao = {
   sugestao: Sugestao | null;
   opcoes: { patioId: string; rotulo: string }[]; // vários carros do mesmo modelo: escolha rápida
   candidatos: string[]; // carros do Pátio que o nome da campanha cita (visão "por carro")
+  divisao: string | null; // "anuncio" | "manual" quando a campanha é dividida entre carros
+  partes: Parte[]; // quanto de cada carro, quando dividida
 };
 
 /** Carros do Pátio cujo modelo aparece no nome da campanha (sem contar a marca).
@@ -59,7 +62,7 @@ export function candidatosDoNome(nome: string, patio: CarroDoPatio[]): CarroDoPa
 const r2 = (n: number) => Math.round(n * 100) / 100;
 export const rotuloCarro = (c: Pick<CarroDoPatio, "nome" | "placa"> & { status?: string }) => [c.nome, c.placa, c.status === "sold" ? "vendido" : null].filter(Boolean).join(" · ");
 
-export function montarLigacoes(campanhas: CampanhaCrua[], veiculos: VeiculoCru[], patio: CarroDoPatio[], metricas: Metrica[], destinos: Record<string, string> = {}): LinhaLigacao[] {
+export function montarLigacoes(campanhas: CampanhaCrua[], veiculos: VeiculoCru[], patio: CarroDoPatio[], metricas: Metrica[], destinos: Record<string, string> = {}, partesPorCampanha: Record<string, { car_id: string; gasto: number; msgs: number }[]> = {}): LinhaLigacao[] {
   const soma = new Map<string, { gasto: number; msgs: number; de: string | null; ate: string | null }>();
   for (const m of metricas) {
     const s = soma.get(m.campaign_id) ?? { gasto: 0, msgs: 0, de: null, ate: null };
@@ -87,7 +90,15 @@ export function montarLigacoes(campanhas: CampanhaCrua[], veiculos: VeiculoCru[]
       let ligadaA: string | null = null;
       let patioId: string | null = null;
       let foraId: string | null = null;
-      if (c.car_id) {
+      let partes: Parte[] = [];
+      if (c.divisao) {
+        partes = (partesPorCampanha[c.id] ?? [])
+          .map((p) => ({ patioId: veic.get(p.car_id)?.site_vehicle_id ?? "", investido: r2(p.gasto * (1 + IMPOSTO)), msgs: Math.round(p.msgs) }))
+          .filter((p) => p.patioId && porPatio.has(p.patioId));
+        situacao = "dividida";
+        const n = new Set(partes.map((p) => p.patioId)).size;
+        ligadaA = `${c.divisao === "anuncio" ? "Dividida por anúncio" : "Dividida"} entre ${n} carro(s)`;
+      } else if (c.car_id) {
         const v = veic.get(c.car_id);
         const p = v?.site_vehicle_id ? porPatio.get(v.site_vehicle_id) : undefined;
         if (p) { situacao = "carro"; patioId = p.id; ligadaA = rotuloCarro(p); }
@@ -115,7 +126,7 @@ export function montarLigacoes(campanhas: CampanhaCrua[], veiculos: VeiculoCru[]
       }
       const citados = new Set(candidatosDoNome(c.nome || "", patio).map((x) => x.id));
       if (sugestao?.tipo === "carro") citados.add(sugestao.patioId);
-      return { ...base, situacao, ligadaA, patioId, finalidade: c.categoria_objetivo, foraId, sugestao, opcoes: escolhas, candidatos: [...citados] };
+      return { ...base, situacao, ligadaA, patioId, finalidade: c.categoria_objetivo, foraId, sugestao, opcoes: escolhas, candidatos: [...citados], divisao: c.divisao ?? null, partes };
     })
     .filter((l) => l.investido > 0 || l.ativa || l.situacao !== "sem")
     .sort((a, b) => Number(b.ativa) - Number(a.ativa) || b.investido - a.investido);

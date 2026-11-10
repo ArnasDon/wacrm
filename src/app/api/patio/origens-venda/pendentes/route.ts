@@ -7,6 +7,7 @@ import { valorVenda } from "@/lib/patio/resumo";
 import { sugerirOrigem } from "@/lib/patio/sugestao-origem";
 import { createAdminClient } from "@/lib/trafego/admin";
 import { fetchAll } from "@/lib/trafego/fetchAll";
+import { carregarGastoPorCarro, partesPorCarro } from "@/lib/trafego/gasto-carro";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -42,28 +43,25 @@ export async function GET() {
     const admin = createAdminClient();
     const { data: contas } = await admin.from("accounts").select("id").eq("organization_id", q.orgId);
     const idsContas = (contas ?? []).map((c) => c.id as string);
-    const [clientes, veic, camps, mets] = await Promise.all([
+    const [clientes, veic, g] = await Promise.all([
       idsContas.length && ids.length
         ? fetchAll<{ veiculo_site_id: string; origem: string | null }>((a, b) => admin.from("contacts").select("id, veiculo_site_id, origem").in("account_id", idsContas).in("veiculo_site_id", ids).order("id").range(a, b))
         : Promise.resolve({ data: [], error: null }),
       fetchAll<{ id: string; site_vehicle_id: string | null }>((a, b) => admin.from("veiculos").select("id, site_vehicle_id").eq("org_id", q.orgId).order("id").range(a, b)),
-      fetchAll<{ id: string; nome: string; car_id: string | null }>((a, b) => admin.from("tr_campaigns").select("id, nome, car_id").eq("org_id", q.orgId).not("car_id", "is", null).order("id").range(a, b)),
-      fetchAll<{ campaign_id: string; gasto: number }>((a, b) => admin.from("tr_campaign_metrics_daily").select("id, campaign_id, gasto").eq("org_id", q.orgId).order("id").range(a, b)),
+      carregarGastoPorCarro(admin, q.orgId),
     ]);
 
     const origensPorCarro = new Map<string, (string | null)[]>();
     for (const c of clientes.data) origensPorCarro.set(c.veiculo_site_id, [...(origensPorCarro.get(c.veiculo_site_id) ?? []), c.origem]);
     const sitePorVeiculo = new Map(veic.data.filter((v) => v.site_vehicle_id).map((v) => [String(v.id), String(v.site_vehicle_id)]));
-    const gastoPorCampanha = new Map<string, number>();
-    for (const m of mets.data) gastoPorCampanha.set(m.campaign_id, (gastoPorCampanha.get(m.campaign_id) ?? 0) + (Number(m.gasto) || 0));
+    const nomeCamp = new Map(g.campanhas.map((c) => [c.id, c.nome]));
     const anuncios = new Map<string, { gasto: number; top: string; topGasto: number }>();
-    for (const c of camps.data) {
-      const site = sitePorVeiculo.get(String(c.car_id));
+    for (const p of partesPorCarro(g.linhas)) {
+      const site = sitePorVeiculo.get(String(p.car_id));
       if (!site) continue;
-      const g = gastoPorCampanha.get(c.id) ?? 0;
       const a = anuncios.get(site) ?? { gasto: 0, top: "", topGasto: -1 };
-      a.gasto += g;
-      if (g > a.topGasto) { a.top = c.nome; a.topGasto = g; }
+      a.gasto += p.gasto;
+      if (p.gasto > a.topGasto) { a.top = nomeCamp.get(p.campaign_id) ?? ""; a.topGasto = p.gasto; }
       anuncios.set(site, a);
     }
 

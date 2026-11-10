@@ -40,7 +40,7 @@ const btnForte: React.CSSProperties = { ...btn, background: "var(--tr-gold-2)", 
 const chip = (on: boolean): React.CSSProperties => ({ ...btn, padding: "4px 10px", borderRadius: 999, fontSize: 12.5, ...(on ? { background: "var(--tr-text)", color: "var(--tr-bg, var(--tr-surface))", borderColor: "var(--tr-text)", fontWeight: 600 } : {}) });
 const rotuloFiltro: React.CSSProperties = { fontSize: 11, textTransform: "uppercase", letterSpacing: ".06em", color: "var(--tr-text-dim)", minWidth: 86 };
 
-const SITUACOES: [Situacao, string][] = [["sem", "Sem ligação"], ["fora", "Carro fora do Pátio"], ["carro", "Ligada a carro"], ["finalidade", "Ligada a finalidade"]];
+const SITUACOES: [Situacao, string][] = [["sem", "Sem ligação"], ["fora", "Carro fora do Pátio"], ["carro", "Ligada a carro"], ["dividida", "Dividida entre carros"], ["finalidade", "Ligada a finalidade"]];
 const SUGESTOES: [FiltroSug, string][] = [["todas", "Todas"], ["carro", "Carro sugerido"], ["opcoes", "Qual destes?"], ["finalidade", "Finalidade sugerida"], ["nenhuma", "Sem sugestão"]];
 const ORDENS: [Ordem, string][] = [["gasto", "Mais investido"], ["recente", "Mais recente"], ["conversas", "Mais conversas"], ["custoMenor", "Menor custo por conversa"], ["custoMaior", "Maior custo por conversa"], ["nome", "Nome"]];
 
@@ -55,6 +55,13 @@ export default function LigarPage() {
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [ocupado, setOcupado] = useState<Set<string>>(new Set());
   const [aviso, setAviso] = useState("");
+  const [dividindo, setDividindo] = useState<LinhaLigacao | null>(null);
+
+  async function recarregar() {
+    const r = await fetch("/api/trafego/ligar", { cache: "no-store" });
+    const d = await r.json().catch(() => ({}));
+    if (r.ok) setLinhas(d.linhas);
+  }
 
   useEffect(() => {
     let vivo = true;
@@ -91,9 +98,9 @@ export default function LigarPage() {
     const fin = "finalidade" in alvo ? finalidades.find((x) => x.key === alvo.finalidade) : null;
     setLinhas((ls) => (ls ?? []).map((l) => {
       if (!ids.includes(l.id)) return l;
-      if (carro) return { ...l, situacao: "carro", ligadaA: rotuloCarro(carro), patioId: carro.id, finalidade: null, foraId: null, sugestao: null, opcoes: [] };
-      if (fin) return { ...l, situacao: "finalidade", ligadaA: fin.label, patioId: null, finalidade: fin.key, foraId: null, sugestao: null, opcoes: [] };
-      return { ...l, situacao: "sem", ligadaA: null, patioId: null, finalidade: null, foraId: null };
+      if (carro) return { ...l, situacao: "carro", ligadaA: rotuloCarro(carro), patioId: carro.id, finalidade: null, foraId: null, sugestao: null, opcoes: [], divisao: null, partes: [] };
+      if (fin) return { ...l, situacao: "finalidade", ligadaA: fin.label, patioId: null, finalidade: fin.key, foraId: null, sugestao: null, opcoes: [], divisao: null, partes: [] };
+      return { ...l, situacao: "sem", ligadaA: null, patioId: null, finalidade: null, foraId: null, divisao: null, partes: [] };
     }));
     setSel((s) => { const n = new Set(s); ids.forEach((i) => n.delete(i)); return n; });
     if (!silencioso) {
@@ -140,9 +147,10 @@ export default function LigarPage() {
       {linhas && modo === "campanha" && (
         <PorCampanha linhas={comRecusa} patio={patio} finalidades={finalidades} f={f} mudar={mudar} tipoSug={tipoSug}
           sel={sel} setSel={setSel} ocupado={ocupado} ligar={ligar} aceitarSugestoes={aceitarSugestoes} recusar={recusar}
-          restaurarRecusas={recusadas.size ? () => { setRecusadas(new Set()); gravar(CHAVE_RECUSA, { ids: [] }); } : null} />
+          restaurarRecusas={recusadas.size ? () => { setRecusadas(new Set()); gravar(CHAVE_RECUSA, { ids: [] }); } : null} onDividir={setDividindo} />
       )}
-      {linhas && modo === "carro" && <PorCarro linhas={comRecusa} patio={patio} ocupado={ocupado} ligar={ligar} />}
+      {linhas && modo === "carro" && <PorCarro linhas={comRecusa} patio={patio} ocupado={ocupado} ligar={ligar} onDividir={setDividindo} />}
+      {dividindo && <PainelDivisao linha={dividindo} patio={patio} onFechar={() => setDividindo(null)} onSalvo={async (txt) => { setDividindo(null); setAviso(txt); await recarregar(); }} />}
     </main>
   );
 }
@@ -151,7 +159,7 @@ export default function LigarPage() {
 function Placar({ linhas }: { linhas: LinhaLigacao[] }) {
   const total = linhas.reduce((s, l) => s + l.investido, 0);
   const soma = (sit: Situacao[]) => linhas.filter((l) => sit.includes(l.situacao)).reduce((s, l) => s + l.investido, 0);
-  const noCarro = soma(["carro"]), naFinalidade = soma(["finalidade"]), solto = soma(["sem", "fora"]);
+  const noCarro = soma(["carro", "dividida"]), naFinalidade = soma(["finalidade"]), solto = soma(["sem", "fora"]);
   const pct = (v: number) => (total ? Math.round((v / total) * 100) : 0);
   const barras: [string, number, string][] = [["Em carros do Pátio", noCarro, "var(--tr-good)"], ["Em finalidades", naFinalidade, "var(--tr-text-dim)"], ["Sem destino certo", solto, "var(--tr-bad)"]];
   return (
@@ -174,6 +182,7 @@ function PorCampanha(p: {
   linhas: LinhaLigacao[]; patio: CarroDoPatio[]; finalidades: Finalidade[]; f: Filtros; mudar: (m: Partial<Filtros>) => void;
   tipoSug: (l: LinhaLigacao) => FiltroSug; sel: Set<string>; setSel: React.Dispatch<React.SetStateAction<Set<string>>>; ocupado: Set<string>;
   ligar: (ids: string[], alvo: Alvo) => Promise<boolean>; aceitarSugestoes: (l: LinhaLigacao[]) => void; recusar: (id: string) => void; restaurarRecusas: (() => void) | null;
+  onDividir: (l: LinhaLigacao) => void;
 }) {
   const { linhas, f, mudar, tipoSug, sel, setSel } = p;
   const desde = f.dias ? menosDias(f.dias) : null;
@@ -257,7 +266,7 @@ function PorCampanha(p: {
           <EscolherCarro patio={p.patio} rotulo="Ligar a um carro…" onEscolher={(c) => p.ligar(ids, { patioId: c.id })} />
           <EscolherFinalidade finalidades={p.finalidades} rotulo="Ligar a uma finalidade…" onEscolher={(k) => p.ligar(ids, { finalidade: k })} />
           {lista.some((l) => sel.has(l.id) && l.sugestao) && <button type="button" style={btn} onClick={() => p.aceitarSugestoes(lista.filter((l) => sel.has(l.id)))}>Aceitar sugestões das marcadas</button>}
-          {lista.some((l) => sel.has(l.id) && (l.situacao === "carro" || l.situacao === "finalidade")) && <button type="button" style={btn} onClick={() => p.ligar(ids, { limpar: true })}>Desfazer ligação</button>}
+          {lista.some((l) => sel.has(l.id) && (l.situacao === "carro" || l.situacao === "finalidade" || l.situacao === "dividida")) && <button type="button" style={btn} onClick={() => p.ligar(ids, { limpar: true })}>Desfazer ligação</button>}
           <button type="button" style={{ ...btn, color: "var(--tr-text-dim)" }} onClick={() => setSel(new Set())}>Cancelar</button>
         </section>
       )}
@@ -273,7 +282,7 @@ function PorCampanha(p: {
           {lista.map((l) => (
             <LinhaCampanha key={l.id} l={l} patio={p.patio} finalidades={p.finalidades} marcada={sel.has(l.id)} ocupada={p.ocupado.has(l.id)}
               onMarcar={() => setSel((s) => { const n = new Set(s); if (n.has(l.id)) n.delete(l.id); else n.add(l.id); return n; })}
-              onLigar={(alvo) => p.ligar([l.id], alvo)} onRecusar={() => p.recusar(l.id)} />
+              onLigar={(alvo) => p.ligar([l.id], alvo)} onRecusar={() => p.recusar(l.id)} onDividir={() => p.onDividir(l)} />
           ))}
         </section>
       )}
@@ -291,6 +300,7 @@ function Situacao({ l }: { l: LinhaLigacao }) {
     fora: { txt: `Ligada a carro fora do Pátio: ${l.ligadaA}`, cor: "var(--tr-bad)" },
     carro: { txt: `Carro: ${l.ligadaA}`, cor: "var(--tr-good)" },
     finalidade: { txt: `Finalidade: ${l.ligadaA}`, cor: "var(--tr-good)" },
+    dividida: { txt: l.ligadaA ?? "Dividida", cor: "var(--tr-good)" },
   }[l.situacao];
   return <div style={{ fontSize: 12, marginTop: 3, color: s.cor }}>{s.txt}</div>;
 }
@@ -305,9 +315,9 @@ function Metricas({ l }: { l: LinhaLigacao }) {
   );
 }
 
-function LinhaCampanha({ l, patio, finalidades, marcada, ocupada, onMarcar, onLigar, onRecusar }: {
+function LinhaCampanha({ l, patio, finalidades, marcada, ocupada, onMarcar, onLigar, onRecusar, onDividir }: {
   l: LinhaLigacao; patio: CarroDoPatio[]; finalidades: Finalidade[]; marcada: boolean; ocupada: boolean;
-  onMarcar: () => void; onLigar: (alvo: Alvo) => void; onRecusar: () => void;
+  onMarcar: () => void; onLigar: (alvo: Alvo) => void; onRecusar: () => void; onDividir: () => void;
 }) {
   return (
     <div style={{ display: "grid", gridTemplateColumns: "auto minmax(240px, 1.2fr) minmax(300px, 2fr)", gap: 12, alignItems: "center", padding: "12px 14px", borderBottom: "1px solid var(--tr-border)", opacity: ocupada ? 0.5 : 1, background: marcada ? "var(--tr-surface-2)" : undefined }}>
@@ -332,15 +342,16 @@ function LinhaCampanha({ l, patio, finalidades, marcada, ocupada, onMarcar, onLi
           </span>
         )}
         <EscolherCarro patio={patio} rotulo={l.situacao === "carro" ? "Trocar carro…" : l.opcoes.length || l.sugestao ? "Outro carro…" : "Carro…"} onEscolher={(c) => onLigar({ patioId: c.id })} />
+        <button type="button" style={btn} onClick={onDividir} title="Campanha com anúncios de carros diferentes, ou um anúncio com mais de um carro">{l.situacao === "dividida" ? "Ver divisão…" : "Dividir…"}</button>
         <EscolherFinalidade finalidades={finalidades} rotulo="Não é carro…" atual={l.finalidade} onEscolher={(k) => onLigar({ finalidade: k })} />
-        {(l.situacao === "carro" || l.situacao === "finalidade") && <button type="button" style={{ ...btn, color: "var(--tr-text-dim)" }} onClick={() => onLigar({ limpar: true })}>Desfazer</button>}
+        {(l.situacao === "carro" || l.situacao === "finalidade" || l.situacao === "dividida") && <button type="button" style={{ ...btn, color: "var(--tr-text-dim)" }} onClick={() => onLigar({ limpar: true })}>Desfazer</button>}
       </div>
     </div>
   );
 }
 
 // ---------- por carro do Pátio ----------
-function PorCarro({ linhas, patio, ocupado, ligar }: { linhas: LinhaLigacao[]; patio: CarroDoPatio[]; ocupado: Set<string>; ligar: (ids: string[], alvo: Alvo) => Promise<boolean> }) {
+function PorCarro({ linhas, patio, ocupado, ligar, onDividir }: { linhas: LinhaLigacao[]; patio: CarroDoPatio[]; ocupado: Set<string>; ligar: (ids: string[], alvo: Alvo) => Promise<boolean>; onDividir: (l: LinhaLigacao) => void }) {
   const [busca, setBusca] = useState("");
   const [estado, setEstado] = useState<"venda" | "vendidos" | "todos">("venda");
   const [soSemAnuncio, setSoSemAnuncio] = useState(false);
@@ -354,6 +365,8 @@ function PorCarro({ linhas, patio, ocupado, ligar }: { linhas: LinhaLigacao[]; p
     for (const c of patio) m.set(c.id, { ligadas: [], possiveis: [] });
     for (const l of linhas) {
       if (l.situacao === "carro" && l.patioId) m.get(l.patioId)?.ligadas.push(l);
+      // dividida: entra em cada carro só com a parte dele
+      if (l.situacao === "dividida") for (const p of l.partes) m.get(p.patioId)?.ligadas.push({ ...l, investido: p.investido, msgs: p.msgs });
       if (l.situacao === "sem" || l.situacao === "fora") for (const id of l.candidatos) m.get(id)?.possiveis.push(l);
     }
     return m;
@@ -473,8 +486,10 @@ function PorCarro({ linhas, patio, ocupado, ligar }: { linhas: LinhaLigacao[]; p
             {dados.ligadas.length === 0 && <p style={{ margin: 0, padding: 14, fontSize: 13, color: "var(--tr-text-dim)" }}>Ainda nenhuma.</p>}
             {[...dados.ligadas].sort((a, b) => b.investido - a.investido).map((l) => (
               <div key={l.id} style={{ display: "flex", gap: 12, alignItems: "center", padding: "10px 14px", borderBottom: "1px solid var(--tr-border)", opacity: ocupado.has(l.id) ? 0.5 : 1 }}>
-                <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 600, fontSize: 13.5 }}>{l.nome}</div><Metricas l={l} /></div>
-                <button type="button" style={{ ...btn, color: "var(--tr-text-dim)" }} disabled={ocupado.has(l.id)} onClick={() => ligar([l.id], { limpar: true })}>Desfazer</button>
+                <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 600, fontSize: 13.5 }}>{l.nome}</div><Metricas l={l} />{l.situacao === "dividida" && <Situacao l={l} />}</div>
+                {l.situacao === "dividida"
+                  ? <button type="button" style={btn} onClick={() => onDividir(l)}>Ver divisão…</button>
+                  : <button type="button" style={{ ...btn, color: "var(--tr-text-dim)" }} disabled={ocupado.has(l.id)} onClick={() => ligar([l.id], { limpar: true })}>Desfazer</button>}
               </div>
             ))}
           </div>
@@ -542,5 +557,164 @@ function EscolherFinalidade({ finalidades, rotulo, atual, onEscolher }: { finali
       <option value="">{rotulo}</option>
       {finalidades.map((x) => <option key={x.key} value={x.key} disabled={x.key === atual}>{x.label}</option>)}
     </select>
+  );
+}
+
+// ---------- dividir uma campanha entre carros ----------
+type AnuncioDiv = { id: string; nome: string; conjunto: string | null; status: string | null; gasto: number; msgs: number; patioId: string | null; sugestao: string | null; candidatos: string[] };
+type DadosDivisao = { campanha: { id: string; nome: string; divisao: string | null; gasto: number }; anuncios: AnuncioDiv[]; divisoes: { patioId: string; peso: number }[]; aviso: string };
+
+function PainelDivisao({ linha, patio, onFechar, onSalvo }: { linha: LinhaLigacao; patio: CarroDoPatio[]; onFechar: () => void; onSalvo: (aviso: string) => void }) {
+  const [d, setD] = useState<DadosDivisao | null>(null);
+  const [erro, setErro] = useState("");
+  const [modo, setModo] = useState<"anuncio" | "manual">("anuncio");
+  const [carroDoAnuncio, setCarroDoAnuncio] = useState<Record<string, string | null>>({});
+  const [partes, setPartes] = useState<{ patioId: string; peso: number }[]>([]);
+  const [salvando, setSalvando] = useState(false);
+  const porId = useMemo(() => new Map(patio.map((c) => [c.id, c])), [patio]);
+  const nomeCarro = (id: string | null) => (id ? (porId.get(id) ? rotuloCarro(porId.get(id)!) : "carro") : "Sem carro");
+
+  useEffect(() => {
+    let vivo = true;
+    fetch(`/api/trafego/dividir?campanha=${linha.id}`, { cache: "no-store" })
+      .then(async (r) => ({ ok: r.ok, j: await r.json().catch(() => ({})) }))
+      .then(({ ok, j }) => {
+        if (!vivo) return;
+        if (!ok) { setErro(j.erro || "Não consegui abrir a divisão."); return; }
+        const dados = j as DadosDivisao;
+        setD(dados);
+        setModo(dados.campanha.divisao === "manual" || (dados.anuncios.length < 2 && !dados.campanha.divisao) ? "manual" : "anuncio");
+        setCarroDoAnuncio(Object.fromEntries(dados.anuncios.map((a) => [a.id, a.patioId ?? a.sugestao ?? null])));
+        setPartes(dados.divisoes.length ? dados.divisoes : linha.candidatos.slice(0, 2).map((id) => ({ patioId: id, peso: 50 })));
+      });
+    return () => { vivo = false; };
+  }, [linha.id, linha.candidatos]);
+
+  useEffect(() => {
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") onFechar(); };
+    document.addEventListener("keydown", esc);
+    return () => document.removeEventListener("keydown", esc);
+  }, [onFechar]);
+
+  async function salvar(corpo: Record<string, unknown>, txt: string) {
+    setSalvando(true); setErro("");
+    const r = await fetch("/api/trafego/dividir", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ campanha: linha.id, ...corpo }) });
+    const j = await r.json().catch(() => ({}));
+    setSalvando(false);
+    if (!r.ok) { setErro(j.erro || "Não consegui salvar."); return; }
+    onSalvo(txt);
+  }
+
+  // resumo da divisão por anúncio
+  const resumoAnuncio = useMemo(() => {
+    const m = new Map<string | null, { gasto: number; msgs: number }>();
+    for (const a of d?.anuncios ?? []) { const k = carroDoAnuncio[a.id] ?? null; const x = m.get(k) ?? { gasto: 0, msgs: 0 }; x.gasto += a.gasto; x.msgs += a.msgs; m.set(k, x); }
+    return [...m.entries()].sort((a, b) => b[1].gasto - a[1].gasto);
+  }, [d, carroDoAnuncio]);
+  const totalPeso = partes.reduce((s, p) => s + (Number(p.peso) || 0), 0);
+  const carrosAnuncio = new Set(Object.values(carroDoAnuncio).filter(Boolean)).size;
+
+  return (
+    <div role="dialog" aria-modal="true" aria-label={`Dividir ${linha.nome}`} onMouseDown={(e) => { if (e.target === e.currentTarget) onFechar(); }}
+      style={{ position: "fixed", inset: 0, zIndex: 60, background: "rgba(0,0,0,.35)", display: "flex", justifyContent: "flex-end" }}>
+      <div style={{ width: "min(760px, 100%)", height: "100%", overflowY: "auto", background: "var(--tr-bg, var(--tr-surface))", borderLeft: "1px solid var(--tr-border)", padding: 20, display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
+          <div>
+            <p style={{ margin: 0, fontSize: 12, color: "var(--tr-text-dim)" }}>Dividir campanha entre carros</p>
+            <h2 style={{ margin: "4px 0 0", fontSize: 18 }}>{linha.nome}</h2>
+            <p style={{ margin: "4px 0 0", fontSize: 13, color: "var(--tr-text-dim)" }}>{brl(linha.investido)} investidos (com imposto) · {linha.msgs} conversas</p>
+          </div>
+          <button type="button" style={btn} onClick={onFechar} aria-label="Fechar">Fechar</button>
+        </div>
+
+        {erro && <p role="alert" style={{ margin: 0, color: "var(--tr-bad)", fontSize: 14 }}>{erro}</p>}
+        {!d && !erro && <p style={{ margin: 0, fontSize: 14 }}>Buscando os anúncios desta campanha no Facebook…</p>}
+
+        {d && (
+          <>
+            {d.aviso && <p style={{ margin: 0, fontSize: 13, color: "var(--tr-bad)" }}>{d.aviso}</p>}
+            <div role="tablist" style={{ display: "flex", gap: 4, padding: 4, ...card }}>
+              <button role="tab" aria-selected={modo === "anuncio"} type="button" onClick={() => setModo("anuncio")} style={{ ...btn, border: 0, flex: 1, ...(modo === "anuncio" ? { background: "var(--tr-surface-2)", fontWeight: 600 } : {}) }}>Por anúncio · gasto real ({d.anuncios.length})</button>
+              <button role="tab" aria-selected={modo === "manual"} type="button" onClick={() => setModo("manual")} style={{ ...btn, border: 0, flex: 1, ...(modo === "manual" ? { background: "var(--tr-surface-2)", fontWeight: 600 } : {}) }}>Dividir em partes</button>
+            </div>
+
+            {modo === "anuncio" && (
+              <>
+                <p style={{ margin: 0, fontSize: 13, color: "var(--tr-text-dim)" }}>Cada anúncio vai para um carro. O carro recebe o gasto e as conversas reais daquele anúncio, dia a dia, direto do Facebook. Use quando cada anúncio ou conjunto é de um carro diferente.</p>
+                {d.anuncios.length === 0 && <p style={{ margin: 0, fontSize: 14 }}>O Facebook não devolveu anúncios para esta campanha. Use “Dividir em partes”.</p>}
+                <div style={{ ...card }}>
+                  {d.anuncios.map((a) => {
+                    const atual = carroDoAnuncio[a.id] ?? null;
+                    return (
+                      <div key={a.id} style={{ padding: "12px 14px", borderBottom: "1px solid var(--tr-border)", display: "flex", flexDirection: "column", gap: 8 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontWeight: 600, fontSize: 13.5 }}>{a.nome}</div>
+                            <div style={{ fontSize: 12, color: "var(--tr-text-dim)" }}>{[a.conjunto ? `Conjunto: ${a.conjunto}` : null, a.status === "ACTIVE" ? "● No ar" : "Pausado", brl(a.gasto), `${a.msgs} conversa(s)`].filter(Boolean).join(" · ")}</div>
+                          </div>
+                          <span style={{ fontSize: 12.5, whiteSpace: "nowrap", color: atual ? "var(--tr-good)" : "var(--tr-text-dim)" }}>{nomeCarro(atual)}</span>
+                        </div>
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                          {a.candidatos.map((id) => <button key={id} type="button" aria-pressed={atual === id} style={chip(atual === id)} onClick={() => setCarroDoAnuncio((m) => ({ ...m, [a.id]: id }))}>{nomeCarro(id)}</button>)}
+                          <EscolherCarro patio={patio} rotulo="Outro carro…" onEscolher={(c) => setCarroDoAnuncio((m) => ({ ...m, [a.id]: c.id }))} />
+                          <button type="button" aria-pressed={!atual} style={chip(!atual)} onClick={() => setCarroDoAnuncio((m) => ({ ...m, [a.id]: null }))}>Sem carro</button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {d.anuncios.length > 0 && (
+                  <div style={{ ...card, padding: "12px 14px", fontSize: 13, display: "flex", flexDirection: "column", gap: 4 }}>
+                    <b>Como fica</b>
+                    {resumoAnuncio.map(([id, x]) => <span key={id ?? "sem"} style={{ color: id ? undefined : "var(--tr-text-dim)" }}>{nomeCarro(id)}: <b>{brl(x.gasto)}</b> · {x.msgs} conversa(s)</span>)}
+                  </div>
+                )}
+                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
+                  {d.campanha.divisao && <button type="button" style={{ ...btn, color: "var(--tr-text-dim)" }} disabled={salvando} onClick={() => salvar({ modo: "nenhuma" }, "Divisão desfeita. A campanha voltou para “sem ligação”.")}>Desfazer divisão</button>}
+                  <button type="button" style={btnForte} disabled={salvando || !carrosAnuncio} onClick={() => salvar({ modo: "anuncio", anuncios: d.anuncios.map((a) => ({ id: a.id, patioId: carroDoAnuncio[a.id] ?? null })) }, `Campanha dividida por anúncio entre ${carrosAnuncio} carro(s).`)}>
+                    {salvando ? "Salvando…" : "Salvar divisão por anúncio"}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {modo === "manual" && (
+              <>
+                <p style={{ margin: 0, fontSize: 13, color: "var(--tr-text-dim)" }}>O gasto e as conversas da campanha são repartidos entre os carros. Use quando um mesmo anúncio mostra mais de um carro. Comece em partes iguais e ajuste a porcentagem se quiser.</p>
+                <div style={{ ...card }}>
+                  {partes.map((p, i) => (
+                    <div key={p.patioId} style={{ padding: "10px 14px", borderBottom: "1px solid var(--tr-border)", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                      <span style={{ flex: 1, minWidth: 200, fontSize: 13.5, fontWeight: 600 }}>{nomeCarro(p.patioId)}</span>
+                      <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+                        <input inputMode="decimal" value={String(p.peso)} aria-label={`Porcentagem de ${nomeCarro(p.patioId)}`}
+                          onChange={(e) => { const v = Number(e.target.value.replace(",", ".")) || 0; setPartes((ps) => ps.map((x, k) => (k === i ? { ...x, peso: v } : x))); }}
+                          style={{ ...btn, width: 70, cursor: "text", textAlign: "right" }} />%
+                      </label>
+                      <span style={{ fontSize: 12.5, color: "var(--tr-text-dim)", width: 110, textAlign: "right" }}>{totalPeso ? brl((linha.investido * (Number(p.peso) || 0)) / totalPeso) : "—"}</span>
+                      <button type="button" style={{ ...btn, color: "var(--tr-text-dim)" }} onClick={() => setPartes((ps) => ps.filter((_, k) => k !== i))} aria-label={`Tirar ${nomeCarro(p.patioId)}`}>Tirar</button>
+                    </div>
+                  ))}
+                  <div style={{ padding: "10px 14px", display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                    {linha.candidatos.filter((id) => !partes.some((p) => p.patioId === id)).slice(0, 4).map((id) => (
+                      <button key={id} type="button" style={{ ...btn, borderColor: "var(--tr-gold-2)" }} onClick={() => setPartes((ps) => [...ps, { patioId: id, peso: 0 }])}>+ {nomeCarro(id)}</button>
+                    ))}
+                    <EscolherCarro patio={patio} rotulo="+ Adicionar carro…" onEscolher={(c) => setPartes((ps) => (ps.some((x) => x.patioId === c.id) ? ps : [...ps, { patioId: c.id, peso: 0 }]))} />
+                    {partes.length > 1 && <button type="button" style={btn} onClick={() => setPartes((ps) => ps.map((x) => ({ ...x, peso: Math.round((100 / ps.length) * 100) / 100 })))}>Partes iguais</button>}
+                  </div>
+                </div>
+                <p style={{ margin: 0, fontSize: 13, color: Math.abs(totalPeso - 100) < 0.05 ? "var(--tr-text-dim)" : "var(--tr-bad)" }}>Total: {totalPeso.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%{Math.abs(totalPeso - 100) < 0.05 ? "" : " — precisa somar 100%"}</p>
+                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
+                  {d.campanha.divisao && <button type="button" style={{ ...btn, color: "var(--tr-text-dim)" }} disabled={salvando} onClick={() => salvar({ modo: "nenhuma" }, "Divisão desfeita. A campanha voltou para “sem ligação”.")}>Desfazer divisão</button>}
+                  <button type="button" style={btnForte} disabled={salvando || partes.filter((p) => p.peso > 0).length < 2 || Math.abs(totalPeso - 100) >= 0.05}
+                    onClick={() => salvar({ modo: "manual", carros: partes.filter((p) => p.peso > 0) }, `Campanha dividida entre ${partes.filter((p) => p.peso > 0).length} carros.`)}>
+                    {salvando ? "Salvando…" : "Salvar divisão"}
+                  </button>
+                </div>
+              </>
+            )}
+          </>
+        )}
+      </div>
+    </div>
   );
 }

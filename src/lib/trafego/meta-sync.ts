@@ -267,5 +267,87 @@ export async function syncMeta(
     console.error("Sync por hora não gravada (não bloqueia a diária):", erroHora);
   }
 
+  // Campanhas divididas por anúncio: o gasto de cada anúncio no mesmo período.
+  await syncAnunciosDasDivididas(supabase, accountId, act, token, { desde, ate });
+
   return linhasDia.length + horasGravadas;
+}
+
+// ---------- Anúncios (para campanhas divididas por anúncio) ----------
+//
+// Busca, das campanhas pedidas, cada anúncio com o gasto e as conversas por
+// dia. Só roda para campanhas com divisão por anúncio (ou quando alguém abre
+// a divisão), para não encher o banco com o que ninguém usa. Nunca mexe no
+// carro escolhido para o anúncio (tr_ads.car_id).
+export async function syncAnuncios(
+  supabase: Supa,
+  orgId: string,
+  adAccountId: string,
+  token: string,
+  campanhas: { id: string; external_campaign_id: string }[],
+  periodo: { desde: string; ate: string } | "maximo",
+): Promise<{ anuncios: number; dias: number }> {
+  if (!campanhas.length) return { anuncios: 0, dias: 0 };
+  const act = adAccountId.startsWith("act_") ? adAccountId : `act_${adAccountId}`;
+  const interna = new Map(campanhas.map((c) => [String(c.external_campaign_id), c.id]));
+  const filtro = JSON.stringify([
+    { field: "campaign.id", operator: "IN", value: [...interna.keys()] },
+    { field: "ad.effective_status", operator: "IN", value: ["ACTIVE", "PAUSED", "DELETED", "ARCHIVED", "CAMPAIGN_PAUSED", "ADSET_PAUSED", "IN_PROCESS", "WITH_ISSUES", "DISAPPROVED", "PENDING_REVIEW"] },
+  ]);
+  const tempo: Record<string, string> = periodo === "maximo" ? { date_preset: "maximum" } : { time_range: JSON.stringify({ since: periodo.desde, until: periodo.ate }) };
+  const linhas = await graphTodasPaginas(`${act}/insights`, {
+    level: "ad", time_increment: "1", ...tempo, filtering: filtro, limit: "500",
+    fields: "ad_id,ad_name,adset_name,campaign_id,spend,impressions,clicks,actions",
+  }, token).catch(async (e) => {
+    if (e instanceof Error && /Token do Meta/.test(e.message)) throw e;
+    // sem o filtro de status (o Meta às vezes recusa algum valor)
+    return graphTodasPaginas(`${act}/insights`, {
+      level: "ad", time_increment: "1", ...tempo, limit: "500",
+      filtering: JSON.stringify([{ field: "campaign.id", operator: "IN", value: [...interna.keys()] }]),
+      fields: "ad_id,ad_name,adset_name,campaign_id,spend,impressions,clicks,actions",
+    }, token);
+  });
+  // status atual de cada anúncio
+  const status = new Map<string, string>();
+  for (const ext of interna.keys()) {
+    const ads = await graphTodasPaginas(`${ext}/ads`, { fields: "id,effective_status", limit: "500" }, token).catch(() => [] as Linha[]);
+    for (const a of ads) status.set(String(a.id), String(a.effective_status || ""));
+  }
+
+  const anuncios = new Map<string, Record<string, unknown>>();
+  for (const l of linhas) {
+    const cid = interna.get(String(l.campaign_id));
+    if (!cid || !l.ad_id) continue;
+    anuncios.set(String(l.ad_id), {
+      org_id: orgId, campaign_id: cid, external_ad_id: String(l.ad_id),
+      nome: l.ad_name ?? null, conjunto: l.adset_name ?? null,
+      status: status.get(String(l.ad_id)) || "DELETED", atualizado_em: new Date().toISOString(),
+    });
+  }
+  if (!anuncios.size) return { anuncios: 0, dias: 0 };
+  await upsertEmLotes(supabase, "tr_ads", [...anuncios.values()], "org_id,external_ad_id");
+  const { data: mapa, error } = await supabase.from("tr_ads").select("id, external_ad_id").eq("org_id", orgId).in("external_ad_id", [...anuncios.keys()]);
+  if (error) throw new Error(`tr_ads: ${error.message}`);
+  const id = new Map((mapa ?? []).map((r: { id: string; external_ad_id: string }) => [String(r.external_ad_id), String(r.id)]));
+  const agora = new Date().toISOString();
+  const dias = linhas
+    .filter((l) => id.has(String(l.ad_id)) && l.date_start)
+    .map((l) => ({
+      org_id: orgId, ad_id: id.get(String(l.ad_id)), data: l.date_start,
+      gasto: Number(l.spend) || 0, impressions: Number(l.impressions) || 0, clicks: Number(l.clicks) || 0,
+      msgs: somaAcao(l.actions, "onsite_conversion.messaging_conversation_started_7d"), atualizado_em: agora,
+    }));
+  await upsertEmLotes(supabase, "tr_ad_metrics_daily", dias, "ad_id,data");
+  return { anuncios: anuncios.size, dias: dias.length };
+}
+
+/** Depois do sync da conta: atualiza os anúncios das campanhas divididas por anúncio. Nunca derruba o sync. */
+export async function syncAnunciosDasDivididas(supabase: Supa, orgId: string, adAccountId: string, token: string, periodo: { desde: string; ate: string }) {
+  try {
+    const { data, error } = await supabase.from("tr_campaigns").select("id, external_campaign_id").eq("org_id", orgId).eq("divisao", "anuncio").not("external_campaign_id", "is", null);
+    if (error || !data?.length) return;
+    await syncAnuncios(supabase, orgId, adAccountId, token, data as { id: string; external_campaign_id: string }[], periodo);
+  } catch (e) {
+    console.error("Meta: anúncios das campanhas divididas não atualizaram:", e);
+  }
 }

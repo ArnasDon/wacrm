@@ -6,6 +6,7 @@ import { montarCarro } from "@/lib/patio/veiculo";
 import { montarAuditoria, type CampanhaAud, type VeiculoMkt } from "@/lib/patio/auditoria";
 import { createAdminClient } from "@/lib/trafego/admin";
 import { fetchAll } from "@/lib/trafego/fetchAll";
+import { carregarGastoPorCarro, partesPorCarro } from "@/lib/trafego/gasto-carro";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -35,18 +36,30 @@ export async function GET() {
     const publicos = await listarPublicos(q.projeto);
     const privados = q.papel === "socio" ? await lerPrivados(q.projeto, publicos.map((p) => p.id)) : {};
     const patio = publicos.map((p) => montarCarro(p.id, p.dados, privados[p.id] ?? {}, { criadoEm: p.criadoEm, atualizadoEm: p.atualizadoEm }));
-    const [{ data: veic }, { data: camps }, { data: mets }] = await Promise.all([
+    const [{ data: veic }, g] = await Promise.all([
       fetchAll((a, b) => admin.from("veiculos").select("id, placa, modelo, ano, status, origem, site_vehicle_id").eq("org_id", q.orgId).order("id").range(a, b)),
-      fetchAll((a, b) => admin.from("tr_campaigns").select("id, nome, status, car_id, categoria_objetivo, destino_id").eq("org_id", q.orgId).order("id").range(a, b)),
-      fetchAll((a, b) => admin.from("tr_campaign_metrics_daily").select("id, campaign_id, gasto, msgs").eq("org_id", q.orgId).order("id").range(a, b)),
+      carregarGastoPorCarro(admin, q.orgId),
     ]);
     const soma = new Map<string, { gasto: number; msgs: number }>();
-    for (const m of mets as { campaign_id: string; gasto: number | string; msgs: number }[]) {
+    for (const m of g.metricas) {
       const s = soma.get(m.campaign_id) ?? { gasto: 0, msgs: 0 };
       s.gasto += Number(m.gasto) || 0; s.msgs += Number(m.msgs) || 0;
       soma.set(m.campaign_id, s);
     }
-    const campanhas: CampanhaAud[] = (camps as Omit<CampanhaAud, "gasto" | "msgs">[]).map((c) => ({ ...c, gasto: soma.get(c.id)?.gasto ?? 0, msgs: soma.get(c.id)?.msgs ?? 0 }));
+    // campanha dividida vira uma "parte" por carro; o que não caiu em carro fica sem vínculo
+    const partes = new Map<string, { car_id: string; gasto: number; msgs: number }[]>();
+    for (const p of partesPorCarro(g.linhas)) partes.set(p.campaign_id, [...(partes.get(p.campaign_id) ?? []), p]);
+    const campanhas: CampanhaAud[] = g.campanhas.flatMap((c) => {
+      const base = { id: c.id, nome: c.nome, status: c.status, car_id: c.car_id, categoria_objetivo: c.categoria_objetivo, destino_id: c.destino_id };
+      const total = soma.get(c.id) ?? { gasto: 0, msgs: 0 };
+      if (!c.divisao) return [{ ...base, gasto: total.gasto, msgs: total.msgs }];
+      const ps = partes.get(c.id) ?? [];
+      const resto = total.gasto - ps.reduce((s2, p) => s2 + p.gasto, 0);
+      return [
+        ...ps.map((p) => ({ ...base, id: `${c.id}:${p.car_id}`, nome: `${c.nome} (parte)`, car_id: p.car_id, gasto: p.gasto, msgs: Math.round(p.msgs) })),
+        ...(resto > 0.01 ? [{ ...base, id: `${c.id}:resto`, nome: `${c.nome} (anúncios sem carro)`, car_id: null, gasto: resto, msgs: 0 }] : []),
+      ];
+    });
     return NextResponse.json({ papel: q.papel, ...montarAuditoria(patio, veic as VeiculoMkt[], campanhas, q.papel === "socio") });
   } catch (e) {
     console.error("[patio/auditoria]", e);

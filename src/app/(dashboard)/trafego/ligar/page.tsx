@@ -512,18 +512,33 @@ function EscolherCarro({ patio, rotulo, onEscolher }: { patio: CarroDoPatio[]; r
   const [termo, setTermo] = useState("");
   const [foco, setFoco] = useState(0);
   const caixa = useRef<HTMLDivElement>(null);
+  const campo = useRef<HTMLInputElement>(null);
+  const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null);
   const achados = useMemo(() => buscarCarros(patio, termo), [patio, termo]);
   useEffect(() => {
     if (!aberto) return;
     const fora = (e: MouseEvent) => { if (caixa.current && !caixa.current.contains(e.target as Node)) setAberto(false); };
+    // a lista fica presa à tela (position: fixed), sempre inteira e visível,
+    // mesmo dentro do painel lateral ou perto da borda
+    const medir = () => {
+      const r = campo.current?.getBoundingClientRect();
+      if (!r) return;
+      const largura = Math.min(380, window.innerWidth - 16);
+      const left = Math.max(8, Math.min(r.left, window.innerWidth - largura - 8));
+      const embaixo = window.innerHeight - r.bottom;
+      setPos({ top: embaixo < 260 && r.top > embaixo ? Math.max(8, r.top - 344) : r.bottom + 4, left, width: largura });
+    };
+    medir();
     document.addEventListener("mousedown", fora);
-    return () => document.removeEventListener("mousedown", fora);
+    window.addEventListener("resize", medir);
+    window.addEventListener("scroll", medir, true);
+    return () => { document.removeEventListener("mousedown", fora); window.removeEventListener("resize", medir); window.removeEventListener("scroll", medir, true); };
   }, [aberto]);
   const escolher = (c: CarroDoPatio) => { setAberto(false); setTermo(""); setFoco(0); onEscolher(c); };
   if (!aberto) return <button type="button" style={btn} onClick={() => setAberto(true)}>{rotulo}</button>;
   return (
     <div ref={caixa} style={{ position: "relative" }}>
-      <input autoFocus value={termo} onChange={(e) => { setTermo(e.target.value); setFoco(0); }} placeholder="Modelo, ano ou placa…" aria-label="Buscar carro do Pátio"
+      <input ref={campo} autoFocus value={termo} onChange={(e) => { setTermo(e.target.value); setFoco(0); }} placeholder="Modelo, ano ou placa…" aria-label="Buscar carro do Pátio"
         onKeyDown={(e) => {
           if (e.key === "Escape") setAberto(false);
           if (e.key === "ArrowDown") { e.preventDefault(); setFoco((i) => Math.min(i + 1, achados.length - 1)); }
@@ -531,8 +546,8 @@ function EscolherCarro({ patio, rotulo, onEscolher }: { patio: CarroDoPatio[]; r
           if (e.key === "Enter" && achados[foco]) escolher(achados[foco]);
         }}
         style={{ ...btn, width: 230, cursor: "text" }} />
-      {termo.trim() && (
-        <ul role="listbox" style={{ position: "absolute", right: 0, top: "calc(100% + 4px)", zIndex: 30, width: 360, maxHeight: 340, overflowY: "auto", listStyle: "none", margin: 0, padding: 4, background: "var(--tr-surface-2)", border: "1px solid var(--tr-border)", borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,.15)" }}>
+      {termo.trim() && pos && (
+        <ul role="listbox" style={{ position: "fixed", top: pos.top, left: pos.left, zIndex: 80, width: pos.width, maxHeight: 340, overflowY: "auto", listStyle: "none", margin: 0, padding: 4, background: "var(--tr-surface-2)", border: "1px solid var(--tr-border)", borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,.15)" }}>
           {achados.length === 0 && <li style={{ padding: 10, fontSize: 13, color: "var(--tr-text-dim)" }}>Nenhum carro do Pátio com esse nome.</li>}
           {achados.map((c, i) => (
             <li key={c.id} role="option" aria-selected={i === foco}>

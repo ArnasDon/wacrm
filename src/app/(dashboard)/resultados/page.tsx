@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { BaixarRelatorioAnuncios } from "@/components/trafego/baixar-relatorio";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { brl } from "../patio/comum";
@@ -129,6 +130,7 @@ export default function ResultadosPage() {
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <button type="button" className="btns" onClick={salvarModelo}>Salvar como modelo</button>
           <button type="button" className="btnp" onClick={() => window.print()}>Baixar PDF</button>
+          {r && r.papel !== "vendedor" && <BaixarRelatorioAnuncios classeBotao="btns" />}
         </div>
         {modelos.length > 0 && (
           <div className="rot" style={{ fontSize: 13 }}>

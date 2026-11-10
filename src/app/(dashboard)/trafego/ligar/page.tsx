@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { lerCard } from "@/lib/patio/entrada-card";
+import { BaixarRelatorioAnuncios } from "@/components/trafego/baixar-relatorio";
 import Link from "next/link";
 import { buscarCarros, rotuloCarro, type CarroDoPatio, type LinhaLigacao, type Situacao } from "@/lib/trafego/ligacoes";
 
@@ -140,10 +141,13 @@ export default function LigarPage() {
           <h1 className="text-xl font-bold" style={{ margin: "4px 0 0" }}>Ligar campanhas</h1>
           <p style={{ margin: "6px 0 0", fontSize: 14, color: "var(--tr-text-dim)", maxWidth: 720 }}>Cada campanha vai para um <b>carro do Pátio</b> ou para uma <b>finalidade</b> (Instagram, site, marca…). É isso que coloca o gasto no custo de cada carro.</p>
         </div>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <BaixarRelatorioAnuncios estiloBotao={btn} />
         <div role="tablist" aria-label="Forma de trabalhar" style={{ display: "flex", gap: 4, padding: 4, ...card }}>
           {([["campanha", "Por campanha"], ["carro", "Por carro do Pátio"]] as [Modo, string][]).map(([k, n]) => (
             <button key={k} role="tab" aria-selected={modo === k} type="button" onClick={() => { setModo(k); setSel(new Set()); }} style={{ ...btn, border: 0, ...(modo === k ? { background: "var(--tr-surface-2)", fontWeight: 600 } : {}) }}>{n}</button>
           ))}
+        </div>
         </div>
       </header>
 

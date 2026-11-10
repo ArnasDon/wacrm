@@ -73,3 +73,14 @@ describe("candidatos pelo modelo", () => {
     expect(candidatosDoNome("[24/03] VD | T-Cross", p3).map((x) => x.id)).toEqual(["t"]);
   });
 });
+
+describe("ano no fim do nome", () => {
+  it("'SW4 SRX 22' prefere o carro de 2022", async () => {
+    const { sugerirCarroParaCampanha } = await import("./estoqueSite");
+    const cars = [
+      { id: "a", placa: "RPP4D14", modelo: "TOYOTA SW4 SRX 2023", ano: 2023, status: "estoque", nomeSite: "TOYOTA SW4 SRX 2023", modeloSite: "SW4 SRX" },
+      { id: "b", placa: "RCP4A87", modelo: "Toyota SW4 SRX 7 Lugares 2022/22", ano: 2022, status: "vendido", nomeSite: "Toyota SW4 SRX 7 Lugares 2022/22", modeloSite: "SW4 SRX 7 Lugares" },
+    ];
+    expect(sugerirCarroParaCampanha("TOYOTA SW4 SRX 22 carrossel - TOYOTA SW4 SRX 22", cars)?.id).toBe("b");
+  });
+});

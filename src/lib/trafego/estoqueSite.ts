@@ -151,7 +151,9 @@ export function sugerirCarroParaCampanha<T extends CarroPainel & { nomeSite?: st
   const texto = palavras(nomeCampanha);
   if (texto.length === 0) return null;
   const junto = texto.join("");
-  const anoNome = Number((nomeCampanha.match(/\b(19|20)\d{2}\b/) || [])[0]) || null;
+  // ano com 4 dígitos ("2022") ou com 2 no fim do nome ("SW4 SRX 22")
+  const ano2 = Number((nomeCampanha.match(/\b(\d{2})\s*$/) || [])[1]);
+  const anoNome = Number((nomeCampanha.match(/\b(19|20)\d{2}\b/) || [])[0]) || (ano2 >= 10 && ano2 <= 30 ? 2000 + ano2 : null);
   const finaisPlaca = (nomeCampanha.toUpperCase().match(/\b[A-Z0-9]{4}\b/g) || []).filter((f) => /\d/.test(f) && /[A-Z]/.test(f));
   let melhor: T | null = null;
   let melhorPontos = 0;

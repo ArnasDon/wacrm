@@ -44,6 +44,7 @@ async function carrosDoPatio(projeto: string): Promise<CarroDoPatio[]> {
         status: s(d.status),
         img: s(d.img) || null,
         modelo: s(d.model) || null,
+        preco: Number((d.finance as Record<string, unknown> | undefined)?.sale_price) || null,
       };
     });
 }

@@ -9,7 +9,7 @@ import { sugerirFinalidade, rotuloFinalidade } from "./finalidades";
 
 export const IMPOSTO = 0.12;
 
-export type CarroDoPatio = { id: string; nome: string; placa: string | null; ano: number | null; status: string; img: string | null; modelo: string | null };
+export type CarroDoPatio = { id: string; nome: string; placa: string | null; ano: number | null; status: string; img: string | null; modelo: string | null; preco?: number | null };
 export type CampanhaCrua = { id: string; nome: string; objetivo: string | null; status: string | null; car_id: string | null; categoria_objetivo: string | null; destino_id: string | null };
 export type VeiculoCru = { id: string; modelo: string | null; placa: string | null; site_vehicle_id: string | null };
 export type Metrica = { campaign_id: string; data: string; gasto: number; msgs: number };
@@ -33,6 +33,7 @@ export type LinhaLigacao = {
   foraId: string | null; // carro do Marketing sem par no Pátio
   sugestao: Sugestao | null;
   opcoes: { patioId: string; rotulo: string }[]; // vários carros do mesmo modelo: escolha rápida
+  candidatos: string[]; // carros do Pátio que o nome da campanha cita (visão "por carro")
 };
 
 /** Carros do Pátio cujo modelo aparece no nome da campanha (sem contar a marca). */
@@ -99,7 +100,9 @@ export function montarLigacoes(campanhas: CampanhaCrua[], veiculos: VeiculoCru[]
           }
         }
       }
-      return { ...base, situacao, ligadaA, patioId, finalidade: c.categoria_objetivo, foraId, sugestao, opcoes: escolhas };
+      const citados = new Set(candidatosDoNome(c.nome || "", patio).map((x) => x.id));
+      if (sugestao?.tipo === "carro") citados.add(sugestao.patioId);
+      return { ...base, situacao, ligadaA, patioId, finalidade: c.categoria_objetivo, foraId, sugestao, opcoes: escolhas, candidatos: [...citados] };
     })
     .filter((l) => l.investido > 0 || l.ativa || l.situacao !== "sem")
     .sort((a, b) => Number(b.ativa) - Number(a.ativa) || b.investido - a.investido);

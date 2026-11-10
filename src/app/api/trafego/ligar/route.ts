@@ -54,6 +54,8 @@ export async function GET() {
   if (q instanceof NextResponse) return q;
   const admin = createAdminClient();
   try {
+    const { data: dest } = await admin.from("tr_link_destinos").select("id, nome").eq("org_id", q.orgId);
+    const destinos = Object.fromEntries((dest ?? []).map((d) => [String(d.id), String(d.nome)]));
     const [patio, camps, veic, mets] = await Promise.all([
       carrosDoPatio(q.projeto),
       fetchAll<CampanhaCrua>((a, b) => admin.from("tr_campaigns").select("id, nome, objetivo, status, car_id, categoria_objetivo, destino_id").eq("org_id", q.orgId).order("id").range(a, b)),
@@ -61,7 +63,7 @@ export async function GET() {
       fetchAll<Metrica>((a, b) => admin.from("tr_campaign_metrics_daily").select("id, campaign_id, data, gasto, msgs").eq("org_id", q.orgId).order("id").range(a, b)),
     ]);
     if (camps.error || veic.error || mets.error) throw new Error("dados do Marketing não carregaram");
-    const linhas = montarLigacoes(camps.data, veic.data, patio, mets.data);
+    const linhas = montarLigacoes(camps.data, veic.data, patio, mets.data, destinos);
     return NextResponse.json({ linhas, patio: patio.sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")), finalidades: FINALIDADES });
   } catch (e) {
     console.error("[trafego/ligar]", e);
@@ -80,7 +82,7 @@ export async function POST(req: Request) {
   let mudar: { car_id: string | null; categoria_objetivo: string | null; destino_id?: null };
   let rotulo = "";
   if (corpo.limpar === true) {
-    mudar = { car_id: null, categoria_objetivo: null };
+    mudar = { car_id: null, categoria_objetivo: null, destino_id: null };
   } else if (typeof corpo.finalidade === "string" && FINALIDADES.some((f) => f.key === corpo.finalidade)) {
     mudar = { car_id: null, categoria_objetivo: corpo.finalidade, destino_id: null };
     rotulo = FINALIDADES.find((f) => f.key === corpo.finalidade)!.label;

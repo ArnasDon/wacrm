@@ -49,7 +49,7 @@ export function candidatosDoNome(nome: string, patio: CarroDoPatio[]): CarroDoPa
 const r2 = (n: number) => Math.round(n * 100) / 100;
 export const rotuloCarro = (c: Pick<CarroDoPatio, "nome" | "placa"> & { status?: string }) => [c.nome, c.placa, c.status === "sold" ? "vendido" : null].filter(Boolean).join(" · ");
 
-export function montarLigacoes(campanhas: CampanhaCrua[], veiculos: VeiculoCru[], patio: CarroDoPatio[], metricas: Metrica[]): LinhaLigacao[] {
+export function montarLigacoes(campanhas: CampanhaCrua[], veiculos: VeiculoCru[], patio: CarroDoPatio[], metricas: Metrica[], destinos: Record<string, string> = {}): LinhaLigacao[] {
   const soma = new Map<string, { gasto: number; msgs: number; de: string | null; ate: string | null }>();
   for (const m of metricas) {
     const s = soma.get(m.campaign_id) ?? { gasto: 0, msgs: 0, de: null, ate: null };
@@ -84,6 +84,9 @@ export function montarLigacoes(campanhas: CampanhaCrua[], veiculos: VeiculoCru[]
         else { situacao = "fora"; foraId = c.car_id; ligadaA = [v?.modelo, v?.placa].filter(Boolean).join(" · ") || "carro apagado"; }
       } else if (c.categoria_objetivo) {
         situacao = "finalidade"; ligadaA = rotuloFinalidade(c.categoria_objetivo);
+      } else if (c.destino_id) {
+        // jeito antigo de marcar "não é carro": o destino (Instagram, site…)
+        situacao = "finalidade"; ligadaA = `Destino: ${destinos[c.destino_id] ?? "cadastrado"}`;
       }
       let sugestao: Sugestao | null = null;
       let escolhas: { patioId: string; rotulo: string }[] = [];

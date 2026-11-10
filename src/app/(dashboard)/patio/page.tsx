@@ -105,6 +105,7 @@ export default function PatioPage() {
   const aVenda = porAba.venda;
   const totalEstoque = aVenda.reduce((s, c) => s + preco(c), 0);
   const sel = aberto ? (carros ?? []).find((c) => c.id === aberto) ?? null : null;
+  const semOrigem = porAba.vendidos.filter((c) => !String(c.sale?.origem ?? "").trim()).length;
 
   if (erro) {
     return (
@@ -137,6 +138,7 @@ export default function PatioPage() {
             <span className="sr-only">Buscar no pátio</span>
             <input type="search" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Modelo, versão, placa, ano ou cor…" autoComplete="off" spellCheck={false} />
           </label>
+          {carros && socio && <Link href="/patio/origens" className="btns">Origem das vendas{semOrigem ? ` · ${semOrigem} sem origem` : ""}</Link>}
           {carros && papel !== "vendedor" && <Link href="/patio/auditoria" className="btns">Anúncios e custos por carro</Link>}
           {carros && papel !== "vendedor" && <Link href="/patio/novo" className="btnp">Cadastrar carro</Link>}
         </div>
@@ -160,6 +162,8 @@ export default function PatioPage() {
           <button type="button" aria-pressed={modo === "lista"} onClick={() => setModo("lista")}>Lista</button>
         </div>
       </div>
+
+      {aba === "rascunho" && papel !== "vendedor" && <DiarioDoGrupo />}
 
       {aba !== "documentos" && (
         <section className="card filtros" aria-label="Filtros" style={{ padding: "12px 14px", display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end" }}>
@@ -330,5 +334,30 @@ export default function PatioPage() {
         )}
       </div>
     </div>
+  );
+}
+
+// Mostra a última mensagem do grupo de entradas que chegou ao sistema — é
+// como dá para ver se o WhatsApp conectado está recebendo o grupo.
+function DiarioDoGrupo() {
+  const [d, setD] = useState<{ recebido_em?: string; resultado?: string; carro_id?: string } | null | undefined>(undefined);
+  useEffect(() => {
+    let vivo = true;
+    fetch("/api/patio/grupo-entradas", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : { ultima: null }))
+      .then((j) => { if (vivo) setD(j.ultima ?? null); })
+      .catch(() => { if (vivo) setD(null); });
+    return () => { vivo = false; };
+  }, []);
+  if (d === undefined) return null;
+  return (
+    <p className="card" role="status" style={{ margin: 0, padding: "10px 14px", fontSize: 14 }}>
+      {d?.recebido_em ? (
+        <>Última mensagem do grupo de entradas recebida em <b>{new Date(d.recebido_em).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}</b>: {d.resultado}
+          {d.carro_id && <> · <Link href={`/patio/${d.carro_id}`}>ver o carro</Link></>}</>
+      ) : (
+        <>O sistema ainda não recebeu nenhuma mensagem do grupo de entradas. O WhatsApp conectado ao CRM precisa ser participante do grupo “IBOX PRIME | ENTRADA VEÍCULOS”.</>
+      )}
+    </p>
   );
 }

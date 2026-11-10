@@ -315,7 +315,7 @@ export default function ResultadosPage() {
                 );
               })}
             </ul>
-            {r.patio.porOrigem.some((o) => o.origem === "Não informada") && <p className="rot" style={{ fontSize: 12, margin: "10px 0 0" }}>Preencha a origem na ficha do carro → Financeiro → Venda.</p>}
+            {r.patio.porOrigem.some((o) => o.origem === "Não informada") && <p className="rot" style={{ fontSize: 12, margin: "10px 0 0" }}>{ehSocio ? <Link href="/patio/origens">Informar a origem das vendas que faltam</Link> : "Falta informar a origem de algumas vendas."}</p>}
           </section>
         )}
 

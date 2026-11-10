@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { ehCard, lerCard } from "./entrada-card";
 import { novoCarro, separarParaFirestore, montarCarro, type DadosNovoCarro } from "./veiculo";
-import { listarPublicos, gravarCarro, lerUm } from "./firestore";
+import { listarPublicos, gravarCarro, lerUm, gravarDocumento } from "./firestore";
 import { situacaoChave } from "./google";
 import { FIRESTORE_PROJETO_PADRAO } from "@/lib/trafego/estoqueSite";
 
@@ -29,25 +29,41 @@ export function dadosDoCard(texto: string): DadosNovoCarro {
   };
 }
 
+// Diário do grupo de entradas: a última mensagem que chegou e o que o
+// sistema fez com ela. Fica num documento que o site não lê
+// (sistema_privado/grupo_entradas) e aparece no Pátio — é como a gente sabe
+// se o WhatsApp conectado está recebendo o grupo e por que um card não virou carro.
+export const DOC_DIARIO_GRUPO = "sistema_privado/grupo_entradas";
+async function anotar(projeto: string, m: Msg, resultado: string, carroId?: string) {
+  await gravarDocumento(projeto, DOC_DIARIO_GRUPO, {
+    recebido_em: new Date(m.timestampMs).toISOString(),
+    anotado_em: new Date().toISOString(),
+    tipo: m.contentType,
+    resultado,
+    ...(carroId ? { carro_id: carroId } : {}),
+  }).catch((e) => console.error("[entrada-grupo] diário", e));
+}
+
 type Msg = { accountId: string; chatJid: string; contentType: string; text: string | null; mediaUrl: string | null; externalId: string; timestampMs: number };
 
 export async function entradaDoGrupo(admin: SupabaseClient, m: Msg): Promise<void> {
   if (m.chatJid !== GRUPO_ENTRADAS || situacaoChave() !== "ok") return;
+  let projeto = FIRESTORE_PROJETO_PADRAO;
   try {
     const { data: conta } = await admin.from("accounts").select("organization_id").eq("id", m.accountId).maybeSingle();
     const orgId = conta?.organization_id as string | undefined;
-    if (!orgId) return;
+    if (!orgId) return anotar(projeto, m, "conta do WhatsApp sem loja ligada");
     const { data: cfg } = await admin.from("tr_config").select("estoque_firestore_projeto").eq("org_id", orgId).maybeSingle();
-    const projeto = (cfg?.estoque_firestore_projeto as string) || FIRESTORE_PROJETO_PADRAO;
+    projeto = (cfg?.estoque_firestore_projeto as string) || FIRESTORE_PROJETO_PADRAO;
 
-    // 1. Card do carro
     if (m.text && ehCard(m.text)) {
       const dados = dadosDoCard(m.text);
-      if (!dados.brand || !dados.model) return;
+      if (!dados.brand || !dados.model) return anotar(projeto, m, "card sem marca/modelo — não virou carro");
       const placa = normPlaca(dados.plate);
       if (placa) {
         const existentes = await listarPublicos(projeto);
-        if (existentes.some((e) => normPlaca(e.dados.plate) === placa)) return; // já está no pátio
+        const ja = existentes.find((e) => normPlaca(e.dados.plate) === placa);
+        if (ja) return anotar(projeto, m, `placa ${placa} já está no pátio — não duplicou`, ja.id);
       }
       const id = `grp_${m.externalId.replace(/[^A-Za-z0-9_-]/g, "").slice(-40)}`;
       if (await lerUm(projeto, id)) return; // a mesma mensagem chegou duas vezes
@@ -56,19 +72,18 @@ export async function entradaDoGrupo(admin: SupabaseClient, m: Msg): Promise<voi
       const { publico, privado } = separarParaFirestore(carro);
       await gravarCarro(projeto, id, publico, privado);
       await admin.from("patio_historico").insert({ org_id: orgId, veiculo_site_id: id, quem: "Grupo de entradas", acao: "entrou pelo grupo de entradas", campos: [] });
-      return;
+      return anotar(projeto, m, `card lido: ${dados.brand} ${dados.model} — entrou no Pátio aguardando aprovação`, id);
     }
 
-    // 2. Foto depois do card → último carro que entrou pelo grupo na última hora
     if (m.contentType === "image" && m.mediaUrl) {
       const desde = new Date(m.timestampMs - JANELA_FOTOS_MS).toISOString();
       const { data: ult } = await admin.from("patio_historico").select("veiculo_site_id, criado_em").eq("org_id", orgId).eq("acao", "entrou pelo grupo de entradas").gte("criado_em", desde).order("criado_em", { ascending: false }).limit(1).maybeSingle();
       const id = ult?.veiculo_site_id as string | undefined;
-      if (!id) return;
+      if (!id) return anotar(projeto, m, "foto sem card nos 60 minutos antes — não juntou a nenhum carro");
       const lido = await lerUm(projeto, id);
-      if (!lido) return;
+      if (!lido) return anotar(projeto, m, "foto: o carro do último card não existe mais");
       const atual = montarCarro(id, lido.publico.dados, lido.privado, { criadoEm: lido.publico.criadoEm, atualizadoEm: lido.publico.atualizadoEm });
-      if (atual.status !== "review") return; // já foi aprovado: não mexe mais sozinho
+      if (atual.status !== "review") return anotar(projeto, m, "foto: o carro já foi aprovado — não mexe mais sozinho", id);
       if ((atual.images ?? []).some((i) => (i as Record<string, unknown>).mid === m.externalId)) return;
       const corpo = new URLSearchParams({ file: m.mediaUrl, upload_preset: PRESET, folder: `vehicles/${id}` });
       const r = await fetch(CLOUDINARY, { method: "POST", body: corpo });
@@ -78,8 +93,13 @@ export async function entradaDoGrupo(admin: SupabaseClient, m: Msg): Promise<voi
       const novo = { ...atual, images, img: atual.img || j.secure_url };
       const { publico, privado } = separarParaFirestore(novo);
       await gravarCarro(projeto, id, publico, privado);
+      return anotar(projeto, m, `foto juntada a ${atual.brand ?? ""} ${atual.model ?? ""}`.trim(), id);
     }
+
+    if (m.contentType === "image") return anotar(projeto, m, "foto chegou sem arquivo (o WhatsApp não liberou a imagem)");
+    return anotar(projeto, m, m.text ? "mensagem de texto que não é card de carro — ignorada" : `mensagem do tipo ${m.contentType} — ignorada`);
   } catch (e) {
     console.error("[entrada-grupo]", e);
+    await anotar(projeto, m, `erro: ${(e instanceof Error ? e.message : String(e)).slice(0, 200)}`);
   }
 }

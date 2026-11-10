@@ -148,6 +148,7 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { href: "/trafego", labelKey: "trafficOverview", icon: BarChart3, module: "trafego", minRole: "admin" },
       { href: "/trafego/campanhas", labelKey: "trafficCampaigns", icon: Megaphone, module: "trafego", minRole: "admin" },
+      { href: "/trafego/ligar", labelKey: "trafficLink", icon: Link2, module: "trafego", minRole: "admin" },
       { href: "/trafego/carros", labelKey: "trafficCars", icon: Car, module: "trafego", minRole: "admin" },
       { href: "/trafego/links-utm", labelKey: "trafficUtm", icon: Link2, module: "trafego", minRole: "admin" },
       { href: "/trafego/conferir", labelKey: "trafficCheck", icon: CheckCheck, module: "trafego", minRole: "admin" },

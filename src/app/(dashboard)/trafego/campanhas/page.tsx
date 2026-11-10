@@ -1215,6 +1215,7 @@ export default function CampanhasPage() {
           </div>
 
           <div className="result-count">
+            <a href="/trafego/ligar" className="btn btn-accent" style={{ marginRight: 10 }}>Ligar campanhas a carros e finalidades (mais rápido) →</a>
             {filteredSorted.length} campanha(s)
             {qtdSugestoes > 0 && (
               <>

@@ -84,7 +84,10 @@ export default function AuditoriaPage() {
             O carro do Pátio é o do site. As campanhas ficam ligadas ao cadastro do carro em Marketing → Carros. Aqui você vê os dois lado a lado, com o gasto desde o início, e liga o que falta.
           </p>
         </div>
-        {sugestoes.length > 0 && <button type="button" className="btnp" disabled={trabalhando} onClick={aceitarTodas}>Ligar {sugestoes.length} sugestões</button>}
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <Link href="/trafego/ligar" className="btns">Ligar campanhas uma a uma</Link>
+          {sugestoes.length > 0 && <button type="button" className="btnp" disabled={trabalhando} onClick={aceitarTodas}>Ligar {sugestoes.length} sugestões</button>}
+        </div>
       </div>
 
       <section className="card" aria-label="Resumo" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", overflow: "hidden" }}>

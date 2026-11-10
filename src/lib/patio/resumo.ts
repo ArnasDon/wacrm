@@ -88,6 +88,10 @@ export function resumoPatio(carros: CarroResumo[], desde: number, ate: number, l
       .sort((a, b) => (b.anuncios?.msgs ?? 0) - (a.anuncios?.msgs ?? 0))
       .slice(0, 5)
       .map((c) => ({ id: c.id, nome: [c.brand, c.model, c.versao].filter(Boolean).join(" "), ano: String(c.year ?? ""), preco: preco(c), img: c.img ?? "", msgs: c.anuncios?.msgs ?? 0, gasto: c.anuncios?.gasto ?? 0 })),
+    // todos os carros com anúncio no período (a tela Hoje filtra e ordena)
+    ranking: carros
+      .filter((c) => (c.anuncios?.gasto ?? 0) > 0 || (c.anuncios?.msgs ?? 0) > 0)
+      .map((c) => ({ id: c.id, nome: [c.brand, c.model, c.versao].filter(Boolean).join(" "), ano: String(c.year ?? ""), preco: preco(c), img: c.img ?? "", msgs: c.anuncios?.msgs ?? 0, gasto: c.anuncios?.gasto ?? 0, status: c.status ?? "available", cat: String(c.cat ?? "carros"), dias: c.dias ?? null })),
     maisParados: [...aVenda]
       .filter((c) => c.dias != null)
       .sort((a, b) => (b.dias ?? 0) - (a.dias ?? 0))

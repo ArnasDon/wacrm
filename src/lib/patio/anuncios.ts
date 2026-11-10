@@ -15,6 +15,7 @@ export async function anunciosPorCarro(
   orgId: string,
   dias = 30,
   soCarro?: string,
+  periodo?: { desde: string; ate?: string },
 ): Promise<Record<string, AnunciosDoCarro>> {
   let qv = admin.from("veiculos").select("id, site_vehicle_id").eq("org_id", orgId).not("site_vehicle_id", "is", null);
   if (soCarro) qv = qv.eq("site_vehicle_id", soCarro);
@@ -25,8 +26,8 @@ export async function anunciosPorCarro(
 
   // Mesma regra de todas as telas: campanha inteira no carro, ou dividida
   // por anúncio / em partes (lib/trafego/gasto-carro.ts). Paginado lá dentro.
-  const desde = new Date(Date.now() - dias * 86_400_000).toISOString().slice(0, 10);
-  const g = await carregarGastoPorCarro(admin, orgId, { desde });
+  const desde = periodo?.desde ?? new Date(Date.now() - dias * 86_400_000).toISOString().slice(0, 10);
+  const g = await carregarGastoPorCarro(admin, orgId, { desde, ate: periodo?.ate });
   const camp = new Map(g.campanhas.map((c) => [c.id, c]));
 
   const saida: Record<string, AnunciosDoCarro> = {};

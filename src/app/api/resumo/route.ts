@@ -32,7 +32,8 @@ export async function GET(req: Request) {
 
   try {
     const [carros, campanhas] = await Promise.all([
-      situacaoChave() === "ok" ? carrosCompletos(quem, admin) : Promise.resolve(null),
+      // anúncios de cada carro no MESMO período escolhido na tela
+      situacaoChave() === "ok" ? carrosCompletos(quem, admin, { desde: dataISO(de), ate: dataISO(ate) }) : Promise.resolve(null),
       campanhasNoPeriodo(admin, quem.orgId, dataISO(de), dataISO(ate)),
     ]);
     const patio = carros ? resumoPatio(carros, de, ate) : null;

@@ -95,3 +95,5 @@
 .modulo-patio .campo.mini input, .modulo-patio .campo.mini select { padding: 7px 9px; font-size: 13px; min-width: 0; }
 .modulo-patio .campo.mini select { min-width: 120px; }
 @media (max-width: 640px) { .modulo-patio .filtros .campo.mini { flex: 1 1 140px; } .modulo-patio .filtros .campo.mini select, .modulo-patio .filtros .campo.mini input { width: 100% !important; } }
+/* seletor compacto (filtros do ranking em Hoje) */
+.modulo-patio .campo-mini { font: inherit; font-size: 13px; color: var(--p-ink); background: var(--campo, #fff); border: 1px solid var(--input); border-radius: 8px; padding: 6px 8px; }

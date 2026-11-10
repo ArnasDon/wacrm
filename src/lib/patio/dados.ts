@@ -7,10 +7,10 @@ import type { CarroResumo, CampanhaPeriodo } from "./resumo";
 import type { Quem } from "./servidor";
 
 /** Todos os carros completos (só servidor), com dias no pátio e anúncios dos últimos 30 dias. */
-export async function carrosCompletos(quem: Quem, admin: SupabaseClient): Promise<CarroResumo[]> {
+export async function carrosCompletos(quem: Quem, admin: SupabaseClient, periodo?: { desde: string; ate?: string }): Promise<CarroResumo[]> {
   const publicos = await listarPublicos(quem.projeto);
   const privados = await lerPrivados(quem.projeto, publicos.map((p) => p.id));
-  const anuncios = await anunciosPorCarro(admin, quem.orgId).catch(() => ({}) as Record<string, never>);
+  const anuncios = await anunciosPorCarro(admin, quem.orgId, 30, undefined, periodo).catch(() => ({}) as Record<string, never>);
   return publicos.map((p) => {
     const c = montarCarro(p.id, p.dados, privados[p.id] ?? {}, { criadoEm: p.criadoEm, atualizadoEm: p.atualizadoEm });
     return { ...c, dias: diasNoPatio(c), anuncios: anuncios[p.id] ?? null };

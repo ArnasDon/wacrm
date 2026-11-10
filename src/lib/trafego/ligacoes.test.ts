@@ -60,3 +60,16 @@ describe("vários carros do mesmo modelo", () => {
     expect(l.opcoes.map((o) => o.patioId).sort()).toEqual(["b1", "b2"]);
   });
 });
+
+describe("candidatos pelo modelo", () => {
+  it("não confunde T-Cross com Corolla Cross", async () => {
+    const { candidatosDoNome } = await import("./ligacoes");
+    const p3: CarroDoPatio[] = [
+      { id: "t", nome: "Volkswagen T-Cross Comfortline 2023", placa: "FIS-6B93", ano: 2023, status: "available", img: null, modelo: "T-Cross Comfortline" },
+      { id: "c", nome: "Toyota Corolla Cross XRX 2025", placa: "SKB-1E92", ano: 2025, status: "available", img: null, modelo: "Corolla Cross XRX" },
+    ];
+    expect(candidatosDoNome("[28/05] [WP] [apolo] corolla cross [9c12]", p3).map((x) => x.id)).toEqual(["c"]);
+    expect(candidatosDoNome("[23/09] enga | Quiz | Tcross", p3).map((x) => x.id)).toEqual(["t"]);
+    expect(candidatosDoNome("[24/03] VD | T-Cross", p3).map((x) => x.id)).toEqual(["t"]);
+  });
+});

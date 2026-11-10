@@ -4,7 +4,7 @@
 // sugestão (carro pelo nome/placa, finalidade pelo objetivo do Meta).
 // Testado em ligacoes.test.ts.
 
-import { sugerirCarroParaCampanha, palavras, MARCAS } from "./estoqueSite";
+import { sugerirCarroParaCampanha, MARCAS } from "./estoqueSite";
 import { sugerirFinalidade, rotuloFinalidade } from "./finalidades";
 
 export const IMPOSTO = 0.12;
@@ -36,13 +36,23 @@ export type LinhaLigacao = {
   candidatos: string[]; // carros do Pátio que o nome da campanha cita (visão "por carro")
 };
 
-/** Carros do Pátio cujo modelo aparece no nome da campanha (sem contar a marca). */
+/** Carros do Pátio cujo modelo aparece no nome da campanha (sem contar a marca).
+ *  O modelo é comparado inteiro e sem pontuação ("T-Cross" → "tcross"), para
+ *  "Corolla Cross" não virar candidato de T-Cross nem o contrário. */
+const cru = (x: string) => x.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+export function chaveDoModelo(c: Pick<CarroDoPatio, "modelo" | "nome">): string | null {
+  for (const t of String(c.modelo || c.nome || "").split(/\s+/)) {
+    const k = cru(t);
+    if (k.length >= 3 && !MARCAS.has(k) && !/^(19|20)\d{2}$/.test(k)) return k;
+  }
+  return null;
+}
 export function candidatosDoNome(nome: string, patio: CarroDoPatio[]): CarroDoPatio[] {
-  const texto = palavras(nome);
-  const junto = texto.join("");
+  const texto = cru(nome);
+  const ehOutroModelo = (k: string) => texto.includes("corolla" + k) || (k === "cross" && texto.includes("tcross"));
   return patio.filter((c) => {
-    const principal = palavras(c.modelo || c.nome).find((w) => !MARCAS.has(w) && !/^(19|20)\d{2}$/.test(w) && w.length >= 3);
-    return !!principal && (texto.includes(principal) || junto.includes(principal));
+    const k = chaveDoModelo(c);
+    return !!k && texto.includes(k) && !ehOutroModelo(k);
   });
 }
 

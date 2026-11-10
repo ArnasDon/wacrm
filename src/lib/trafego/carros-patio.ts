@@ -10,8 +10,8 @@ const s = (v: unknown) => (v == null ? "" : String(v)).trim();
 
 export async function carrosDoPatio(projeto: string): Promise<CarroDoPatio[]> {
   const pub = await listarPublicos(projeto);
+  // inclui os "aguardando revisão" (cadastro rápido e grupo de entradas): podem ter campanha
   return pub
-    .filter((p) => p.dados.status !== "review")
     .map((p) => {
       const d = p.dados;
       return {

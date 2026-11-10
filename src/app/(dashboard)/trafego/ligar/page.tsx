@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { lerCard } from "@/lib/patio/entrada-card";
 import Link from "next/link";
 import { buscarCarros, rotuloCarro, type CarroDoPatio, type LinhaLigacao, type Situacao } from "@/lib/trafego/ligacoes";
 
@@ -44,6 +45,11 @@ const SITUACOES: [Situacao, string][] = [["sem", "Sem ligação"], ["fora", "Car
 const SUGESTOES: [FiltroSug, string][] = [["todas", "Todas"], ["carro", "Carro sugerido"], ["opcoes", "Qual destes?"], ["finalidade", "Finalidade sugerida"], ["nenhuma", "Sem sugestão"]];
 const ORDENS: [Ordem, string][] = [["gasto", "Mais investido"], ["recente", "Mais recente"], ["conversas", "Mais conversas"], ["custoMenor", "Menor custo por conversa"], ["custoMaior", "Maior custo por conversa"], ["nome", "Nome"]];
 
+// Qualquer busca de carro da tela pode cadastrar um carro novo na hora.
+const CadastroCtx = createContext<{ cadastrar: (termo: string, depois: (c: CarroDoPatio) => void) => void }>({ cadastrar: () => {} });
+
+const statusCarro = (c: CarroDoPatio) => (c.status === "sold" ? "vendido" : c.status === "review" ? "aguardando revisão" : null);
+
 export default function LigarPage() {
   const [linhas, setLinhas] = useState<LinhaLigacao[] | null>(null);
   const [patio, setPatio] = useState<CarroDoPatio[]>([]);
@@ -56,6 +62,8 @@ export default function LigarPage() {
   const [ocupado, setOcupado] = useState<Set<string>>(new Set());
   const [aviso, setAviso] = useState("");
   const [dividindo, setDividindo] = useState<LinhaLigacao | null>(null);
+  const [cadastro, setCadastro] = useState<{ termo: string; depois: (c: CarroDoPatio) => void } | null>(null);
+  const ctx = useMemo(() => ({ cadastrar: (termo: string, depois: (c: CarroDoPatio) => void) => setCadastro({ termo, depois }) }), []);
 
   async function recarregar() {
     const r = await fetch("/api/trafego/ligar", { cache: "no-store" });
@@ -124,6 +132,7 @@ export default function LigarPage() {
   }
 
   return (
+    <CadastroCtx.Provider value={ctx}>
     <main className="px-6 py-8 max-w-7xl mx-auto" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <header style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 12, flexWrap: "wrap" }}>
         <div>
@@ -150,8 +159,13 @@ export default function LigarPage() {
           restaurarRecusas={recusadas.size ? () => { setRecusadas(new Set()); gravar(CHAVE_RECUSA, { ids: [] }); } : null} onDividir={setDividindo} />
       )}
       {linhas && modo === "carro" && <PorCarro linhas={comRecusa} patio={patio} ocupado={ocupado} ligar={ligar} onDividir={setDividindo} />}
+      {cadastro && (
+        <CadastroRapido termo={cadastro.termo} onFechar={() => setCadastro(null)}
+          onCriado={(c) => { setPatio((ps) => (ps.some((x) => x.id === c.id) ? ps : [...ps, c].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")))); const depois = cadastro.depois; setCadastro(null); depois(c); }} />
+      )}
       {dividindo && <PainelDivisao linha={dividindo} patio={patio} onFechar={() => setDividindo(null)} onSalvo={async (txt) => { setDividindo(null); setAviso(txt); await recarregar(); }} />}
     </main>
+    </CadastroCtx.Provider>
   );
 }
 
@@ -419,7 +433,7 @@ function PorCarro({ linhas, patio, ocupado, ligar, onDividir }: { linhas: LinhaL
                 <Foto src={x.c.img} w={56} h={42} />
                 <span style={{ minWidth: 0, flex: 1 }}>
                   <span style={{ display: "block", fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.c.nome}</span>
-                  <span style={{ display: "block", fontSize: 12, color: "var(--tr-text-dim)" }}>{[x.c.placa, x.c.status === "sold" ? "vendido" : null].filter(Boolean).join(" · ")}</span>
+                  <span style={{ display: "block", fontSize: 12, color: "var(--tr-text-dim)" }}>{[x.c.placa, statusCarro(x.c)].filter(Boolean).join(" · ")}</span>
                   <span style={{ display: "block", fontSize: 12, color: "var(--tr-text-dim)" }}>{x.nLigadas ? `${brl0(x.investido)} · ${x.nLigadas} campanha(s)` : "Sem campanha ligada"}</span>
                 </span>
                 {x.nPossiveis > 0 && <span title="Campanhas sem ligação que citam este carro" style={{ fontSize: 11, fontWeight: 700, padding: "2px 7px", borderRadius: 999, background: "var(--tr-gold-2)", color: "var(--primary-foreground)" }}>{x.nPossiveis}</span>}
@@ -534,7 +548,9 @@ function EscolherCarro({ patio, rotulo, onEscolher }: { patio: CarroDoPatio[]; r
     window.addEventListener("scroll", medir, true);
     return () => { document.removeEventListener("mousedown", fora); window.removeEventListener("resize", medir); window.removeEventListener("scroll", medir, true); };
   }, [aberto]);
+  const { cadastrar } = useContext(CadastroCtx);
   const escolher = (c: CarroDoPatio) => { setAberto(false); setTermo(""); setFoco(0); onEscolher(c); };
+  const novo = () => { const t = termo; setAberto(false); setTermo(""); cadastrar(t, onEscolher); };
   if (!aberto) return <button type="button" style={btn} onClick={() => setAberto(true)}>{rotulo}</button>;
   return (
     <div ref={caixa} style={{ position: "relative" }}>
@@ -548,18 +564,23 @@ function EscolherCarro({ patio, rotulo, onEscolher }: { patio: CarroDoPatio[]; r
         style={{ ...btn, width: 230, cursor: "text" }} />
       {termo.trim() && pos && (
         <ul role="listbox" style={{ position: "fixed", top: pos.top, left: pos.left, zIndex: 80, width: pos.width, maxHeight: 340, overflowY: "auto", listStyle: "none", margin: 0, padding: 4, background: "var(--tr-surface-2)", border: "1px solid var(--tr-border)", borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,.15)" }}>
-          {achados.length === 0 && <li style={{ padding: 10, fontSize: 13, color: "var(--tr-text-dim)" }}>Nenhum carro do Pátio com esse nome.</li>}
+          {achados.length === 0 && <li style={{ padding: "10px 10px 4px", fontSize: 13, color: "var(--tr-text-dim)" }}>Nenhum carro do Pátio com esse nome.</li>}
           {achados.map((c, i) => (
             <li key={c.id} role="option" aria-selected={i === foco}>
               <button type="button" onMouseEnter={() => setFoco(i)} onClick={() => escolher(c)} style={{ display: "flex", gap: 10, alignItems: "center", width: "100%", textAlign: "left", padding: 6, border: 0, borderRadius: 8, color: "inherit", background: i === foco ? "var(--tr-surface)" : "transparent", cursor: "pointer" }}>
                 <Foto src={c.img} w={48} h={36} />
                 <span style={{ fontSize: 13, minWidth: 0 }}>
                   <span style={{ display: "block", fontWeight: 600 }}>{c.nome}</span>
-                  <span style={{ color: "var(--tr-text-dim)", fontSize: 12 }}>{[c.placa, c.status === "sold" ? "vendido" : null, c.preco ? brl0(c.preco) : null].filter(Boolean).join(" · ")}</span>
+                  <span style={{ color: "var(--tr-text-dim)", fontSize: 12 }}>{[c.placa, statusCarro(c), c.preco ? brl0(c.preco) : null].filter(Boolean).join(" · ")}</span>
                 </span>
               </button>
             </li>
           ))}
+          <li style={{ borderTop: "1px solid var(--tr-border)", marginTop: 4, paddingTop: 4 }}>
+            <button type="button" onClick={novo} style={{ width: "100%", textAlign: "left", padding: "8px 10px", border: 0, borderRadius: 8, background: "transparent", color: "inherit", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
+              + Cadastrar carro novo{termo.trim() ? ` “${termo.trim()}”` : ""} <span style={{ fontWeight: 400, color: "var(--tr-text-dim)" }}>— não está no Pátio</span>
+            </button>
+          </li>
         </ul>
       )}
     </div>
@@ -730,6 +751,90 @@ function PainelDivisao({ linha, patio, onFechar, onSalvo }: { linha: LinhaLigaca
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+// ---------- cadastro rápido de carro (não estava no Pátio) ----------
+function CadastroRapido({ termo, onFechar, onCriado }: { termo: string; onFechar: () => void; onCriado: (c: CarroDoPatio) => void }) {
+  const palavras = termo.trim().split(/\s+/).filter(Boolean);
+  const [ficha, setFicha] = useState("");
+  const [lida, setLida] = useState("");
+  const [f, setF] = useState({ brand: "", model: palavras.join(" "), versao: "", year: "", plate: "", color: "", sale_price: "", purchase_price: "" });
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState("");
+  const muda = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement>) => setF((x) => ({ ...x, [k]: e.target.value }));
+  const num = (v: string) => Number(String(v).replace(/[^\d,]/g, "").replace(",", ".")) || 0;
+
+  useEffect(() => {
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") onFechar(); };
+    document.addEventListener("keydown", esc);
+    return () => document.removeEventListener("keydown", esc);
+  }, [onFechar]);
+
+  function lerFicha(texto: string) {
+    setFicha(texto);
+    if (texto.trim().length < 15) return;
+    try {
+      const { veiculo, interno, faltando } = lerCard(texto);
+      const t = (v: unknown) => (v == null ? "" : String(v));
+      setF((x) => ({
+        brand: t(veiculo.brand) || x.brand, model: t(veiculo.model) || x.model, versao: t(veiculo.versao) || x.versao, year: t(veiculo.year) || x.year,
+        plate: t(veiculo.plate) || x.plate, color: t(veiculo.color) || x.color,
+        sale_price: veiculo.sale_price ? String(veiculo.sale_price) : x.sale_price, purchase_price: interno.purchase_price ? String(interno.purchase_price) : x.purchase_price,
+      }));
+      setLida(faltando.length ? `Ficha lida. Não achei: ${faltando.slice(0, 4).join(", ")}.` : "Ficha lida. Confira e salve.");
+    } catch { setLida("Não consegui ler a ficha. Preencha os campos abaixo."); }
+  }
+
+  async function salvar(e: React.FormEvent) {
+    e.preventDefault();
+    if (!f.brand.trim() || !f.model.trim()) { setErro("Informe pelo menos marca e modelo."); return; }
+    setSalvando(true); setErro("");
+    const dados = { cat: "carros", brand: f.brand.trim(), model: f.model.trim(), versao: f.versao.trim(), year: f.year.trim(), plate: f.plate.trim(), color: f.color.trim(), sale_price: num(f.sale_price), purchase_price: num(f.purchase_price) };
+    const r = await fetch("/api/patio", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dados, card: ficha.trim() ? ficha : undefined }) });
+    const d = await r.json().catch(() => ({}));
+    setSalvando(false);
+    const id = r.ok ? d.id : r.status === 409 ? d.id : null; // placa que já existe: usa o carro que já está no Pátio
+    if (!id) { setErro(d.erro || "Não consegui cadastrar."); return; }
+    const nome = [dados.brand, dados.model, dados.versao, dados.year].filter(Boolean).join(" ");
+    onCriado({ id, nome, placa: dados.plate || null, ano: Number(dados.year.slice(0, 4)) || null, status: r.ok ? "review" : "available", img: null, modelo: dados.model, preco: dados.sale_price || null });
+  }
+
+  const campo = (rot: string, k: keyof typeof f, ph = "", largura = 1) => (
+    <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12.5, gridColumn: `span ${largura}` }}>{rot}
+      <input value={f[k]} onChange={muda(k)} placeholder={ph} style={{ ...btn, cursor: "text", padding: "8px 10px" }} />
+    </label>
+  );
+
+  return (
+    <div role="dialog" aria-modal="true" aria-label="Cadastrar carro novo" onMouseDown={(e) => { if (e.target === e.currentTarget) onFechar(); }}
+      style={{ position: "fixed", inset: 0, zIndex: 90, background: "rgba(0,0,0,.4)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <form onSubmit={salvar} style={{ width: "min(620px, 100%)", maxHeight: "100%", overflowY: "auto", background: "var(--tr-bg, var(--tr-surface))", border: "1px solid var(--tr-border)", borderRadius: 14, padding: 20, display: "flex", flexDirection: "column", gap: 12 }}>
+        <div>
+          <h2 style={{ margin: 0, fontSize: 18 }}>Cadastrar carro novo</h2>
+          <p style={{ margin: "4px 0 0", fontSize: 13, color: "var(--tr-text-dim)" }}>O carro entra no Pátio como <b>Aguardando revisão</b> — não aparece no site — e já fica ligado à campanha. Depois você completa fotos e preço no Pátio, se quiser.</p>
+        </div>
+        <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12.5 }}>Colar a ficha do WhatsApp (opcional)
+          <textarea value={ficha} onChange={(e) => lerFicha(e.target.value)} rows={4} placeholder="Cole aqui o card do carro, do jeito que vai no grupo de entradas…" style={{ ...btn, cursor: "text", whiteSpace: "normal", padding: "8px 10px", resize: "vertical", fontFamily: "inherit" }} />
+        </label>
+        {lida && <p style={{ margin: 0, fontSize: 12.5, color: "var(--tr-good)" }}>{lida}</p>}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
+          {campo("Marca *", "brand", "Hyundai", 2)}
+          {campo("Modelo *", "model", "Creta", 2)}
+          {campo("Versão", "versao", "Platinum", 2)}
+          {campo("Ano", "year", "2022/2022")}
+          {campo("Placa", "plate", "ABC1D23")}
+          {campo("Cor", "color", "Branco")}
+          {campo("Preço de venda", "sale_price", "R$")}
+          {campo("Custo (só sócio vê)", "purchase_price", "R$", 2)}
+        </div>
+        {erro && <p role="alert" style={{ margin: 0, fontSize: 13, color: "var(--tr-bad)" }}>{erro}</p>}
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <button type="button" style={btn} onClick={onFechar}>Cancelar</button>
+          <button type="submit" style={btnForte} disabled={salvando}>{salvando ? "Cadastrando…" : "Cadastrar e ligar"}</button>
+        </div>
+      </form>
     </div>
   );
 }

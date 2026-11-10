@@ -4,7 +4,7 @@
 // sugestão (carro pelo nome/placa, finalidade pelo objetivo do Meta).
 // Testado em ligacoes.test.ts.
 
-import { sugerirCarroParaCampanha } from "./estoqueSite";
+import { sugerirCarroParaCampanha, palavras, MARCAS } from "./estoqueSite";
 import { sugerirFinalidade, rotuloFinalidade } from "./finalidades";
 
 export const IMPOSTO = 0.12;
@@ -32,10 +32,21 @@ export type LinhaLigacao = {
   finalidade: string | null;
   foraId: string | null; // carro do Marketing sem par no Pátio
   sugestao: Sugestao | null;
+  opcoes: { patioId: string; rotulo: string }[]; // vários carros do mesmo modelo: escolha rápida
 };
 
+/** Carros do Pátio cujo modelo aparece no nome da campanha (sem contar a marca). */
+export function candidatosDoNome(nome: string, patio: CarroDoPatio[]): CarroDoPatio[] {
+  const texto = palavras(nome);
+  const junto = texto.join("");
+  return patio.filter((c) => {
+    const principal = palavras(c.modelo || c.nome).find((w) => !MARCAS.has(w) && !/^(19|20)\d{2}$/.test(w) && w.length >= 3);
+    return !!principal && (texto.includes(principal) || junto.includes(principal));
+  });
+}
+
 const r2 = (n: number) => Math.round(n * 100) / 100;
-export const rotuloCarro = (c: Pick<CarroDoPatio, "nome" | "placa">) => [c.nome, c.placa].filter(Boolean).join(" · ");
+export const rotuloCarro = (c: Pick<CarroDoPatio, "nome" | "placa"> & { status?: string }) => [c.nome, c.placa, c.status === "sold" ? "vendido" : null].filter(Boolean).join(" · ");
 
 export function montarLigacoes(campanhas: CampanhaCrua[], veiculos: VeiculoCru[], patio: CarroDoPatio[], metricas: Metrica[]): LinhaLigacao[] {
   const soma = new Map<string, { gasto: number; msgs: number; de: string | null; ate: string | null }>();
@@ -74,15 +85,21 @@ export function montarLigacoes(campanhas: CampanhaCrua[], veiculos: VeiculoCru[]
         situacao = "finalidade"; ligadaA = rotuloFinalidade(c.categoria_objetivo);
       }
       let sugestao: Sugestao | null = null;
+      let escolhas: { patioId: string; rotulo: string }[] = [];
       if (situacao === "sem" || situacao === "fora") {
         const carro = sugerirCarroParaCampanha(c.nome || "", opcoes);
         if (carro) sugestao = { tipo: "carro", patioId: carro.id, rotulo: rotuloCarro(porPatio.get(carro.id)!) };
-        else if (situacao === "sem") {
-          const f = sugerirFinalidade(c.objetivo, c.nome || "");
-          if (f) sugestao = { tipo: "finalidade", chave: f, rotulo: rotuloFinalidade(f) };
+        else {
+          const cands = candidatosDoNome(c.nome || "", patio).sort((a, b) => Number(a.status === "sold") - Number(b.status === "sold"));
+          if (cands.length) escolhas = cands.slice(0, 4).map((x) => ({ patioId: x.id, rotulo: rotuloCarro(x) }));
+          else if (situacao === "sem") {
+            // finalidade só quando o nome não cita nenhum carro do Pátio
+            const f = sugerirFinalidade(c.objetivo, c.nome || "");
+            if (f) sugestao = { tipo: "finalidade", chave: f, rotulo: rotuloFinalidade(f) };
+          }
         }
       }
-      return { ...base, situacao, ligadaA, patioId, finalidade: c.categoria_objetivo, foraId, sugestao };
+      return { ...base, situacao, ligadaA, patioId, finalidade: c.categoria_objetivo, foraId, sugestao, opcoes: escolhas };
     })
     .filter((l) => l.investido > 0 || l.ativa || l.situacao !== "sem")
     .sort((a, b) => Number(b.ativa) - Number(a.ativa) || b.investido - a.investido);

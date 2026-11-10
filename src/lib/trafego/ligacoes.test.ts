@@ -48,3 +48,15 @@ describe("buscarCarros", () => {
     expect(buscarCarros(patio, "")).toEqual([]);
   });
 });
+
+describe("vários carros do mesmo modelo", () => {
+  it("mostra as opções em vez de sugerir finalidade", () => {
+    const p2: CarroDoPatio[] = [
+      { id: "b1", nome: "BMW 320I Sport Gp 2022", placa: "RDM-1C32", ano: 2022, status: "available", img: null, modelo: "320I Sport Gp" },
+      { id: "b2", nome: "BMW 320I M-Sport 2023", placa: "RPX-7F77", ano: 2023, status: "available", img: null, modelo: "320I M-Sport" },
+    ];
+    const [l] = montarLigacoes([{ id: "c1", nome: "[30/10] [ENG] BMW 320i rebaixada", objetivo: "OUTCOME_ENGAGEMENT", status: "ACTIVE", car_id: null, categoria_objetivo: null, destino_id: null }], [], p2, [{ campaign_id: "c1", data: "2026-10-30", gasto: 10, msgs: 1 }]);
+    expect(l.sugestao).toBeNull();
+    expect(l.opcoes.map((o) => o.patioId).sort()).toEqual(["b1", "b2"]);
+  });
+});

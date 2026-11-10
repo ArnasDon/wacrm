@@ -61,8 +61,8 @@ export default function LigarPage() {
     const fin = "finalidade" in alvo ? finalidades.find((f) => f.key === alvo.finalidade) : null;
     setLinhas((ls) => (ls ?? []).map((l) => {
       if (!ids.includes(l.id)) return l;
-      if (carro) return { ...l, situacao: "carro", ligadaA: rotuloCarro(carro), patioId: carro.id, finalidade: null, foraId: null, sugestao: null };
-      if (fin) return { ...l, situacao: "finalidade", ligadaA: fin.label, patioId: null, finalidade: fin.key, foraId: null, sugestao: null };
+      if (carro) return { ...l, situacao: "carro", ligadaA: rotuloCarro(carro), patioId: carro.id, finalidade: null, foraId: null, sugestao: null, opcoes: [] };
+      if (fin) return { ...l, situacao: "finalidade", ligadaA: fin.label, patioId: null, finalidade: fin.key, foraId: null, sugestao: null, opcoes: [] };
       return { ...l, situacao: "sem", ligadaA: null, patioId: null, finalidade: null, foraId: null };
     }));
     setSel((s) => { const n = new Set(s); ids.forEach((i) => n.delete(i)); return n; });
@@ -176,7 +176,15 @@ function Linha({ l, patio, finalidades, marcada, ocupada, onMarcar, onLigar }: {
             ✓ {l.sugestao.rotulo}
           </button>
         )}
-        <EscolherCarro patio={patio} rotulo={l.situacao === "carro" ? "Trocar carro…" : "Carro…"} onEscolher={(c) => onLigar({ patioId: c.id })} />
+        {!l.sugestao && l.opcoes.length > 0 && (
+          <span style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", justifyContent: "flex-end" }}>
+            <span style={{ fontSize: 12, color: "var(--tr-text-dim)" }}>Qual destes?</span>
+            {l.opcoes.map((o) => (
+              <button key={o.patioId} type="button" style={{ ...btn, borderColor: "var(--tr-gold-2)" }} disabled={ocupada} onClick={() => onLigar({ patioId: o.patioId })}>{o.rotulo}</button>
+            ))}
+          </span>
+        )}
+        <EscolherCarro patio={patio} rotulo={l.situacao === "carro" ? "Trocar carro…" : l.opcoes.length ? "Outro carro…" : "Carro…"} onEscolher={(c) => onLigar({ patioId: c.id })} />
         <EscolherFinalidade finalidades={finalidades} rotulo="Não é carro…" atual={l.finalidade} onEscolher={(f) => onLigar({ finalidade: f })} />
         {(l.situacao === "carro" || l.situacao === "finalidade") && <button type="button" style={{ ...btn, color: "var(--tr-text-dim)" }} onClick={() => onLigar({ limpar: true })}>Desfazer</button>}
       </div>

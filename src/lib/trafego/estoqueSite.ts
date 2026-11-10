@@ -135,7 +135,7 @@ export function candidatoNoPainel(v: VeiculoSite, cars: CarroPainel[]): Candidat
   return null;
 }
 
-const MARCAS = new Set([
+export const MARCAS = new Set([
   "vw", "volkswagen", "volkswagem", "toyota", "fiat", "chevrolet", "gm", "jeep", "honda", "hyundai", "bmw", "audi", "ram",
   "ford", "nissan", "renault", "mitsubishi", "mercedes", "benz", "land", "rover", "range", "porsche", "jaguar", "byd", "kia",
   "peugeot", "peugot", "citroen", "caoa", "chery", "cherry", "jaecoo", "troller", "volvo", "seadoo", "sea", "doo", "yamaha",

@@ -34,6 +34,7 @@ import {
   X,
   Zap,
   Sun,
+  CheckCheck,
 } from "lucide-react";
 import { hasMinRole, type AccountRole } from "@/lib/auth/roles";
 
@@ -149,6 +150,7 @@ const NAV_SECTIONS: NavSection[] = [
       { href: "/trafego/campanhas", labelKey: "trafficCampaigns", icon: Megaphone, module: "trafego", minRole: "admin" },
       { href: "/trafego/carros", labelKey: "trafficCars", icon: Car, module: "trafego", minRole: "admin" },
       { href: "/trafego/links-utm", labelKey: "trafficUtm", icon: Link2, module: "trafego", minRole: "admin" },
+      { href: "/trafego/conferir", labelKey: "trafficCheck", icon: CheckCheck, module: "trafego", minRole: "admin" },
       { href: "/broadcasts", labelKey: "broadcasts", icon: Radio },
       { href: "/automations", labelKey: "automations", icon: Zap, also: ["/regras", "/trafego/alertas", "/flows"] },
     ],

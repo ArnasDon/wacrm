@@ -777,6 +777,10 @@ export default function DashboardPage() {
             {syncError && <span style={{ color: "var(--tr-bad)" }}> · {syncError}</span>}
           </p>
         </div>
+        <div className="flex items-center gap-2">
+        <a href="/trafego/conferir" className="text-xs font-semibold px-4 py-2 rounded-md" style={{ border: "1px solid var(--tr-border)" }}>
+          Conferir com o Facebook
+        </a>
         <button
           onClick={sincronizarAgora}
           disabled={syncing}
@@ -785,6 +789,7 @@ export default function DashboardPage() {
         >
           {syncing ? "Sincronizando…" : "↻ Atualizar agora"}
         </button>
+        </div>
       </header>
 
       {/* Barra de filtros */}

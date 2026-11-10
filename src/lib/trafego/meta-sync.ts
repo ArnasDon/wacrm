@@ -27,6 +27,24 @@ type Linha = Record<string, any>;
 
 export type ModoSync = "rapido" | "completo";
 
+// Sem este filtro o Meta deixa de fora das métricas as campanhas EXCLUÍDAS
+// e ARQUIVADAS — mas o gasto delas continua no total da conta (o que o
+// Gerenciador mostra em "Máximo"). Com ele, o painel soma igual ao Facebook.
+export const TODAS_AS_CAMPANHAS = JSON.stringify([
+  { field: "campaign.effective_status", operator: "IN", value: ["ACTIVE", "PAUSED", "DELETED", "ARCHIVED", "IN_PROCESS", "WITH_ISSUES"] },
+]);
+
+// Busca de insights com o filtro acima; se o Meta recusar o filtro, busca sem.
+export async function insightsDeTodas(caminho: string, params: Record<string, string>, token: string): Promise<Linha[]> {
+  try {
+    return await graphTodasPaginas(caminho, { ...params, filtering: TODAS_AS_CAMPANHAS }, token);
+  } catch (e) {
+    if (e instanceof Error && /Token do Meta/.test(e.message)) throw e;
+    console.error("Meta: filtro de campanhas excluídas recusado, buscando sem ele:", e);
+    return graphTodasPaginas(caminho, params, token);
+  }
+}
+
 // Janelas de busca. O "rápido" roda a cada 15 min (e quando alguém abre o
 // painel): só os últimos dias, que são os que mudam. O "completo" roda uma
 // vez por dia e reescreve 30 dias, pra pegar ajustes tardios do Meta
@@ -36,7 +54,7 @@ const JANELAS: Record<ModoSync, { dias: number; diasHora: number }> = {
   completo: { dias: 30, diasHora: 10 },
 };
 
-async function graphTodasPaginas(caminho: string, params: Record<string, string>, token: string): Promise<Linha[]> {
+export async function graphTodasPaginas(caminho: string, params: Record<string, string>, token: string): Promise<Linha[]> {
   const url = new URL(`${GRAPH}/${caminho}`);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
   url.searchParams.set("access_token", token);
@@ -134,7 +152,7 @@ export async function syncMeta(
       fields: "id,name,objective,status,effective_status,created_time",
       limit: "500",
     }, token),
-    graphTodasPaginas(`${act}/insights`, {
+    insightsDeTodas(`${act}/insights`, {
       level: "campaign",
       time_increment: "1",
       time_range: JSON.stringify({ since: desde, until: ate }),

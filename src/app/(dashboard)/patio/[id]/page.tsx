@@ -22,7 +22,7 @@ export default function FichaCarroPage({ params }: { params: Promise<{ id: strin
   const [carro, setCarro] = useState<CarroUI | null>(null);
   const [anuncios, setAnuncios] = useState<AnunciosDoCarro | null>(null);
   const [anunciosTotal, setAnunciosTotal] = useState<AnunciosDoCarro | null>(null);
-  const [veiculoTrafegoId, setVeiculoTrafegoId] = useState<string | null>(null);
+  const [, setVeiculoTrafegoId] = useState<string | null>(null);
   const [historico, setHistorico] = useState<Historico[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [visitas, setVisitas] = useState<VisitaCarro[]>([]);
@@ -99,7 +99,7 @@ export default function FichaCarroPage({ params }: { params: Promise<{ id: strin
   if (!carro) return <div className="card" style={{ padding: 24 }} aria-busy="true">Abrindo a ficha…</div>;
 
   const preco = Number(carro.finance?.sale_price) || 0;
-  const cpl = anuncios?.msgs ? anuncios.gasto / anuncios.msgs : 0;
+  const cpl = anunciosTotal?.msgs ? anunciosTotal.gasto / anunciosTotal.msgs : 0;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20, maxWidth: 1280 }}>
@@ -132,8 +132,8 @@ export default function FichaCarroPage({ params }: { params: Promise<{ id: strin
           </div>
           <div className="card" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", overflow: "hidden" }}>
             <div style={{ padding: "14px 16px", borderRight: "1px solid var(--p-linha-2)" }}><div className="rot">No pátio</div><div className="dado" style={{ fontSize: 22 }}>{carro.dias != null ? <span className={seloDias(carro.dias)} style={{ fontSize: 16 }}>{carro.dias} dias</span> : "—"}</div></div>
-            <div style={{ padding: "14px 16px", borderRight: "1px solid var(--p-linha-2)" }}><div className="rot">Conversas em 30 dias</div><div className="dado" style={{ fontSize: 22 }}>{anuncios?.msgs || "—"}</div></div>
-            <div style={{ padding: "14px 16px" }}><div className="rot">Custo por conversa</div><div className="dado" style={{ fontSize: 22 }}>{cpl ? brl(cpl, 2) : "—"}</div></div>
+            <div style={{ padding: "14px 16px", borderRight: "1px solid var(--p-linha-2)" }}><div className="rot">Anúncio desde o início</div><div className="dado" style={{ fontSize: 22 }}>{anunciosTotal?.gasto ? brl(anunciosTotal.gasto) : "—"}</div><div className="rot" style={{ fontSize: 12 }}>{anunciosTotal?.msgs ? `${anunciosTotal.msgs} conversas` : "sem conversas"}{anuncios?.gasto ? ` · ${brl(anuncios.gasto)} em 30 dias` : ""}</div></div>
+            <div style={{ padding: "14px 16px" }}><div className="rot">Custo por conversa</div><div className="dado" style={{ fontSize: 22 }}>{cpl ? brl(cpl, 2) : "—"}</div><div className="rot" style={{ fontSize: 12 }}>desde o início, com imposto</div></div>
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {carro.status === "review" && podeEditar && (
@@ -161,10 +161,10 @@ export default function FichaCarroPage({ params }: { params: Promise<{ id: strin
         ))}
       </div>
 
-      {aba === "geral" && <VisaoGeral carro={carro} anuncios={anuncios} />}
+      {aba === "geral" && <VisaoGeral carro={carro} anuncios={anuncios} anunciosTotal={anunciosTotal} />}
       {aba === "site" && <DadosSite key={carro.atualizado_em ?? "novo"} carro={carro} podeEditar={podeEditar} salvando={salvando} salvar={salvar} />}
       {aba === "fotos" && <Fotos carro={carro} podeEditar={podeEditar} salvando={salvando} salvar={salvar} />}
-      {aba === "anuncios" && <Anuncios anuncios={anuncios} veiculoTrafegoId={veiculoTrafegoId} />}
+      {aba === "anuncios" && <Anuncios anuncios={anuncios} anunciosTotal={anunciosTotal} />}
       {aba === "clientes" && <ClientesDoCarro clientes={clientes} visitas={visitas} />}
       {aba === "financeiro" && ehSocio && <Financeiro key={carro.atualizado_em ?? "novo"} carro={carro} anunciosTotal={anunciosTotal} salvando={salvando} salvar={salvar} />}
       {aba === "dono" && ehSocio && <Dono key={carro.atualizado_em ?? "novo"} carro={carro} salvando={salvando} salvar={salvar} />}
@@ -174,7 +174,7 @@ export default function FichaCarroPage({ params }: { params: Promise<{ id: strin
   );
 }
 
-function VisaoGeral({ carro, anuncios }: { carro: CarroUI; anuncios: AnunciosDoCarro | null }) {
+function VisaoGeral({ carro, anuncios, anunciosTotal }: { carro: CarroUI; anuncios: AnunciosDoCarro | null; anunciosTotal: AnunciosDoCarro | null }) {
   const ck = carro.checklist ?? {};
   const linha = (rotulo: string, valor: unknown) => (
     <>
@@ -199,14 +199,19 @@ function VisaoGeral({ carro, anuncios }: { carro: CarroUI; anuncios: AnunciosDoC
         </dl>
       </section>
       <section className="card" style={{ padding: "18px 20px" }} aria-labelledby="an">
-        <h2 id="an" className="h2">Anúncios nos últimos 30 dias</h2>
-        {anuncios?.campanhas.length ? (
-          <p style={{ margin: "12px 0 0" }}>
-            <span className="dado">{brl(anuncios.gasto, 2)}</span> no Meta trouxeram <span className="dado">{anuncios.msgs}</span> conversas
-            {anuncios.msgs ? <> (<span className="dado">{brl(anuncios.gasto / anuncios.msgs, 2)}</span> cada)</> : null}.
-          </p>
+        <h2 id="an" className="h2">Anúncios</h2>
+        {anunciosTotal?.campanhas.length ? (
+          <>
+            <p style={{ margin: "12px 0 0" }}>
+              Desde o início: <span className="dado">{brl(anunciosTotal.gasto, 2)}</span> no Meta trouxeram <span className="dado">{anunciosTotal.msgs}</span> conversas
+              {anunciosTotal.msgs ? <> (<span className="dado">{brl(anunciosTotal.gasto / anunciosTotal.msgs, 2)}</span> cada)</> : null}.
+            </p>
+            <p className="rot" style={{ margin: "6px 0 0", fontSize: 14 }}>
+              Últimos 30 dias: {anuncios?.gasto ? <><span className="dado">{brl(anuncios.gasto, 2)}</span> e {anuncios.msgs} conversas.</> : "sem gasto."}
+            </p>
+          </>
         ) : (
-          <p className="rot" style={{ fontSize: 14, margin: "12px 0 0" }}>Nenhuma campanha ligada a este carro. Ligue uma em Tráfego → Campanhas.</p>
+          <p className="rot" style={{ fontSize: 14, margin: "12px 0 0" }}>Nenhuma campanha ligada a este carro. Ligue em <Link href="/trafego/ligar">Marketing → Ligar campanhas</Link>.</p>
         )}
       </section>
     </div>
@@ -347,30 +352,50 @@ function Fotos({ carro, podeEditar, salvando, salvar }: { carro: CarroUI; podeEd
   );
 }
 
-function Anuncios({ anuncios, veiculoTrafegoId }: { anuncios: AnunciosDoCarro | null; veiculoTrafegoId: string | null }) {
-  const gerenciar = veiculoTrafegoId
-    ? <p style={{ margin: "0 0 12px", fontSize: 14 }}>Ligar ou desligar campanhas, retorno por campanha e dados da troca: <Link href={`/trafego/carros/${veiculoTrafegoId}`}>abrir a análise de tráfego deste carro</Link>.</p>
-    : null;
-  if (!anuncios?.campanhas.length) {
-    return <section className="card" style={{ padding: 20 }}>{gerenciar}<p style={{ margin: 0 }}>Nenhuma campanha ligada. Em <Link href="/trafego/campanhas">Marketing → Campanhas</Link> você escolhe o carro de cada campanha.</p></section>;
+function Anuncios({ anuncios, anunciosTotal }: { anuncios: AnunciosDoCarro | null; anunciosTotal: AnunciosDoCarro | null }) {
+  const total = anunciosTotal;
+  if (!total?.campanhas.length) {
+    return <section className="card" style={{ padding: 20 }}><p style={{ margin: 0 }}>Nenhuma campanha ligada a este carro. Em <Link href="/trafego/ligar">Marketing → Ligar campanhas</Link> você liga campanhas a ele (ou divide uma campanha entre carros).</p></section>;
   }
+  const ult = new Map((anuncios?.campanhas ?? []).map((c) => [c.id + c.nome, c]));
+  const linhas = [...total.campanhas].sort((a, b) => b.gasto - a.gasto);
+  const cartao = (rot: string, val: string, sub?: string) => (
+    <div style={{ padding: "14px 16px", borderRight: "1px solid var(--p-linha-2)" }}><div className="rot">{rot}</div><div className="dado" style={{ fontSize: 22 }}>{val}</div>{sub && <div className="rot" style={{ fontSize: 12 }}>{sub}</div>}</div>
+  );
+  const situacao = (st: string | null) => (st === "ACTIVE" ? "No ar" : st === "PAUSED" ? "Pausada" : st === "ARCHIVED" || st === "DELETED" ? "Encerrada" : st ?? "—");
   return (
-    <section className="card" style={{ overflowX: "auto" }}>
-      {gerenciar && <div style={{ padding: "14px 16px 0" }}>{gerenciar}</div>}
-      <table className="tab">
-        <thead><tr><th scope="col">Campanha</th><th scope="col">Situação</th><th scope="col" style={{ textAlign: "right" }}>Gasto (30 dias, com imposto)</th><th scope="col" style={{ textAlign: "right" }}>Conversas</th><th scope="col" style={{ textAlign: "right" }}>Custo por conversa</th></tr></thead>
-        <tbody>
-          {anuncios.campanhas.map((c) => (
-            <tr key={c.id}>
-              <td><b>{c.nome}</b></td><td>{c.status ?? "—"}</td>
-              <td className="dado" style={{ textAlign: "right" }}>{brl(c.gasto, 2)}</td>
-              <td className="dado" style={{ textAlign: "right" }}>{c.msgs}</td>
-              <td className="dado" style={{ textAlign: "right" }}>{c.msgs ? brl(c.gasto / c.msgs, 2) : "—"}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </section>
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <section className="card" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", overflow: "hidden" }} aria-label="Resumo dos anúncios">
+        {cartao("Investido desde o início", brl(total.gasto, 2), "com imposto de 12%")}
+        {cartao("Conversas", String(total.msgs), `${total.campanhas.length} campanha(s)`)}
+        {cartao("Custo por conversa", total.msgs ? brl(total.gasto / total.msgs, 2) : "—")}
+        {cartao("Últimos 30 dias", anuncios?.gasto ? brl(anuncios.gasto, 2) : "—", anuncios?.gasto ? `${anuncios.msgs} conversas` : "sem gasto no período")}
+      </section>
+      <section className="card" style={{ overflowX: "auto" }}>
+        <div style={{ padding: "14px 16px 0", fontSize: 14 }}>Para ligar, tirar ou dividir campanhas: <Link href="/trafego/ligar">Marketing → Ligar campanhas</Link>.</div>
+        <table className="tab">
+          <thead><tr>
+            <th scope="col">Campanha</th><th scope="col">Situação</th>
+            <th scope="col" style={{ textAlign: "right" }}>Investido (com imposto)</th><th scope="col" style={{ textAlign: "right" }}>Conversas</th>
+            <th scope="col" style={{ textAlign: "right" }}>Custo por conversa</th><th scope="col" style={{ textAlign: "right" }}>Últimos 30 dias</th>
+          </tr></thead>
+          <tbody>
+            {linhas.map((c) => {
+              const u = ult.get(c.id + c.nome);
+              return (
+                <tr key={c.id + c.nome}>
+                  <td><b>{c.nome}</b></td><td>{situacao(c.status)}</td>
+                  <td className="dado" style={{ textAlign: "right" }}>{brl(c.gasto, 2)}</td>
+                  <td className="dado" style={{ textAlign: "right" }}>{c.msgs}</td>
+                  <td className="dado" style={{ textAlign: "right" }}>{c.msgs ? brl(c.gasto / c.msgs, 2) : "—"}</td>
+                  <td className="dado" style={{ textAlign: "right" }}>{u?.gasto ? brl(u.gasto, 2) : "—"}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </section>
+    </div>
   );
 }
 

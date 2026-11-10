@@ -802,8 +802,8 @@ function CadastroRapido({ termo, onFechar, onCriado }: { termo: string; onFechar
   }
 
   const campo = (rot: string, k: keyof typeof f, ph = "", largura = 1) => (
-    <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12.5, gridColumn: `span ${largura}` }}>{rot}
-      <input value={f[k]} onChange={muda(k)} placeholder={ph} style={{ ...btn, cursor: "text", padding: "8px 10px" }} />
+    <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12.5, gridColumn: `span ${largura}`, minWidth: 0 }}>{rot}
+      <input value={f[k]} onChange={muda(k)} placeholder={ph} style={{ ...btn, cursor: "text", padding: "8px 10px", width: "100%", minWidth: 0, boxSizing: "border-box" }} />
     </label>
   );
 
@@ -816,10 +816,10 @@ function CadastroRapido({ termo, onFechar, onCriado }: { termo: string; onFechar
           <p style={{ margin: "4px 0 0", fontSize: 13, color: "var(--tr-text-dim)" }}>O carro entra no Pátio como <b>Aguardando revisão</b> — não aparece no site — e já fica ligado à campanha. Depois você completa fotos e preço no Pátio, se quiser.</p>
         </div>
         <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12.5 }}>Colar a ficha do WhatsApp (opcional)
-          <textarea value={ficha} onChange={(e) => lerFicha(e.target.value)} rows={4} placeholder="Cole aqui o card do carro, do jeito que vai no grupo de entradas…" style={{ ...btn, cursor: "text", whiteSpace: "normal", padding: "8px 10px", resize: "vertical", fontFamily: "inherit" }} />
+          <textarea value={ficha} onChange={(e) => lerFicha(e.target.value)} rows={4} placeholder="Cole aqui o card do carro, do jeito que vai no grupo de entradas…" style={{ ...btn, cursor: "text", width: "100%", boxSizing: "border-box", whiteSpace: "normal", padding: "8px 10px", resize: "vertical", fontFamily: "inherit" }} />
         </label>
         {lida && <p style={{ margin: 0, fontSize: 12.5, color: "var(--tr-good)" }}>{lida}</p>}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 10 }}>
           {campo("Marca *", "brand", "Hyundai", 2)}
           {campo("Modelo *", "model", "Creta", 2)}
           {campo("Versão", "versao", "Platinum", 2)}

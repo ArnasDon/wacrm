@@ -1,6 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { DndContext, DragOverlay, KeyboardSensor, MouseSensor, TouchSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { SortableContext, arrayMove, rectSortingStrategy, sortableKeyboardCoordinates, useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { use, useEffect, useMemo, useState } from "react";
 import type { AnunciosDoCarro } from "@/lib/patio/anuncios";
 import { enviarParaCloudinary } from "@/lib/patio/cloudinary";
@@ -294,10 +297,49 @@ function DadosSite({ carro, podeEditar, salvando, salvar }: { carro: CarroUI; po
   );
 }
 
-function Fotos({ carro, podeEditar, salvando, salvar }: { carro: CarroUI; podeEditar: boolean; salvando: boolean; salvar: (m: Mapa) => void }) {
-  const fotos = carro.images ?? [];
+type FotoItem = { id: string; f: NonNullable<CarroUI["images"]>[number] };
+
+function comIds(lista: NonNullable<CarroUI["images"]>): FotoItem[] {
+  const vistos = new Map<string, number>();
+  return lista.map((f) => {
+    const n = vistos.get(f.url) ?? 0;
+    vistos.set(f.url, n + 1);
+    return { id: n ? `${f.url}#${n}` : f.url, f };
+  });
+}
+
+function Fotos({ carro, podeEditar, salvando, salvar }: { carro: CarroUI; podeEditar: boolean; salvando: boolean; salvar: (m: Mapa, pronto?: string) => void }) {
+  const salvas = useMemo(() => comIds(carro.images ?? []), [carro.images]);
+  const [ordem, setOrdem] = useState<FotoItem[]>(salvas);
   const [enviando, setEnviando] = useState<string | null>(null);
-  const mover = (i: number) => salvar({ images: [fotos[i], ...fotos.filter((_, j) => j !== i)] });
+  const [arrastando, setArrastando] = useState<string | null>(null);
+  // quando o carro recarrega (salvou, subiu foto), a tela volta a mostrar a ordem salva
+  const [base, setBase] = useState(salvas);
+  if (base !== salvas) {
+    setBase(salvas);
+    setOrdem(salvas);
+  }
+
+  const mudou = ordem.length === salvas.length && ordem.some((x, i) => x.id !== salvas[i].id);
+  const ocupado = salvando || !!enviando;
+  const sensores = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 220, tolerance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+  const fotosDe = (l: FotoItem[]) => l.map((x) => x.f);
+  const mover = (de: number, para: number) => {
+    if (para < 0 || para >= ordem.length || de === para) return;
+    setOrdem(arrayMove(ordem, de, para));
+  };
+  function soltou(e: DragEndEvent) {
+    setArrastando(null);
+    if (!e.over || e.active.id === e.over.id) return;
+    const de = ordem.findIndex((x) => x.id === e.active.id);
+    const para = ordem.findIndex((x) => x.id === e.over!.id);
+    if (de >= 0 && para >= 0) setOrdem(arrayMove(ordem, de, para));
+  }
+
   async function adicionar(e: React.ChangeEvent<HTMLInputElement>) {
     const arquivos = Array.from(e.target.files ?? []);
     e.target.value = "";
@@ -314,41 +356,90 @@ function Fotos({ carro, podeEditar, salvando, salvar }: { carro: CarroUI; podeEd
     }
     if (novas.length) {
       setEnviando(null);
-      salvar({ images: [...fotos, ...novas] });
+      // salva na ordem que está na tela (inclusive se você já tinha reorganizado) + as novas no fim
+      salvar({ images: [...fotosDe(ordem), ...novas] }, "Fotos adicionadas no fim. Arraste para colocar na ordem que quiser e clique em Salvar ordem.");
     }
   }
   const remover = (i: number) => {
-    if (confirm("Tirar esta foto do anúncio? Ela some do site.")) salvar({ images: fotos.filter((_, j) => j !== i) });
+    if (confirm("Tirar esta foto do anúncio? Ela some do site.")) salvar({ images: fotosDe(ordem.filter((_, j) => j !== i)) });
   };
+  const ativa = arrastando ? ordem.find((x) => x.id === arrastando) : null;
+
   return (
     <section className="card" style={{ padding: 20 }} aria-label="Fotos do carro">
-      {fotos.length === 0 ? (
+      {ordem.length === 0 ? (
         <p className="rot" style={{ fontSize: 14, margin: 0 }}>Este carro ainda não tem fotos.</p>
       ) : (
-        <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 14 }}>
-          {fotos.map((f, i) => (
-            <li key={f.url + i} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <Foto url={f.url} alt={`Foto ${i + 1}`} style={{ height: 140, borderRadius: 10, outline: i === 0 ? "3px solid var(--p-azul)" : undefined }} />
-              {i === 0 ? <span className="rot">Capa</span> : podeEditar ? (
-                <div style={{ display: "flex", gap: 6 }}>
-                  <button type="button" className="btns" disabled={salvando} onClick={() => mover(i)}>Usar como capa</button>
-                  <button type="button" className="btns" disabled={salvando} onClick={() => remover(i)} aria-label={`Remover foto ${i + 1}`}>Remover</button>
-                </div>
-              ) : null}
-            </li>
-          ))}
-        </ul>
+        <>
+          {podeEditar && ordem.length > 1 && (
+            <p className="rot" style={{ fontSize: 13, margin: "0 0 12px" }}>
+              Arraste as fotos para mudar a ordem (no celular, segure a foto um instante e arraste). Também dá para usar as setas ← →. A primeira é a capa.
+            </p>
+          )}
+          <DndContext sensors={sensores} collisionDetection={closestCenter} onDragStart={(e) => setArrastando(String(e.active.id))} onDragEnd={soltou} onDragCancel={() => setArrastando(null)}>
+            <SortableContext items={ordem.map((x) => x.id)} strategy={rectSortingStrategy} disabled={!podeEditar || ocupado}>
+              <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 14 }}>
+                {ordem.map((x, i) => (
+                  <FotoArrastavel key={x.id} item={x} i={i} total={ordem.length} podeEditar={podeEditar} ocupado={ocupado} mover={mover} remover={remover} />
+                ))}
+              </ul>
+            </SortableContext>
+            <DragOverlay>
+              {ativa ? <Foto url={ativa.f.url} alt="" style={{ height: 140, borderRadius: 10, boxShadow: "0 12px 32px rgba(0,0,0,.25)", cursor: "grabbing" }} /> : null}
+            </DragOverlay>
+          </DndContext>
+        </>
+      )}
+      {podeEditar && mudou && (
+        <div role="status" style={{ marginTop: 16, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", padding: "12px 14px", borderRadius: 10, background: "var(--p-suave)" }}>
+          <span style={{ fontSize: 14, fontWeight: 500, marginRight: "auto" }}>Ordem alterada — ainda não foi salva.</span>
+          <button type="button" className="btns" disabled={ocupado} onClick={() => setOrdem(salvas)}>Desfazer</button>
+          <button type="button" className="btnp" disabled={ocupado} onClick={() => salvar({ images: fotosDe(ordem) })}>
+            {salvando ? "Salvando…" : "Salvar ordem"}
+          </button>
+        </div>
       )}
       {podeEditar && (
         <div style={{ marginTop: 16, display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-          <label className="btnp" style={{ cursor: salvando || enviando ? "default" : "pointer" }}>
+          <label className="btnp" style={{ cursor: ocupado ? "default" : "pointer" }}>
             Adicionar fotos
-            <input type="file" accept="image/*" multiple onChange={adicionar} disabled={salvando || !!enviando} className="sr-only" />
+            <input type="file" accept="image/*" multiple onChange={adicionar} disabled={ocupado} className="sr-only" />
           </label>
           <span className="rot" style={{ fontSize: 13 }} role="status">{enviando ?? "Fotos em 1200×900 (4:3) ficam melhor no site. A primeira é a capa."}</span>
         </div>
       )}
     </section>
+  );
+}
+
+function FotoArrastavel({ item, i, total, podeEditar, ocupado, mover, remover }: {
+  item: FotoItem; i: number; total: number; podeEditar: boolean; ocupado: boolean;
+  mover: (de: number, para: number) => void; remover: (i: number) => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id });
+  const pode = podeEditar && !ocupado;
+  return (
+    <li ref={setNodeRef} style={{ display: "flex", flexDirection: "column", gap: 8, transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.35 : 1 }}>
+      <div
+        {...(podeEditar ? attributes : {})}
+        {...(pode ? listeners : {})}
+        aria-label={podeEditar ? `Foto ${i + 1} de ${total}. Pressione espaço para mover com as setas.` : `Foto ${i + 1}`}
+        style={{ position: "relative", cursor: pode ? "grab" : "default", touchAction: "manipulation", borderRadius: 10 }}
+      >
+        <Foto url={item.f.url} alt={`Foto ${i + 1}`} style={{ height: 140, borderRadius: 10, outline: i === 0 ? "3px solid var(--p-azul)" : undefined, pointerEvents: "none" }} />
+        <span aria-hidden style={{ position: "absolute", top: 8, left: 8, minWidth: 24, height: 24, padding: "0 7px", borderRadius: 12, background: i === 0 ? "var(--p-azul)" : "rgba(0,0,0,.6)", color: "#fff", fontSize: 12, fontWeight: 600, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+          {i === 0 ? "Capa" : i + 1}
+        </span>
+      </div>
+      {podeEditar ? (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <button type="button" className="btns" disabled={!pode || i === 0} onClick={() => mover(i, i - 1)} aria-label={`Mover foto ${i + 1} para trás`} title="Mover para trás">←</button>
+          <button type="button" className="btns" disabled={!pode || i === total - 1} onClick={() => mover(i, i + 1)} aria-label={`Mover foto ${i + 1} para frente`} title="Mover para frente">→</button>
+          {i !== 0 && <button type="button" className="btns" disabled={!pode} onClick={() => mover(i, 0)}>Usar como capa</button>}
+          <button type="button" className="btns" disabled={!pode} onClick={() => remover(i)} aria-label={`Remover foto ${i + 1}`}>Remover</button>
+        </div>
+      ) : i === 0 ? <span className="rot">Capa</span> : null}
+    </li>
   );
 }
 

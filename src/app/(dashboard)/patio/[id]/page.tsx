@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { use, useEffect, useMemo, useState } from "react";
 import type { AnunciosDoCarro } from "@/lib/patio/anuncios";
-import { enviarParaCloudinary } from "@/lib/patio/cloudinary";
 import { createClient } from "@/lib/supabase/client";
 import { ORIGENS_VENDA, detalheDaOrigem } from "@/lib/patio/origem-venda";
+import { Fotos } from "../fotos";
 import { brl, Foto, nomeCarro, seloDias, STATUS_NOME, STATUS_SELO, type CarroUI, type Papel } from "../comum";
 
 type Historico = { criado_em: string; quem: string | null; acao: string; campos: string[]; antes: Record<string, unknown> | null; depois: Record<string, unknown> | null };
@@ -163,7 +163,7 @@ export default function FichaCarroPage({ params }: { params: Promise<{ id: strin
 
       {aba === "geral" && <VisaoGeral carro={carro} anuncios={anuncios} anunciosTotal={anunciosTotal} />}
       {aba === "site" && <DadosSite key={carro.atualizado_em ?? "novo"} carro={carro} podeEditar={podeEditar} salvando={salvando} salvar={salvar} />}
-      {aba === "fotos" && <Fotos carro={carro} podeEditar={podeEditar} salvando={salvando} salvar={salvar} />}
+      {aba === "fotos" && <Fotos key={carro.atualizado_em ?? "novo"} carro={carro} podeEditar={podeEditar} salvando={salvando} salvar={salvar} />}
       {aba === "anuncios" && <Anuncios anuncios={anuncios} anunciosTotal={anunciosTotal} />}
       {aba === "clientes" && <ClientesDoCarro clientes={clientes} visitas={visitas} />}
       {aba === "financeiro" && ehSocio && <Financeiro key={carro.atualizado_em ?? "novo"} carro={carro} anunciosTotal={anunciosTotal} salvando={salvando} salvar={salvar} />}
@@ -291,64 +291,6 @@ function DadosSite({ carro, podeEditar, salvando, salvar }: { carro: CarroUI; po
         </div>
       )}
     </form>
-  );
-}
-
-function Fotos({ carro, podeEditar, salvando, salvar }: { carro: CarroUI; podeEditar: boolean; salvando: boolean; salvar: (m: Mapa) => void }) {
-  const fotos = carro.images ?? [];
-  const [enviando, setEnviando] = useState<string | null>(null);
-  const mover = (i: number) => salvar({ images: [fotos[i], ...fotos.filter((_, j) => j !== i)] });
-  async function adicionar(e: React.ChangeEvent<HTMLInputElement>) {
-    const arquivos = Array.from(e.target.files ?? []);
-    e.target.value = "";
-    if (!arquivos.length) return;
-    const novas: { url: string; ts: number }[] = [];
-    try {
-      for (const [i, arq] of arquivos.entries()) {
-        setEnviando(`Enviando foto ${i + 1} de ${arquivos.length}…`);
-        const url = await enviarParaCloudinary(arq, `media/veh_${carro.id}_${Date.now().toString(36)}${i}`);
-        novas.push({ url, ts: Date.now() });
-      }
-    } catch (err) {
-      setEnviando(`Uma foto não subiu (${(err as Error).message}). As que subiram serão salvas.`);
-    }
-    if (novas.length) {
-      setEnviando(null);
-      salvar({ images: [...fotos, ...novas] });
-    }
-  }
-  const remover = (i: number) => {
-    if (confirm("Tirar esta foto do anúncio? Ela some do site.")) salvar({ images: fotos.filter((_, j) => j !== i) });
-  };
-  return (
-    <section className="card" style={{ padding: 20 }} aria-label="Fotos do carro">
-      {fotos.length === 0 ? (
-        <p className="rot" style={{ fontSize: 14, margin: 0 }}>Este carro ainda não tem fotos.</p>
-      ) : (
-        <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 14 }}>
-          {fotos.map((f, i) => (
-            <li key={f.url + i} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <Foto url={f.url} alt={`Foto ${i + 1}`} style={{ height: 140, borderRadius: 10, outline: i === 0 ? "3px solid var(--p-azul)" : undefined }} />
-              {i === 0 ? <span className="rot">Capa</span> : podeEditar ? (
-                <div style={{ display: "flex", gap: 6 }}>
-                  <button type="button" className="btns" disabled={salvando} onClick={() => mover(i)}>Usar como capa</button>
-                  <button type="button" className="btns" disabled={salvando} onClick={() => remover(i)} aria-label={`Remover foto ${i + 1}`}>Remover</button>
-                </div>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      )}
-      {podeEditar && (
-        <div style={{ marginTop: 16, display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-          <label className="btnp" style={{ cursor: salvando || enviando ? "default" : "pointer" }}>
-            Adicionar fotos
-            <input type="file" accept="image/*" multiple onChange={adicionar} disabled={salvando || !!enviando} className="sr-only" />
-          </label>
-          <span className="rot" style={{ fontSize: 13 }} role="status">{enviando ?? "Fotos em 1200×900 (4:3) ficam melhor no site. A primeira é a capa."}</span>
-        </div>
-      )}
-    </section>
   );
 }
 

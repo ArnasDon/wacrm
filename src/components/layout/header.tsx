@@ -17,6 +17,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ModeToggle } from "@/components/layout/mode-toggle";
+import { OwnerBadge } from "@/components/layout/owner-badge";
 
 const pageTitles: Record<string, string> = {
   "/dashboard": "dashboard",
@@ -48,7 +49,7 @@ import { useTranslations } from "next-intl";
 export function Header({ onOpenSidebar }: HeaderProps) {
   const t = useTranslations("Header");
   const pathname = usePathname();
-  const { profile, signOut } = useAuth();
+  const { profile, isOwner, signOut } = useAuth();
   const titleKey = getPageTitleKey(pathname);
 
   const initial =
@@ -102,9 +103,12 @@ export function Header({ onOpenSidebar }: HeaderProps) {
           className="min-w-56 bg-popover text-popover-foreground ring-border"
         >
           <div className="px-2 py-1.5">
-            <p className="truncate text-sm font-medium text-foreground">
-              {profile?.full_name ?? t("defaultUser")}
-            </p>
+            <div className="flex min-w-0 items-center gap-2">
+              <p className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+                {profile?.full_name ?? t("defaultUser")}
+              </p>
+              {isOwner ? <OwnerBadge label={t("roleOwner")} /> : null}
+            </div>
             <p className="truncate text-xs text-muted-foreground">
               {profile?.email ?? ""}
             </p>

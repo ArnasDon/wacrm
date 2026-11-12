@@ -97,3 +97,34 @@
 @media (max-width: 640px) { .modulo-patio .filtros .campo.mini { flex: 1 1 140px; } .modulo-patio .filtros .campo.mini select, .modulo-patio .filtros .campo.mini input { width: 100% !important; } }
 /* seletor compacto (filtros do ranking em Hoje) */
 .modulo-patio .campo-mini { font: inherit; font-size: 13px; color: var(--p-ink); background: var(--campo, #fff); border: 1px solid var(--input); border-radius: 8px; padding: 6px 8px; }
+
+/* Aba Fotos — reordenar arrastando (lê o tema claro/escuro) */
+.modulo-patio .fo-previa { display: grid; grid-template-columns: 220px 1fr; gap: 8px 12px; align-items: start; margin-bottom: 18px; padding-bottom: 18px; border-bottom: 1px solid var(--p-linha-2); }
+.modulo-patio .fo-previa-capa { height: 150px; border-radius: 10px; }
+.modulo-patio .fo-previa-tira { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; max-width: 420px; }
+.modulo-patio .fo-previa-tira .foto { height: 70px; border-radius: 7px; }
+.modulo-patio .fo-previa > .rot { grid-column: 1 / -1; }
+@media (max-width: 640px) { .modulo-patio .fo-previa { grid-template-columns: 1fr; } .modulo-patio .fo-previa-capa { height: 180px; } }
+.modulo-patio .fo-grade { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 14px; }
+@media (max-width: 640px) { .modulo-patio .fo-grade { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } }
+.modulo-patio .fo-item { display: flex; flex-direction: column; gap: 6px; background: var(--p-papel); border-radius: 12px; }
+.modulo-patio .fo-pega { position: relative; cursor: grab; touch-action: manipulation; border-radius: 10px; }
+.modulo-patio .fo-pega:active { cursor: grabbing; }
+.modulo-patio .fo-img { height: 128px; border-radius: 10px; user-select: none; -webkit-user-drag: none; }
+.modulo-patio .fo-img img { pointer-events: none; }
+.modulo-patio .fo-item-capa .fo-img { outline: 3px solid var(--p-ouro); outline-offset: -3px; }
+.modulo-patio .fo-num { position: absolute; top: 7px; left: 7px; min-width: 26px; height: 24px; padding: 0 7px; display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; background: rgba(23,25,27,.78); color: #fff; font-family: var(--font-plex-mono), monospace; font-size: 12px; font-weight: 600; }
+.modulo-patio .fo-num.fo-capa { background: var(--p-ouro); color: #17191b; }
+.modulo-patio .fo-voando { box-shadow: 0 14px 34px rgba(0,0,0,.28); transform: rotate(2deg) scale(1.04); cursor: grabbing; position: relative; }
+.modulo-patio .fo-acoes { display: flex; gap: 4px; }
+.modulo-patio .fo-bt { flex: 1; min-width: 0; height: 30px; border: 1px solid var(--p-linha); background: var(--p-papel); color: var(--p-ink); border-radius: 7px; font: inherit; font-size: 13px; cursor: pointer; padding: 0 4px; }
+.modulo-patio .fo-bt:hover:not(:disabled) { border-color: var(--p-ink); }
+.modulo-patio .fo-bt:disabled { opacity: .35; cursor: default; }
+.modulo-patio .fo-bt-txt { font-size: 11px; }
+.modulo-patio .fo-bt-del:hover:not(:disabled) { border-color: #c0392b; color: #c0392b; }
+.modulo-patio .fo-removidas { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 16px; padding: 10px 12px; background: color-mix(in srgb, #c0392b 12%, var(--p-papel)); border-radius: 10px; }
+.modulo-patio .fo-removida { display: flex; flex-direction: column; align-items: center; gap: 2px; border: 0; background: transparent; cursor: pointer; font: inherit; font-size: 11px; color: var(--p-ink); }
+.modulo-patio .fo-removida .foto { width: 64px; height: 46px; border-radius: 6px; opacity: .6; }
+.modulo-patio .fo-removida:hover .foto { opacity: 1; }
+.modulo-patio .fo-barra { position: sticky; bottom: 0; z-index: 5; margin: 18px -20px -20px; padding: 12px 20px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; background: var(--p-papel); border-top: 1px solid var(--p-linha-2); border-radius: 0 0 14px 14px; }
+.modulo-patio .fo-barra-ativa { background: color-mix(in srgb, var(--p-ouro) 16%, var(--p-papel)); border-top-color: var(--p-ouro); box-shadow: 0 -6px 18px rgba(0,0,0,.06); }

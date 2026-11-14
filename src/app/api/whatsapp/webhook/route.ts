@@ -1,7 +1,7 @@
 import { NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption'
-import { getMediaUrl, downloadMedia } from '@/lib/whatsapp/meta-api'
+import { getMediaUrl } from '@/lib/whatsapp/meta-api'
 import { normalizePhone } from '@/lib/whatsapp/phone-utils'
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
@@ -35,7 +35,17 @@ function supabaseAdmin() {
 
 // In-memory short-TTL cache for whatsapp_config lookups to absorb webhook bursts
 // shortcut: in-memory cache per instance, 60s TTL is adequate for serverless instances
-const configCache = new Map<string, { config: any; expiresAt: number }>()
+interface WhatsAppConfig {
+  verify_token: string | null
+  access_token: string
+  account_id: string
+  user_id: string
+}
+
+const configCache = new Map<
+  string,
+  { config: WhatsAppConfig; expiresAt: number }
+>()
 const CONFIG_CACHE_TTL_MS = 60_000
 
 async function getCachedWhatsAppConfig(phoneNumberId: string) {
@@ -74,7 +84,7 @@ async function getCachedWhatsAppConfig(phoneNumberId: string) {
     return null
   }
 
-  const config = configRows[0]
+  const config = configRows[0] as WhatsAppConfig
   configCache.set(phoneNumberId, {
     config,
     expiresAt: Date.now() + CONFIG_CACHE_TTL_MS,

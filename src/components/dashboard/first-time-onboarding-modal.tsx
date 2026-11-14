@@ -43,7 +43,9 @@ export function FirstTimeOnboardingModal() {
   useEffect(() => {
     // Show only if user has never completed or dismissed the first-time modal
     const completed = localStorage.getItem('wacrm_ft_onboarding_completed');
+
     if (!completed) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setOpen(true);
     }
   }, []);

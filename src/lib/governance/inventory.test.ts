@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { adjustInventory } from './service';
 
 describe('Phase 3: Inventory and Order Safety', () => {
@@ -17,7 +18,7 @@ describe('Phase 3: Inventory and Order Safety', () => {
           }),
         }),
       }),
-    } as any;
+    } as unknown as SupabaseClient;
 
     await expect(
       adjustInventory(mockSupabase, {
@@ -53,7 +54,7 @@ describe('Phase 3: Inventory and Order Safety', () => {
           }),
         }),
       }),
-    } as any;
+    } as unknown as SupabaseClient;
 
     const result = await adjustInventory(mockSupabase, {
       accountId: 'acc-1',

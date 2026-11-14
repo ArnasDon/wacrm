@@ -23,10 +23,12 @@ jobs:
     # META_APP_SECRET are read at module-load by lib/whatsapp/*; the
     # test suite asserts behaviour around these values, so any non-
     # empty placeholder works as long as it stays consistent with
-    # vitest.config.ts.
+    # vitest.config.ts. The service-role placeholder is needed by
+    # API routes that construct an admin client during module loading.
     env:
       NEXT_PUBLIC_SUPABASE_URL: https://ci.example.supabase.co
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-dummy-anon-key
+      SUPABASE_SERVICE_ROLE_KEY: ci-dummy-service-role-key
       ENCRYPTION_KEY: '0000000000000000000000000000000000000000000000000000000000000000'
       META_APP_SECRET: 'ci-dummy-meta-secret'
     steps:

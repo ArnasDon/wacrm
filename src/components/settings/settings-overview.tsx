@@ -1,10 +1,11 @@
 'use client';
 
 import { useEffect, useState, type ReactNode } from 'react';
-import { ChevronRight, Loader2 } from 'lucide-react';
+import { ChevronRight, Loader2, ShieldCheck } from 'lucide-react';
 
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
+import { usePlatformAdmin } from '@/hooks/use-platform-admin';
 import { useTheme } from '@/hooks/use-theme';
 import { THEMES } from '@/lib/themes';
 import { CURRENCIES } from '@/lib/currency';
@@ -37,6 +38,7 @@ export function SettingsOverview({
 }) {
   const { user, profile, accountId, accountRole, defaultCurrency, canManageMembers } =
     useAuth();
+  const isPlatformAdmin = usePlatformAdmin();
   const { mode, theme } = useTheme();
 
   const [counts, setCounts] = useState<OverviewCounts | null>(null);
@@ -220,7 +222,7 @@ export function SettingsOverview({
   return (
     <section className="animate-in fade-in-50 duration-200">
       {/* Identity */}
-      <Card className="flex-row items-center gap-4 px-5 py-5">
+      <Card className="flex-row flex-wrap items-center gap-4 px-5 py-5">
         <Avatar size="lg" className="size-14">
           {profile?.avatar_url ? (
             <AvatarImage src={profile.avatar_url} alt={displayName} />
@@ -239,12 +241,20 @@ export function SettingsOverview({
             </div>
           ) : null}
         </div>
-        {roleMeta && RoleIcon ? (
-          <SettingsChip variant={roleMeta.variant}>
-            <RoleIcon />
-            {roleMeta.label}
-          </SettingsChip>
-        ) : null}
+        <div className="flex flex-wrap gap-2">
+          {isPlatformAdmin ? (
+            <SettingsChip variant="admin">
+              <ShieldCheck />
+              Super Admin
+            </SettingsChip>
+          ) : null}
+          {roleMeta && RoleIcon ? (
+            <SettingsChip variant={roleMeta.variant}>
+              <RoleIcon />
+              {roleMeta.label}
+            </SettingsChip>
+          ) : null}
+        </div>
       </Card>
 
       {/* Status tiles */}

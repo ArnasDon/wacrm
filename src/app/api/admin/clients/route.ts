@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { isPlatformAdmin } from '@/lib/auth/platform-admin';
 import { createClient } from '@/lib/supabase/server';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
 
@@ -7,18 +8,6 @@ function getAdminClient() {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
-}
-
-function isPlatformAdmin(email?: string, systemRole?: string | null): boolean {
-  if (systemRole === 'superadmin') return true;
-  const adminEmails = (process.env.PLATFORM_ADMIN_EMAILS || '')
-    .split(',')
-    .map((e) => e.trim().toLowerCase())
-    .filter(Boolean);
-  if (email && adminEmails.includes(email.toLowerCase())) {
-    return true;
-  }
-  return false;
 }
 
 export async function GET() {

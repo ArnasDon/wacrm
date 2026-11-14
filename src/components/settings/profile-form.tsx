@@ -6,6 +6,7 @@ import { Loader2, Upload, Trash2, Mail, CircleAlert } from 'lucide-react';
 
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
+import { usePlatformAdmin } from '@/hooks/use-platform-admin';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -32,6 +33,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function ProfileForm() {
   const { user, profile, refreshProfile } = useAuth();
+  const isPlatformAdmin = usePlatformAdmin();
   const supabase = createClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -307,9 +309,15 @@ export function ProfileForm() {
             </p>
             <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
               <div>
-                <dt className="text-muted-foreground">Role</dt>
+                <dt className="text-muted-foreground">Platform role</dt>
                 <dd className="mt-0.5 font-mono text-foreground">
-                  {profile?.role ?? 'user'}
+                  {isPlatformAdmin ? 'Super Admin' : 'User'}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Workspace role</dt>
+                <dd className="mt-0.5 font-mono capitalize text-foreground">
+                  {profile?.account_role ?? '—'}
                 </dd>
               </div>
               <div>

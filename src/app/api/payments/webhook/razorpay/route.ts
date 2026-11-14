@@ -32,8 +32,10 @@ export async function POST(request: NextRequest) {
     const paymentLinkEntity = payloadObj?.payment_link?.entity as Record<string, unknown> | undefined;
     const paymentEntity = payloadObj?.payment?.entity as Record<string, unknown> | undefined;
     const notes = (paymentLinkEntity?.notes || paymentEntity?.notes || {}) as Record<string, string>;
-    const orderId = notes.orderId;
-    const accountId = notes.accountId;
+    const orderId = typeof notes.orderId === 'string' ? notes.orderId : undefined;
+    const accountId = typeof notes.accountId === 'string' ? notes.accountId : undefined;
+    const paymentLinkId =
+      typeof paymentLinkEntity?.id === 'string' ? paymentLinkEntity.id : undefined;
 
     const admin = getAdmin();
 
@@ -41,6 +43,7 @@ export async function POST(request: NextRequest) {
     let order: {
       id: string;
       account_id: string;
+      provider: string;
       status: string;
       amount: number;
       currency: string;
@@ -54,23 +57,25 @@ export async function POST(request: NextRequest) {
         .eq('id', orderId)
         .maybeSingle();
       order = data;
-    } else if (paymentLinkEntity?.id) {
+    } else if (paymentLinkId) {
       const { data } = await admin
         .from('payment_orders')
         .select('*, products(title)')
-        .eq('provider_payment_link_id', paymentLinkEntity.id)
+        .eq('provider_payment_link_id', paymentLinkId)
         .maybeSingle();
       order = data;
     }
 
-    const targetAccountId = accountId || order?.account_id;
-
-    // Security check: must resolve target account and verify HMAC signature
-    if (!targetAccountId) {
-      return NextResponse.json({ error: 'Unresolvable order account' }, { status: 400 });
+    if (!order) {
+      return NextResponse.json({ error: 'Unknown payment order' }, { status: 400 });
     }
 
-    const config = await getGatewayConfig(targetAccountId, 'razorpay');
+    if (order.provider !== 'razorpay' || (accountId && accountId !== order.account_id)) {
+      console.warn('Razorpay webhook rejected: order/provider account mismatch');
+      return NextResponse.json({ error: 'Invalid payment order' }, { status: 400 });
+    }
+
+    const config = await getGatewayConfig(order.account_id, 'razorpay');
     if (!config?.webhookSecret || !signature) {
       console.warn('Razorpay webhook rejected: missing webhook secret or signature header');
       return NextResponse.json({ error: 'Unauthorized webhook' }, { status: 401 });
@@ -109,7 +114,10 @@ export async function POST(request: NextRequest) {
         if (order.conversation_id) {
           const currencySymbol = order.currency === 'INR' ? '₹' : `${order.currency} `;
           const itemTitle = order.products?.title || 'your order';
-          const txnId = (paymentEntity?.id as string) || (paymentLinkEntity?.id as string) || order.id.slice(0, 8);
+          const txnId =
+            (typeof paymentEntity?.id === 'string' && paymentEntity.id) ||
+            paymentLinkId ||
+            order.id.slice(0, 8);
 
           const receiptMessage = `✅ *Payment Received!*\n\nWe have received your payment of *${currencySymbol}${Number(order.amount).toLocaleString()}* for *${itemTitle}*.\n\nTransaction ID: \`${txnId}\`\nStatus: *Completed*\n\nThank you for your purchase!`;
 

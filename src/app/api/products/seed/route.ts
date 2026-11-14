@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
 import { requireRole, toErrorResponse } from '@/lib/auth/account';
-import { INITIAL_DEMO_PRODUCTS, resetDemoProducts } from '@/lib/commerce/demo-store';
+import { INITIAL_DEMO_PRODUCTS } from '@/lib/commerce/demo-store';
 
 export const DEMO_PRODUCTS = INITIAL_DEMO_PRODUCTS;
 
@@ -8,13 +9,16 @@ export const DEMO_PRODUCTS = INITIAL_DEMO_PRODUCTS;
  * POST /api/products/seed
  * Seed the standard demo products into the active account
  */
-export async function POST(_request: NextRequest) {
+export async function POST(request: NextRequest) {
+  void request;
+
   try {
     const { supabase, accountId } = await requireRole('agent');
 
     const records = DEMO_PRODUCTS.map((item) => {
       // Omit static demo ID so Postgres gen_random_uuid() handles ID assignment
-      const { id: _id, ...rest } = item;
+      const { id, ...rest } = item;
+      void id;
       return {
         ...rest,
         account_id: accountId,

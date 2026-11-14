@@ -1,12 +1,10 @@
 import Link from 'next/link';
 import {
-  MessageSquare,
   Zap,
   Users,
   GitBranch,
   Radio,
   Workflow,
-  Building2,
   ArrowRight,
   CheckCircle2,
   XCircle,
@@ -15,18 +13,11 @@ import {
   Stethoscope,
   Car,
   Briefcase,
-  GraduationCap,
   Sparkles,
-  Bot,
-  ShieldCheck,
   CreditCard,
-  Layers,
   Send,
-  Eye,
   CheckCheck,
-  Clock,
   Sparkle,
-  PhoneCall,
   Flame,
 } from 'lucide-react';
 import { buttonVariants } from '@/components/ui/button';

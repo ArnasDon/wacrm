@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getCurrentAccount, toErrorResponse } from '@/lib/auth/account'
+import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import type { AutomationTriggerType } from '@/types'
 
@@ -11,7 +11,7 @@ import type { AutomationTriggerType } from '@/types'
 export async function POST(request: Request) {
   let accountId: string
   try {
-    const ctx = await getCurrentAccount()
+    const ctx = await requireRole('agent')
     accountId = ctx.accountId
   } catch (err) {
     return toErrorResponse(err)

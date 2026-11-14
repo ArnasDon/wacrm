@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/automations/admin-client'
 import { getTemplate } from '@/lib/automations/templates'
 import { insertSteps, type BuilderStepInput } from '@/lib/automations/steps-tree'
@@ -24,27 +25,13 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  // Resolve the caller's account_id — `automations.account_id` is NOT
-  // NULL post-017, so an INSERT without it trips the not-null constraint
-  // even though the admin client bypasses RLS.
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('account_id')
-    .eq('user_id', user.id)
-    .single()
-  const accountId = profile?.account_id as string | undefined
-  if (!accountId) {
-    return NextResponse.json(
-      { error: 'Your profile is not linked to an account.' },
-      { status: 403 },
-    )
+  let context: Awaited<ReturnType<typeof requireRole>>
+  try {
+    context = await requireRole('agent')
+  } catch (error) {
+    return toErrorResponse(error)
   }
+  const { accountId, userId } = context
 
   const body = await request.json().catch(() => null)
   if (!body) return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
@@ -98,7 +85,7 @@ export async function POST(request: Request) {
   const { data: automation, error: insertErr } = await admin
     .from('automations')
     .insert({
-      user_id: user.id,
+      user_id: userId,
       account_id: accountId,
       name: effectiveName,
       description: effectiveDescription ?? null,

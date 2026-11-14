@@ -36,6 +36,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
+    "test:production": "node --test scripts/production-smoke.test.mjs",
     "test:watch": "vitest"
   },
   "dependencies": {

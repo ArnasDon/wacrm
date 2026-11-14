@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentAccount, requireRole, toErrorResponse } from '@/lib/auth/account';
-import { getDemoProducts, addDemoProduct } from '@/lib/commerce/demo-store';
 
 /**
  * GET /api/products

@@ -1,3 +1,4 @@
+
 # Security Policy
 
 Thanks for taking the time to look into the security of this template.

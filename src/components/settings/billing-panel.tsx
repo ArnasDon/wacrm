@@ -2,13 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import {
-  CreditCard,
-  Check,
-  Sparkles,
-  Loader2,
-  ArrowUpRight,
-} from 'lucide-react';
+import { Check, Loader2, ArrowUpRight } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import { Button } from '@/components/ui/button';
@@ -34,7 +28,6 @@ interface SubscriptionData {
 
 export function BillingPanel() {
   const { accountId, accountRole } = useAuth();
-  const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState<string | null>(null);
   const [subscription, setSubscription] = useState<SubscriptionData | null>(
     null
@@ -61,8 +54,8 @@ export function BillingPanel() {
         } else if (data) {
           setSubscription(data as SubscriptionData);
         }
-      } finally {
-        setLoading(false);
+      } catch (err) {
+        console.error('Failed to load subscription:', err);
       }
     }
 

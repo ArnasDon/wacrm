@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/automations/admin-client'
 import {
   loadStepsTree,
@@ -47,8 +48,13 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params
-  const user = await requireUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  let context: Awaited<ReturnType<typeof requireRole>>
+  try {
+    context = await requireRole('agent')
+  } catch (error) {
+    return toErrorResponse(error)
+  }
+  const user = { id: context.userId }
 
   const body = await request.json().catch(() => null)
   if (!body) return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
@@ -125,8 +131,13 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params
-  const user = await requireUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  let context: Awaited<ReturnType<typeof requireRole>>
+  try {
+    context = await requireRole('agent')
+  } catch (error) {
+    return toErrorResponse(error)
+  }
+  const user = { id: context.userId }
 
   const { error } = await supabaseAdmin()
     .from('automations')

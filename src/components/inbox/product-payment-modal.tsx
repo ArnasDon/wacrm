@@ -10,13 +10,12 @@ import {
   Check,
   Loader2,
   Tag,
-  ExternalLink,
 } from 'lucide-react';
+import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Dialog,
@@ -249,10 +248,14 @@ export function ProductPaymentModal({
                       >
                         <div className="flex items-center gap-3">
                           {p.image_url ? (
-                            <img
+                            <Image
                               src={p.image_url}
                               alt={p.title}
                               className="h-10 w-10 rounded object-cover border border-border"
+                              width={40}
+                              height={40}
+                              sizes="40px"
+                              unoptimized
                             />
                           ) : (
                             <div className="flex h-10 w-10 items-center justify-center rounded bg-muted text-muted-foreground">

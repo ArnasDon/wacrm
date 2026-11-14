@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
+import Image from "next/image";
 import type { Message, MessageReaction } from "@/types";
 import {
   Clock,
@@ -107,10 +108,13 @@ function MediaImage({ url, alt }: { url: string; alt: string }) {
   }
 
   return (
-    <img
+    <Image
       src={src ?? ""}
       alt={alt}
-      className="max-h-64 max-w-60 rounded-lg object-cover"
+      className="h-auto w-auto max-h-64 max-w-60 rounded-lg object-cover"
+      width={480}
+      height={512}
+      unoptimized
       onError={() => setError(true)}
     />
   );

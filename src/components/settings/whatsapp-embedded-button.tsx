@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { MessageSquare, Loader2, Sparkles, CheckCircle2 } from 'lucide-react';
+import { MessageSquare, Loader2 } from 'lucide-react';
 
 interface WhatsAppEmbeddedButtonProps {
   onSuccess: () => void;

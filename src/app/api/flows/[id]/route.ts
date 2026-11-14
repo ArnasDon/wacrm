@@ -1,6 +1,12 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
+import {
+  ForbiddenError,
+  requireRole,
+  UnauthorizedError,
+} from '@/lib/auth/account'
+import type { AccountRole } from '@/lib/auth/roles'
 
 /**
  * GET   /api/flows/[id]  — fetch one flow with its nodes.
@@ -19,6 +25,7 @@ import { supabaseAdmin } from '@/lib/flows/admin-client'
 
 async function requireOwnership(
   flowId: string,
+  minimumRole?: AccountRole,
 ): Promise<
   | {
       ok: true
@@ -27,12 +34,32 @@ async function requireOwnership(
     }
   | { ok: false; status: number; body: { error: string } }
 > {
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) {
-    return { ok: false, status: 401, body: { error: 'Unauthorized' } }
+  let supabase: Awaited<ReturnType<typeof createClient>>
+  let userId: string
+  if (minimumRole) {
+    try {
+      const context = await requireRole(minimumRole)
+      supabase = context.supabase
+      userId = context.userId
+    } catch (error) {
+      if (error instanceof UnauthorizedError || error instanceof ForbiddenError) {
+        return {
+          ok: false,
+          status: error.status,
+          body: { error: error.message },
+        }
+      }
+      throw error
+    }
+  } else {
+    supabase = await createClient()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+    if (!user) {
+      return { ok: false, status: 401, body: { error: 'Unauthorized' } }
+    }
+    userId = user.id
   }
   // RLS scopes this to the caller — a flow owned by another user
   // returns null (404 below).
@@ -44,7 +71,7 @@ async function requireOwnership(
   if (!flow) {
     return { ok: false, status: 404, body: { error: 'Not found' } }
   }
-  return { ok: true, userId: user.id, supabase }
+  return { ok: true, userId, supabase }
 }
 
 export async function GET(
@@ -91,7 +118,7 @@ export async function PUT(
   context: { params: Promise<{ id: string }> },
 ) {
   const { id } = await context.params
-  const guard = await requireOwnership(id)
+  const guard = await requireOwnership(id, 'agent')
   if (!guard.ok) return NextResponse.json(guard.body, { status: guard.status })
 
   const body = (await request.json().catch(() => null)) as PutBody | null
@@ -177,7 +204,7 @@ export async function DELETE(
   context: { params: Promise<{ id: string }> },
 ) {
   const { id } = await context.params
-  const guard = await requireOwnership(id)
+  const guard = await requireOwnership(id, 'agent')
   if (!guard.ok) return NextResponse.json(guard.body, { status: guard.status })
 
   // CASCADE on flow_nodes / flow_runs / flow_run_events handles the

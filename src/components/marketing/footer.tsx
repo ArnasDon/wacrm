@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { MessageSquare, Shield, Lock, Zap } from 'lucide-react';
+import { MessageSquare, Shield, Lock } from 'lucide-react';
 
 export function MarketingFooter() {
   return (

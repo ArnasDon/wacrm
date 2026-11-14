@@ -9,16 +9,13 @@ import {
   Edit2,
   Trash2,
   Loader2,
-  CheckCircle2,
-  XCircle,
   Tag,
-  DollarSign,
   Package,
   Sparkles,
   Upload,
-  Image as ImageIcon,
   X,
 } from 'lucide-react';
+import Image from 'next/image';
 import { useAuth } from '@/hooks/use-auth';
 import { canEditSettings } from '@/lib/auth/roles';
 import { uploadAccountMedia, MEDIA_MAX_BYTES_BY_KIND } from '@/lib/storage/upload-media';
@@ -33,7 +30,6 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
-  CardDescription,
 } from '@/components/ui/card';
 import {
   Dialog,
@@ -318,13 +314,16 @@ export default function ProductsPage() {
           {filtered.map((item) => (
             <Card key={item.id} className="overflow-hidden border-border transition-all hover:shadow-sm">
               {item.image_url && (
-                <div className="aspect-video w-full overflow-hidden bg-muted">
-                  <img
+                <div className="relative aspect-video w-full overflow-hidden bg-muted">
+                  <Image
                     src={item.image_url}
                     alt={item.title}
                     className="h-full w-full object-cover"
+                    fill
+                    sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                    unoptimized
                     onError={(e) => {
-                      (e.target as HTMLElement).style.display = 'none';
+                      e.currentTarget.style.display = 'none';
                     }}
                   />
                 </div>
@@ -461,13 +460,16 @@ export default function ProductsPage() {
               <div className="flex h-10 items-center gap-2">
                 {imageUrl ? (
                   <div className="flex h-10 w-full min-w-0 items-center gap-2.5 rounded-md border border-border bg-muted/40 px-3">
-                    <div className="h-7 w-7 flex-shrink-0 overflow-hidden rounded border border-border bg-background">
-                      <img
+                    <div className="relative h-7 w-7 flex-shrink-0 overflow-hidden rounded border border-border bg-background">
+                      <Image
                         src={imageUrl}
                         alt="Product preview"
                         className="h-full w-full object-cover"
+                        fill
+                        sizes="28px"
+                        unoptimized
                         onError={(e) => {
-                          (e.target as HTMLElement).style.display = 'none';
+                          e.currentTarget.style.display = 'none';
                         }}
                       />
                     </div>

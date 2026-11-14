@@ -5,7 +5,6 @@ import Link from 'next/link';
 import { Card } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import {
-  CheckCircle2,
   BookOpen,
   MessageSquare,
   UserPlus,

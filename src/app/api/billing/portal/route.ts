@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import {
+  ForbiddenError,
+  requireRole,
+  toErrorResponse,
+  UnauthorizedError,
+} from '@/lib/auth/account';
 import { stripe } from '@/lib/stripe/client';
 
 export async function POST(req: NextRequest) {
@@ -14,32 +19,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('account_id, account_role')
-      .eq('user_id', user.id)
-      .maybeSingle();
-
-    if (!profile?.account_id) {
-      return NextResponse.json(
-        { error: 'No associated account found.' },
-        { status: 400 }
-      );
-    }
+    const { supabase, accountId } = await requireRole('admin');
 
     const { data: subscription } = await supabase
       .from('subscriptions')
       .select('stripe_customer_id')
-      .eq('account_id', profile.account_id)
+      .eq('account_id', accountId)
       .single();
 
     if (!subscription?.stripe_customer_id) {
@@ -61,6 +46,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ url: portalSession.url });
   } catch (error) {
+    if (error instanceof UnauthorizedError || error instanceof ForbiddenError) {
+      return toErrorResponse(error);
+    }
     console.error('Error creating Stripe customer portal session:', error);
     return NextResponse.json(
       {

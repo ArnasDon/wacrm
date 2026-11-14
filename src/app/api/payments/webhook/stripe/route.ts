@@ -30,14 +30,16 @@ export async function POST(request: NextRequest) {
     const dataObj = event.data as Record<string, Record<string, unknown>> | undefined;
     const session = dataObj?.object;
     const metadata = (session?.metadata || {}) as Record<string, string>;
-    const orderId = metadata.orderId;
-    const accountId = metadata.accountId;
+    const orderId = typeof metadata.orderId === 'string' ? metadata.orderId : undefined;
+    const accountId = typeof metadata.accountId === 'string' ? metadata.accountId : undefined;
+    const sessionId = typeof session?.id === 'string' ? session.id : undefined;
 
     const admin = getAdmin();
 
     let order: {
       id: string;
       account_id: string;
+      provider: string;
       status: string;
       amount: number;
       currency: string;
@@ -51,27 +53,29 @@ export async function POST(request: NextRequest) {
         .eq('id', orderId)
         .maybeSingle();
       order = data;
-    } else if (session?.id) {
+    } else if (sessionId) {
       const { data } = await admin
         .from('payment_orders')
         .select('*, products(title)')
-        .or(`provider_payment_link_id.eq.${session.id},provider_order_id.eq.${session.id}`)
+        .eq('provider_payment_link_id', sessionId)
         .maybeSingle();
       order = data;
     }
 
-    const targetAccountId = accountId || order?.account_id;
+    if (!order) {
+      return NextResponse.json({ error: 'Unknown payment order' }, { status: 400 });
+    }
 
-    // Security check: must resolve target account and verify HMAC signature with replay protection
-    if (!targetAccountId) {
-      return NextResponse.json({ error: 'Unresolvable order account' }, { status: 400 });
+    if (order.provider !== 'stripe' || (accountId && accountId !== order.account_id)) {
+      console.warn('Stripe webhook rejected: order/provider account mismatch');
+      return NextResponse.json({ error: 'Invalid payment order' }, { status: 400 });
     }
 
     if (!signatureHeader) {
       return NextResponse.json({ error: 'Missing stripe-signature header' }, { status: 401 });
     }
 
-    const config = await getGatewayConfig(targetAccountId, 'stripe');
+    const config = await getGatewayConfig(order.account_id, 'stripe');
     if (!config?.webhookSecret) {
       console.warn('Stripe webhook rejected: missing webhook secret for account');
       return NextResponse.json({ error: 'Unauthorized webhook' }, { status: 401 });
@@ -124,7 +128,7 @@ export async function POST(request: NextRequest) {
         if (order.conversation_id) {
           const currencySymbol = order.currency === 'INR' ? '₹' : `${order.currency} `;
           const itemTitle = order.products?.title || 'your order';
-          const refId = (session?.id as string) || order.id.slice(0, 8);
+          const refId = sessionId || order.id.slice(0, 8);
 
           const receiptMessage = `✅ *Payment Received!*\n\nWe have received your payment of *${currencySymbol}${Number(order.amount).toLocaleString()}* for *${itemTitle}*.\n\nStripe Reference: \`${refId}\`\nStatus: *Completed*\n\nThank you for your purchase!`;
 

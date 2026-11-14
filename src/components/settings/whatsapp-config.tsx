@@ -195,7 +195,7 @@ export function WhatsAppConfig() {
     if (loadedAccountIdRef.current === accountId) return;
     loadedAccountIdRef.current = accountId;
     fetchConfig(accountId);
-  }, [authLoading, profileLoading, user?.id, accountId, fetchConfig]);
+  }, [authLoading, profileLoading, user, accountId, fetchConfig]);
 
   async function handleSave() {
     if (!phoneNumberId.trim()) {

@@ -44,8 +44,8 @@ describe('Phase 4: Payment Webhook Security & Signatures', () => {
 
   it('validates Stripe timestamp signature and enforces 300s replay window', () => {
     const now = Math.floor(Date.now() / 1000);
-    const payload = `${now}.${sampleBody}`;
-    const sig = crypto.createHmac('sha256', secret).update(payload).digest('hex');
+    
+    
 
     // Inside window
     expect(Math.abs(Math.floor(Date.now() / 1000) - now)).toBeLessThanOrEqual(300);

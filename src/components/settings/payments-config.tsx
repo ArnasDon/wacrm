@@ -4,11 +4,7 @@ import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import {
   CreditCard,
-  Key,
-  ShieldCheck,
-  CheckCircle2,
   Copy,
-  ExternalLink,
   Loader2,
   AlertCircle,
   Lock,

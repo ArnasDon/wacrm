@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { buttonVariants } from '@/components/ui/button';
-import { MessageSquare, ArrowRight, Sparkles } from 'lucide-react';
+import { MessageSquare, ArrowRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export function MarketingNavbar() {

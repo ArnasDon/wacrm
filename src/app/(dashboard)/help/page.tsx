@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import Link from 'next/link';
 import {
   BookOpen,
@@ -10,36 +9,28 @@ import {
   Sparkles,
   CheckCircle2,
   AlertTriangle,
-  ArrowRight,
   ExternalLink,
   MessageSquare,
-  Users,
   GitBranch,
   Radio,
   Workflow,
   Zap,
   Building2,
-  Key,
   ShieldCheck,
   Clock,
-  HelpCircle,
   ShoppingBag,
   Home,
   Stethoscope,
   Car,
   Briefcase,
-  Search,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Button, buttonVariants } from '@/components/ui/button';
+import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { Input } from '@/components/ui/input';
 
 export default function HelpCenterPage() {
-  const [search, setSearch] = useState('');
-
   return (
     <div className="mx-auto max-w-7xl space-y-8 pb-12">
       {/* Header */}

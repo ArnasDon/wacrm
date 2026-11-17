@@ -2,10 +2,17 @@
 
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { countAudience } from '@/lib/broadcast-audience';
+import {
+  countAudience,
+  type AudienceConfig,
+  type AudienceType,
+  type CustomFieldFilter,
+  type CustomFieldOperator,
+} from '@/lib/broadcast-audience';
 import { parseBroadcastCsv } from '@/lib/broadcast-csv';
 import { CustomField, Tag } from '@/types';
 import { Button } from '@/components/ui/button';
+import { PhoneCountrySelect } from '@/components/contacts/phone-country-select';
 import { toast } from 'sonner';
 import {
   Users,
@@ -17,25 +24,9 @@ import {
   ArrowRight,
   ArrowLeft,
   X,
+  Globe,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-
-type AudienceType = 'all' | 'tags' | 'custom_field' | 'csv';
-type CustomFieldOperator = 'is' | 'is_not' | 'contains';
-
-interface CustomFieldFilter {
-  fieldId: string;
-  operator: CustomFieldOperator;
-  value: string;
-}
-
-interface AudienceConfig {
-  type: AudienceType;
-  tagIds?: string[];
-  customField?: CustomFieldFilter;
-  csvContacts?: { phone: string; name?: string }[];
-  excludeTagIds?: string[];
-}
 
 interface Step2Props {
   audience: AudienceConfig;
@@ -153,6 +144,7 @@ export function Step2SelectAudience({
         customField: audience.customField,
         csvContacts: audience.csvContacts,
         excludeTagIds: audience.excludeTagIds,
+        countryCode: audience.countryCode,
       });
     } catch {
       count = null;
@@ -166,6 +158,7 @@ export function Step2SelectAudience({
     audience.customField,
     audience.csvContacts,
     audience.excludeTagIds,
+    audience.countryCode,
   ]);
 
   useEffect(() => {
@@ -425,6 +418,25 @@ export function Step2SelectAudience({
           />
         </div>
       )}
+
+      <div className="rounded-xl border border-border bg-card/50 p-4">
+        <div className="mb-1 flex items-center gap-2">
+          <Globe className="h-4 w-4 text-primary" />
+          <p className="text-sm font-medium text-foreground">
+            {t('selectAudience.countryTitle')}
+          </p>
+        </div>
+        <p className="mb-3 text-xs text-muted-foreground">
+          {t('selectAudience.countryDesc')}
+        </p>
+        <PhoneCountrySelect
+          value={audience.countryCode ?? null}
+          onChange={(next) =>
+            onUpdate({ ...audience, countryCode: next ?? undefined })
+          }
+          className="w-full bg-muted sm:w-72"
+        />
+      </div>
 
       {/* Exclude list — applies regardless of audience type */}
       <div className="rounded-xl border border-border bg-card/50 p-4">

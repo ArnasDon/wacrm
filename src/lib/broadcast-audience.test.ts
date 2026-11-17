@@ -46,6 +46,11 @@ function cappedPostgrest(tables: Record<string, Row[]>) {
           filters.push((row) => row[col] !== value);
           return builder;
         },
+        like(col: string, pattern: string) {
+          const prefix = pattern.replace(/%$/, '');
+          filters.push((row) => String(row[col] ?? '').startsWith(prefix));
+          return builder;
+        },
         ilike(col: string, pattern: string) {
           const needle = pattern.replace(/%/g, '').toLowerCase();
           filters.push((row) =>
@@ -127,6 +132,120 @@ function tagRows(contactRows: Row[], tagId: string, prefix: string): Row[] {
 }
 
 const noCsv = async (): Promise<Contact[]> => [];
+
+function contactsWithPhones(phones: string[], offset = 0): Row[] {
+  return phones.map((phone, i) => ({
+    id: uuid('p', offset + i),
+    phone,
+    phone_normalized: phone.replace(/\D/g, ''),
+  }));
+}
+
+function mixedCountryContacts(perCountry: number): Row[] {
+  const make = (prefix: string) =>
+    Array.from({ length: perCountry }, (_, i) =>
+      `+${prefix}${String(i).padStart(9, '0')}`,
+    );
+  return contactsWithPhones([
+    ...make('91'),
+    ...make('44'),
+    ...make('1'),
+    ...make('49'),
+    '',
+  ]);
+}
+
+describe('country audience filter', () => {
+  const all = mixedCountryContacts(700);
+  const inIndia = all.filter((c) => String(c.phone).startsWith('+91'));
+  const inUk = all.filter((c) => String(c.phone).startsWith('+44'));
+
+  it('agrees between estimate and send for "all"', async () => {
+    const { db } = cappedPostgrest({ contacts: all });
+    const audience: AudienceConfig = { type: 'all', countryCode: '91' };
+    const resolved = await resolveAudienceContacts(db, audience, noCsv);
+    expect(resolved).toHaveLength(700);
+    expect(resolved.every((c) => c.phone.startsWith('+91'))).toBe(true);
+    expect(await countAudience(db, audience)).toBe(resolved.length);
+  });
+
+  it('does not match +4x numbers for +44', async () => {
+    const { db } = cappedPostgrest({ contacts: all });
+    const audience: AudienceConfig = { type: 'all', countryCode: '44' };
+    const resolved = await resolveAudienceContacts(db, audience, noCsv);
+    expect(new Set(resolved.map((c) => c.id))).toEqual(
+      new Set(inUk.map((c) => c.id)),
+    );
+    expect(await countAudience(db, audience)).toBe(700);
+  });
+
+  it('intersects a tag audience and its excludes with the country', async () => {
+    const { db } = cappedPostgrest({
+      contacts: all,
+      contact_tags: [
+        ...tagRows(all, 'tag-all', 't'),
+        ...tagRows(inIndia.slice(0, 250), 'tag-optout', 'x'),
+      ],
+    });
+    const audience: AudienceConfig = {
+      type: 'tags',
+      tagIds: ['tag-all'],
+      excludeTagIds: ['tag-optout'],
+      countryCode: '91',
+    };
+    const resolved = await resolveAudienceContacts(db, audience, noCsv);
+    expect(resolved).toHaveLength(450);
+    expect(resolved.every((c) => c.phone.startsWith('+91'))).toBe(true);
+    expect(await countAudience(db, audience)).toBe(450);
+  });
+
+  it('applies excludes to "all" within the country', async () => {
+    const { db } = cappedPostgrest({
+      contacts: all,
+      contact_tags: [
+        ...tagRows(inIndia.slice(0, 100), 'tag-optout', 'x'),
+        ...tagRows(inUk, 'tag-optout-uk', 'y'),
+      ],
+    });
+    const audience: AudienceConfig = {
+      type: 'all',
+      countryCode: '91',
+      excludeTagIds: ['tag-optout', 'tag-optout-uk'],
+    };
+    const resolved = await resolveAudienceContacts(db, audience, noCsv);
+    expect(resolved).toHaveLength(600);
+    expect(await countAudience(db, audience)).toBe(600);
+  });
+
+  it('filters CSV rows before resolving them', async () => {
+    const { db } = cappedPostgrest({});
+    const audience: AudienceConfig = {
+      type: 'csv',
+      csvContacts: [
+        { phone: '919876543210' },
+        { phone: '447946095800' },
+        { phone: '14155551212' },
+      ],
+      countryCode: '1',
+    };
+    const seen: string[] = [];
+    const resolved = await resolveAudienceContacts(db, audience, async (rows) => {
+      seen.push(...rows.map((r) => r.phone));
+      return contactsWithPhones(rows.map((r) => r.phone)) as unknown as Contact[];
+    });
+    expect(seen).toEqual(['14155551212']);
+    expect(resolved).toHaveLength(1);
+    expect(await countAudience(db, audience)).toBe(1);
+  });
+
+  it('resolves nobody for an unknown calling code instead of everyone', async () => {
+    const { db, requests } = cappedPostgrest({ contacts: all });
+    const audience: AudienceConfig = { type: 'all', countryCode: '4' };
+    expect(await resolveAudienceContacts(db, audience, noCsv)).toEqual([]);
+    expect(await countAudience(db, audience)).toBe(0);
+    expect(requests).toHaveLength(0);
+  });
+});
 
 describe('resolveAudienceContacts', () => {
   it('returns every contact for "all" beyond the 1000-row cap', async () => {

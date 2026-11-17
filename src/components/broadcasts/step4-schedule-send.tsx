@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { countAudience, type AudienceConfig } from '@/lib/broadcast-audience';
+import { phoneCountryOptions } from '@/lib/contacts/phone-country';
 import { createClient } from '@/lib/supabase/client';
 import { MessageTemplate } from '@/types';
 import { Button } from '@/components/ui/button';
@@ -16,7 +17,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { ArrowLeft, Send, Loader2, Users, Save } from 'lucide-react';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 
 interface Step4Props {
   name: string;
@@ -42,6 +43,7 @@ export function Step4ScheduleSend({
   progress,
 }: Step4Props) {
   const t = useTranslations('Broadcasts.wizard');
+  const locale = useLocale();
   const [showConfirm, setShowConfirm] = useState(false);
   const [estimatedReach, setEstimatedReach] = useState<number>(0);
   const [loadingReach, setLoadingReach] = useState(true);
@@ -69,6 +71,12 @@ export function Step4ScheduleSend({
         : audience.type === 'csv'
           ? t('scheduleSend.audienceCsv')
           : t('scheduleSend.audienceField');
+
+  const countryLabel = audience.countryCode
+    ? phoneCountryOptions(locale).find(
+        (option) => option.callingCode === audience.countryCode,
+      )?.label
+    : undefined;
 
   return (
     <div className="space-y-6">
@@ -101,6 +109,9 @@ export function Step4ScheduleSend({
           <div>
             <p className="text-xs text-muted-foreground">{t('scheduleSend.audience')}</p>
             <p className="text-foreground">{audienceLabel}</p>
+            {countryLabel && (
+              <p className="text-xs text-muted-foreground">{countryLabel}</p>
+            )}
           </div>
           <div>
             <p className="text-xs text-muted-foreground">{t('scheduleSend.estimatedReach')}</p>

@@ -163,6 +163,13 @@ BEGIN
     RAISE EXCEPTION 'anon can execute dashboard_overview — migration 059 grants are wrong';
   END IF;
 
+  IF to_regprocedure('public.filter_contacts_by_tags(uuid[],text,integer,integer,text)') IS NULL THEN
+    RAISE EXCEPTION 'public.filter_contacts_by_tags with p_phone_pattern is missing — migration 062 did not apply';
+  END IF;
+  IF to_regprocedure('public.filter_contacts_by_tags(uuid[],text,integer,integer)') IS NOT NULL THEN
+    RAISE EXCEPTION 'the four-argument filter_contacts_by_tags still exists — migration 062 did not drop it';
+  END IF;
+
   RAISE NOTICE 'schema verification passed';
 END
 $$;

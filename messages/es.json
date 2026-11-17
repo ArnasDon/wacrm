@@ -531,6 +531,10 @@
       "networkError": "No se pudo conectar con el servidor."
     }
   },
+  "PhoneCountrySelect": {
+    "label": "País del teléfono",
+    "allCountries": "Todos los países"
+  },
   "Contacts": {
     "page": {
       "title": "Contactos",
@@ -1003,6 +1007,8 @@
         "searchTags": "Buscar etiquetas...",
         "noTagsFound": "No se encontraron etiquetas.",
         "excludeTags": "Excluir etiquetas (opcional)",
+        "countryTitle": "País del teléfono",
+        "countryDesc": "Incluye solo los contactos cuyo número de teléfono empieza por este prefijo internacional. +1 abarca Estados Unidos, Canadá y otros números de Norteamérica. Los contactos sin número de teléfono quedan fuera.",
         "searchExcludeTags": "Buscar etiquetas para excluir...",
         "field": "Campo",
         "selectField": "Selecciona un campo...",

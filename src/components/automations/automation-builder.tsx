@@ -1638,8 +1638,13 @@ function previewFor(
         unit: unitLabel,
       })
     }
-    case "condition":
-      return t("preview.when", { subject: String(step.step_config.subject ?? "?") })
+    case "condition": {
+      const subject = String(step.step_config.subject ?? "?")
+      const label = ["tag_presence", "contact_field", "message_content", "time_of_day"].includes(subject)
+        ? t(`config.subjects.${subject}`)
+        : subject
+      return t("preview.when", { subject: label })
+    }
     case "send_webhook":
       return (step.step_config.url as string) || t("preview.noUrl")
     default:

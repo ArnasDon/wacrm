@@ -536,6 +536,10 @@
       "networkError": "Couldn’t reach the server."
     }
   },
+  "PhoneCountrySelect": {
+    "label": "Phone country",
+    "allCountries": "All countries"
+  },
   "Contacts": {
     "page": {
       "title": "Contacts",
@@ -1008,6 +1012,8 @@
         "searchTags": "Search tags...",
         "noTagsFound": "No tags found.",
         "excludeTags": "Exclude Tags (Optional)",
+        "countryTitle": "Phone country",
+        "countryDesc": "Only include contacts whose phone number starts with this calling code. +1 covers the US, Canada and other North American numbers. Contacts without a phone number are left out.",
         "searchExcludeTags": "Search tags to exclude...",
         "field": "Field",
         "selectField": "Select a field...",

@@ -536,6 +536,10 @@
       "networkError": "Não foi possível conectar ao servidor."
     }
   },
+  "PhoneCountrySelect": {
+    "label": "País do telefone",
+    "allCountries": "Todos os países"
+  },
   "Contacts": {
     "page": {
       "title": "Contatos",
@@ -1008,6 +1012,8 @@
         "searchTags": "Buscar tags...",
         "noTagsFound": "Nenhuma tag encontrada.",
         "excludeTags": "Excluir do público por tags (opcional)",
+        "countryTitle": "País do telefone",
+        "countryDesc": "Inclui apenas os contatos cujo número de telefone começa com este código de discagem. +1 abrange os EUA, o Canadá e outros números da América do Norte. Contatos sem número de telefone ficam de fora.",
         "searchExcludeTags": "Buscar tags para excluir do público...",
         "field": "Campo",
         "selectField": "Selecione um campo...",

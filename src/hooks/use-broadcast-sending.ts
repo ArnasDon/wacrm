@@ -344,6 +344,7 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
             tagIds: payload.audience.tagIds,
             customField: payload.audience.customField,
             excludeTagIds: payload.audience.excludeTagIds,
+            countryCode: payload.audience.countryCode,
           },
           status: 'sending',
           total_recipients: contacts.length,

@@ -54,6 +54,8 @@ import { ContactForm } from '@/components/contacts/contact-form';
 import { ContactDetailView } from '@/components/contacts/contact-detail-view';
 import { ImportModal } from '@/components/contacts/import-modal';
 import { CustomFieldsManager } from '@/components/contacts/custom-fields-manager';
+import { PhoneCountrySelect } from '@/components/contacts/phone-country-select';
+import { phoneCountryLikePattern } from '@/lib/contacts/phone-country';
 import { useCan } from '@/hooks/use-can';
 import { GatedButton } from '@/components/ui/gated-button';
 import { useLocale, useTranslations } from 'next-intl';
@@ -84,6 +86,7 @@ export default function ContactsPage() {
   const [totalCount, setTotalCount] = useState(0);
   // Tag filter — contacts shown must have ANY of these tags (OR).
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
+  const [countryCode, setCountryCode] = useState<string | null>(null);
 
   // Modals
   const [formOpen, setFormOpen] = useState(false);
@@ -136,6 +139,7 @@ export default function ContactsPage() {
     const from = page * PAGE_SIZE;
     const to = from + PAGE_SIZE - 1;
     const term = search.trim();
+    const phonePattern = phoneCountryLikePattern(countryCode);
 
     let contactRows: Contact[];
     let count: number;
@@ -149,6 +153,7 @@ export default function ContactsPage() {
       const { data, error } = await supabase.rpc('filter_contacts_by_tags', {
         p_tag_ids: selectedTagIds,
         p_search: contactSearchPattern(term),
+        p_phone_pattern: phonePattern,
         p_limit: PAGE_SIZE,
         p_offset: from,
       });
@@ -171,6 +176,7 @@ export default function ContactsPage() {
 
       const searchFilter = contactSearchFilter(term, { includeEmail: true });
       if (searchFilter) query = query.or(searchFilter);
+      if (phonePattern) query = query.like('phone_normalized', phonePattern);
 
       const { data, count: exactCount, error } = await query;
       if (seq !== fetchSeq.current) return; // superseded by a newer fetch
@@ -227,7 +233,7 @@ export default function ContactsPage() {
 
     setContacts(enriched);
     setLoading(false);
-  }, [supabase, page, search, selectedTagIds, tagsMap, t]);
+  }, [supabase, page, search, selectedTagIds, countryCode, tagsMap, t]);
 
   // Load-once-on-mount-ish data fetches. Each setter inside runs
   // inside an async promise completion (Supabase await), not
@@ -343,7 +349,8 @@ export default function ContactsPage() {
   const allTags = Object.values(tagsMap).sort((a, b) =>
     a.name.localeCompare(b.name)
   );
-  const hasActiveFilters = search.trim().length > 0 || selectedTagIds.length > 0;
+  const hasActiveFilters =
+    search.trim().length > 0 || selectedTagIds.length > 0 || countryCode !== null;
 
   function toggleTagFilter(tagId: string) {
     setSelectedTagIds((prev) =>
@@ -480,6 +487,15 @@ export default function ContactsPage() {
               )}
             </PopoverContent>
           </Popover>
+
+          <PhoneCountrySelect
+            value={countryCode}
+            onChange={(next) => {
+              setCountryCode(next);
+              setPage(0);
+            }}
+            className="shrink-0 hover:bg-muted"
+          />
         </div>
 
         {/* Active tag-filter chips */}

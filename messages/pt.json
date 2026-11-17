@@ -640,6 +640,12 @@
       "contactInfo": "Informações do contato",
       "unnamed": "Desconhecido",
       "contactDetailsDesc": "Dados do contato",
+      "referral": {
+        "cameFrom": "Veio de:",
+        "ad": "Anúncio",
+        "post": "Publicação",
+        "other": "Indicação"
+      },
       "name": "Nome",
       "phone": "Telefone",
       "email": "E-mail",

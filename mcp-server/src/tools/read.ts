@@ -54,7 +54,8 @@ export function registerReadTools(server: McpServer, client: WacrmClient): void 
     'get_contact',
     {
       title: 'Get contact',
-      description: 'Read a single contact by its id.',
+      description:
+        'Read a single contact by its id, including its first-touch referral_source (the Click-to-WhatsApp ad or post it came from) when it has one.',
       inputSchema: {
         id: z.string().describe('Contact id.'),
       },

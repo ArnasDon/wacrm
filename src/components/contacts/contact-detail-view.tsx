@@ -44,6 +44,7 @@ import { useTranslations } from 'next-intl';
 import { planCustomValueWrites } from '@/lib/contacts/custom-value-writes';
 import { contactHandle } from '@/lib/whatsapp/wa-identity';
 import { parseInternationalPhone } from '@/lib/whatsapp/phone-utils';
+import { ContactReferralSourceLine } from '@/components/contacts/contact-referral-source';
 
 interface ContactDetailViewProps {
   open: boolean;
@@ -443,6 +444,10 @@ export function ContactDetailView({
                       </span>
                     )}
                   </div>
+                  <ContactReferralSourceLine
+                    referralSource={contact.referral_source}
+                    receivedAt={contact.referral_received_at}
+                  />
                 </div>
               </div>
               <div className="mt-3">

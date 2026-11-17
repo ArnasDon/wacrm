@@ -640,6 +640,12 @@
       "contactInfo": "연락처 정보",
       "unnamed": "알 수 없음",
       "contactDetailsDesc": "연락처 정보",
+      "referral": {
+        "cameFrom": "유입 경로:",
+        "ad": "광고",
+        "post": "게시물",
+        "other": "추천"
+      },
       "name": "이름",
       "phone": "전화번호",
       "email": "이메일",

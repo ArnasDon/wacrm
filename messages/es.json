@@ -330,7 +330,8 @@
   },
   "Inbox": {
     "page": {
-      "whatsappNotConnected": "WhatsApp® no está conectado. Ve a Configuración para conectar tu cuenta."
+      "whatsappNotConnected": "WhatsApp® no está conectado. Ve a Configuración para conectar tu cuenta.",
+      "openConversationFailed": "No se pudo abrir la conversación. Actualiza la bandeja de entrada e inténtalo de nuevo."
     },
     "conversationList": {
       "searchPlaceholder": "Buscar conversaciones...",
@@ -348,7 +349,8 @@
       "clearAll": "Limpiar todo",
       "noConversations": "No se encontraron conversaciones",
       "noMessagesYet": "Aún no hay mensajes",
-      "unknown": "Desconocido"
+      "unknown": "Desconocido",
+      "newMessage": "Nuevo mensaje"
     },
     "messageThread": {
       "backToConversations": "Volver a las conversaciones",
@@ -510,6 +512,26 @@
       "headerVarLabel": "Encabezado {var}",
       "bodyVarLabel": "Cuerpo {var}",
       "urlButtonVarLabel": "Botón de URL \"{text}\": valor para {var}"
+    },
+    "newConversation": {
+      "title": "Nuevo mensaje",
+      "description": "Elige un contacto. Si ya tienes una conversación con él, se abrirá. Si no, envía una plantilla aprobada para iniciarla.",
+      "searchPlaceholder": "Buscar por nombre o teléfono",
+      "loadFailed": "No se pudieron cargar los contactos",
+      "loadFailedHint": "Revisa tu conexión e inténtalo de nuevo.",
+      "retry": "Intentar de nuevo",
+      "noContacts": "Aún no hay contactos",
+      "noContactsHint": "Añade o importa contactos en la página Contactos y vuelve aquí.",
+      "noMatches": "Ningún contacto coincide con tu búsqueda",
+      "noMatchesHint": "Prueba con otro nombre o número de teléfono.",
+      "limitHint": "Se muestran hasta {limit} contactos. Busca para acotar la lista.",
+      "unnamed": "Contacto sin nombre",
+      "cancel": "Cancelar",
+      "lookupFailed": "No se pudo comprobar si ya existe una conversación. Inténtalo de nuevo.",
+      "sending": "Enviando plantilla…",
+      "sent": "Plantilla \"{name}\" enviada",
+      "sendFailed": "No se pudo enviar la plantilla: {reason}",
+      "networkError": "error de red"
     },
     "sidebar": {
       "contactInfo": "Información del contacto",

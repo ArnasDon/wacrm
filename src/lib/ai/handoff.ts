@@ -1,4 +1,5 @@
 import type { ChatMessage } from './types'
+import { getT, type Translate } from '@/lib/i18n/translate'
 
 /** Longest the quoted customer message runs before we ellipsize it —
  *  keeps the internal note to a glanceable one-liner. */
@@ -20,24 +21,19 @@ const MAX_QUOTE_LEN = 160
 export function buildHandoffSummary(args: {
   messages: ChatMessage[]
   replyCount: number
-}): string {
+}, t: Translate = getT('Handoff')): string {
   const { messages, replyCount } = args
 
   const lastCustomer = [...messages]
     .reverse()
     .find((m) => m.role === 'user' && m.content.trim())
 
-  const replies =
-    replyCount === 0
-      ? 'without replying'
-      : `after ${replyCount} ${replyCount === 1 ? 'reply' : 'replies'}`
-
-  const base = `🤖 AI agent handed off ${replies}.`
+  const base = t('summary', { count: replyCount })
 
   if (!lastCustomer) return base
 
   const quote = truncate(lastCustomer.content.trim(), MAX_QUOTE_LEN)
-  return `${base} Last customer message: “${quote}”`
+  return base + t('lastMessage', { message: quote })
 }
 
 function truncate(text: string, max: number): string {

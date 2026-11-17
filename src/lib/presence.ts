@@ -1,3 +1,5 @@
+import { getT, type Translate } from '@/lib/i18n/translate';
+
 // ============================================================
 // Presence helpers — pure, unit-testable, no I/O.
 //
@@ -68,24 +70,22 @@ export function derivePresence(
 export function formatLastSeen(
   lastSeenAt: string | null | undefined,
   now: number,
+  t: Translate = getT('Presence'),
 ): string {
-  if (!lastSeenAt) return "a while ago";
+  if (!lastSeenAt) return t('unknown');
   const last = new Date(lastSeenAt).getTime();
-  if (Number.isNaN(last)) return "a while ago";
+  if (Number.isNaN(last)) return t('unknown');
 
   const diff = Math.max(0, now - last);
   const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return "just now";
-  if (mins === 1) return "1 minute ago";
-  if (mins < 60) return `${mins} minutes ago`;
+  if (mins < 1) return t('justNow');
+  if (mins < 60) return t('minutesAgo', { count: mins });
 
   const hours = Math.floor(mins / 60);
-  if (hours === 1) return "1 hour ago";
-  if (hours < 24) return `${hours} hours ago`;
+  if (hours < 24) return t('hoursAgo', { count: hours });
 
   const days = Math.floor(hours / 24);
-  if (days === 1) return "1 day ago";
-  return `${days} days ago`;
+  return t('daysAgo', { count: days });
 }
 
 /**
@@ -98,14 +98,15 @@ export function presenceLabel(
   status: PresenceStatus,
   lastSeenAt: string | null | undefined,
   now: number,
+  t: Translate = getT('Presence'),
 ): string {
   switch (status) {
     case "online":
-      return "Online — active now";
+      return t('online');
     case "away":
-      return "Away — idle";
+      return t('away');
     case "offline":
-      return `Offline — last seen ${formatLastSeen(lastSeenAt, now)}`;
+      return t('offline', { time: formatLastSeen(lastSeenAt, now, t) });
   }
 }
 

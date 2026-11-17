@@ -9,11 +9,12 @@
 
 import { requireApiKey } from '@/lib/auth/api-context';
 import { ok, fail, toApiErrorResponse } from '@/lib/api/v1/respond';
+import { isUuid } from '@/lib/api/v1/pagination';
 import { normalizeEvents } from '@/lib/webhooks/events';
 import {
   WEBHOOK_PUBLIC_COLUMNS,
   serializeWebhookEndpoint,
-  normalizeWebhookUrl,
+  checkWebhookUrl,
 } from '@/lib/webhooks/endpoints';
 
 export async function GET(
@@ -23,6 +24,7 @@ export async function GET(
   try {
     const ctx = await requireApiKey(request, 'webhooks:manage');
     const { id } = await params;
+    if (!isUuid(id)) return fail('not_found', 'Webhook not found', 404);
 
     const { data, error } = await ctx.supabase
       .from('webhook_endpoints')
@@ -50,6 +52,7 @@ export async function PATCH(
   try {
     const ctx = await requireApiKey(request, 'webhooks:manage');
     const { id } = await params;
+    if (!isUuid(id)) return fail('not_found', 'Webhook not found', 404);
 
     const body = (await request.json().catch(() => null)) as Record<
       string,
@@ -62,11 +65,11 @@ export async function PATCH(
     const updates: Record<string, unknown> = {};
 
     if ('url' in body) {
-      const url = normalizeWebhookUrl(body.url);
-      if (!url) {
-        return fail('bad_request', "'url' must be a valid https:// URL", 400);
+      const urlCheck = checkWebhookUrl(body.url);
+      if (!urlCheck.ok) {
+        return fail('bad_request', urlCheck.message, 400);
       }
-      updates.url = url;
+      updates.url = urlCheck.url;
     }
 
     if ('events' in body) {
@@ -124,6 +127,7 @@ export async function DELETE(
   try {
     const ctx = await requireApiKey(request, 'webhooks:manage');
     const { id } = await params;
+    if (!isUuid(id)) return fail('not_found', 'Webhook not found', 404);
 
     const { data, error } = await ctx.supabase
       .from('webhook_endpoints')

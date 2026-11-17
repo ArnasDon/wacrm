@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/select';
 import { ArrowLeft, ArrowRight, Eye, ImageIcon, Loader2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import { extractTemplateVariables } from '@/lib/whatsapp/template-validators';
 
 type VariableType = 'static' | 'field' | 'custom_field';
 
@@ -128,11 +129,11 @@ export function Step3Personalize({
     };
   }, []);
 
-  const placeholders = useMemo(() => {
-    const matches = template.body_text.match(/\{\{(\d+)\}\}/g);
-    if (!matches) return [];
-    return [...new Set(matches)].sort();
-  }, [template.body_text]);
+  // Positional {{1}} or named {{customer_name}} placeholders.
+  const placeholders = useMemo(
+    () => extractTemplateVariables(template.body_text).map((k) => `{{${k}}}`),
+    [template.body_text],
+  );
 
   // Templates with an IMAGE/VIDEO/DOCUMENT header need a media URL at
   // send time — Meta requires the media component on every delivery and
@@ -189,7 +190,8 @@ export function Step3Personalize({
 
   /**
    * Substitute placeholders using the first real contact where
-   * possible. Placeholders keyed by "{{N}}" map to variable key "N".
+   * possible. Placeholders keyed by "{{N}}" or "{{name}}" map to
+   * variable key "N" / "name".
    */
   const previewText = useMemo(() => {
     const contact = firstContact ?? {

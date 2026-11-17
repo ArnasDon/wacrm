@@ -25,6 +25,7 @@ import {
 import { format } from "date-fns";
 import { ReplyQuote } from "./reply-quote";
 import { MessageReactions } from "./message-reactions";
+import { LinkifyText } from "@/lib/inbox/linkify-text";
 import {
   MediaAudioBubble,
   MediaDocumentBubble,
@@ -183,7 +184,7 @@ function MessageContent({
     case "text":
       return (
         <p className="whitespace-pre-wrap break-words text-sm">
-          {message.content_text}
+          <LinkifyText text={message.content_text ?? ""} isAgent={isAgent} />
         </p>
       );
 
@@ -197,7 +198,7 @@ function MessageContent({
           )}
           {message.content_text && (
             <p className="mt-1 whitespace-pre-wrap break-words text-sm">
-              {message.content_text}
+              <LinkifyText text={message.content_text} isAgent={isAgent} />
             </p>
           )}
         </div>
@@ -213,7 +214,7 @@ function MessageContent({
           )}
           {message.content_text && (
             <p className="mt-1 whitespace-pre-wrap break-words text-sm">
-              {message.content_text}
+              <LinkifyText text={message.content_text} isAgent={isAgent} />
             </p>
           )}
         </div>
@@ -263,7 +264,7 @@ function MessageContent({
           )}
           {message.content_text ? (
             <p className="mt-1 whitespace-pre-wrap break-words text-sm">
-              {message.content_text}
+              <LinkifyText text={message.content_text} isAgent={isAgent} />
             </p>
           ) : (
             message.template_name && (
@@ -341,14 +342,20 @@ function MessageContent({
               {t("buttonReply")}
             </span>
             <p className="whitespace-pre-wrap break-words text-sm">
-              {message.content_text || t("interactiveReply")}
+              <LinkifyText
+                text={message.content_text || t("interactiveReply")}
+                isAgent={isAgent}
+              />
             </p>
           </div>
         );
       }
       return (
         <p className="whitespace-pre-wrap break-words text-sm">
-          {message.content_text || t("interactiveReply")}
+          <LinkifyText
+            text={message.content_text || t("interactiveReply")}
+            isAgent={isAgent}
+          />
         </p>
       );
     }
@@ -356,7 +363,10 @@ function MessageContent({
     default:
       return (
         <p className="whitespace-pre-wrap break-words text-sm">
-          {message.content_text || t("unsupported")}
+          <LinkifyText
+            text={message.content_text || t("unsupported")}
+            isAgent={isAgent}
+          />
         </p>
       );
   }

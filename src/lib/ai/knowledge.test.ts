@@ -15,7 +15,10 @@ interface FakeState {
   chunkCount: number
   rpcCalls: string[]
   inserted: Record<string, unknown>[] | null
-  deletedFor: string | null
+  deletedIds: string[] | null
+  existingChunkIds: string[]
+  events: string[]
+  insertError: unknown
 }
 
 function makeDb() {
@@ -25,7 +28,10 @@ function makeDb() {
     chunkCount: 5, // account has a non-empty KB by default
     rpcCalls: [],
     inserted: null,
-    deletedFor: null,
+    deletedIds: null,
+    existingChunkIds: ['old-1', 'old-2'],
+    events: [],
+    insertError: null,
   }
   const db = {
     rpc: (name: string) => {
@@ -39,15 +45,25 @@ function makeDb() {
     from: () => ({
       // retrieveKnowledge's empty-KB count guard.
       select: () => ({
-        eq: () => Promise.resolve({ count: state.chunkCount, error: null }),
+        eq: () => {
+          state.events.push('list')
+          return Promise.resolve({
+            count: state.chunkCount,
+            data: state.existingChunkIds.map((id) => ({ id })),
+            error: null,
+          })
+        },
       }),
       delete: () => ({
-        eq: (_col: string, val: string) => {
-          state.deletedFor = val
+        in: (_col: string, ids: string[]) => {
+          state.events.push('delete')
+          state.deletedIds = [...(state.deletedIds ?? []), ...ids]
           return Promise.resolve({ error: null })
         },
       }),
       insert: (rows: Record<string, unknown>[]) => {
+        state.events.push('insert')
+        if (state.insertError) return Promise.resolve({ error: state.insertError })
         state.inserted = rows
         return Promise.resolve({ error: null })
       },
@@ -127,7 +143,7 @@ describe('ingestDocument', () => {
     const result = await ingestDocument(db, 'acct', { embeddingsApiKey: 'sk-x' }, 'doc-1', 'hello world')
     expect(result).toEqual({ keywordOnly: false, embedError: null })
     expect(h.embedTexts).toHaveBeenCalledTimes(1)
-    expect(state.deletedFor).toBe('doc-1')
+    expect(state.deletedIds).toEqual(['old-1', 'old-2'])
     expect(state.inserted).toHaveLength(1)
     expect(state.inserted![0].embedding).toBe('[0,0]') // literal from mocked embed
     expect(state.inserted![0].account_id).toBe('acct')
@@ -143,7 +159,7 @@ describe('ingestDocument', () => {
   it('deletes existing chunks and inserts nothing for empty content', async () => {
     const { db, state } = makeDb()
     await ingestDocument(db, 'acct', { embeddingsApiKey: 'sk-x' }, 'doc-1', '   ')
-    expect(state.deletedFor).toBe('doc-1')
+    expect(state.deletedIds).toEqual(['old-1', 'old-2'])
     expect(state.inserted).toBeNull()
     expect(h.embedTexts).not.toHaveBeenCalled()
   })
@@ -157,5 +173,32 @@ describe('ingestDocument', () => {
     // Chunks were inserted (lexical search works) despite the embed failure…
     expect(state.inserted).toHaveLength(1)
     expect(state.inserted![0].embedding).toBeNull()
+  })
+
+  it('keeps the existing chunks until the embed has finished', async () => {
+    const { db, state } = makeDb()
+    h.embedTexts.mockImplementationOnce(async () => {
+      expect(state.events).toEqual([])
+      throw new Error('timeout')
+    })
+    await ingestDocument(db, 'acct', { embeddingsApiKey: 'sk-x' }, 'doc-1', 'hello world')
+    expect(state.events).toEqual(['list', 'insert', 'delete'])
+  })
+
+  it('keeps the existing chunks when the insert fails', async () => {
+    const { db, state } = makeDb()
+    state.insertError = new Error('insert failed')
+    await expect(
+      ingestDocument(db, 'acct', { embeddingsApiKey: null }, 'doc-1', 'hello world'),
+    ).rejects.toThrow('insert failed')
+    expect(state.deletedIds).toBeNull()
+  })
+
+  it('deletes previous chunks in batches', async () => {
+    const { db, state } = makeDb()
+    state.existingChunkIds = Array.from({ length: 250 }, (_, i) => `old-${i}`)
+    await ingestDocument(db, 'acct', { embeddingsApiKey: null }, 'doc-1', 'hello world')
+    expect(state.events.filter((e) => e === 'delete')).toHaveLength(3)
+    expect(state.deletedIds).toHaveLength(250)
   })
 })

@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
 import { validateFlowForActivation } from '@/lib/flows/validate'
+import { MAX_FLOW_TIMEOUT_HOURS } from '@/lib/flows/types'
 import { getT } from '@/lib/i18n/translate'
 
 const t = getT('Api')
@@ -117,6 +118,13 @@ export async function PUT(
     )
   }
 
+  if (!isValidFallbackPolicy(body.fallback_policy)) {
+    return NextResponse.json(
+      { error: t('flows.timeoutHoursInvalid', { max: MAX_FLOW_TIMEOUT_HOURS }) },
+      { status: 400 },
+    )
+  }
+
   const admin = supabaseAdmin()
 
   const activeBlockers = await validateIfActive(admin, id, body)
@@ -127,25 +135,7 @@ export async function PUT(
     )
   }
 
-  if (body.nodes !== undefined) {
-    const { error: nodesErr } = await guard.supabase.rpc('replace_flow_nodes', {
-      p_flow_id: id,
-      p_nodes: body.nodes.map((n) => ({
-        node_key: n.node_key,
-        node_type: n.node_type,
-        config: n.config,
-        position_x: n.position_x ?? 0,
-        position_y: n.position_y ?? 0,
-      })),
-    })
-    if (nodesErr) {
-      return NextResponse.json({ error: nodesErr.message }, { status: 500 })
-    }
-  }
-
-  const flowPatch: Record<string, unknown> = {
-    updated_at: new Date().toISOString(),
-  }
+  const flowPatch: Record<string, unknown> = {}
   if (body.name !== undefined) flowPatch.name = body.name.trim()
   if (body.description !== undefined)
     flowPatch.description = body.description
@@ -157,12 +147,29 @@ export async function PUT(
   if (body.fallback_policy !== undefined)
     flowPatch.fallback_policy = body.fallback_policy
 
-  const { error: updErr } = await admin
-    .from('flows')
-    .update(flowPatch)
-    .eq('id', id)
-  if (updErr) {
-    return NextResponse.json({ error: updErr.message }, { status: 500 })
+  if (body.nodes !== undefined) {
+    const { error: graphErr } = await guard.supabase.rpc('replace_flow_graph', {
+      p_flow_id: id,
+      p_nodes: body.nodes.map((n) => ({
+        node_key: n.node_key,
+        node_type: n.node_type,
+        config: n.config,
+        position_x: n.position_x ?? 0,
+        position_y: n.position_y ?? 0,
+      })),
+      p_flow: flowPatch,
+    })
+    if (graphErr) {
+      return NextResponse.json({ error: graphErr.message }, { status: 500 })
+    }
+  } else {
+    const { error: updErr } = await admin
+      .from('flows')
+      .update({ ...flowPatch, updated_at: new Date().toISOString() })
+      .eq('id', id)
+    if (updErr) {
+      return NextResponse.json({ error: updErr.message }, { status: 500 })
+    }
   }
 
   // Re-fetch and return the new state — the editor uses the response
@@ -176,6 +183,19 @@ export async function PUT(
       .order('created_at', { ascending: true }),
   ])
   return NextResponse.json({ flow, nodes: nodes ?? [] })
+}
+
+function isValidFallbackPolicy(policy: unknown): boolean {
+  if (policy === undefined) return true
+  if (!policy || typeof policy !== 'object' || Array.isArray(policy)) return false
+  const hours = (policy as { on_timeout_hours?: unknown }).on_timeout_hours
+  if (hours === undefined) return true
+  return (
+    typeof hours === 'number' &&
+    Number.isFinite(hours) &&
+    hours > 0 &&
+    hours <= MAX_FLOW_TIMEOUT_HOURS
+  )
 }
 
 async function validateIfActive(

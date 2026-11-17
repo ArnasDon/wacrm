@@ -3,13 +3,14 @@ import type { FakeTables } from "./fake-db.test-helper";
 
 const h = vi.hoisted(() => ({
   tables: {} as Record<string, Record<string, unknown>[]>,
+  failingTables: new Set<string>(),
   sendText: vi.fn(async () => ({ whatsapp_message_id: "wamid.text" })),
   sendButtons: vi.fn(async () => ({ whatsapp_message_id: "wamid.buttons" })),
 }));
 
 vi.mock("./admin-client", async () => {
   const { createFakeDb } = await import("./fake-db.test-helper");
-  return { supabaseAdmin: () => createFakeDb(h.tables as FakeTables) };
+  return { supabaseAdmin: () => createFakeDb(h.tables as FakeTables, h.failingTables) };
 });
 
 vi.mock("./meta-send", () => ({
@@ -20,7 +21,8 @@ vi.mock("./meta-send", () => ({
 }));
 
 import { closureForActiveRun, dispatchInboundToFlows } from "./engine";
-import type { ParsedInbound } from "./types";
+import { MAX_AUTO_ADVANCING_CHAIN, type ParsedInbound } from "./types";
+import { validateFlowForActivation } from "./validate";
 
 const HOUR = 60 * 60 * 1000;
 
@@ -130,6 +132,7 @@ function setup(flowStatus: string, runOverrides: Record<string, unknown> = {}, o
 }
 
 beforeEach(() => {
+  h.failingTables.clear();
   h.sendText.mockClear();
   h.sendButtons.mockClear();
 });
@@ -218,4 +221,97 @@ describe("dispatchInboundToFlows run integrity", () => {
     expect(result).toMatchObject({ consumed: true, outcome: "completed" });
     expect(h.sendText).toHaveBeenCalledTimes(1);
   });
+  it("does not re-send the menu when a tap advanced the run first", async () => {
+    setup("active");
+    const typed: ParsedInbound = { kind: "text", text: "what?", meta_message_id: "m-typed" };
+    const results = await Promise.all([dispatch(tap("m-1")), dispatch(typed)]);
+    expect(h.sendButtons).not.toHaveBeenCalled();
+    expect(h.sendText).toHaveBeenCalledTimes(1);
+    expect(results.map((r) => r.outcome).sort()).toEqual(["completed", "duplicate_inbound_ignored"]);
+    expect(run("run-1")).toMatchObject({ status: "completed", end_reason: "end_node" });
+  });
+
+  it("does not end a run that advanced while an exhausted fallback was deciding", async () => {
+    setup("active", { reprompt_count: 5 });
+    h.tables.flows[0].fallback_policy = { on_unknown_reply: "reprompt", max_reprompts: 1, on_exhaust: "end" };
+    const typed: ParsedInbound = { kind: "text", text: "what?", meta_message_id: "m-typed" };
+    await Promise.all([dispatch(tap("m-1")), dispatch(typed)]);
+    expect(run("run-1")).toMatchObject({ status: "completed", end_reason: "end_node" });
+  });
+
+  it("claims the fallback reprompt so a later stale tap loses", async () => {
+    setup("active");
+    const typed: ParsedInbound = { kind: "text", text: "what?", meta_message_id: "m-typed" };
+    const results = await Promise.all([dispatch(typed), dispatch(tap("m-1"))]);
+    expect(h.sendButtons).toHaveBeenCalledTimes(1);
+    expect(h.sendText).not.toHaveBeenCalled();
+    expect(results.map((r) => r.outcome).sort()).toEqual(["duplicate_inbound_ignored", "fallback_fired"]);
+    expect(run("run-1")).toMatchObject({ status: "active", current_node_key: "menu", reprompt_count: 1, transition_seq: 1 });
+  });
+
+  it("leaves a healthy run alone when its nodes cannot be read", async () => {
+    setup("active");
+    h.failingTables.add("flow_nodes");
+    const result = await dispatch(tap("m-1"));
+    expect(result).toEqual({ consumed: true, flow_run_id: "run-1", outcome: "run_error" });
+    expect(run("run-1")).toMatchObject({ status: "active", current_node_key: "menu" });
+  });
+
+  it("leaves a healthy run alone when its flow cannot be read", async () => {
+    setup("active");
+    h.failingTables.add("flows");
+    const result = await dispatch(tap("m-1"));
+    expect(result).toEqual({ consumed: true, flow_run_id: "run-1", outcome: "run_error" });
+    expect(run("run-1")).toMatchObject({ status: "active", current_node_key: "menu" });
+  });
+
+  it("leaves the message to other handlers when no run exists and flows cannot be read", async () => {
+    setup("active");
+    h.tables.flow_runs = [];
+    h.failingTables.add("flows");
+    const result = await dispatch(tap("m-1"));
+    expect(result).toEqual({ consumed: false, outcome: "no_match" });
+  });
 });
+
+describe("advance cap matches activation validation", () => {
+  function chainNodes(autoCount: number) {
+    const nodes: Record<string, unknown>[] = [
+      { flow_id: "flow-greet", node_key: "n0", node_type: "start", config: { next_node_key: "n1" } },
+    ];
+    for (let i = 1; i < autoCount; i += 1) {
+      nodes.push({
+        flow_id: "flow-greet",
+        node_key: `n${i}`,
+        node_type: "send_message",
+        config: { text: `Step ${i}`, next_node_key: i + 1 < autoCount ? `n${i + 1}` : "bye" },
+      });
+    }
+    nodes.push({ flow_id: "flow-greet", node_key: "bye", node_type: "end", config: {} });
+    return nodes;
+  }
+
+  for (const [autoCount, expectedStatus] of [
+    [MAX_AUTO_ADVANCING_CHAIN, "completed"],
+    [MAX_AUTO_ADVANCING_CHAIN + 1, "failed"],
+  ] as const) {
+    it(`runs a ${autoCount}-step chain to "${expectedStatus}" and validation agrees`, async () => {
+      const nodes = chainNodes(autoCount);
+      h.tables = {
+        flows: [{ ...GREETING_FLOW, entry_node_id: "n0" }],
+        flow_nodes: nodes,
+        flow_runs: [],
+        flow_run_events: [],
+        messages: [],
+      };
+      await dispatch(hi);
+      expect(h.tables.flow_runs[0]).toMatchObject({ status: expectedStatus });
+      const errors = validateFlowForActivation(
+        { ...GREETING_FLOW, name: "Greeting", entry_node_id: "n0" } as never,
+        nodes as never,
+      ).filter((i) => i.severity === "error");
+      expect(errors.length === 0).toBe(expectedStatus === "completed");
+    });
+  }
+});
+

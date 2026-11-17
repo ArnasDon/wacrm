@@ -298,6 +298,8 @@ export interface FlowFallbackPolicy {
   on_exhaust: "handoff" | "end";
 }
 
+export const MAX_FLOW_TIMEOUT_HOURS = 87600;
+
 export const DEFAULT_FALLBACK_POLICY: FlowFallbackPolicy = {
   on_unknown_reply: "reprompt",
   max_reprompts: 2,
@@ -360,6 +362,7 @@ export interface DispatchInboundResult {
     | "handed_off"
     | "fallback_fired"
     | "duplicate_inbound_ignored"
+    | "run_error"
     | "no_match";
 }
 
@@ -378,6 +381,10 @@ export const AUTO_ADVANCING_NODE_TYPES: ReadonlySet<string> = new Set([
   "condition",
   "set_tag",
 ]);
+
+export const MAX_NODES_PER_ADVANCE = 25;
+
+export const MAX_AUTO_ADVANCING_CHAIN = MAX_NODES_PER_ADVANCE - 1;
 
 export function assertNever(x: never): never {
   throw new Error(`Unhandled node type: ${JSON.stringify(x)}`);

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { checkRunTimeout } from "./timeout";
+import { MAX_FLOW_TIMEOUT_HOURS } from "./types";
 
 const NOW = new Date("2026-10-16T12:00:00Z");
 
@@ -17,6 +18,12 @@ describe("checkRunTimeout", () => {
     const policy = { on_timeout_hours: 2 };
     expect(checkRunTimeout("2026-10-16T10:30:00Z", policy, NOW).timedOut).toBe(false);
     expect(checkRunTimeout("2026-10-16T09:59:00Z", policy, NOW).timedOut).toBe(true);
+  });
+
+  it("caps on_timeout_hours at the same ceiling as the database sweep", () => {
+    const check = checkRunTimeout("2016-10-16T12:00:00Z", { on_timeout_hours: 99999999 }, NOW);
+    expect(check.policyHours).toBe(MAX_FLOW_TIMEOUT_HOURS);
+    expect(check.timedOut).toBe(true);
   });
 
   it("never times out a run with an unparseable timestamp", () => {

@@ -11,6 +11,7 @@ import {
   validateSendMessageParams,
   SendMessageError,
 } from '@/lib/whatsapp/send-message'
+import { isUniqueViolation } from '@/lib/contacts/dedupe'
 import { getT } from '@/lib/i18n/translate'
 
 const t = getT('Api')
@@ -208,14 +209,18 @@ async function findOrCreateConversation(
   userId: string,
   contactId: string,
 ): Promise<string | null> {
-  const { data: existing } = await supabase
-    .from('conversations')
-    .select('id')
-    .eq('account_id', accountId)
-    .eq('contact_id', contactId)
-    .maybeSingle()
+  const findExisting = async () => {
+    const { data } = await supabase
+      .from('conversations')
+      .select('id')
+      .eq('account_id', accountId)
+      .eq('contact_id', contactId)
+      .maybeSingle()
+    return data?.id ?? null
+  }
 
-  if (existing) return existing.id
+  const existingId = await findExisting()
+  if (existingId) return existingId
 
   const { data: created, error } = await supabase
     .from('conversations')
@@ -228,6 +233,10 @@ async function findOrCreateConversation(
     .single()
 
   if (error) {
+    if (isUniqueViolation(error)) {
+      const racedId = await findExisting()
+      if (racedId) return racedId
+    }
     console.error('Error creating conversation for contact send:', error.message)
     return null
   }

@@ -71,6 +71,13 @@ export function isUuid(value: string): boolean {
   return UUID_RE.test(value);
 }
 
+const ISO_TIMESTAMP_RE =
+  /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}(:?\d{2})?)$/;
+
+function isIsoTimestamp(value: string): boolean {
+  return ISO_TIMESTAMP_RE.test(value) && !Number.isNaN(Date.parse(value));
+}
+
 /** Decode a cursor string, or null if missing/malformed/untrusted. */
 export function decodeCursor(value: string | null): Cursor | null {
   if (!value) return null;
@@ -84,8 +91,7 @@ export function decodeCursor(value: string | null): Cursor | null {
     // ISO-8601 timestamp and a UUID. This is what keeps the raw
     // interpolation in `keysetFilter` safe.
     if (!UUID_RE.test(id)) return null;
-    const ts = Date.parse(createdAt);
-    if (Number.isNaN(ts)) return null;
+    if (!isIsoTimestamp(createdAt)) return null;
     return { createdAt, id };
   } catch {
     return null;

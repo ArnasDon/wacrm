@@ -15,6 +15,7 @@ import {
 import { ArrowLeft, ArrowRight, Eye, ImageIcon, Loader2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { extractTemplateVariables } from '@/lib/whatsapp/template-validators';
+import { CONTACT_VARIABLE_FIELDS, contactVariableValue } from '@/lib/broadcast-variables';
 
 type VariableType = 'static' | 'field' | 'custom_field';
 
@@ -49,12 +50,6 @@ function isValidHttpUrl(value: string): boolean {
     return false;
   }
 }
-
-const contactFields = [
-  { value: 'name', labelKey: 'name' },
-  { value: 'phone', labelKey: 'phone' },
-  { value: 'email', labelKey: 'email' },
-];
 
 const SAMPLE_CONTACT: Contact = {
   id: 'sample',
@@ -213,13 +208,7 @@ export function Step3Personalize({
         if (mapping.type === 'static' && mapping.value) {
           replacement = mapping.value;
         } else if (mapping.type === 'field' && mapping.value) {
-          const fieldMap: Record<string, string | undefined> = {
-            name: contact.name,
-            phone: contact.phone,
-            email: contact.email,
-            company: contact.company,
-          };
-          replacement = fieldMap[mapping.value] ?? placeholder;
+          replacement = contactVariableValue(contact, mapping.value) ?? placeholder;
         } else if (mapping.type === 'custom_field' && mapping.value) {
           replacement = customValues.get(mapping.value) || placeholder;
         }
@@ -365,9 +354,9 @@ export function Step3Personalize({
                           <SelectValue placeholder={t('personalize.selectContactField')} />
                         </SelectTrigger>
                         <SelectContent className="border-border bg-popover">
-                          {contactFields.map((field) => (
-                            <SelectItem key={field.value} value={field.value}>
-                              {t(`personalize.fieldMap.${field.labelKey}`)}
+                          {CONTACT_VARIABLE_FIELDS.map((field) => (
+                            <SelectItem key={field} value={field}>
+                              {t(`personalize.fieldMap.${field}`)}
                             </SelectItem>
                           ))}
                         </SelectContent>

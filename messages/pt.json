@@ -1056,7 +1056,8 @@
         "fieldMap": {
           "name": "Nome",
           "phone": "Telefone",
-          "email": "E-mail"
+          "email": "E-mail",
+          "company": "Empresa"
         },
         "sampleName": "João Silva",
         "sampleCompany": "Empresa Exemplo Ltda."

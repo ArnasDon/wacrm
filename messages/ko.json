@@ -1056,7 +1056,8 @@
         "fieldMap": {
           "name": "이름",
           "phone": "전화번호",
-          "email": "이메일"
+          "email": "이메일",
+          "company": "회사"
         },
         "sampleName": "홍길동",
         "sampleCompany": "예시 주식회사"

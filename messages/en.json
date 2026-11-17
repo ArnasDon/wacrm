@@ -1056,7 +1056,8 @@
         "fieldMap": {
           "name": "Name",
           "phone": "Phone",
-          "email": "Email"
+          "email": "Email",
+          "company": "Company"
         },
         "sampleName": "John Doe",
         "sampleCompany": "Acme Corp"

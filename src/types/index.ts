@@ -438,6 +438,7 @@ export interface Broadcast {
    * send. Added in migration 038.
    */
   delivery_locked_at?: string | null;
+  delivery_lease_until?: string | null;
   created_at: string;
 }
 

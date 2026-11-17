@@ -15,7 +15,7 @@ import {
   WEBHOOK_PUBLIC_COLUMNS,
   serializeWebhookEndpoint,
   generateWebhookSecret,
-  normalizeWebhookUrl,
+  checkWebhookUrl,
 } from '@/lib/webhooks/endpoints';
 
 export async function GET(request: Request) {
@@ -58,10 +58,11 @@ export async function POST(request: Request) {
       return fail('bad_request', 'Request body must be a JSON object', 400);
     }
 
-    const url = normalizeWebhookUrl(body.url);
-    if (!url) {
-      return fail('bad_request', "'url' must be a valid https:// URL", 400);
+    const urlCheck = checkWebhookUrl(body.url);
+    if (!urlCheck.ok) {
+      return fail('bad_request', urlCheck.message, 400);
     }
+    const url = urlCheck.url;
 
     const events = normalizeEvents(body.events);
     if (!events) {

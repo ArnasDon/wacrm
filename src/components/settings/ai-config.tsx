@@ -229,6 +229,9 @@ export function AiConfig() {
         setHasStoredKey(false);
         setApiKey('');
         setKeyEdited(false);
+        setHasStoredEmbeddingsKey(false);
+        setEmbeddingsKey('');
+        setEmbeddingsKeyEdited(false);
         setIsActive(false);
         setAutoReplyEnabled(false);
         setSystemPrompt('');

@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { CornerUpLeft, Copy, SmilePlus } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { shouldOpenTouchToolbar } from "@/lib/inbox/context-menu";
 import {
   Popover,
   PopoverContent,
@@ -41,11 +42,19 @@ export function MessageActions({
   // interacts elsewhere.
   const [touchOpen, setTouchOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const lastPointerType = useRef<string | null>(null);
 
   const isAgent =
     message.sender_type === "agent" || message.sender_type === "bot";
 
   const handleContextMenu = (e: React.MouseEvent) => {
+    const target = e.target instanceof Element ? e.target : null;
+    const openToolbar = shouldOpenTouchToolbar({
+      pointerType: lastPointerType.current,
+      coarsePointer: window.matchMedia("(hover: none) and (pointer: coarse)").matches,
+      onLink: Boolean(target?.closest("a[href]")),
+    });
+    if (!openToolbar) return;
     e.preventDefault();
     setTouchOpen(true);
   };
@@ -85,6 +94,9 @@ export function MessageActions({
         "flex w-full",
         isAgent ? "justify-end" : "justify-start",
       )}
+      onPointerDown={(e) => {
+        lastPointerType.current = e.pointerType;
+      }}
       onContextMenu={handleContextMenu}
       onBlur={() => setTouchOpen(false)}
     >

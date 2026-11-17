@@ -15,8 +15,11 @@
  *     using the template's `header_media_url` (or `header_handle`).
  *     Meta requires the media component on every send even though
  *     the URL hasn't changed since approval.
- *   - TEXT headers with `{{1}}` need `headerText` from the caller.
- *   - Body variables come in as `body: string[]`, indexed by {{N}}.
+ *   - TEXT headers with `{{1}}` (or one named variable) need
+ *     `headerText` from the caller.
+ *   - Body variables come in as `body: string[]`, in
+ *     `extractTemplateVariables` order. Named variables
+ *     (`{{customer_name}}`) are sent with their `parameter_name`.
  *   - URL buttons with `{{1}}` need `buttonUrlParams[i]` keyed by
  *     button index. URL buttons without variables, plus QUICK_REPLY
  *     and PHONE_NUMBER buttons, don't need send-time parameters.
@@ -31,13 +34,20 @@
  */
 
 import type { MessageTemplate, TemplateButton } from '@/types';
-import { extractVariableIndices } from './template-validators';
+import {
+  extractTemplateVariables,
+  extractVariableIndices,
+  isNamedVariable,
+} from './template-validators';
 import { getT } from '@/lib/i18n/translate';
 
 const t = getT('Validation.templates');
 
 export interface SendTimeParams {
-  /** Values for body {{1}}, {{2}}, … indexed by variable position. */
+  /**
+   * Values for the body variables, in `extractTemplateVariables` order:
+   * {{1}}, {{2}}, … or named variables sorted by name.
+   */
   body?: string[];
   /** Value for TEXT-header {{1}}, when the header has a variable. */
   headerText?: string;
@@ -65,7 +75,7 @@ export type MetaSendComponent =
     };
 
 type MetaSendParameter =
-  | { type: 'text'; text: string }
+  | { type: 'text'; text: string; parameter_name?: string }
   | { type: 'image'; image: { link?: string; id?: string } }
   | { type: 'video'; video: { link?: string; id?: string } }
   | { type: 'document'; document: { link?: string; id?: string } }
@@ -83,17 +93,17 @@ function buildHeaderComponent(
     // TEXT header with {{1}} → need a value. Static text headers
     // (no variables) just ride along inside the template itself; no
     // header component required on send.
-    const varCount = extractVariableIndices(template.header_content ?? '').length;
-    if (varCount === 0) return null;
+    const [key] = extractTemplateVariables(template.header_content ?? '');
+    if (!key) return null;
     const value = params.headerText;
     if (!value || !value.trim()) {
       throw new Error(
-        t('headerTextValueRequired', { var: '{{1}}' }),
+        t('headerTextValueRequired', { var: `{{${key}}}` }),
       );
     }
     return {
       type: 'header',
-      parameters: [{ type: 'text', text: value }],
+      parameters: [textParameter(key, value)],
     };
   }
 
@@ -130,7 +140,8 @@ function buildBodyComponent(
   template: MessageTemplate,
   params: SendTimeParams,
 ): MetaSendComponent | null {
-  const varCount = extractVariableIndices(template.body_text).length;
+  const keys = extractTemplateVariables(template.body_text);
+  const varCount = keys.length;
   const body = params.body ?? [];
   if (varCount === 0 && body.length === 0) return null;
   if (body.length < varCount) {
@@ -143,8 +154,15 @@ function buildBodyComponent(
   const values = body.slice(0, varCount);
   return {
     type: 'body',
-    parameters: values.map((text) => ({ type: 'text', text: String(text) })),
+    parameters: values.map((text, i) => textParameter(keys[i], String(text))),
   };
+}
+
+/** A text parameter, carrying `parameter_name` for a NAMED variable. */
+function textParameter(key: string, text: string): MetaSendParameter {
+  return isNamedVariable(key)
+    ? { type: 'text', parameter_name: key, text }
+    : { type: 'text', text };
 }
 
 function buttonNeedsSendParam(

@@ -16,6 +16,7 @@ import {
 } from '@/lib/whatsapp/template-validators'
 import { buildMetaTemplatePayload } from '@/lib/whatsapp/template-components'
 import { ensureMediaHeaderHandle } from '@/lib/whatsapp/template-header-handle'
+import { canEditTemplateCategory } from '@/lib/whatsapp/template-category-edit'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { getT } from '@/lib/i18n/translate'
 
@@ -89,7 +90,7 @@ export async function PATCH(
     // meta_template_id and status — fetch explicitly.
     const { data: existing, error: lookupErr } = await supabase
       .from('message_templates')
-      .select('id, name, status, meta_template_id, language')
+      .select('id, name, status, category, meta_template_id, language')
       .eq('id', id)
       .eq('account_id', accountId)
       .maybeSingle()
@@ -135,6 +136,14 @@ export async function PATCH(
       )
     }
 
+    const categoryChanged = payload.category !== existing.category
+    if (categoryChanged && !canEditTemplateCategory(existing.status)) {
+      return NextResponse.json(
+        { error: t('templates.categoryLockedApproved') },
+        { status: 400 },
+      )
+    }
+
     if (!isDryRun()) {
       const { data: config, error: configError } = await supabase
         .from('whatsapp_config')
@@ -167,6 +176,7 @@ export async function PATCH(
           metaTemplateId: existing.meta_template_id,
           accessToken,
           components: metaPayload.components,
+          category: categoryChanged ? metaPayload.category : undefined,
         })
       } catch (e) {
         const message = e instanceof Error ? e.message : t('templates.metaEditFailed')

@@ -124,6 +124,28 @@ describe('createBroadcast recipient validation (#586)', () => {
     ]);
   });
 
+  it('counts recipients that resolve to an already-listed contact as duplicates', async () => {
+    const { db } = makeDb({
+      data: [{ broadcast_id: 'b-1', recipient_id: 'r-1', contact_id: 'c1' }],
+      error: null,
+    });
+
+    const plan = await createBroadcast(db, 'acc', 'user', {
+      templateName: 'promo',
+      recipients: [
+        { to: '+14155550123', params: ['first'] },
+        { to: '+1 415 555 0123', params: ['second'] },
+        { to: 'invalid' },
+      ],
+    });
+
+    expect(plan.rejected).toBe(1);
+    expect(plan.duplicates).toBe(1);
+    expect(plan.planned).toEqual([
+      { recipientRowId: 'r-1', phone: '14155550123', params: ['first'] },
+    ]);
+  });
+
   it('fails the whole request when no recipient carries a country code', async () => {
     const { db, calls } = makeDb({ data: [], error: null });
     await expect(

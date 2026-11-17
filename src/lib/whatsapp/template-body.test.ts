@@ -65,6 +65,15 @@ describe('renderTemplateBody', () => {
       'twice and twice'
     );
   });
+
+  it('substitutes named placeholders in sorted-name order', () => {
+    expect(
+      renderTemplateBody('Hi {{name}}, see you {{date}}', ['Monday', 'Sam'])
+    ).toBe('Hi Sam, see you Monday');
+    expect(renderTemplateBody('Call on {{service_details}}', [])).toBe(
+      'Call on {{service_details}}'
+    );
+  });
 });
 
 describe('templateBodyParams', () => {

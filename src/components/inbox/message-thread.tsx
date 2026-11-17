@@ -30,7 +30,6 @@ import {
 } from "lucide-react";
 import { format, isToday, isYesterday, differenceInHours } from "date-fns";
 import { useLocale, useTranslations } from "next-intl";
-import { getDateLocale } from "@/i18n/date-locale";
 import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
@@ -62,6 +61,7 @@ import {
   templateNamesInMessages,
 } from "@/lib/whatsapp/template-message-view";
 import { contactHandle } from "@/lib/whatsapp/wa-identity";
+import { resolveAssignmentResult } from "@/lib/inbox/assignment";
 import {
   businessReactionOn,
   withBusinessReaction,
@@ -133,7 +133,7 @@ function formatDateSeparator(dateStr: string, t: ReturnType<typeof useTranslatio
   const date = new Date(dateStr);
   if (isToday(date)) return t("today");
   if (isYesterday(date)) return t("yesterday");
-  return format(date, "PPP", { locale: getDateLocale(locale) });
+  return date.toLocaleDateString(locale, { month: "long", day: "numeric", year: "numeric" });
 }
 
 function groupMessagesByDate(messages: Message[]) {
@@ -204,6 +204,7 @@ export function MessageThread({
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [profilesVersion, setProfilesVersion] = useState(0);
   const [reactions, setReactions] = useState<MessageReaction[]>([]);
   const [sentTemplates, setSentTemplates] = useState<MessageTemplate[]>([]);
   const sentTemplateNames = useMemo(
@@ -288,7 +289,7 @@ export function MessageThread({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [profilesVersion]);
 
   // 24-hour session timer
   const sessionInfo = useMemo(() => {
@@ -943,10 +944,12 @@ export function MessageThread({
       if (!conversation) return;
 
       const supabase = createClient();
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from("conversations")
         .update({ assigned_agent_id: agentId })
-        .eq("id", conversation.id);
+        .eq("id", conversation.id)
+        .select("assigned_agent_id")
+        .single();
 
       if (error) {
         console.error("Failed to update assignment:", error);
@@ -954,7 +957,16 @@ export function MessageThread({
         return;
       }
 
-      onAssignChange(conversation.id, agentId);
+      const { assignedAgentId, rejected } = resolveAssignmentResult(
+        agentId,
+        data?.assigned_agent_id,
+      );
+      if (rejected) {
+        toast.error(t("assigneeNoLongerMember"));
+        setProfilesVersion((v) => v + 1);
+      }
+
+      onAssignChange(conversation.id, assignedAgentId);
     },
     [conversation, onAssignChange, t],
   );

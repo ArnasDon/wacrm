@@ -21,6 +21,7 @@ import {
   serializeContact,
   findOrCreateContact,
   setContactTags,
+  addContactTags,
   getContactById,
   resolveAuditUserId,
   ContactError,
@@ -123,7 +124,8 @@ export async function POST(request: Request) {
     );
 
     if (Array.isArray(body.tags)) {
-      await setContactTags(
+      const applyTags = created ? setContactTags : addContactTags;
+      await applyTags(
         ctx.supabase,
         ctx.accountId,
         auditUserId,

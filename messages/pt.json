@@ -1663,7 +1663,17 @@
       "removeDialogDesc": "Remover <bold>{name}</bold> da conta? A pessoa será desconectada desta conta e receberá uma nova conta pessoal no próximo login. O login dela não é excluído.",
       "cancel": "Cancelar",
       "removing": "Removendo...",
-      "removeBtn": "Remover membro"
+      "removeBtn": "Remover membro",
+      "thisAccount": "esta conta",
+      "leaveTitle": "Sair desta conta",
+      "leaveDescription": "Deixe de ser membro desta conta. Você mantém seu login e continua na sua própria conta pessoal.",
+      "ownerCannotLeave": "Como proprietário, você não pode sair desta conta. Transfira a propriedade para outro membro primeiro.",
+      "leaveBtn": "Sair da conta",
+      "leaveDialogTitle": "Sair de {account}?",
+      "leaveDialogDesc": "Você perderá imediatamente o acesso às conversas, contatos e configurações desta conta, e as conversas atribuídas a você ficarão sem responsável. Você continuará na sua própria conta pessoal. Para voltar, um administrador precisará convidá-lo novamente.",
+      "leaving": "Saindo...",
+      "leaveFailed": "Não foi possível sair da conta",
+      "leftToast": "Você saiu de {account}"
     },
     "invite": {
       "inviteCreated": "Convite criado",
@@ -2789,7 +2799,11 @@
       "nameTooLong": "O nome da conta deve ter no máximo {max} caracteres",
       "updateFailed": "Falha ao atualizar a conta",
       "transferFailed": "Falha ao transferir a propriedade",
-      "newOwnerInvalid": "newOwnerUserId deve ser um UUID válido"
+      "newOwnerInvalid": "newOwnerUserId deve ser um UUID válido",
+      "leave": {
+        "ownerCannotLeave": "O proprietário da conta não pode sair; transfira a propriedade primeiro",
+        "failed": "Não foi possível sair da conta"
+      }
     },
     "invitations": {
       "redeemFailed": "Falha ao aceitar o convite",

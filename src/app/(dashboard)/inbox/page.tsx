@@ -14,6 +14,7 @@ import { ConversationList } from "@/components/inbox/conversation-list";
 import { parseInboxFilter } from "@/lib/inbox/inbox-filters";
 import { MessageThread } from "@/components/inbox/message-thread";
 import { ContactSidebar } from "@/components/inbox/contact-sidebar";
+import { NewConversationDialog } from "@/components/inbox/new-conversation-dialog";
 import { toast } from "sonner";
 import { WifiOff } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -487,6 +488,37 @@ function InboxPageInner() {
     [activeConversation?.id, router]
   );
 
+  const [newConversationOpen, setNewConversationOpen] = useState(false);
+  const handleOpenNewConversation = useCallback(() => {
+    setNewConversationOpen(true);
+  }, []);
+
+  const handleConversationReady = useCallback(
+    async (convId: string) => {
+      const known = conversations.find((c) => c.id === convId);
+      if (known) {
+        handleSelectConversation(known);
+        return;
+      }
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("conversations")
+        .select(CONVERSATION_SELECT)
+        .eq("id", convId)
+        .maybeSingle();
+      if (error || !data) {
+        toast.error(t("openConversationFailed"));
+        return;
+      }
+      const fetched = normalizeConversation(data);
+      setConversations((prev) =>
+        prev.some((c) => c.id === fetched.id) ? prev : [fetched, ...prev],
+      );
+      handleSelectConversation(fetched);
+    },
+    [conversations, handleSelectConversation, t],
+  );
+
   // Mobile "back" — deselect the conversation so the list pane comes
   // back. Also clears the ?c= param so a refresh lands on the list
   // instead of re-opening the thread the user just backed out of.
@@ -595,6 +627,7 @@ function InboxPageInner() {
             onConversationsLoaded={handleConversationsLoaded}
             resyncToken={resyncToken}
             initialFilter={parseInboxFilter(searchParams.get("filter"))}
+            onNewConversation={handleOpenNewConversation}
           />
         </div>
 
@@ -642,6 +675,12 @@ function InboxPageInner() {
           </div>
         )}
       </div>
+
+      <NewConversationDialog
+        open={newConversationOpen}
+        onOpenChange={setNewConversationOpen}
+        onConversationReady={handleConversationReady}
+      />
     </div>
   );
 }

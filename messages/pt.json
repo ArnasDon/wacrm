@@ -330,7 +330,8 @@
   },
   "Inbox": {
     "page": {
-      "whatsappNotConnected": "O WhatsApp® não está conectado. Vá em Configurações para conectar sua conta."
+      "whatsappNotConnected": "O WhatsApp® não está conectado. Vá em Configurações para conectar sua conta.",
+      "openConversationFailed": "Não foi possível abrir a conversa. Atualize a caixa de entrada e tente novamente."
     },
     "conversationList": {
       "searchPlaceholder": "Buscar conversas...",
@@ -348,7 +349,8 @@
       "clearAll": "Limpar tudo",
       "noConversations": "Nenhuma conversa encontrada",
       "noMessagesYet": "Nenhuma mensagem ainda",
-      "unknown": "Desconhecido"
+      "unknown": "Desconhecido",
+      "newMessage": "Nova mensagem"
     },
     "messageThread": {
       "backToConversations": "Voltar às conversas",
@@ -510,6 +512,26 @@
       "headerVarLabel": "Cabeçalho {var}",
       "bodyVarLabel": "Corpo {var}",
       "urlButtonVarLabel": "Botão de URL \"{text}\" — valor para {var}"
+    },
+    "newConversation": {
+      "title": "Nova mensagem",
+      "description": "Escolha um contato. Se você já tiver uma conversa com ele, ela será aberta. Caso contrário, envie um modelo aprovado para iniciá-la.",
+      "searchPlaceholder": "Pesquisar por nome ou telefone",
+      "loadFailed": "Não foi possível carregar os contatos",
+      "loadFailedHint": "Verifique sua conexão e tente novamente.",
+      "retry": "Tentar novamente",
+      "noContacts": "Ainda não há contatos",
+      "noContactsHint": "Adicione ou importe contatos na página Contatos e volte aqui.",
+      "noMatches": "Nenhum contato corresponde à sua pesquisa",
+      "noMatchesHint": "Tente outro nome ou número de telefone.",
+      "limitHint": "Mostrando até {limit} contatos. Pesquise para refinar a lista.",
+      "unnamed": "Contato sem nome",
+      "cancel": "Cancelar",
+      "lookupFailed": "Não foi possível verificar se já existe uma conversa. Tente novamente.",
+      "sending": "Enviando modelo…",
+      "sent": "Modelo \"{name}\" enviado",
+      "sendFailed": "Não foi possível enviar o modelo: {reason}",
+      "networkError": "erro de rede"
     },
     "sidebar": {
       "contactInfo": "Informações do contato",

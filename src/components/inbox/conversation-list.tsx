@@ -10,7 +10,7 @@ import {
 import { applyInboxFilter, type InboxFilter } from "@/lib/inbox/inbox-filters";
 import { cn } from "@/lib/utils";
 import type { Conversation, ConversationStatus, Tag } from "@/types";
-import { Search, ChevronDown, X } from "lucide-react";
+import { Search, ChevronDown, X, SquarePen } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useTranslations } from "next-intl";
 import { Input } from "@/components/ui/input";
@@ -22,6 +22,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { GatedButton } from "@/components/ui/gated-button";
+import { useCan } from "@/hooks/use-can";
 
 interface ConversationListProps {
   activeConversationId: string | null;
@@ -36,6 +38,7 @@ interface ConversationListProps {
    */
   resyncToken?: number;
   initialFilter?: InboxFilter;
+  onNewConversation?: () => void;
 }
 
 const STATUS_COLORS: Record<ConversationStatus, string> = {
@@ -52,8 +55,11 @@ export function ConversationList({
   onConversationsLoaded,
   resyncToken = 0,
   initialFilter = "all",
+  onNewConversation,
 }: ConversationListProps) {
   const t = useTranslations("Inbox.conversationList");
+  const tGate = useTranslations("GatedButton");
+  const canSend = useCan("send-messages");
   
   const FILTER_OPTIONS: { label: string; value: InboxFilter }[] = useMemo(() => [
     { label: t("filterAll"), value: "all" },
@@ -229,14 +235,30 @@ export function ConversationList({
     <div className="flex h-full w-full flex-col border-r border-border bg-card lg:w-80">
       {/* Search + Filter */}
       <div className="space-y-2 border-b border-border p-3">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={handleSearchChange}
-            placeholder={t("searchPlaceholder")}
-            className="border-border bg-muted pl-9 text-sm text-foreground placeholder-muted-foreground focus:border-primary/50"
-          />
+        <div className="flex items-center gap-2">
+          <div className="relative min-w-0 flex-1">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={handleSearchChange}
+              placeholder={t("searchPlaceholder")}
+              className="border-border bg-muted pl-9 text-sm text-foreground placeholder-muted-foreground focus:border-primary/50"
+            />
+          </div>
+          {onNewConversation && (
+            <GatedButton
+              variant="outline"
+              size="icon"
+              canAct={canSend}
+              gateReason={tGate("reasons.sendMessages")}
+              title={t("newMessage")}
+              aria-label={t("newMessage")}
+              onClick={onNewConversation}
+              className="shrink-0"
+            >
+              <SquarePen className="h-4 w-4" />
+            </GatedButton>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-1">

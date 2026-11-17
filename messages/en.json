@@ -330,7 +330,8 @@
   },
   "Inbox": {
     "page": {
-      "whatsappNotConnected": "WhatsApp® is not connected. Go to Settings to connect your account."
+      "whatsappNotConnected": "WhatsApp® is not connected. Go to Settings to connect your account.",
+      "openConversationFailed": "Couldn't open the conversation. Refresh the inbox and try again."
     },
     "conversationList": {
       "searchPlaceholder": "Search conversations...",
@@ -348,7 +349,8 @@
       "clearAll": "Clear all",
       "noConversations": "No conversations found",
       "noMessagesYet": "No messages yet",
-      "unknown": "Unknown"
+      "unknown": "Unknown",
+      "newMessage": "New message"
     },
     "messageThread": {
       "backToConversations": "Back to conversations",
@@ -510,6 +512,26 @@
       "headerVarLabel": "Header {var}",
       "bodyVarLabel": "Body {var}",
       "urlButtonVarLabel": "URL button \"{text}\" — value for {var}"
+    },
+    "newConversation": {
+      "title": "New message",
+      "description": "Choose a contact. If you already have a conversation with them, it opens. Otherwise, send an approved template to start one.",
+      "searchPlaceholder": "Search by name or phone",
+      "loadFailed": "Couldn't load contacts",
+      "loadFailedHint": "Check your connection and try again.",
+      "retry": "Try again",
+      "noContacts": "No contacts yet",
+      "noContactsHint": "Add or import contacts on the Contacts page, then come back here.",
+      "noMatches": "No contacts match your search",
+      "noMatchesHint": "Try a different name or phone number.",
+      "limitHint": "Showing up to {limit} contacts. Search to narrow the list.",
+      "unnamed": "Unnamed contact",
+      "cancel": "Cancel",
+      "lookupFailed": "Couldn't check for an existing conversation. Try again.",
+      "sending": "Sending template…",
+      "sent": "Template \"{name}\" sent",
+      "sendFailed": "Couldn't send the template: {reason}",
+      "networkError": "network error"
     },
     "sidebar": {
       "contactInfo": "Contact info",

@@ -215,6 +215,7 @@ describe('POST /api/whatsapp/send — contact_id template path', () => {
     expect(res.status).toBe(200)
     expect(json.success).toBe(true)
     expect(json.whatsapp_message_id).toBe('wamid-1')
+    expect(json.conversation_id).toBe('conv-new')
 
     // A conversation was created for this contact.
     expect(conversationInserts).toHaveLength(1)
@@ -253,6 +254,7 @@ describe('POST /api/whatsapp/send — contact_id template path', () => {
 
     const res = await postContactTemplate()
     expect(res.status).toBe(200)
+    expect((await res.json()).conversation_id).toBe('conv-existing')
 
     expect(conversationInserts).toHaveLength(0)
     expect(messageInserts[0]).toMatchObject({ conversation_id: 'conv-existing' })

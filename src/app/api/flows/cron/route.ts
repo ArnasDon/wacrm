@@ -13,6 +13,19 @@ interface TimedOutRunRow {
 }
 
 /**
+ * Constant-time compare of two secrets. Returns false on any length
+ * mismatch (which `timingSafeEqual` would otherwise throw on).
+ */
+function secretsMatch(supplied: string, expected: string): boolean {
+  const suppliedBuf = Buffer.from(supplied)
+  const expectedBuf = Buffer.from(expected)
+  return (
+    suppliedBuf.length === expectedBuf.length &&
+    timingSafeEqual(suppliedBuf, expectedBuf)
+  )
+}
+
+/**
  * Sweep abandoned active flow runs.
  *
  * Reads each active run's parent-flow `fallback_policy.on_timeout_hours`
@@ -25,10 +38,13 @@ interface TimedOutRunRow {
  * index on `flow_runs WHERE status='active'`) forever — blocking any
  * new triggers for them. The cron is therefore not optional.
  *
- * Auth: re-uses `AUTOMATION_CRON_SECRET` so operators only have one
- * secret to provision. The two endpoints (`/api/automations/cron`
- * and this one) are independent operations; we keep them on separate
- * URLs so one failing doesn't block the other.
+ * Auth: accepts either Vercel Cron's `Authorization: Bearer
+ * <CRON_SECRET>` (it cannot set custom headers) or an external
+ * pinger's `x-cron-secret: <AUTOMATION_CRON_SECRET>`. Sharing
+ * `AUTOMATION_CRON_SECRET` with `/api/automations/cron` means
+ * operators provision at most one pinger secret. The two endpoints
+ * are independent operations; we keep them on separate URLs so one
+ * failing doesn't block the other.
  *
  * Hosting: hit on a schedule (Vercel Cron / GitHub Actions / external
  * pinger). A 5-minute interval is more than enough for a 24h timeout
@@ -36,21 +52,25 @@ interface TimedOutRunRow {
  * tenants.
  */
 export async function GET(request: Request) {
-  const expected = process.env.AUTOMATION_CRON_SECRET
-  if (!expected) {
+  const cronSecret = process.env.CRON_SECRET
+  const pingerSecret = process.env.AUTOMATION_CRON_SECRET
+
+  if (!cronSecret && !pingerSecret) {
     return NextResponse.json({ error: 'cron not configured' }, { status: 503 })
   }
-  // Constant-time compare so an attacker who can hit the endpoint
-  // can't recover the secret byte-by-byte from response-time deltas.
-  // Length pre-check is required by timingSafeEqual (throws otherwise)
-  // and leaks only the length itself, which isn't sensitive.
+
+  // Constant-time compares so an attacker who can hit the endpoint
+  // can't recover a secret byte-by-byte from response-time deltas.
+  // Vercel Cron path: `Authorization: Bearer <CRON_SECRET>`.
+  const authHeader = request.headers.get('authorization') ?? ''
+  const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : ''
+  const vercelOk = !!cronSecret && secretsMatch(bearer, cronSecret)
+
+  // External-pinger path: `x-cron-secret: <AUTOMATION_CRON_SECRET>`.
   const supplied = request.headers.get('x-cron-secret') ?? ''
-  const suppliedBuf = Buffer.from(supplied)
-  const expectedBuf = Buffer.from(expected)
-  if (
-    suppliedBuf.length !== expectedBuf.length ||
-    !timingSafeEqual(suppliedBuf, expectedBuf)
-  ) {
+  const pingerOk = !!pingerSecret && secretsMatch(supplied, pingerSecret)
+
+  if (!vercelOk && !pingerOk) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

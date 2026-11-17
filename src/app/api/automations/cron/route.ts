@@ -10,31 +10,63 @@ import {
 import type { AutomationContext } from '@/lib/automations/engine'
 
 /**
+ * Constant-time compare of two secrets. Returns false on any length
+ * mismatch (which `timingSafeEqual` would otherwise throw on).
+ */
+function secretsMatch(supplied: string, expected: string): boolean {
+  const suppliedBuf = Buffer.from(supplied)
+  const expectedBuf = Buffer.from(expected)
+  return (
+    suppliedBuf.length === expectedBuf.length &&
+    timingSafeEqual(suppliedBuf, expectedBuf)
+  )
+}
+
+/**
  * Drain due `automation_pending_executions` rows. Meant to be hit
- * on a schedule (Vercel Cron / external pinger) — requires a shared
- * secret via the `x-cron-secret` header to match
- * `AUTOMATION_CRON_SECRET`.
+ * on a schedule — authenticated one of two ways:
+ *
+ *   - Vercel Cron: sends `Authorization: Bearer <CRON_SECRET>` and
+ *     cannot set custom headers, so it's matched against `CRON_SECRET`.
+ *   - External pinger (cron-job.org, etc.): sends the `x-cron-secret`
+ *     header, matched against `AUTOMATION_CRON_SECRET`.
+ *
+ * Either secret being configured + presented is sufficient. If neither
+ * env var is set the endpoint is disabled (503).
+ */
+export async function GET(request: Request) {
+  const cronSecret = process.env.CRON_SECRET
+  const pingerSecret = process.env.AUTOMATION_CRON_SECRET
+
+  if (!cronSecret && !pingerSecret) {
+    return NextResponse.json({ error: 'cron not configured' }, { status: 503 })
+  }
+
+  // Vercel Cron path: `Authorization: Bearer <CRON_SECRET>`.
+  const authHeader = request.headers.get('authorization') ?? ''
+  const bearer = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : ''
+  const vercelOk = !!cronSecret && secretsMatch(bearer, cronSecret)
+
+  // External-pinger path: `x-cron-secret: <AUTOMATION_CRON_SECRET>`.
+  const supplied = request.headers.get('x-cron-secret') ?? ''
+  const pingerOk = !!pingerSecret && secretsMatch(supplied, pingerSecret)
+
+  if (!vercelOk && !pingerOk) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  return runCronDrain()
+}
+
+/**
+ * The actual drain. Split out from `GET` so both auth paths share it.
  *
  * The claim step (status = 'running') serves as a simple lock so
  * overlapping invocations don't double-process rows. Best-effort
  * only; expensive SELECT ... FOR UPDATE is avoided in favor of a
  * two-step UPDATE-by-id.
  */
-export async function GET(request: Request) {
-  const expected = process.env.AUTOMATION_CRON_SECRET
-  if (!expected) {
-    return NextResponse.json({ error: 'cron not configured' }, { status: 503 })
-  }
-  const supplied = request.headers.get('x-cron-secret') ?? ''
-  const suppliedBuf = Buffer.from(supplied)
-  const expectedBuf = Buffer.from(expected)
-  if (
-    suppliedBuf.length !== expectedBuf.length ||
-    !timingSafeEqual(suppliedBuf, expectedBuf)
-  ) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
+async function runCronDrain() {
   // Close out wait_for_reply runs whose 24h reply window lapsed. The
   // webhook already refuses to resume them; this just settles their
   // status and explains the outcome on the log.

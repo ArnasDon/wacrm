@@ -1,0 +1,52 @@
+name: Cron pinger
+
+# Drives the two scheduled endpoints that Vercel's Hobby plan can't run
+# more than once per day:
+#   - /api/automations/cron  (drains due Wait-step executions)
+#   - /api/flows/cron         (sweeps abandoned flow runs to free the
+#                              one-active-run-per-contact index)
+#
+# Both authenticate via the `x-cron-secret` header matched against the
+# AUTOMATION_CRON_SECRET env var on the deployment.
+#
+# Required repository secrets (Settings -> Secrets and variables -> Actions):
+#   CRON_PING_BASE_URL     e.g. https://your-app.vercel.app  (no trailing slash)
+#   AUTOMATION_CRON_SECRET must equal the deployment's AUTOMATION_CRON_SECRET
+#
+# Note: GitHub's scheduler has a 5-minute minimum and may delay or drop
+# runs under load. A 24h flow-timeout default tolerates this easily; if
+# you need tighter Wait-step latency, use a dedicated pinger (cron-job.org)
+# or Vercel Pro crons instead.
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {}
+
+# A slow endpoint shouldn't let runs pile up on top of each other.
+concurrency:
+  group: cron-pinger
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping automations cron
+        env:
+          BASE_URL: ${{ secrets.CRON_PING_BASE_URL }}
+          CRON_SECRET: ${{ secrets.AUTOMATION_CRON_SECRET }}
+        run: |
+          curl -fsS --max-time 60 \
+            -H "x-cron-secret: ${CRON_SECRET}" \
+            "${BASE_URL}/api/automations/cron"
+
+      - name: Ping flows cron
+        env:
+          BASE_URL: ${{ secrets.CRON_PING_BASE_URL }}
+          CRON_SECRET: ${{ secrets.AUTOMATION_CRON_SECRET }}
+        run: |
+          curl -fsS --max-time 60 \
+            -H "x-cron-secret: ${CRON_SECRET}" \
+            "${BASE_URL}/api/flows/cron"

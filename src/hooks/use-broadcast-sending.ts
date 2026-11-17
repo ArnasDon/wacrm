@@ -12,6 +12,7 @@ import {
   type AudienceConfig,
 } from '@/lib/broadcast-audience';
 import { normalizeKey } from '@/lib/contacts/dedupe';
+import { contactVariableValue } from '@/lib/broadcast-variables';
 import {
   acquireWizardDeliveryLease,
   renewWizardDeliveryLease,
@@ -135,15 +136,7 @@ export function resolveVariables(
     const v = variables[key];
     if (v.type === 'static') return v.value;
 
-    if (v.type === 'field') {
-      const fieldMap: Record<string, string | undefined> = {
-        name: contact.name,
-        phone: contact.phone,
-        email: contact.email,
-        company: contact.company,
-      };
-      return fieldMap[v.value] ?? '';
-    }
+    if (v.type === 'field') return contactVariableValue(contact, v.value) ?? '';
 
     // custom_field
     return customValues?.get(v.value) ?? '';

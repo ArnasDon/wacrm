@@ -1658,7 +1658,17 @@
       "removeDialogDesc": "Remove <bold>{name}</bold> from the account? They'll be signed out of this account and given a fresh personal account on their next sign-in. Their login isn't deleted.",
       "cancel": "Cancel",
       "removing": "Removing...",
-      "removeBtn": "Remove member"
+      "removeBtn": "Remove member",
+      "thisAccount": "this account",
+      "leaveTitle": "Leave this account",
+      "leaveDescription": "Stop being a member of this account. You'll keep your login and continue in your own personal account.",
+      "ownerCannotLeave": "As the owner, you can't leave this account. Transfer ownership to another member first.",
+      "leaveBtn": "Leave account",
+      "leaveDialogTitle": "Leave {account}?",
+      "leaveDialogDesc": "You'll lose access to this account's conversations, contacts and settings right away, and conversations assigned to you will be unassigned. You'll continue in your own personal account. To come back, an admin has to invite you again.",
+      "leaving": "Leaving...",
+      "leaveFailed": "Failed to leave the account",
+      "leftToast": "You left {account}"
     },
     "invite": {
       "inviteCreated": "Invite created",
@@ -2784,7 +2794,11 @@
       "nameTooLong": "Account name must be {max} characters or fewer",
       "updateFailed": "Failed to update account",
       "transferFailed": "Failed to transfer ownership",
-      "newOwnerInvalid": "'newOwnerUserId' must be a valid UUID"
+      "newOwnerInvalid": "'newOwnerUserId' must be a valid UUID",
+      "leave": {
+        "ownerCannotLeave": "The account owner cannot leave; transfer ownership first",
+        "failed": "Failed to leave the account"
+      }
     },
     "invitations": {
       "redeemFailed": "Failed to redeem invitation",

@@ -73,6 +73,7 @@ import {
   PresenceDot,
 } from '@/components/presence/presence-dot';
 import { InviteMemberDialog } from './invite-member-dialog';
+import { LeaveAccountCard } from './leave-account-card';
 import { SettingsPanelHead } from './settings-panel-head';
 import { ROLE_META } from './role-meta';
 
@@ -559,6 +560,8 @@ export function MembersTab() {
           )}
         </div>
       </RequireRole>
+
+      <LeaveAccountCard memberCount={members.length} />
 
       <InviteMemberDialog
         open={inviteOpen}

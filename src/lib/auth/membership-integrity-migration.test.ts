@@ -47,8 +47,47 @@ describe("account membership integrity migrations", () => {
   });
 
   it("unassigns a removed member's conversations", () => {
-    expect(latestFunctionBody("remove_account_member")).toMatch(
-      /update\s+conversations\s+set\s+assigned_agent_id\s*=\s*null\s+where\s+account_id\s*=\s*v_target_account_id\s+and\s+assigned_agent_id\s*=\s*p_user_id/i,
+    expect(latestFunctionBody("detach_member_to_personal_account")).toMatch(
+      /update\s+conversations\s+set\s+assigned_agent_id\s*=\s*null\s+where\s+account_id\s*=\s*p_account_id\s+and\s+assigned_agent_id\s*=\s*p_user_id/i,
+    );
+  });
+
+  it("clears the departing member's deals, AI handoff target and notifications", () => {
+    const body = latestFunctionBody("detach_member_to_personal_account");
+    expect(body).toMatch(
+      /update\s+deals\s+set\s+assigned_to\s*=\s*null\s+where\s+account_id\s*=\s*p_account_id\s+and\s+assigned_to\s*=\s*v_profile_id/i,
+    );
+    expect(body).toMatch(
+      /update\s+ai_configs\s+set\s+handoff_agent_id\s*=\s*null\s+where\s+account_id\s*=\s*p_account_id\s+and\s+handoff_agent_id\s*=\s*p_user_id/i,
+    );
+    expect(body).toMatch(
+      /delete\s+from\s+notifications\s+where\s+account_id\s*=\s*p_account_id\s+and\s+user_id\s*=\s*p_user_id/i,
+    );
+  });
+
+  it("routes both removal and leaving through the shared detach helper", () => {
+    const detach = /detach_member_to_personal_account\s*\(\s*p_user_id\s*,\s*v_target_account_id\s*\)/i;
+    expect(latestFunctionBody("remove_account_member")).toMatch(detach);
+    expect(latestFunctionBody("leave_account")).toMatch(
+      /detach_member_to_personal_account\s*\(\s*auth\.uid\(\)\s*,\s*v_account_id\s*\)/i,
+    );
+  });
+
+  it("refuses to let the owner leave", () => {
+    expect(latestFunctionBody("leave_account")).toMatch(
+      /if\s+v_role\s*=\s*'owner'\s+then\s+raise\s+exception/i,
+    );
+  });
+
+  it("keeps the detach helper out of reach of API callers", () => {
+    const latest = migrations
+      .filter(({ sql }) => /function\s+public\.detach_member_to_personal_account/i.test(sql))
+      .at(-1);
+    expect(latest?.sql).toMatch(
+      /revoke\s+all\s+on\s+function\s+public\.detach_member_to_personal_account\(uuid,\s*uuid\)\s+from\s+public,\s*anon,\s*authenticated/i,
+    );
+    expect(latest?.sql).not.toMatch(
+      /grant\s+execute\s+on\s+function\s+public\.detach_member_to_personal_account/i,
     );
   });
 

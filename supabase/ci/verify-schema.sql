@@ -163,6 +163,20 @@ BEGIN
     RAISE EXCEPTION 'anon can execute dashboard_overview — migration 059 grants are wrong';
   END IF;
 
+  IF to_regprocedure('public.leave_account()') IS NULL THEN
+    RAISE EXCEPTION 'public.leave_account() is missing — migration 061 did not apply';
+  END IF;
+  IF has_function_privilege('anon', 'public.leave_account()', 'EXECUTE') THEN
+    RAISE EXCEPTION 'anon can execute leave_account — migration 061 grants are wrong';
+  END IF;
+  IF has_function_privilege('authenticated', 'public.detach_member_to_personal_account(uuid,uuid)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'authenticated can execute detach_member_to_personal_account — migration 061 grants are wrong';
+  END IF;
+  IF pg_get_functiondef('public.remove_account_member(uuid)'::regprocedure)
+     NOT LIKE '%detach_member_to_personal_account%' THEN
+    RAISE EXCEPTION 'remove_account_member does not use the shared detach helper — migration 061 did not apply';
+  END IF;
+
   RAISE NOTICE 'schema verification passed';
 END
 $$;

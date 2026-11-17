@@ -30,7 +30,6 @@ import {
 } from "lucide-react";
 import { format, isToday, isYesterday, differenceInHours } from "date-fns";
 import { useLocale, useTranslations } from "next-intl";
-import { getDateLocale } from "@/i18n/date-locale";
 import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
@@ -134,7 +133,7 @@ function formatDateSeparator(dateStr: string, t: ReturnType<typeof useTranslatio
   const date = new Date(dateStr);
   if (isToday(date)) return t("today");
   if (isYesterday(date)) return t("yesterday");
-  return format(date, "PPP", { locale: getDateLocale(locale) });
+  return date.toLocaleDateString(locale, { month: "long", day: "numeric", year: "numeric" });
 }
 
 function groupMessagesByDate(messages: Message[]) {

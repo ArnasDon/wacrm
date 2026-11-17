@@ -14,6 +14,7 @@ import {
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
 import { reopenClosedConversation } from '@/lib/conversations/reopen'
 import { claimFirstInboundMessage } from '@/lib/conversations/first-inbound'
+import { captureReferralSource } from '@/lib/contacts/referral-source'
 import {
   verifyMetaWebhookSignature,
   verifyTokenMatches,
@@ -106,6 +107,7 @@ interface WhatsAppMessage {
    * afterwards, so this reason is the only thing there is to keep.
    */
   errors?: MetaError[]
+  referral?: unknown
 }
 
 /**
@@ -627,6 +629,15 @@ async function processMessage(
   )
   if (!contactOutcome) return
   const contactRecord = contactOutcome.contact
+
+  if (message.referral && !contactRecord.referral_source) {
+    await captureReferralSource(
+      supabaseAdmin(),
+      contactRecord.id,
+      message.referral,
+      message.timestamp
+    )
+  }
 
   // Find or create conversation
   const convResult = await findOrCreateConversation(

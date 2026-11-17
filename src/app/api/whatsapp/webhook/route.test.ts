@@ -163,6 +163,10 @@ vi.mock('@supabase/supabase-js', () => ({
                     maybeSingle: () =>
                       Promise.resolve({ data: null, error: null }),
                   }),
+                  is: () => ({
+                    select: () =>
+                      Promise.resolve({ data: [{ id: 'contact-1' }], error: null }),
+                  }),
                 }),
               }
             },
@@ -932,6 +936,53 @@ describe('inbound webhook: contact name backfill (#519 regression guard)', () =>
     ])
 
     expect(h.state.contactUpdates[0]).toMatchObject({ name: 'ada' })
+  })
+})
+
+describe('inbound webhook: Click-to-WhatsApp referral source (#725)', () => {
+  const REFERRAL_MESSAGE = {
+    ...TEXT_MESSAGE,
+    referral: {
+      source_type: 'ad',
+      source_id: '120200000000000',
+      source_url: 'https://fb.me/3cr4Wqqkv',
+      headline: 'Spring sale',
+      ctwa_clid: 'ARAkLkA8rmlFeiCktEJQ',
+    },
+  }
+
+  it('stores the referral as the first-touch source', async () => {
+    await runWebhook(REFERRAL_MESSAGE)
+
+    expect(h.state.contactUpdates).toContainEqual({
+      referral_source: {
+        source_type: 'ad',
+        source_id: '120200000000000',
+        source_url: 'https://fb.me/3cr4Wqqkv',
+        headline: 'Spring sale',
+        ctwa_clid: 'ARAkLkA8rmlFeiCktEJQ',
+      },
+      referral_received_at: '2023-11-14T22:13:20.000Z',
+    })
+  })
+
+  it('leaves an existing first-touch source alone', async () => {
+    mockFindExistingContact.mockResolvedValue({
+      id: 'contact-1',
+      name: 'Ada',
+      phone: '15551230000',
+      referral_source: { source_type: 'post', headline: 'Earlier post' },
+    })
+
+    await runWebhook(REFERRAL_MESSAGE)
+
+    expect(h.state.contactUpdates).toHaveLength(0)
+  })
+
+  it('writes nothing for a message without a referral', async () => {
+    await runWebhook()
+
+    expect(h.state.contactUpdates).toHaveLength(0)
   })
 })
 

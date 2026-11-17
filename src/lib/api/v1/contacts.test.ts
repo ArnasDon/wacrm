@@ -46,6 +46,8 @@ describe('serializeContact', () => {
       company: 'Acme',
       avatar_url: null,
       tags: [{ id: 't1', name: 'vip', color: '#fff' }],
+      referral_source: null,
+      referral_received_at: null,
       created_at: '2026-01-01T00:00:00Z',
       updated_at: '2026-01-02T00:00:00Z',
     });
@@ -63,6 +65,32 @@ describe('serializeContact', () => {
       updated_at: 'b',
     };
     expect(serializeContact(row).tags).toEqual([]);
+  });
+
+  it('exposes the stored first-touch referral source', () => {
+    const row = {
+      id: 'c3',
+      phone: '+1',
+      created_at: 'a',
+      updated_at: 'b',
+      referral_source: {
+        source_type: 'ad',
+        source_id: '120200000',
+        source_url: 'https://fb.me/abc',
+        headline: 'Spring sale',
+        ctwa_clid: 'clid-1',
+      },
+      referral_received_at: '2026-11-01T10:00:00.000Z',
+    };
+    const contact = serializeContact(row);
+    expect(contact.referral_source).toEqual({
+      source_type: 'ad',
+      source_id: '120200000',
+      source_url: 'https://fb.me/abc',
+      headline: 'Spring sale',
+      ctwa_clid: 'clid-1',
+    });
+    expect(contact.referral_received_at).toBe('2026-11-01T10:00:00.000Z');
   });
 });
 

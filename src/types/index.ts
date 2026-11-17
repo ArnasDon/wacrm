@@ -1,5 +1,6 @@
 import type { AccountRole } from "@/lib/auth/roles";
 import type { InteractiveMessagePayload } from "@/lib/whatsapp/interactive";
+import type { ContactReferralSource } from "@/lib/contacts/referral-source";
 
 export type {
   InteractiveMessagePayload,
@@ -119,6 +120,8 @@ export interface Contact {
   email?: string;
   company?: string;
   avatar_url?: string;
+  referral_source?: ContactReferralSource | null;
+  referral_received_at?: string | null;
   created_at: string;
   updated_at: string;
   /** Hydrated by queries that embed `contact_tags(tags(*))` (e.g. the

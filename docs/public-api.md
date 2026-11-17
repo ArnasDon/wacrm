@@ -187,12 +187,28 @@ or phone) and `?tag=<tagId>`.
       "id": "…", "phone": "+14155550123", "name": "Jane Doe",
       "email": null, "company": "Acme", "avatar_url": null,
       "tags": [{ "id": "…", "name": "vip", "color": "#3b82f6" }],
+      "referral_source": {
+        "source_type": "ad", "source_id": "…",
+        "source_url": "https://fb.me/…", "headline": "Spring sale",
+        "ctwa_clid": "…"
+      },
+      "referral_received_at": "…",
       "created_at": "…", "updated_at": "…"
     }
   ],
   "meta": { "next_cursor": "…" }
 }
 ```
+
+`referral_source` is the contact's first-touch lead source: the
+`referral` object Meta attaches to the first inbound message that came
+from a Click-to-WhatsApp ad or a post. Only the first one is kept, so
+later referrals never overwrite it. Possible keys are `source_type`
+(`ad` or `post`), `source_id`, `source_url`, `headline`, `body`,
+`media_type`, `image_url`, `video_url`, `thumbnail_url` and `ctwa_clid`;
+absent ones are omitted. `referral_received_at` is when that message
+was sent. Both are `null` for contacts that did not arrive through a
+referral, and both are read-only.
 
 ### `POST /api/v1/contacts`
 

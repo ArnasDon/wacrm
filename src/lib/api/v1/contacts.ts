@@ -13,6 +13,7 @@ import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe';
 import { resolveImportTagIds } from '@/lib/contacts/resolve-import-tags';
 import { addContactTagAndDispatch } from '@/lib/contacts/tag-events';
 import { parseInternationalPhone } from '@/lib/whatsapp/phone-utils';
+import { parseReferral, type ContactReferralSource } from '@/lib/contacts/referral-source';
 
 /** Row select that embeds the contact's tags for serialization. */
 export const CONTACT_SELECT = '*, contact_tags(tags(*))';
@@ -25,6 +26,8 @@ export interface ApiContact {
   company: string | null;
   avatar_url: string | null;
   tags: { id: string; name: string; color: string }[];
+  referral_source: ContactReferralSource | null;
+  referral_received_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -55,6 +58,8 @@ export function serializeContact(row: Record<string, unknown>): ApiContact {
       .map((j) => j.tags)
       .filter((t): t is NonNullable<RawTagJoin['tags']> => t != null)
       .map((t) => ({ id: t.id, name: t.name, color: t.color })),
+    referral_source: parseReferral(row.referral_source),
+    referral_received_at: (row.referral_received_at as string | null) ?? null,
     created_at: row.created_at as string,
     updated_at: row.updated_at as string,
   };

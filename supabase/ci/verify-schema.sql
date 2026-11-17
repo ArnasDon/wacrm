@@ -163,6 +163,14 @@ BEGIN
     RAISE EXCEPTION 'anon can execute dashboard_overview — migration 059 grants are wrong';
   END IF;
 
+  IF (
+    SELECT COUNT(*) FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'contacts'
+      AND column_name IN ('referral_source', 'referral_received_at')
+  ) <> 2 THEN
+    RAISE EXCEPTION 'contacts referral columns are missing — migration 063 did not apply';
+  END IF;
+
   RAISE NOTICE 'schema verification passed';
 END
 $$;

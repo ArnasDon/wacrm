@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
+import { canSendMessages } from "@/lib/auth/roles";
 import { cn } from "@/lib/utils";
 import type { Contact, Deal, ContactNote, Tag } from "@/types";
 import {
@@ -15,12 +16,24 @@ import {
   DollarSign,
   StickyNote,
   Plus,
+  X,
 } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { format } from "date-fns";
 import { useTranslations } from "next-intl";
 import { contactHandle } from "@/lib/whatsapp/wa-identity";
+import { addContactTag, deleteContactTag } from "@/lib/contacts/tag-api";
 
 interface ContactSidebarProps {
   contact: Contact | null;
@@ -30,11 +43,14 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
   const tSidebar = useTranslations("Inbox.sidebar");
   const tThread = useTranslations("Inbox.messageThread");
 
-  const { accountId } = useAuth();
+  const { accountId, accountRole } = useAuth();
+  const canManageContactTags = accountRole ? canSendMessages(accountRole) : false;
   const [copied, setCopied] = useState(false);
   const [deals, setDeals] = useState<Deal[]>([]);
   const [notes, setNotes] = useState<ContactNote[]>([]);
   const [tags, setTags] = useState<(Tag & { contact_tag_id: string })[]>([]);
+  const [allTags, setAllTags] = useState<Tag[]>([]);
+  const [savingTags, setSavingTags] = useState(false);
   const [newNote, setNewNote] = useState("");
   const [addingNote, setAddingNote] = useState(false);
 
@@ -44,7 +60,7 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
     const supabase = createClient();
 
     // Fetch deals, notes, and tags in parallel
-    const [dealsRes, notesRes, tagsRes] = await Promise.all([
+    const [dealsRes, notesRes, tagsRes, allTagsRes] = await Promise.all([
       supabase
         .from("deals")
         .select("*, stage:pipeline_stages(*)")
@@ -59,10 +75,12 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
         .from("contact_tags")
         .select("id, tag_id, tags(*)")
         .eq("contact_id", contact.id),
+      supabase.from("tags").select("*").order("name"),
     ]);
 
     if (dealsRes.data) setDeals(dealsRes.data);
     if (notesRes.data) setNotes(notesRes.data);
+    if (allTagsRes.data) setAllTags(allTagsRes.data as Tag[]);
     if (tagsRes.data) {
       const mapped = tagsRes.data
         .filter((ct: Record<string, unknown>) => ct.tags)
@@ -80,6 +98,24 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchContactData();
   }, [fetchContactData]);
+
+  const handleToggleTag = useCallback(async (tagId: string) => {
+    if (!contact || savingTags) return;
+    const assignedTag = tags.find((tag) => tag.id === tagId);
+    setSavingTags(true);
+    try {
+      if (assignedTag) await deleteContactTag(contact.id, tagId);
+      else await addContactTag(contact.id, tagId);
+      await fetchContactData();
+    } catch (error) {
+      console.error("Failed to update contact tags from inbox:", error);
+      toast.error(
+        error instanceof Error ? error.message : tSidebar("tagUpdateFailed"),
+      );
+    } finally {
+      setSavingTags(false);
+    }
+  }, [contact, fetchContactData, savingTags, tags, tSidebar]);
 
   const handleCopyPhone = useCallback(async () => {
     // Copies whatever the row displays — a BSUID-only contact has no
@@ -163,6 +199,7 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
           <div className="mt-4 space-y-2">
             <button
               onClick={handleCopyPhone}
+              style={{ cursor: "pointer" }}
               className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted"
             >
               <Phone className="h-4 w-4 text-muted-foreground" />
@@ -189,9 +226,52 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
 
           {/* Tags */}
           <div>
-            <div className="flex items-center gap-2 px-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              <TagIcon className="h-3 w-3" />
-              {tSidebar("tags")}
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 px-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                <TagIcon className="h-3 w-3" />
+                {tSidebar("tags")}
+              </div>
+              {canManageContactTags && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    disabled={savingTags}
+                    style={{ cursor: savingTags ? "not-allowed" : "pointer" }}
+                    className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/10 disabled:opacity-50"
+                  >
+                    <Plus className="h-3 w-3" />
+                    {tSidebar("addTags")}
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-56 border-border bg-popover">
+                    <DropdownMenuGroup>
+                      <DropdownMenuLabel className="text-xs text-muted-foreground">
+                        {tSidebar("availableTags")}
+                      </DropdownMenuLabel>
+                      {allTags.length === 0 ? (
+                        <DropdownMenuItem disabled className="text-xs text-muted-foreground">
+                          {tSidebar("noAvailableTags")}
+                        </DropdownMenuItem>
+                      ) : (
+                        allTags.map((tag) => (
+                          <DropdownMenuCheckboxItem
+                            key={tag.id}
+                            checked={tags.some((assigned) => assigned.id === tag.id)}
+                            onCheckedChange={() => void handleToggleTag(tag.id)}
+                            disabled={savingTags}
+                            style={{ cursor: savingTags ? "default" : "pointer" }}
+                            className="text-sm text-popover-foreground"
+                          >
+                            <span
+                              className="h-2 w-2 shrink-0 rounded-full"
+                              style={{ backgroundColor: tag.color }}
+                            />
+                            <span className="truncate">{tag.name}</span>
+                          </DropdownMenuCheckboxItem>
+                        ))
+                      )}
+                    </DropdownMenuGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
             </div>
             <div className="mt-2 flex flex-wrap gap-1">
               {tags.length === 0 ? (
@@ -200,13 +280,26 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
                 tags.map((tag) => (
                   <span
                     key={tag.contact_tag_id}
-                    className="rounded-full px-2 py-0.5 text-[10px] font-medium"
+                    className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium"
                     style={{
                       backgroundColor: `${tag.color}20`,
                       color: tag.color,
                     }}
                   >
-                    {tag.name}
+                    <span>{tag.name}</span>
+                    {canManageContactTags && (
+                      <button
+                        type="button"
+                        aria-label={tSidebar("removeTag", { tag: tag.name })}
+                        title={tSidebar("removeTag", { tag: tag.name })}
+                        onClick={() => void handleToggleTag(tag.id)}
+                        disabled={savingTags}
+                        style={{ cursor: savingTags ? "default" : "pointer" }}
+                        className="rounded-full opacity-70 transition-opacity hover:opacity-100 disabled:opacity-40"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    )}
                   </span>
                 ))
               )}

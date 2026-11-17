@@ -517,6 +517,11 @@
       "notes": "Notes",
       "deals": "Deals",
       "noTags": "No tags",
+      "addTags": "Add tags",
+      "availableTags": "Available tags",
+      "noAvailableTags": "No tags have been created yet.",
+      "removeTag": "Remove {tag}",
+      "tagUpdateFailed": "Could not update contact tags.",
       "noDeals": "No deals",
       "addNotePlaceholder": "Add a note..."
     },

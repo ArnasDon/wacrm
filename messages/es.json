@@ -517,6 +517,11 @@
       "notes": "Notas",
       "deals": "Negocios",
       "noTags": "Sin etiquetas",
+      "addTags": "Añadir etiquetas",
+      "availableTags": "Etiquetas disponibles",
+      "noAvailableTags": "Aún no se han creado etiquetas.",
+      "removeTag": "Quitar {tag}",
+      "tagUpdateFailed": "No se pudieron actualizar las etiquetas del contacto.",
       "noDeals": "Sin negocios",
       "addNotePlaceholder": "Agregar una nota..."
     },

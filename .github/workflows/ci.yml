@@ -46,6 +46,10 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Typecheck MCP server
+        working-directory: mcp-server
+        run: npm ci && npm run typecheck
+
       - name: Test
         run: npm test
 

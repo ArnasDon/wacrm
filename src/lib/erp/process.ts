@@ -26,7 +26,11 @@ import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe';
 import { resolveImportTagIds } from '@/lib/contacts/resolve-import-tags';
 import { addContactTagAndDispatch } from '@/lib/contacts/tag-events';
 import { resolveAuditUserId } from '@/lib/api/v1/contacts';
-import { sanitizePhoneForMeta, isValidE164 } from '@/lib/whatsapp/phone-utils';
+import {
+  isValidE164,
+  normalizePhone,
+  sanitizePhoneForMeta,
+} from '@/lib/whatsapp/phone-utils';
 import { resolveConversationByPhone } from '@/lib/whatsapp/resolve-conversation';
 import { sendMessageToConversation } from '@/lib/whatsapp/send-message';
 import {
@@ -298,33 +302,99 @@ export async function findOrCreateErpContact(
  */
 export async function syncContactFromErp(
   ctx: ErpProcessContext,
-  contactId: string,
+  contact: ResolvedContact,
   customer: ErpCustomer,
-): Promise<void> {
+): Promise<ContactSync> {
+  const synced = await saveContactFields(ctx, contact, customer);
+  await applyErpTag(ctx, contact.id);
+  await applyCustomValues(ctx, contact.id, customer);
+  return synced;
+}
+
+/** What `saveContactFields` left on the contact. */
+export interface ContactSync {
+  /**
+   * The number stored on the contact now. The ONLY number a message
+   * for this event may go to: the contact was read before the save,
+   * so its `phone` is the number from before a correction.
+   */
+  phone: string;
+  /**
+   * The ERP's new number when it could NOT be stored because another
+   * CRM contact already has it. The contact still holds the old —
+   * per the ERP, wrong — number, so nothing may be sent for it.
+   */
+  phoneBlockedBy: string | null;
+}
+
+/**
+ * Write the ERP's name, email, id and number onto the contact.
+ *
+ * A number change is how a wrong number gets corrected, so it is
+ * never dropped silently:
+ *  - saved: the caller sends to the new number, this same event;
+ *  - another contact already has the number (unique index, 23505 —
+ *    e.g. the customer once messaged from it): the other fields are
+ *    still saved, and `phoneBlockedBy` tells the caller to send
+ *    nothing rather than message the old number;
+ *  - any other error: thrown, so the ERP retries the event.
+ */
+export async function saveContactFields(
+  ctx: ErpProcessContext,
+  contact: ResolvedContact,
+  customer: ErpCustomer,
+): Promise<ContactSync> {
   const { db, accountId } = ctx;
 
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (customer.name) patch.name = customer.name;
   if (customer.email) patch.email = customer.email;
   if (customer.erpCustomerId) patch.erp_customer_id = customer.erpCustomerId;
+
+  let newPhone: string | null = null;
   if (customer.phone) {
     const phone = sanitizePhoneForMeta(customer.phone);
-    if (phone && isValidE164(phone)) patch.phone = phone;
+    if (
+      phone &&
+      isValidE164(phone) &&
+      normalizePhone(phone) !== normalizePhone(contact.phone ?? '')
+    ) {
+      newPhone = phone;
+    }
   }
 
-  const { error } = await db
-    .from('contacts')
-    .update(patch)
-    .eq('id', contactId)
-    .eq('account_id', accountId);
-  if (error) {
-    // A phone collision here means two ERP customers share a number.
-    // Keep the rest of the event working rather than failing it.
-    console.warn('[erp] contact update skipped:', error.message);
+  const save = (fields: Record<string, unknown>) =>
+    db
+      .from('contacts')
+      .update(fields)
+      .eq('id', contact.id)
+      .eq('account_id', accountId);
+
+  if (!newPhone) {
+    const { error } = await save(patch);
+    if (error) console.warn('[erp] contact update skipped:', error.message);
+    return { phone: contact.phone, phoneBlockedBy: null };
   }
 
-  await applyErpTag(ctx, contactId);
-  await applyCustomValues(ctx, contactId, customer);
+  const { error } = await save({ ...patch, phone: newPhone });
+  if (!error) return { phone: newPhone, phoneBlockedBy: null };
+
+  if (!isUniqueViolation(error)) {
+    throw new Error(`Failed to save the new number on the contact: ${error.message}`);
+  }
+  console.warn('[erp] number change blocked: another contact already has the new number');
+  const { error: rest } = await save(patch);
+  if (rest) console.warn('[erp] contact update skipped:', rest.message);
+  return { phone: contact.phone, phoneBlockedBy: newPhone };
+}
+
+/** The ledger text for an event withheld because the new number could not be saved. */
+export function blockedNumberDetail(oldPhone: string, newPhone: string): string {
+  return (
+    `not sent: the ERP changed this customer's number to ${newPhone}, but another CRM contact ` +
+    `already has that number, so this contact still has the old one (${oldPhone}). ` +
+    'Sort out the two contacts in the CRM, then resend from the ERP.'
+  );
 }
 
 /** Tag the contact `erp-customer`, creating the tag on first use. */
@@ -623,7 +693,7 @@ export async function processErpEvent(
     return { status: 'skipped', detail: 'customer has no valid phone number' };
   }
 
-  await syncContactFromErp(ctx, contact.id, customer);
+  const synced = await syncContactFromErp(ctx, contact, customer);
 
   const branch = extractBranch(event);
   // Every return below carries the filing outcome, because "the
@@ -649,7 +719,26 @@ export async function processErpEvent(
   if (event.type === 'customer.upsert') {
     return {
       status: 'done',
-      detail: withNote('contact synced', note),
+      detail: withNote(
+        synced.phoneBlockedBy
+          ? `contact synced, but NOT its new number: ${blockedNumberDetail(synced.phone, synced.phoneBlockedBy).replace(/^not sent: /, '')}`
+          : 'contact synced',
+        note,
+      ),
+      contactId: contact.id,
+      branch,
+      orderRef,
+    };
+  }
+
+  // The ERP corrected this customer's number but the CRM could not
+  // store it. The contact still holds the number the ERP says is
+  // wrong, so sending would message a stranger. Before every other
+  // reason not to send, so the ledger names the cause staff can fix.
+  if (synced.phoneBlockedBy) {
+    return {
+      status: 'skipped',
+      detail: withNote(blockedNumberDetail(synced.phone, synced.phoneBlockedBy), note),
       contactId: contact.id,
       branch,
       orderRef,
@@ -755,7 +844,10 @@ export async function processErpEvent(
   const { conversationId } = await resolveConversationByPhone(
     ctx.db,
     ctx.accountId,
-    contact.phone,
+    // The number saved above, not the one read before the save: when
+    // this event corrected a wrong number, `contact.phone` is still
+    // the wrong one.
+    synced.phone,
     customer.name ?? null,
   );
 

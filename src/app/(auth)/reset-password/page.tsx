@@ -31,6 +31,10 @@ import {
 } from "@/components/ui/card";
 import { CheckCircle, KeyRound, Loader2, MailX } from "lucide-react";
 
+// Force dynamic rendering to prevent build-time static generation,
+// which would fail because createClient() requires runtime env vars.
+export const dynamic = 'force-dynamic';
+
 type Status = "checking" | "ready" | "expired" | "done";
 
 export default function ResetPasswordPage() {

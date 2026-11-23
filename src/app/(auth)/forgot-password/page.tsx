@@ -16,6 +16,10 @@ import {
 } from "@/components/ui/card";
 import { MessageSquare, CheckCircle, ArrowLeft } from "lucide-react";
 
+// Force dynamic rendering to prevent build-time static generation,
+// which would fail because createClient() requires runtime env vars.
+export const dynamic = 'force-dynamic';
+
 export default function ForgotPasswordPage() {
   const t = useTranslations("ForgotPasswordPage");
   const [email, setEmail] = useState("");

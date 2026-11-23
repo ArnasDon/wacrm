@@ -17,6 +17,10 @@ import {
 } from "@/components/ui/card";
 import { MessageSquare, UsersRound } from "lucide-react";
 
+// Force dynamic rendering to prevent build-time static generation,
+// which would fail because createClient() requires runtime env vars.
+export const dynamic = 'force-dynamic';
+
 // `useSearchParams` opts the component out of static prerendering
 // unless it sits under a Suspense boundary. We split the form into
 // a child component so the outer page can prerender the chrome

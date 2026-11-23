@@ -17,6 +17,10 @@ import {
 } from "@/components/ui/card";
 import { MessageSquare, CheckCircle, UsersRound } from "lucide-react";
 
+// Force dynamic rendering to prevent build-time static generation,
+// which would fail because createClient() requires runtime env vars.
+export const dynamic = 'force-dynamic';
+
 // `useSearchParams` opts the component out of static prerendering
 // unless wrapped in Suspense — same pattern as /login.
 export default function SignupPage() {

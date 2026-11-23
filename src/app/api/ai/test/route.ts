@@ -32,7 +32,7 @@ export async function POST(request: Request) {
     }
 
     const provider = body.provider as AiProvider
-    if (provider !== 'openai' && provider !== 'anthropic' && provider !== 'openai_compatible') {
+    if (provider !== 'openai' && provider !== 'anthropic' && provider !== 'openai_compatible' && provider !== 'google') {
       return NextResponse.json(
         { error: t('ai.providerInvalid') },
         { status: 400 },

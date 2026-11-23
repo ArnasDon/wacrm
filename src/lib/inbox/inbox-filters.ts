@@ -4,6 +4,9 @@ export const INBOX_FILTERS = [
   "all",
   "unread",
   "waiting",
+  "hot",
+  "warm",
+  "cold",
   "unassigned",
   "expiring",
   "open",
@@ -50,6 +53,12 @@ export function applyInboxFilter(
       return conversations.filter((c) => c.unread_count > 0);
     case "waiting":
       return conversations.filter(isAwaitingReply).sort(byOldestInbound);
+    case "hot":
+      return conversations.filter((c) => c.lead_score === "hot");
+    case "warm":
+      return conversations.filter((c) => c.lead_score === "warm");
+    case "cold":
+      return conversations.filter((c) => c.lead_score === "cold");
     case "expiring":
       return conversations.filter((c) => isWindowClosing(c, now)).sort(byOldestInbound);
     case "unassigned":

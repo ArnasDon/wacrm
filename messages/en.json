@@ -17,7 +17,7 @@
     "linkInvalid": "That link couldn’t be used to sign you in. If you were confirming your email, it may already be verified — just sign in below. For a password reset, request a new link and open it in the same browser you requested it from."
   },
   "Sidebar": {
-    "title": "CRM Template for WhatsApp",
+    "title": "Ocean CRM",
     "primaryNav": "Primary",
     "dashboard": "Dashboard",
     "inbox": "Inbox",
@@ -337,6 +337,9 @@
       "filterAll": "All",
       "filterUnread": "Unread",
       "filterWaiting": "Waiting for reply",
+      "filterHot": "Hot Leads",
+      "filterWarm": "Warm Leads",
+      "filterCold": "Cold Leads",
       "filterUnassigned": "Unassigned",
       "filterExpiring": "Reply window closing",
       "filterOpen": "Open",
@@ -1676,7 +1679,7 @@
       "done": "Done",
       "dialogTitle": "Invite a teammate",
       "networkError": "Could not reach the server. Try again?",
-      "fallbackAccountName": "our wacrm account",
+      "fallbackAccountName": "our Ocean CRM account",
       "dialogDesc": "Generate a one-time invite link. Share it via WhatsApp, Slack, or any channel you like — no email service required.",
       "roleLabel": "Role",
       "validForLabel": "Link valid for",
@@ -1693,7 +1696,7 @@
       "labelTooLong": "Label must be {max} characters or fewer",
       "copied": "Invite link copied",
       "clipboardBlocked": "Clipboard blocked — copy the link manually",
-      "whatsappMessage": "Join {accountName} on wacrm using this link (valid for {expiresInDays} days): {url}",
+      "whatsappMessage": "Join {accountName} on Ocean CRM using this link (valid for {expiresInDays} days): {url}",
       "createFailed": "Failed to create invitation"
     },
     "tagsAndFields": {
@@ -1814,8 +1817,8 @@
       "saveResubmit": "Save & Resubmit",
       "submitApproval": "Submit for Approval",
       "deleteDialogTitle": "Delete template?",
-      "deleteMetaDesc": "\"{name}\" will be deleted from Meta and from wacrm. Active broadcasts using this template will start failing on their next send. This can't be undone.",
-      "deleteLocalDesc": "\"{name}\" will be deleted from wacrm. It was never submitted to Meta, so no remote cleanup is needed.",
+      "deleteMetaDesc": "\"{name}\" will be deleted from Meta and from Ocean CRM. Active broadcasts using this template will start failing on their next send. This can't be undone.",
+      "deleteLocalDesc": "\"{name}\" will be deleted from Ocean CRM. It was never submitted to Meta, so no remote cleanup is needed.",
       "deleting": "Deleting…",
       "delete": "Delete",
       "toastLoadFailed": "Failed to load templates",
@@ -1867,7 +1870,7 @@
       "notConnected": "Not Connected",
       "connectedDesc": "Your access token authenticates with Meta. See Registration status below for whether webhooks are actually wired.",
       "notConnectedDesc": "Configure your Meta API credentials below to connect your WhatsApp Business account.",
-      "registered": "Registered — Meta will deliver events to wacrm",
+      "registered": "Registered — Meta will deliver events to Ocean CRM",
       "notRegistered": "Not registered — Meta will not deliver events",
       "verifyWithMeta": "Verify with Meta",
       "subscribedSince": "Subscribed since {date}. Click Verify with Meta if events stop arriving.",
@@ -1892,7 +1895,7 @@
       "twoStepPin": "Two-step verification PIN",
       "optional": "(optional)",
       "pinPlaceholder": "6-digit PIN from Meta WhatsApp Manager",
-      "pinHint": "Needed only to wire inbound messages for a production number. Set it in Meta Business Manager → WhatsApp Accounts → Phone Numbers → Two-step verification, then paste it here so wacrm can subscribe the number — otherwise Meta routes inbound events to whichever app last claimed it (the symptom that hits second numbers under a shared WABA). Meta test numbers have no PIN and are pre-registered — leave this blank for them. Leaving it blank also keeps an existing registration untouched.",
+      "pinHint": "Needed only to wire inbound messages for a production number. Set it in Meta Business Manager → WhatsApp Accounts → Phone Numbers → Two-step verification, then paste it here so Ocean CRM can subscribe the number — otherwise Meta routes inbound events to whichever app last claimed it (the symptom that hits second numbers under a shared WABA). Meta test numbers have no PIN and are pre-registered — leave this blank for them. Leaving it blank also keeps an existing registration untouched.",
       "webhookTitle": "Webhook Configuration",
       "webhookDesc": "Use this URL as your webhook callback in the Meta App Dashboard.",
       "webhookUrl": "Webhook Callback URL",
@@ -2166,7 +2169,7 @@
     },
     "aiConfig": {
       "title": "Agent setup",
-      "description": "Bring your own OpenAI, Anthropic, or OpenAI-compatible API key. wacrm calls the provider directly with your key — no per-seat AI fees, and your data stays yours. This powers AI-drafted replies in the inbox, the auto-reply bot, and the Playground.",
+      "description": "Bring your own Google Gemini, OpenAI, Anthropic, or OpenAI-compatible API key. Ocean CRM calls the provider directly with your key — no per-seat AI fees, and your data stays yours. This powers AI-drafted replies in the inbox, the auto-reply bot, lead qualification, and the Playground.",
       "adminOnlyConfig": "Only admins and owners can change the AI configuration.",
       "loadFailed": "Failed to load AI configuration",
       "providerAndKey": "Provider & key",
@@ -2269,7 +2272,7 @@
     "titleJoin": "Create account & join",
     "title": "Create account",
     "descJoin": "Verify your email, then accept the invitation to join your team.",
-    "desc": "Get started with CRM Template for WhatsApp",
+    "desc": "Get started with Ocean CRM",
     "fullNameLabel": "Full name",
     "fullNamePlaceholder": "John Doe",
     "emailLabel": "Email",
@@ -2461,7 +2464,7 @@
     "lastMessage": " Last customer message: “{message}”"
   },
   "Metadata": {
-    "description": "Self-hostable CRM template for WhatsApp."
+    "description": "Ocean CRM — WhatsApp CRM for modern businesses"
   },
   "Currency": {
     "USD": "US Dollar",
@@ -2926,7 +2929,7 @@
       "wabaIdDigits": "WhatsApp Business Account ID must contain only digits — copy it from Meta → WhatsApp → API Setup.",
       "pinDigits": "PIN must be exactly 6 digits.",
       "validateFailed": "Failed to validate configuration",
-      "numberLinkedElsewhere": "This WhatsApp phone number is already linked to another account on this instance. Each phone number can only be connected to one wacrm user.",
+      "numberLinkedElsewhere": "This WhatsApp phone number is already linked to another account on this instance. Each phone number can only be connected to one Ocean CRM user.",
       "encryptFailed": "Failed to encrypt token. Check that ENCRYPTION_KEY is a valid 64-character hex string in your environment variables.",
       "updateFailed": "Failed to update configuration",
       "saveFailed": "Failed to save configuration",

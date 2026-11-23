@@ -17,7 +17,7 @@
     "linkInvalid": "No se pudo iniciar sesión con ese enlace. Si estabas confirmando tu correo, es posible que ya esté verificado; inicia sesión abajo. Para restablecer la contraseña, pide un enlace nuevo y ábrelo en el mismo navegador desde el que lo solicitaste."
   },
   "Sidebar": {
-    "title": "Plantilla de CRM para WhatsApp",
+    "title": "Ocean CRM",
     "primaryNav": "Principal",
     "dashboard": "Panel",
     "inbox": "Bandeja de entrada",
@@ -337,6 +337,9 @@
       "filterAll": "Todas",
       "filterUnread": "Sin leer",
       "filterWaiting": "Esperan respuesta",
+      "filterHot": "Prospectos calientes",
+      "filterWarm": "Prospectos tibios",
+      "filterCold": "Prospectos fríos",
       "filterUnassigned": "Sin asignar",
       "filterExpiring": "Ventana a punto de cerrar",
       "filterOpen": "Abiertas",

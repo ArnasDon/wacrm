@@ -69,6 +69,9 @@ describe("applyInboxFilter", () => {
     conv("recent", { last_inbound_at: ago(5) }),
     conv("old", { last_inbound_at: ago(90), assigned_agent_id: "agent-1" }),
     conv("answered", { last_inbound_at: ago(60), last_reply_at: ago(30) }),
+    conv("hot-lead", { lead_score: "hot" }),
+    conv("warm-lead", { lead_score: "warm" }),
+    conv("cold-lead", { lead_score: "cold" }),
     conv("pending", { status: "pending", assigned_agent_id: "agent-1" }),
     conv("unread", { unread_count: 2, assigned_agent_id: "agent-1" }),
   ];
@@ -83,6 +86,9 @@ describe("applyInboxFilter", () => {
 
   it("keeps the existing unread and status filters", () => {
     expect(applyInboxFilter(list, "unread", NOW).map((c) => c.id)).toEqual(["unread"]);
+    expect(applyInboxFilter(list, "hot", NOW).map((c) => c.id)).toEqual(["hot-lead"]);
+    expect(applyInboxFilter(list, "warm", NOW).map((c) => c.id)).toEqual(["warm-lead"]);
+    expect(applyInboxFilter(list, "cold", NOW).map((c) => c.id)).toEqual(["cold-lead"]);
     expect(applyInboxFilter(list, "pending", NOW).map((c) => c.id)).toEqual(["pending"]);
     expect(applyInboxFilter(list, "all", NOW)).toBe(list);
   });

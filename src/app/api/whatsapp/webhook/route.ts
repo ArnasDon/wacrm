@@ -22,6 +22,7 @@ import { readCappedBody } from '@/lib/whatsapp/webhook-body'
 import { resumeAwaitingReply, runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply'
+import { qualifyLead, shouldRequalify } from '@/lib/ai/lead-qualify'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
 import {
   applyBroadcastRecipientStatus,
@@ -942,6 +943,23 @@ async function processMessage(
       // the reply is generated.
       inboundMessageId: message.id,
     })
+  }
+
+  // ============================================================
+  // Lead qualification — auto-score the lead as hot / warm / cold
+  // based on the customer's messages.  Runs after the AI reply
+  // (not before) so the reply is not delayed.  Throttled: only
+  // re-scores every 3 customer messages to avoid burning tokens.
+  // Never throws.
+  // ============================================================
+  if (inboundText.trim()) {
+    const shouldScore = await shouldRequalify(conversation.id)
+    if (shouldScore) {
+      await qualifyLead({
+        accountId,
+        conversationId: conversation.id,
+      })
+    }
   }
 
   // message.received webhook (public API). Awaited — not fire-and-forget

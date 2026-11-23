@@ -17,7 +17,7 @@
     "linkInvalid": "Não foi possível entrar com esse link. Se estava confirmando seu e-mail, ele já pode estar verificado — basta entrar abaixo. Para redefinir a senha, peça um novo link e abra-o no mesmo navegador em que o solicitou."
   },
   "Sidebar": {
-    "title": "Modelo de CRM para WhatsApp",
+    "title": "Ocean CRM",
     "primaryNav": "Principal",
     "dashboard": "Painel",
     "inbox": "Caixa de entrada",
@@ -337,6 +337,9 @@
       "filterAll": "Todas",
       "filterUnread": "Não lidas",
       "filterWaiting": "Aguardando resposta",
+      "filterHot": "Leads quentes",
+      "filterWarm": "Leads mornos",
+      "filterCold": "Leads frios",
       "filterUnassigned": "Sem responsável",
       "filterExpiring": "Janela fechando",
       "filterOpen": "Abertas",

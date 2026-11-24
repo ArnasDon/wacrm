@@ -199,6 +199,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         if (!result.error) {
           data = result.data;
+          console.log("[AuthProvider] Profile loaded:", {
+            userId,
+            hasProfile: !!data,
+            account_id: data?.account_id,
+            account_role: data?.account_role,
+          });
           break;
         }
 
@@ -243,7 +249,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             .eq("id", data.account_id)
             .maybeSingle();
           if (accountErr) {
-            console.error("[AuthProvider] fetchAccount error:", {
+            console.error("[AuthProvider] fetchAccount error:", accountErr);
+            console.error("[AuthProvider] fetchAccount error details:", {
               message: accountErr.message,
               details: accountErr.details,
               hint: accountErr.hint,

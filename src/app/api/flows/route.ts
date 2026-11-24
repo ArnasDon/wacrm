@@ -55,11 +55,13 @@ export async function POST(request: Request) {
   try {
     await requireRole('agent')
   } catch (err) {
+    console.error('[POST /api/flows] requireRole failed:', err)
     return toErrorResponse(err)
   }
 
   const guard = await requireUser()
   if (!guard.ok) {
+    console.error('[POST /api/flows] requireUser failed:', guard)
     return NextResponse.json(guard.body, { status: guard.status })
   }
   const { userId, supabase } = guard
@@ -67,13 +69,23 @@ export async function POST(request: Request) {
   // Resolve the caller's account_id — `flows.account_id` is NOT NULL
   // post-017, so an INSERT without it trips the not-null constraint
   // even though the admin client below bypasses RLS.
-  const { data: profile } = await supabase
+  const { data: profile, error: profileError } = await supabase
     .from('profiles')
     .select('account_id')
     .eq('user_id', userId)
     .single()
+  
+  if (profileError) {
+    console.error('[POST /api/flows] profile query error:', profileError)
+    return NextResponse.json(
+      { error: 'Failed to load profile' },
+      { status: 500 },
+    )
+  }
+  
   const accountId = profile?.account_id as string | undefined
   if (!accountId) {
+    console.error('[POST /api/flows] no account_id for user:', userId)
     return NextResponse.json(
       { error: t('common.profileNotLinked') },
       { status: 403 },

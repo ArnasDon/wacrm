@@ -48,6 +48,26 @@ export const DEFAULT_MODE: Mode = "light";
 
 export const MODE_STORAGE_KEY = "wacrm.mode";
 
+export const UI_STYLES = ["modern", "classic"] as const;
+
+export type UiStyle = (typeof UI_STYLES)[number];
+
+export const DEFAULT_UI_STYLE: UiStyle = "modern";
+
+export const UI_STYLE_STORAGE_KEY = "wacrm.ui";
+
+export const UI_STYLE_PRESETS: Record<UiStyle, { theme: ThemeId; mode: Mode }> = {
+  modern: { theme: "sunbeam", mode: "light" },
+  classic: { theme: "violet", mode: "dark" },
+};
+
+export function isUiStyle(value: unknown): value is UiStyle {
+  return (
+    typeof value === "string" &&
+    (UI_STYLES as ReadonlyArray<string>).includes(value)
+  );
+}
+
 export function isMode(value: unknown): value is Mode {
   return (
     typeof value === "string" && (MODES as ReadonlyArray<string>).includes(value)

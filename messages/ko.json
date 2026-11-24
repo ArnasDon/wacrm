@@ -58,7 +58,10 @@
     "defaultAvatar": "아바타",
     "menuProfile": "프로필",
     "menuSettings": "설정",
-    "menuSignOut": "로그아웃"
+    "menuSignOut": "로그아웃",
+    "menuAppearance": "화면 설정",
+    "switchToClassic": "클래식 인터페이스로 전환",
+    "switchToModern": "모던 인터페이스로 전환"
   },
   "ModeToggle": {
     "switchMode": "{mode} 모드로 전환"
@@ -2075,6 +2078,18 @@
         "rose": {
           "name": "로즈",
           "tagline": "소비자 브랜드, 크리에이터, 라이프스타일에 어울리는 대담하고 현대적인 색상입니다."
+        }
+      },
+      "uiStyle": "인터페이스 스타일",
+      "useUiStyle": "{name} 인터페이스 사용",
+      "uiStyles": {
+        "modern": {
+          "name": "모던",
+          "tagline": "떠 있는 캔버스, 상단 알약형 내비게이션, 선빔 팔레트."
+        },
+        "classic": {
+          "name": "클래식",
+          "tagline": "기존 레이아웃: 왼쪽 사이드바, 컴팩트한 카드, 다크 바이올렛 팔레트."
         }
       }
     },

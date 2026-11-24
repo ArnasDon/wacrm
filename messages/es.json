@@ -58,7 +58,10 @@
     "defaultAvatar": "Avatar",
     "menuProfile": "Perfil",
     "menuSettings": "Configuración",
-    "menuSignOut": "Cerrar sesión"
+    "menuSignOut": "Cerrar sesión",
+    "menuAppearance": "Apariencia",
+    "switchToClassic": "Cambiar a la interfaz clásica",
+    "switchToModern": "Cambiar a la interfaz moderna"
   },
   "ModeToggle": {
     "switchMode": "Cambiar al modo {mode}"
@@ -2075,6 +2078,18 @@
         "rose": {
           "name": "Rosa",
           "tagline": "Atrevido y moderno: para marcas de consumo, creadores y estilo de vida."
+        }
+      },
+      "uiStyle": "Estilo de interfaz",
+      "useUiStyle": "Usar la interfaz {name}",
+      "uiStyles": {
+        "modern": {
+          "name": "Moderna",
+          "tagline": "Lienzo flotante, navegación superior en píldoras y la paleta Rayo de sol."
+        },
+        "classic": {
+          "name": "Clásica",
+          "tagline": "El diseño original: barra lateral, tarjetas compactas y la paleta Violeta oscura."
         }
       }
     },

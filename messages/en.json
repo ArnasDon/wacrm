@@ -58,7 +58,10 @@
     "defaultAvatar": "Avatar",
     "menuProfile": "Profile",
     "menuSettings": "Settings",
-    "menuSignOut": "Sign out"
+    "menuSignOut": "Sign out",
+    "menuAppearance": "Appearance",
+    "switchToClassic": "Switch to classic interface",
+    "switchToModern": "Switch to modern interface"
   },
   "ModeToggle": {
     "switchMode": "Switch to {mode} mode"
@@ -2075,6 +2078,18 @@
         "rose": {
           "name": "Rose",
           "tagline": "Bold and modern — D2C, creator-economy, lifestyle."
+        }
+      },
+      "uiStyle": "Interface style",
+      "useUiStyle": "Use {name} interface",
+      "uiStyles": {
+        "modern": {
+          "name": "Modern",
+          "tagline": "Floating canvas, top pill navigation and the Sunbeam palette."
+        },
+        "classic": {
+          "name": "Classic",
+          "tagline": "The original layout: left sidebar, compact cards and the dark Violet palette."
         }
       }
     },

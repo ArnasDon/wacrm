@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
-import { getCurrentAccount, toErrorResponse } from '@/lib/auth/account'
+import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { qualifyLead } from '@/lib/ai/lead-qualify'
+import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 
 /**
  * POST /api/ai/qualify — manually trigger lead qualification
@@ -11,7 +12,12 @@ import { qualifyLead } from '@/lib/ai/lead-qualify'
  */
 export async function POST(request: Request) {
   try {
-    const { supabase, accountId } = await getCurrentAccount()
+    const { supabase, accountId, userId } = await requireRole('agent')
+
+    const userLimit = checkRateLimit(`ai-qualify:${userId}`, RATE_LIMITS.aiDraft)
+    if (!userLimit.success) return rateLimitResponse(userLimit)
+    const accountLimit = checkRateLimit(`ai-qualify-account:${accountId}`, RATE_LIMITS.aiDraftAccount)
+    if (!accountLimit.success) return rateLimitResponse(accountLimit)
 
     const body = await request.json().catch(() => null)
     const conversationId = body?.conversation_id

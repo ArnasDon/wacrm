@@ -39,17 +39,30 @@ BEGIN
 END $$;
 
 -- Grant execute permissions on all functions
+-- Note: We use pg_proc instead of information_schema to handle overloaded functions properly
 DO $$
 DECLARE
-    func record;
+    func_record record;
 BEGIN
-    FOR func IN 
-        SELECT routine_name, routine_schema
-        FROM information_schema.routines 
-        WHERE routine_schema = 'public'
-          AND routine_type = 'FUNCTION'
+    FOR func_record IN 
+        SELECT 
+            n.nspname as schema_name,
+            p.proname as function_name,
+            pg_get_function_identity_arguments(p.oid) as args
+        FROM pg_proc p
+        JOIN pg_namespace n ON p.pronamespace = n.oid
+        WHERE n.nspname = 'public'
+          AND p.prokind = 'f'  -- functions only, not aggregates or procedures
     LOOP
-        EXECUTE format('GRANT EXECUTE ON FUNCTION %I.%I TO authenticated', func.routine_schema, func.routine_name);
-        EXECUTE format('GRANT EXECUTE ON FUNCTION %I.%I TO service_role', func.routine_schema, func.routine_name);
+        BEGIN
+            EXECUTE format('GRANT EXECUTE ON FUNCTION %I.%I(%s) TO authenticated', 
+                func_record.schema_name, func_record.function_name, func_record.args);
+            EXECUTE format('GRANT EXECUTE ON FUNCTION %I.%I(%s) TO service_role', 
+                func_record.schema_name, func_record.function_name, func_record.args);
+        EXCEPTION WHEN OTHERS THEN
+            -- Skip functions that cause errors (e.g., system functions)
+            RAISE NOTICE 'Skipped function %.% with args %: %', 
+                func_record.schema_name, func_record.function_name, func_record.args, SQLERRM;
+        END;
     END LOOP;
 END $$;

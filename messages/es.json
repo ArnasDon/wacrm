@@ -2052,9 +2052,13 @@
         "dark": "oscuro"
       },
       "themes": {
+        "sunbeam": {
+          "name": "Rayo de sol",
+          "tagline": "El predeterminado: píldoras grafito con un brillo amarillo mantequilla."
+        },
         "violet": {
           "name": "Violeta",
-          "tagline": "El predeterminado: transmite confianza con un toque divertido."
+          "tagline": "Transmite confianza con un toque divertido."
         },
         "emerald": {
           "name": "Esmeralda",

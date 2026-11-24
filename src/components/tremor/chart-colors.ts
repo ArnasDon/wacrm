@@ -74,6 +74,19 @@ export const chartColors = {
     fill: "fill-teal-600",
     text: "text-teal-600",
   },
+  // Redesign palette: theme-aware tokens (follow light/dark mode).
+  ink: {
+    bg: "bg-chart-2",
+    stroke: "stroke-chart-2",
+    fill: "fill-chart-2",
+    text: "text-chart-2",
+  },
+  sunbeam: {
+    bg: "bg-chart-1",
+    stroke: "stroke-chart-1",
+    fill: "fill-chart-1",
+    text: "text-chart-1",
+  },
 } as const satisfies {
   [color: string]: {
     [key in ColorUtility]: string

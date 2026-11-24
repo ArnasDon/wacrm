@@ -122,7 +122,7 @@ export function MessageVolumeCard({ data }: { data: DashboardOverview | null }) 
                 data={timeData}
                 index="label"
                 categories={[incomingLabel, outgoingLabel]}
-                colors={['teal', 'violet']}
+                colors={['ink', 'sunbeam']}
                 type="stacked"
                 yAxisWidth={36}
                 legendPosition="right"
@@ -134,7 +134,7 @@ export function MessageVolumeCard({ data }: { data: DashboardOverview | null }) 
                 data={hoursData}
                 index="label"
                 categories={[averageLabel]}
-                colors={['teal']}
+                colors={['sunbeam']}
                 yAxisWidth={36}
                 showLegend={false}
                 valueFormatter={(v) => format.number(v, { maximumFractionDigits: 1 })}
@@ -151,7 +151,7 @@ function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div>
       <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="text-base font-semibold text-foreground tabular-nums">{value}</dd>
+      <dd className="text-2xl leading-tight font-light tracking-tight text-foreground tabular-nums">{value}</dd>
     </div>
   )
 }

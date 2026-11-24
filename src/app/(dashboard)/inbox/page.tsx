@@ -672,7 +672,7 @@ function InboxPageInner() {
             Below `lg` it isn't rendered at all (`panelFits`), so the
             toggle — which is itself desktop-only — never affects it. */}
         {contactPanelOpen && panelFits && (
-          <div className="hidden lg:block">
+          <div className="hidden h-full min-h-0 lg:block">
             <ContactSidebar
               contact={activeContact}
               conversation={activeConversation}

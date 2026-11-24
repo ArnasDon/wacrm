@@ -55,12 +55,13 @@ function LoginPageInner() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const supabase = createClient();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
+
+    const supabase = createClient();
 
     const { error } = await supabase.auth.signInWithPassword({
       email,

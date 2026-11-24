@@ -195,6 +195,15 @@ export interface Conversation {
   ai_autoreply_disabled?: boolean;
   ai_reply_count?: number;
   ai_handoff_summary?: string | null;
+  /**
+   * AI-inferred lead temperature. Set by the lead-qualification
+   * module after analysing the customer's messages.
+   *  - `hot`  — ready to buy / strong intent
+   *  - `warm` — interested, still exploring
+   *  - `cold` — unresponsive or not interested
+   * NULL means "not yet scored".  Migration 047.
+   */
+  lead_score?: 'hot' | 'warm' | 'cold' | null;
 }
 
 // ============================================================

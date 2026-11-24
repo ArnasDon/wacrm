@@ -42,11 +42,13 @@ const HANDOFF_QUEUE = '__queue__';
 const PROVIDER_LABEL: Record<Exclude<AiProvider, 'openai_compatible'>, string> = {
   openai: 'OpenAI',
   anthropic: 'Anthropic (Claude)',
+  google: 'Google (Gemini)',
 };
 
 const KEY_PLACEHOLDER: Record<AiProvider, string> = {
   openai: 'sk-...',
   anthropic: 'sk-ant-...',
+  google: 'AIzaSy...',
   openai_compatible: 'your-api-key',
 };
 
@@ -297,6 +299,9 @@ export function AiConfig() {
                     <SelectItem value="openai">{PROVIDER_LABEL.openai}</SelectItem>
                     <SelectItem value="anthropic">
                       {PROVIDER_LABEL.anthropic}
+                    </SelectItem>
+                    <SelectItem value="google">
+                      {PROVIDER_LABEL.google}
                     </SelectItem>
                     <SelectItem value="openai_compatible">
                       {t('providerOpenAiCompatible')}

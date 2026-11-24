@@ -17,7 +17,7 @@
     "linkInvalid": "이 링크로는 로그인할 수 없습니다. 이메일 인증 중이었다면 이미 인증이 완료되었을 수 있으니 아래에서 로그인하세요. 비밀번호 재설정은 새 링크를 요청한 뒤 요청한 브라우저에서 열어 주세요."
   },
   "Sidebar": {
-    "title": "WhatsApp용 CRM 템플릿",
+    "title": "Ocean CRM",
     "primaryNav": "기본 메뉴",
     "dashboard": "대시보드",
     "inbox": "인박스",
@@ -58,7 +58,10 @@
     "defaultAvatar": "아바타",
     "menuProfile": "프로필",
     "menuSettings": "설정",
-    "menuSignOut": "로그아웃"
+    "menuSignOut": "로그아웃",
+    "menuAppearance": "화면 설정",
+    "switchToClassic": "클래식 인터페이스로 전환",
+    "switchToModern": "모던 인터페이스로 전환"
   },
   "ModeToggle": {
     "switchMode": "{mode} 모드로 전환"
@@ -337,6 +340,9 @@
       "filterAll": "전체",
       "filterUnread": "읽지 않음",
       "filterWaiting": "답장 대기",
+      "filterHot": "핫 리드",
+      "filterWarm": "웜 리드",
+      "filterCold": "콜드 리드",
       "filterUnassigned": "미배정",
       "filterExpiring": "응답 창 종료 임박",
       "filterOpen": "열림",
@@ -2049,9 +2055,13 @@
         "dark": "다크"
       },
       "themes": {
+        "sunbeam": {
+          "name": "선빔",
+          "tagline": "기본 테마 — 잉크 블랙 버튼에 버터 옐로 포인트."
+        },
         "violet": {
           "name": "바이올렛",
-          "tagline": "자신감에 경쾌함을 더한 기본 테마입니다."
+          "tagline": "자신감에 경쾌함을 더한 테마입니다."
         },
         "emerald": {
           "name": "에메랄드",
@@ -2068,6 +2078,18 @@
         "rose": {
           "name": "로즈",
           "tagline": "소비자 브랜드, 크리에이터, 라이프스타일에 어울리는 대담하고 현대적인 색상입니다."
+        }
+      },
+      "uiStyle": "인터페이스 스타일",
+      "useUiStyle": "{name} 인터페이스 사용",
+      "uiStyles": {
+        "modern": {
+          "name": "모던",
+          "tagline": "떠 있는 캔버스, 상단 알약형 내비게이션, 선빔 팔레트."
+        },
+        "classic": {
+          "name": "클래식",
+          "tagline": "기존 레이아웃: 왼쪽 사이드바, 컴팩트한 카드, 다크 바이올렛 팔레트."
         }
       }
     },

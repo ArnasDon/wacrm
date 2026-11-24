@@ -17,7 +17,7 @@
     "linkInvalid": "No se pudo iniciar sesión con ese enlace. Si estabas confirmando tu correo, es posible que ya esté verificado; inicia sesión abajo. Para restablecer la contraseña, pide un enlace nuevo y ábrelo en el mismo navegador desde el que lo solicitaste."
   },
   "Sidebar": {
-    "title": "Plantilla de CRM para WhatsApp",
+    "title": "Ocean CRM",
     "primaryNav": "Principal",
     "dashboard": "Panel",
     "inbox": "Bandeja de entrada",
@@ -58,7 +58,10 @@
     "defaultAvatar": "Avatar",
     "menuProfile": "Perfil",
     "menuSettings": "Configuración",
-    "menuSignOut": "Cerrar sesión"
+    "menuSignOut": "Cerrar sesión",
+    "menuAppearance": "Apariencia",
+    "switchToClassic": "Cambiar a la interfaz clásica",
+    "switchToModern": "Cambiar a la interfaz moderna"
   },
   "ModeToggle": {
     "switchMode": "Cambiar al modo {mode}"
@@ -337,6 +340,9 @@
       "filterAll": "Todas",
       "filterUnread": "Sin leer",
       "filterWaiting": "Esperan respuesta",
+      "filterHot": "Prospectos calientes",
+      "filterWarm": "Prospectos tibios",
+      "filterCold": "Prospectos fríos",
       "filterUnassigned": "Sin asignar",
       "filterExpiring": "Ventana a punto de cerrar",
       "filterOpen": "Abiertas",
@@ -2049,9 +2055,13 @@
         "dark": "oscuro"
       },
       "themes": {
+        "sunbeam": {
+          "name": "Rayo de sol",
+          "tagline": "El predeterminado: píldoras grafito con un brillo amarillo mantequilla."
+        },
         "violet": {
           "name": "Violeta",
-          "tagline": "El predeterminado: transmite confianza con un toque divertido."
+          "tagline": "Transmite confianza con un toque divertido."
         },
         "emerald": {
           "name": "Esmeralda",
@@ -2068,6 +2078,18 @@
         "rose": {
           "name": "Rosa",
           "tagline": "Atrevido y moderno: para marcas de consumo, creadores y estilo de vida."
+        }
+      },
+      "uiStyle": "Estilo de interfaz",
+      "useUiStyle": "Usar la interfaz {name}",
+      "uiStyles": {
+        "modern": {
+          "name": "Moderna",
+          "tagline": "Lienzo flotante, navegación superior en píldoras y la paleta Rayo de sol."
+        },
+        "classic": {
+          "name": "Clásica",
+          "tagline": "El diseño original: barra lateral, tarjetas compactas y la paleta Violeta oscura."
         }
       }
     },

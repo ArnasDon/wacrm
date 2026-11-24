@@ -580,6 +580,19 @@ function InboxPageInner() {
     [activeConversation]
   );
 
+  const handleLeadScoreUpdated = useCallback(
+    (score: 'hot' | 'warm' | 'cold') => {
+      if (!activeConversation) return;
+      setActiveConversation((prev) => (prev ? { ...prev, lead_score: score } : prev));
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === activeConversation.id ? { ...c, lead_score: score } : c
+        )
+      );
+    },
+    [activeConversation]
+  );
+
   // On mobile (<lg) we show a SINGLE pane — either the list or the
   // thread — rather than cramming both side-by-side. Selecting a
   // conversation slides the thread in; the thread's back button pops
@@ -588,7 +601,9 @@ function InboxPageInner() {
   const hasActiveConv = !!activeConversation;
 
   return (
-    <div className="-m-4 flex h-[calc(100vh-3.5rem)] flex-col overflow-hidden sm:-m-6">
+    // Fills the shell's <main> exactly: edge-to-edge on phones, a
+    // floating rounded workspace card from sm up.
+    <div className="-mx-4 -mb-4 flex h-[calc(100%+1rem)] flex-col overflow-hidden bg-card sm:mx-0 sm:mb-0 sm:h-full sm:rounded-2xl sm:shadow-soft sm:ring-1 sm:ring-foreground/[0.06]">
       {/* WhatsApp connection banner — in the flex column, not absolute,
           so it pushes the panels down instead of overlapping them. */}
       {whatsappConnected === false && (
@@ -659,8 +674,12 @@ function InboxPageInner() {
             Below `lg` it isn't rendered at all (`panelFits`), so the
             toggle — which is itself desktop-only — never affects it. */}
         {contactPanelOpen && panelFits && (
-          <div className="hidden lg:block">
-            <ContactSidebar contact={activeContact} />
+          <div className="hidden h-full min-h-0 lg:block">
+            <ContactSidebar
+              contact={activeContact}
+              conversation={activeConversation}
+              onLeadScoreUpdated={handleLeadScoreUpdated}
+            />
           </div>
         )}
       </div>

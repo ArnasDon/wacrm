@@ -120,8 +120,9 @@ describe('Portuguese messages in their UI context', () => {
     expect(html).toContain('aria-label="Usar o modo escuro"');
     expect(html).toContain('Usar o tema Azul-cobalto');
     expect(html).toContain(
-      'O padrão — transmite confiança com um toque descontraído.'
+      'O padrão — pílulas grafite com um brilho amarelo-manteiga.'
     );
+    expect(html).toContain('Transmite confiança com um toque descontraído.');
     expect(html).not.toMatch(/Growth-coded|product-y|Use light|Use dark/);
   });
 

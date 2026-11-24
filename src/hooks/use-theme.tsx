@@ -12,29 +12,31 @@ import {
 import {
   DEFAULT_MODE,
   DEFAULT_THEME,
+  DEFAULT_UI_STYLE,
   MODE_STORAGE_KEY,
   STORAGE_KEY,
+  UI_STYLE_PRESETS,
+  UI_STYLE_STORAGE_KEY,
   isMode,
   isThemeId,
+  isUiStyle,
   type Mode,
   type ThemeId,
+  type UiStyle,
 } from "@/lib/themes";
 
 /**
- * ThemeProvider — wraps the whole app, owns the two theming axes:
- *   • `theme` — the accent color (`data-theme` on <html>)
- *   • `mode`  — light / dark (`data-mode` on <html>)
- * The two are independent, so any accent renders in either mode.
+ * ThemeProvider — wraps the whole app, owns the three theming axes:
+ *   • `theme`   — the accent color (`data-theme` on <html>)
+ *   • `mode`    — light / dark (`data-mode` on <html>)
+ *   • `uiStyle` — modern / classic interface (`data-ui` on <html>)
  *
- * The boot script in `src/app/layout.tsx` has already applied both
- * `data-theme` and `data-mode` before React hydrates, so by the time
- * this Provider mounts the page is already painted correctly. We just
- * read what's there and keep it in sync going forward.
+ * The boot script in `src/app/layout.tsx` has already applied all
+ * three attributes before React hydrates, so by the time this Provider
+ * mounts the page is already painted correctly. We just read what's
+ * there and keep it in sync going forward.
  *
- * Persistence is localStorage only (device-scoped). A future
- * follow-up could mirror to `profiles.preferences` for cross-device
- * sync, but a per-device choice is also defensible — your phone may
- * deserve a different theme than your laptop.
+ * Persistence is localStorage only (device-scoped).
  */
 
 interface ThemeContextValue {
@@ -43,54 +45,64 @@ interface ThemeContextValue {
   mode: Mode;
   setMode: (next: Mode) => void;
   toggleMode: () => void;
+  uiStyle: UiStyle;
+  /** Switches the interface and applies that style's default accent + mode. */
+  setUiStyle: (next: UiStyle) => void;
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
-function readInitialTheme(): ThemeId {
-  if (typeof window === "undefined") return DEFAULT_THEME;
-  // Whatever the boot script applied is the truth. Fall back to
-  // localStorage / default if for some reason the attribute is missing
-  // (e.g. someone bypassed the boot script in a custom layout).
-  const fromAttr = document.documentElement.dataset.theme;
-  if (isThemeId(fromAttr)) return fromAttr;
+function readAttr<T>(
+  attr: string | undefined,
+  key: string,
+  guard: (v: unknown) => v is T,
+  fallback: T,
+): T {
+  if (guard(attr)) return attr;
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (isThemeId(stored)) return stored;
+    const stored = localStorage.getItem(key);
+    if (guard(stored)) return stored;
   } catch {
     // localStorage can throw in private-browsing / sandboxed contexts.
   }
-  return DEFAULT_THEME;
+  return fallback;
+}
+
+function readInitialTheme(): ThemeId {
+  if (typeof window === "undefined") return DEFAULT_THEME;
+  return readAttr(document.documentElement.dataset.theme, STORAGE_KEY, isThemeId, DEFAULT_THEME);
 }
 
 function readInitialMode(): Mode {
   if (typeof window === "undefined") return DEFAULT_MODE;
-  const fromAttr = document.documentElement.dataset.mode;
-  if (isMode(fromAttr)) return fromAttr;
+  return readAttr(document.documentElement.dataset.mode, MODE_STORAGE_KEY, isMode, DEFAULT_MODE);
+}
+
+function readInitialUiStyle(): UiStyle {
+  if (typeof window === "undefined") return DEFAULT_UI_STYLE;
+  return readAttr(document.documentElement.dataset.ui, UI_STYLE_STORAGE_KEY, isUiStyle, DEFAULT_UI_STYLE);
+}
+
+function persist(key: string, value: string) {
   try {
-    const stored = localStorage.getItem(MODE_STORAGE_KEY);
-    if (isMode(stored)) return stored;
+    localStorage.setItem(key, value);
   } catch {
-    // localStorage can throw in private-browsing / sandboxed contexts.
+    // Same private-browsing edge case as above; in-memory state still
+    // updates so the current tab works for the session.
   }
-  return DEFAULT_MODE;
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<ThemeId>(readInitialTheme);
   const [mode, setModeState] = useState<Mode>(readInitialMode);
+  const [uiStyle, setUiStyleState] = useState<UiStyle>(readInitialUiStyle);
 
   const setTheme = useCallback((next: ThemeId) => {
     setThemeState(next);
     if (typeof document !== "undefined") {
       document.documentElement.dataset.theme = next;
     }
-    try {
-      localStorage.setItem(STORAGE_KEY, next);
-    } catch {
-      // Same private-browsing edge case as above; the in-memory state
-      // still updates so the current tab works for the session.
-    }
+    persist(STORAGE_KEY, next);
   }, []);
 
   const setMode = useCallback((next: Mode) => {
@@ -98,19 +110,29 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     if (typeof document !== "undefined") {
       document.documentElement.dataset.mode = next;
     }
-    try {
-      localStorage.setItem(MODE_STORAGE_KEY, next);
-    } catch {
-      // Same private-browsing edge case as above.
-    }
+    persist(MODE_STORAGE_KEY, next);
   }, []);
 
   const toggleMode = useCallback(() => {
     setMode(mode === "dark" ? "light" : "dark");
   }, [mode, setMode]);
 
-  // Sync from other tabs — change theme or mode in tab A, tab B
-  // catches up without a refresh.
+  const setUiStyle = useCallback(
+    (next: UiStyle) => {
+      setUiStyleState(next);
+      if (typeof document !== "undefined") {
+        document.documentElement.dataset.ui = next;
+      }
+      persist(UI_STYLE_STORAGE_KEY, next);
+      const preset = UI_STYLE_PRESETS[next];
+      setTheme(preset.theme);
+      setMode(preset.mode);
+    },
+    [setTheme, setMode],
+  );
+
+  // Sync from other tabs — change any axis in tab A, tab B catches up
+  // without a refresh.
   useEffect(() => {
     function onStorage(e: StorageEvent) {
       if (e.key === STORAGE_KEY) {
@@ -125,14 +147,23 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
           setModeState(e.newValue);
           document.documentElement.dataset.mode = e.newValue;
         }
+        return;
+      }
+      if (e.key === UI_STYLE_STORAGE_KEY) {
+        if (isUiStyle(e.newValue) && e.newValue !== uiStyle) {
+          setUiStyleState(e.newValue);
+          document.documentElement.dataset.ui = e.newValue;
+        }
       }
     }
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
-  }, [theme, mode]);
+  }, [theme, mode, uiStyle]);
 
   return (
-    <ThemeContext.Provider value={{ theme, setTheme, mode, setMode, toggleMode }}>
+    <ThemeContext.Provider
+      value={{ theme, setTheme, mode, setMode, toggleMode, uiStyle, setUiStyle }}
+    >
       {children}
     </ThemeContext.Provider>
   );
@@ -150,6 +181,8 @@ export function useTheme(): ThemeContextValue {
       mode: DEFAULT_MODE,
       setMode: () => {},
       toggleMode: () => {},
+      uiStyle: DEFAULT_UI_STYLE,
+      setUiStyle: () => {},
     };
   }
   return ctx;

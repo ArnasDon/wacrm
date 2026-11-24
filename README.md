@@ -1,8 +1,8 @@
-# wacrm — CRM Template for WhatsApp
+# Ocean CRM — WhatsApp CRM for Business
 
-> Self-hostable CRM template for WhatsApp® — shared inbox, contacts,
-> sales pipelines, broadcasts, and no-code automations. Fork it, brand
-> it, host it.
+> Modern WhatsApp CRM with automated lead qualification (Hot / Warm / Cold),
+> AI agents powered by Google Gemini, shared inbox, contacts, sales pipelines,
+> broadcasts, and automations.
 
 <p align="center">
   <a href="https://www.hostinger.com/web-apps-hosting?REFERRALCODE=WACRMHOST">

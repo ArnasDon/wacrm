@@ -52,6 +52,17 @@
   --color-status-warning: var(--status-warning);
   --color-status-serious: var(--status-serious);
   --color-status-critical: var(--status-critical);
+  /* Redesign extras: the yellow "highlight" used for emphasis pills /
+   * chart bars, the "ink" surface for the dark feature cards, and the
+   * outer frame colour around the floating app canvas. */
+  --color-highlight: var(--highlight);
+  --color-highlight-foreground: var(--highlight-foreground);
+  --color-ink: var(--ink);
+  --color-ink-foreground: var(--ink-foreground);
+  --color-ink-muted: var(--ink-muted);
+  --color-frame: var(--frame);
+  --shadow-soft: 0 1px 2px rgb(30 25 10 / 0.04), 0 12px 32px -16px rgb(30 25 10 / 0.18);
+  --shadow-float: 0 2px 4px rgb(30 25 10 / 0.04), 0 30px 60px -30px rgb(30 25 10 / 0.35);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -90,76 +101,123 @@
 
 /* ---- MODE: neutral surfaces ---- */
 
+/* Light ("Cream") is the redesign default: warm off-white canvas that
+ * fades into butter yellow, white floating cards, ink-black pills. */
 :root,
-html[data-mode="dark"] {
-  --background: oklch(0.13 0.01 260);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.18 0.01 260);
-  --card-2: oklch(0.205 0.01 260);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.18 0.01 260);
-  --popover-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.22 0.01 260);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.22 0.01 260);
-  --muted-foreground: oklch(0.65 0.01 260);
-  --accent: oklch(0.22 0.01 260);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.28 0.01 260);
-  --input: oklch(0.28 0.01 260);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.16 0.01 260);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.22 0.01 260);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(0.28 0.01 260);
-  --status-good: #0ca30c;
-  --status-warning: #fab219;
-  --status-serious: #ec835a;
-  --status-critical: #e05252;
-}
-
 html[data-mode="light"] {
-  --background: oklch(0.99 0.002 260);
-  --foreground: oklch(0.21 0.01 260);
-  --card: oklch(1 0 0);
-  --card-2: oklch(0.985 0.002 260);
-  --card-foreground: oklch(0.21 0.01 260);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.21 0.01 260);
-  --secondary: oklch(0.967 0.003 260);
-  --secondary-foreground: oklch(0.25 0.01 260);
-  --muted: oklch(0.967 0.003 260);
-  --muted-foreground: oklch(0.52 0.015 260);
-  --accent: oklch(0.96 0.004 260);
-  --accent-foreground: oklch(0.25 0.01 260);
+  --frame: oklch(0.8 0.012 255);
+  --canvas-from: oklch(0.968 0.004 95);
+  --canvas-via: oklch(0.962 0.018 95);
+  --canvas-to: oklch(0.93 0.075 96);
+  --background: oklch(0.972 0.008 95);
+  --foreground: oklch(0.22 0.006 80);
+  --card: oklch(0.995 0.003 95);
+  --card-2: oklch(0.975 0.008 95);
+  --card-foreground: oklch(0.22 0.006 80);
+  --popover: oklch(0.995 0.003 95);
+  --popover-foreground: oklch(0.22 0.006 80);
+  --secondary: oklch(0.955 0.01 95);
+  --secondary-foreground: oklch(0.26 0.006 80);
+  --muted: oklch(0.952 0.01 95);
+  --muted-foreground: oklch(0.5 0.012 80);
+  --accent: oklch(0.945 0.025 95);
+  --accent-foreground: oklch(0.24 0.006 80);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0.004 260);
-  --input: oklch(0.922 0.004 260);
-  --chart-2: oklch(0.6 0.1 260);
-  --chart-3: oklch(0.7 0.06 260);
-  --chart-4: oklch(0.8 0.04 260);
-  --chart-5: oklch(0.87 0.03 260);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0.002 260);
-  --sidebar-foreground: oklch(0.21 0.01 260);
-  --sidebar-accent: oklch(0.96 0.004 260);
-  --sidebar-accent-foreground: oklch(0.25 0.01 260);
-  --sidebar-border: oklch(0.922 0.004 260);
+  --border: oklch(0.905 0.012 95);
+  --input: oklch(0.89 0.012 95);
+  --chart-2: oklch(0.28 0.006 80);
+  --chart-3: oklch(0.62 0.01 80);
+  --chart-4: oklch(0.78 0.01 80);
+  --chart-5: oklch(0.88 0.01 80);
+  --radius: 0.875rem;
+  --sidebar: oklch(0.985 0.006 95);
+  --sidebar-foreground: oklch(0.22 0.006 80);
+  --sidebar-accent: oklch(0.95 0.012 95);
+  --sidebar-accent-foreground: oklch(0.24 0.006 80);
+  --sidebar-border: oklch(0.905 0.012 95);
+  --highlight: oklch(0.88 0.155 95);
+  --highlight-foreground: oklch(0.22 0.006 80);
+  --ink: oklch(0.25 0.004 80);
+  --ink-foreground: oklch(0.98 0.004 95);
+  --ink-muted: oklch(0.72 0.006 80);
   --status-good: #0b7f0b;
   --status-warning: #946100;
   --status-serious: #c2532a;
   --status-critical: #c43232;
 }
 
+/* Dark ("Espresso"): warm charcoal surfaces with a faint amber glow. */
+html[data-mode="dark"] {
+  --frame: oklch(0.1 0.004 80);
+  --canvas-from: oklch(0.17 0.005 80);
+  --canvas-via: oklch(0.18 0.008 85);
+  --canvas-to: oklch(0.23 0.035 90);
+  --background: oklch(0.16 0.005 80);
+  --foreground: oklch(0.97 0.005 95);
+  --card: oklch(0.215 0.006 80);
+  --card-2: oklch(0.24 0.006 80);
+  --card-foreground: oklch(0.97 0.005 95);
+  --popover: oklch(0.225 0.006 80);
+  --popover-foreground: oklch(0.97 0.005 95);
+  --secondary: oklch(0.26 0.006 80);
+  --secondary-foreground: oklch(0.97 0.005 95);
+  --muted: oklch(0.26 0.006 80);
+  --muted-foreground: oklch(0.7 0.01 80);
+  --accent: oklch(0.28 0.01 85);
+  --accent-foreground: oklch(0.97 0.005 95);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.3 0.006 80);
+  --input: oklch(0.32 0.006 80);
+  --chart-2: oklch(0.8 0.008 80);
+  --chart-3: oklch(0.55 0.008 80);
+  --chart-4: oklch(0.42 0.008 80);
+  --chart-5: oklch(0.32 0.008 80);
+  --radius: 0.875rem;
+  --sidebar: oklch(0.19 0.005 80);
+  --sidebar-foreground: oklch(0.97 0.005 95);
+  --sidebar-accent: oklch(0.26 0.006 80);
+  --sidebar-accent-foreground: oklch(0.97 0.005 95);
+  --sidebar-border: oklch(0.3 0.006 80);
+  --highlight: oklch(0.87 0.15 95);
+  --highlight-foreground: oklch(0.2 0.006 80);
+  --ink: oklch(0.12 0.004 80);
+  --ink-foreground: oklch(0.97 0.005 95);
+  --ink-muted: oklch(0.68 0.008 80);
+  --status-good: #0ca30c;
+  --status-warning: #fab219;
+  --status-serious: #ec835a;
+  --status-critical: #e05252;
+}
+
 /* ---- ACCENT: primary color ---- */
 
+/* Sunbeam — the redesign default. Ink-black primary (pills, buttons,
+ * active nav) with butter-yellow as the chart / highlight colour. In
+ * dark mode the roles flip: yellow becomes the primary. */
 :root,
+html[data-theme="sunbeam"] {
+  --primary: oklch(0.25 0.004 80);
+  --primary-foreground: oklch(0.98 0.004 95);
+  --primary-hover: oklch(0.34 0.006 80);
+  --primary-soft: oklch(0.88 0.155 95 / 0.28);
+  --primary-soft-2: oklch(0.88 0.155 95 / 0.5);
+  --ring: oklch(0.8 0.15 92);
+  --chart-1: oklch(0.86 0.16 93);
+  --sidebar-primary: oklch(0.25 0.004 80);
+  --sidebar-primary-foreground: oklch(0.98 0.004 95);
+  --sidebar-ring: oklch(0.8 0.15 92);
+}
+
+html[data-theme="sunbeam"][data-mode="dark"] {
+  --primary: oklch(0.87 0.15 95);
+  --primary-foreground: oklch(0.2 0.006 80);
+  --primary-hover: oklch(0.92 0.13 95);
+  --primary-soft: oklch(0.87 0.15 95 / 0.14);
+  --primary-soft-2: oklch(0.87 0.15 95 / 0.24);
+  --sidebar-primary: oklch(0.87 0.15 95);
+  --sidebar-primary-foreground: oklch(0.2 0.006 80);
+}
+
 html[data-theme="violet"] {
   --primary: oklch(0.526 0.247 293);
   --primary-foreground: oklch(0.985 0 0);
@@ -235,11 +293,77 @@ html[data-theme="rose"] {
   }
   body {
     @apply bg-background text-foreground;
+    font-feature-settings: "ss01", "cv11";
+  }
+  h1,
+  h2,
+  h3 {
+    letter-spacing: -0.02em;
   }
   .recharts-cartesian-axis-tick-value {
     fill: var(--muted-foreground);
   }
   html {
     @apply font-sans;
+  }
+  ::selection {
+    background: var(--highlight);
+    color: var(--highlight-foreground);
+  }
+  /* Slim, rounded scrollbars that sit quietly on the cream canvas. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklch, var(--foreground) 18%, transparent) transparent;
+  }
+}
+
+/* ============================================================
+ * REDESIGN UTILITIES
+ * ============================================================ */
+
+/* The floating app canvas: soft cream that warms into yellow toward
+ * the bottom-right corner, with two blurred light blobs for depth. */
+@utility app-canvas {
+  background:
+    radial-gradient(60% 50% at 100% 100%, color-mix(in oklch, var(--highlight) 45%, transparent) 0%, transparent 70%),
+    radial-gradient(40% 35% at 0% 0%, color-mix(in oklch, var(--card) 70%, transparent) 0%, transparent 70%),
+    linear-gradient(135deg, var(--canvas-from) 0%, var(--canvas-via) 45%, var(--canvas-to) 100%);
+}
+
+/* Diagonal hatching, used for "remaining" segments of progress pills. */
+@utility hatch {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    color-mix(in oklch, var(--foreground) 14%, transparent) 0 1.5px,
+    transparent 1.5px 7px
+  );
+}
+
+/* Frosted surface for the floating navigation pills. */
+@utility glass {
+  background: color-mix(in oklch, var(--card) 62%, transparent);
+  backdrop-filter: blur(14px) saturate(1.4);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+}
+
+/* Gentle entrance for dashboard tiles. */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@utility animate-rise {
+  animation: rise-in 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-rise {
+    animation: none;
   }
 }

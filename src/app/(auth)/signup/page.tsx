@@ -17,6 +17,10 @@ import {
 } from "@/components/ui/card";
 import { MessageSquare, CheckCircle, UsersRound } from "lucide-react";
 
+// Force dynamic rendering to prevent build-time static generation,
+// which would fail because createClient() requires runtime env vars.
+export const dynamic = 'force-dynamic';
+
 // `useSearchParams` opts the component out of static prerendering
 // unless wrapped in Suspense — same pattern as /login.
 export default function SignupPage() {
@@ -44,7 +48,6 @@ function SignupPageInner() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
-  const supabase = createClient();
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -61,6 +64,8 @@ function SignupPageInner() {
     }
 
     setLoading(true);
+
+    const supabase = createClient();
 
     // Always name our own origin as the place the confirmation link
     // returns to. Previously this was left unset unless an invite was
@@ -100,8 +105,8 @@ function SignupPageInner() {
 
   if (success) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background px-4">
-        <Card className="w-full max-w-md border-border bg-card">
+      <div className="flex min-h-screen items-center justify-center px-4 py-10">
+        <Card className="animate-rise w-full max-w-md border-border bg-card/90 shadow-float backdrop-blur-xl">
           <CardHeader className="items-center text-center">
             <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
               <CheckCircle className="h-6 w-6 text-primary" />
@@ -140,8 +145,8 @@ function SignupPageInner() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <Card className="w-full max-w-md border-border bg-card">
+    <div className="flex min-h-screen items-center justify-center px-4 py-10">
+      <Card className="animate-rise w-full max-w-md border-border bg-card/90 shadow-float backdrop-blur-xl">
         <CardHeader className="items-center text-center">
           <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
             {inviteToken ? (
@@ -160,7 +165,7 @@ function SignupPageInner() {
         <CardContent>
           <form onSubmit={handleSignup} className="flex flex-col gap-4">
             {error && (
-              <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+              <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-status-critical">
                 {error}
               </div>
             )}

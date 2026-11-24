@@ -17,7 +17,7 @@
     "linkInvalid": "Não foi possível entrar com esse link. Se estava confirmando seu e-mail, ele já pode estar verificado — basta entrar abaixo. Para redefinir a senha, peça um novo link e abra-o no mesmo navegador em que o solicitou."
   },
   "Sidebar": {
-    "title": "Modelo de CRM para WhatsApp",
+    "title": "Ocean CRM",
     "primaryNav": "Principal",
     "dashboard": "Painel",
     "inbox": "Caixa de entrada",
@@ -58,7 +58,10 @@
     "defaultAvatar": "Avatar",
     "menuProfile": "Perfil",
     "menuSettings": "Configurações",
-    "menuSignOut": "Sair"
+    "menuSignOut": "Sair",
+    "menuAppearance": "Aparência",
+    "switchToClassic": "Mudar para a interface clássica",
+    "switchToModern": "Mudar para a interface moderna"
   },
   "ModeToggle": {
     "switchMode": "Mudar para o modo {mode}"
@@ -337,6 +340,9 @@
       "filterAll": "Todas",
       "filterUnread": "Não lidas",
       "filterWaiting": "Aguardando resposta",
+      "filterHot": "Leads quentes",
+      "filterWarm": "Leads mornos",
+      "filterCold": "Leads frios",
       "filterUnassigned": "Sem responsável",
       "filterExpiring": "Janela fechando",
       "filterOpen": "Abertas",
@@ -2049,9 +2055,13 @@
         "dark": "escuro"
       },
       "themes": {
+        "sunbeam": {
+          "name": "Raio de sol",
+          "tagline": "O padrão — pílulas grafite com um brilho amarelo-manteiga."
+        },
         "violet": {
           "name": "Violeta",
-          "tagline": "O padrão — transmite confiança com um toque descontraído."
+          "tagline": "Transmite confiança com um toque descontraído."
         },
         "emerald": {
           "name": "Esmeralda",
@@ -2068,6 +2078,18 @@
         "rose": {
           "name": "Rosa",
           "tagline": "Marcante e moderno — para marcas de consumo, criadores de conteúdo e estilo de vida."
+        }
+      },
+      "uiStyle": "Estilo da interface",
+      "useUiStyle": "Usar a interface {name}",
+      "uiStyles": {
+        "modern": {
+          "name": "Moderna",
+          "tagline": "Tela flutuante, navegação superior em pílulas e a paleta Raio de sol."
+        },
+        "classic": {
+          "name": "Clássica",
+          "tagline": "O layout original: barra lateral, cartões compactos e a paleta Violeta escura."
         }
       }
     },

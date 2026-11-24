@@ -45,6 +45,12 @@ const STATUS_COLORS: Record<ConversationStatus, string> = {
   closed: "bg-muted-foreground",
 };
 
+const LEAD_SCORE_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
+  hot: { label: "🔥 Hot", color: "text-red-500", bg: "bg-red-500/15" },
+  warm: { label: "🌤 Warm", color: "text-amber-500", bg: "bg-amber-500/15" },
+  cold: { label: "❄️ Cold", color: "text-blue-400", bg: "bg-blue-400/15" },
+};
+
 
 export function ConversationList({
   activeConversationId,
@@ -60,6 +66,9 @@ export function ConversationList({
     { label: t("filterAll"), value: "all" },
     { label: t("filterUnread"), value: "unread" },
     { label: t("filterWaiting"), value: "waiting" },
+    { label: "🔥 " + t("filterHot"), value: "hot" },
+    { label: "🌤 " + t("filterWarm"), value: "warm" },
+    { label: "❄️ " + t("filterCold"), value: "cold" },
     { label: t("filterUnassigned"), value: "unassigned" },
     { label: t("filterExpiring"), value: "expiring" },
     { label: t("filterOpen"), value: "open" },
@@ -490,6 +499,17 @@ function ConversationItem({
             {conversation.last_message_text || t("noMessagesYet")}
           </p>
           <div className="flex shrink-0 items-center gap-1.5">
+            {conversation.lead_score && LEAD_SCORE_CONFIG[conversation.lead_score] && (
+              <span
+                className={cn(
+                  "rounded-full px-1.5 py-0.5 text-[9px] font-semibold leading-none",
+                  LEAD_SCORE_CONFIG[conversation.lead_score].bg,
+                  LEAD_SCORE_CONFIG[conversation.lead_score].color,
+                )}
+              >
+                {LEAD_SCORE_CONFIG[conversation.lead_score].label}
+              </span>
+            )}
             {conversation.unread_count > 0 && (
               <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
                 {conversation.unread_count}

@@ -5,18 +5,22 @@ import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { canSendMessages } from "@/lib/auth/roles";
 import { cn } from "@/lib/utils";
-import type { Contact, Deal, ContactNote, Tag } from "@/types";
+import type { Contact, Conversation, Deal, ContactNote, Tag } from "@/types";
 import {
   Phone,
   Mail,
   Copy,
   Check,
-  User,
   Tag as TagIcon,
   DollarSign,
   StickyNote,
   Plus,
   X,
+  Flame,
+  Sun,
+  Snowflake,
+  RefreshCw,
+  Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -38,9 +42,11 @@ import { addContactTag, deleteContactTag } from "@/lib/contacts/tag-api";
 
 interface ContactSidebarProps {
   contact: Contact | null;
+  conversation?: Conversation | null;
+  onLeadScoreUpdated?: (score: 'hot' | 'warm' | 'cold') => void;
 }
 
-export function ContactSidebar({ contact }: ContactSidebarProps) {
+export function ContactSidebar({ contact, conversation, onLeadScoreUpdated }: ContactSidebarProps) {
   const tSidebar = useTranslations("Inbox.sidebar");
   const dateLocale = getDateLocale(useLocale());
   const tThread = useTranslations("Inbox.messageThread");
@@ -55,6 +61,7 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
   const [savingTags, setSavingTags] = useState(false);
   const [newNote, setNewNote] = useState("");
   const [addingNote, setAddingNote] = useState(false);
+  const [qualifying, setQualifying] = useState(false);
 
   const fetchContactData = useCallback(async () => {
     if (!contact) return;
@@ -161,6 +168,29 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
     setAddingNote(false);
   }, [contact, newNote, accountId]);
 
+  const handleQualify = useCallback(async () => {
+    if (!conversation?.id || qualifying) return;
+    setQualifying(true);
+    try {
+      const res = await fetch("/api/ai/qualify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversation_id: conversation.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || "Could not qualify lead");
+      } else if (data.score) {
+        toast.success(`Lead qualified as ${data.score.toUpperCase()}`);
+        onLeadScoreUpdated?.(data.score);
+      }
+    } catch {
+      toast.error("Network error while qualifying lead");
+    } finally {
+      setQualifying(false);
+    }
+  }, [conversation?.id, qualifying, onLeadScoreUpdated]);
+
   if (!contact) {
     return (
       <div className="flex h-full w-70 items-center justify-center border-l border-border bg-card">
@@ -174,7 +204,7 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
 
   return (
     <div className="flex h-full w-70 flex-col border-l border-border bg-card">
-      <ScrollArea className="flex-1">
+      <ScrollArea className="min-h-0 flex-1">
         <div className="p-4">
           {/* Contact Info */}
           <div className="flex flex-col items-center text-center">
@@ -222,6 +252,95 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
               </div>
             )}
           </div>
+
+          {/* Divider */}
+          <div className="my-4 border-t border-border" />
+
+          {/* Lead Qualification */}
+          {conversation && (
+            <div>
+              <div className="flex items-center justify-between gap-2 px-1">
+                <div className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                  <Sparkles className="h-3 w-3 text-primary" />
+                  <span>Lead Qualification</span>
+                </div>
+                <button
+                  type="button"
+                  disabled={qualifying}
+                  onClick={() => void handleQualify()}
+                  className="inline-flex items-center gap-1 text-[11px] font-medium text-primary hover:text-primary/80 disabled:opacity-50 cursor-pointer"
+                  title="Analyze customer replies and qualify lead"
+                >
+                  <RefreshCw className={cn("h-3 w-3", qualifying && "animate-spin")} />
+                  <span>{qualifying ? "Scoring..." : conversation.lead_score ? "Re-score" : "Qualify"}</span>
+                </button>
+              </div>
+
+              <div className="mt-2 rounded-lg border border-border bg-muted/40 p-2.5">
+                {conversation.lead_score === "hot" && (
+                  <div className="flex items-start gap-2">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-red-500/20 text-red-500">
+                      <Flame className="h-3.5 w-3.5" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-semibold text-red-500">🔥 Hot Lead</span>
+                        <span className="rounded-full bg-red-500/10 px-1.5 py-0.5 text-[9px] font-medium text-red-500">High intent</span>
+                      </div>
+                      <p className="mt-0.5 text-[11px] text-muted-foreground leading-tight">
+                        Clear purchase intent, asked for pricing/payment or ready to buy.
+                      </p>
+                    </div>
+                  </div>
+                )}
+                {conversation.lead_score === "warm" && (
+                  <div className="flex items-start gap-2">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-500/20 text-amber-500">
+                      <Sun className="h-3.5 w-3.5" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-semibold text-amber-500">🌤 Warm Lead</span>
+                        <span className="rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-medium text-amber-500">Interested</span>
+                      </div>
+                      <p className="mt-0.5 text-[11px] text-muted-foreground leading-tight">
+                        Actively inquiring, asking questions about options/features.
+                      </p>
+                    </div>
+                  </div>
+                )}
+                {conversation.lead_score === "cold" && (
+                  <div className="flex items-start gap-2">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-500/20 text-blue-400">
+                      <Snowflake className="h-3.5 w-3.5" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-semibold text-blue-400">❄️ Cold Lead</span>
+                        <span className="rounded-full bg-blue-500/10 px-1.5 py-0.5 text-[9px] font-medium text-blue-400">Low interest</span>
+                      </div>
+                      <p className="mt-0.5 text-[11px] text-muted-foreground leading-tight">
+                        Unresponsive, gave minimal answers, or not interested.
+                      </p>
+                    </div>
+                  </div>
+                )}
+                {!conversation.lead_score && (
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>Not yet scored</span>
+                    <button
+                      type="button"
+                      onClick={() => void handleQualify()}
+                      disabled={qualifying}
+                      className="text-[11px] font-medium text-primary hover:underline cursor-pointer"
+                    >
+                      {qualifying ? "Analyzing..." : "Qualify now"}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Divider */}
           <div className="my-4 border-t border-border" />

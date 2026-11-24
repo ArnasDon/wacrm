@@ -142,7 +142,7 @@ function DashboardPageInner() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <OverviewHeader
         data={data}
         now={now}
@@ -158,12 +158,12 @@ function DashboardPageInner() {
           <AttentionRow data={data} now={now} onlineCount={onlineCount} />
           <KpiRow data={data} currency={defaultCurrency} />
 
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
+          <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
             <MessageVolumeCard data={data} />
             <ReplyQueueCard data={data} now={now} />
           </div>
 
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-3">
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-2 2xl:grid-cols-3">
             <PipelineCard data={data} currency={defaultCurrency} />
             <TeamCard data={data} now={now} />
             <div className="lg:col-span-2 2xl:col-span-1">

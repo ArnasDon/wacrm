@@ -31,11 +31,14 @@ import {
 } from "@/components/ui/card";
 import { CheckCircle, KeyRound, Loader2, MailX } from "lucide-react";
 
+// Force dynamic rendering to prevent build-time static generation,
+// which would fail because createClient() requires runtime env vars.
+export const dynamic = 'force-dynamic';
+
 type Status = "checking" | "ready" | "expired" | "done";
 
 export default function ResetPasswordPage() {
   const t = useTranslations("ResetPasswordPage");
-  const supabase = createClient();
 
   const [status, setStatus] = useState<Status>("checking");
   const [password, setPassword] = useState("");
@@ -47,13 +50,14 @@ export default function ResetPasswordPage() {
     let cancelled = false;
     // The callback wrote the session cookies server-side; the browser
     // client reads them here. No user → the link didn't yield a session.
+    const supabase = createClient();
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!cancelled) setStatus(user ? "ready" : "expired");
     });
     return () => {
       cancelled = true;
     };
-  }, [supabase]);
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -70,6 +74,7 @@ export default function ResetPasswordPage() {
     }
 
     setSaving(true);
+    const supabase = createClient();
     const { error } = await supabase.auth.updateUser({ password });
     setSaving(false);
 
@@ -82,7 +87,7 @@ export default function ResetPasswordPage() {
 
   if (status === "checking") {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background px-4">
+      <div className="flex min-h-screen items-center justify-center px-4 py-10">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" />
           {t("checking")}
@@ -93,8 +98,8 @@ export default function ResetPasswordPage() {
 
   if (status === "expired") {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background px-4">
-        <Card className="w-full max-w-md border-border bg-card">
+      <div className="flex min-h-screen items-center justify-center px-4 py-10">
+        <Card className="animate-rise w-full max-w-md border-border bg-card/90 shadow-float backdrop-blur-xl">
           <CardHeader className="items-center text-center">
             <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-amber-500/10">
               <MailX className="h-6 w-6 text-amber-400" />
@@ -128,8 +133,8 @@ export default function ResetPasswordPage() {
 
   if (status === "done") {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background px-4">
-        <Card className="w-full max-w-md border-border bg-card">
+      <div className="flex min-h-screen items-center justify-center px-4 py-10">
+        <Card className="animate-rise w-full max-w-md border-border bg-card/90 shadow-float backdrop-blur-xl">
           <CardHeader className="items-center text-center">
             <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
               <CheckCircle className="h-6 w-6 text-primary" />
@@ -162,8 +167,8 @@ export default function ResetPasswordPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <Card className="w-full max-w-md border-border bg-card">
+    <div className="flex min-h-screen items-center justify-center px-4 py-10">
+      <Card className="animate-rise w-full max-w-md border-border bg-card/90 shadow-float backdrop-blur-xl">
         <CardHeader className="items-center text-center">
           <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
             <KeyRound className="h-6 w-6 text-primary" />
@@ -176,7 +181,7 @@ export default function ResetPasswordPage() {
         <CardContent>
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             {error && (
-              <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+              <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-status-critical">
                 {error}
               </div>
             )}

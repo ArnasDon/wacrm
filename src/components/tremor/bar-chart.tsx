@@ -90,12 +90,18 @@ const renderShape = (
     width = Math.abs(width)
   }
 
+  // Redesign: soft pill-shaped bars. The radius is capped by the bar's
+  // thinner side so tiny stacked segments don't overflow.
+  const radius = Math.max(0, Math.min(6, Math.abs(width) / 2, Math.abs(height) / 2))
+
   return (
     <rect
       x={x}
       y={y}
       width={width}
       height={height}
+      rx={radius}
+      ry={radius}
       opacity={
         activeBar || (activeLegend && activeLegend !== name)
           ? deepEqual(activeBar, { ...payload, value })

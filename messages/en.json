@@ -2052,9 +2052,13 @@
         "dark": "dark"
       },
       "themes": {
+        "sunbeam": {
+          "name": "Sunbeam",
+          "tagline": "The default — ink-black pills with a butter-yellow glow."
+        },
         "violet": {
           "name": "Violet",
-          "tagline": "The default — confident, slightly playful."
+          "tagline": "Confident, slightly playful."
         },
         "emerald": {
           "name": "Emerald",

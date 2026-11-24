@@ -80,9 +80,9 @@ export function TeamCard({ data, now }: { data: DashboardOverview | null; now: n
                     <TableCell className="text-right tabular-nums">
                       <span className="inline-flex items-center gap-2">
                         {format.number(m.open)}
-                        <span className="hidden h-1.5 w-10 overflow-hidden rounded-full bg-muted sm:inline-block">
+                        <span className="hatch hidden h-2 w-12 overflow-hidden rounded-full bg-muted sm:inline-block">
                           <span
-                            className="block h-full rounded-full bg-foreground/60"
+                            className="block h-full rounded-full bg-highlight"
                             style={{ width: `${(m.open / maxOpen) * 100}%` }}
                           />
                         </span>

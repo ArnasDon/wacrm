@@ -30,7 +30,7 @@ export function DeltaBadge({ change }: { change: Change }) {
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-xs font-medium tabular-nums',
+        'inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-xs font-medium tabular-nums',
         TONE_CLASS[change.tone],
       )}
     >
@@ -59,8 +59,8 @@ export function KpiTile({
   footer: ReactNode
 }) {
   return (
-    <Card size="sm" className="gap-2 px-4">
-      <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+    <Card size="sm" className="animate-rise gap-2.5 px-5 py-5 transition-transform duration-300 hover:-translate-y-0.5">
+      <div className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
         <span className="truncate">{title}</span>
         <Tooltip>
           <TooltipTrigger
@@ -72,7 +72,7 @@ export function KpiTile({
           <TooltipContent>{info}</TooltipContent>
         </Tooltip>
       </div>
-      <p className="text-2xl leading-none font-semibold tracking-tight text-foreground tabular-nums">
+      <p className="text-4xl leading-none font-light tracking-tight text-foreground tabular-nums">
         {value}
         {unit ? <span className="ml-1 text-sm font-medium text-muted-foreground">{unit}</span> : null}
       </p>
@@ -103,9 +103,9 @@ export function TargetBar({ value, target }: { value: number | null; target: num
   const onTarget = value != null && value <= target
   return (
     <div className="pt-1.5" role="img" aria-label={t('target', { minutes: target })}>
-      <div className="relative h-2 rounded-full bg-muted">
+      <div className="hatch relative h-2.5 rounded-full bg-muted">
         <div
-          className={cn('absolute inset-y-0 left-0 rounded-full', onTarget ? 'bg-status-good' : 'bg-status-serious')}
+          className={cn('absolute inset-y-0 left-0 rounded-full', onTarget ? 'bg-highlight' : 'bg-status-serious')}
           style={{ width: `${fill}%` }}
         />
         <div className="absolute -inset-y-1 left-1/2 w-0.5 rounded-full bg-foreground/70" />

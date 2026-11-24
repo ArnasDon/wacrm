@@ -2052,9 +2052,13 @@
         "dark": "escuro"
       },
       "themes": {
+        "sunbeam": {
+          "name": "Raio de sol",
+          "tagline": "O padrão — pílulas grafite com um brilho amarelo-manteiga."
+        },
         "violet": {
           "name": "Violeta",
-          "tagline": "O padrão — transmite confiança com um toque descontraído."
+          "tagline": "Transmite confiança com um toque descontraído."
         },
         "emerald": {
           "name": "Esmeralda",

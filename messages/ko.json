@@ -58,7 +58,9 @@
     "defaultAvatar": "아바타",
     "menuProfile": "프로필",
     "menuSettings": "설정",
-    "menuSignOut": "로그아웃"
+    "menuSignOut": "로그아웃",
+    "flows": "플로우",
+    "aiAgents": "AI 에이전트"
   },
   "ModeToggle": {
     "switchMode": "{mode} 모드로 전환"

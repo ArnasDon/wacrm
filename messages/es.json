@@ -1089,7 +1089,10 @@
         "estimatedReach": "Alcance estimado",
         "language": "Idioma",
         "confirmTitle": "Confirmar difusión",
-        "confirmDesc": "Estás a punto de enviar esta difusión a <b>{count, number}</b> {count, plural, =1 {contacto} other {contactos}} con la plantilla <b>{template}</b>. Esta acción no se puede deshacer."
+        "confirmDesc": "Estás a punto de enviar esta difusión a <b>{count, number}</b> {count, plural, =1 {contacto} other {contactos}} con la plantilla <b>{template}</b>. Esta acción no se puede deshacer.",
+        "costTitle": "Estimated WhatsApp cost (paid to Meta)",
+        "costCategory": "{category} template · priced by each recipient's country",
+        "costNote": "Estimate from Meta's list prices. You pay Meta directly; wabi adds 0% markup. Replies inside an open 24-hour chat or 72 hours after an ad click can be free."
       }
     },
     "sending": {
@@ -1676,7 +1679,7 @@
       "done": "Listo",
       "dialogTitle": "Invitar a un compañero",
       "networkError": "No se pudo conectar con el servidor. ¿Intentar de nuevo?",
-      "fallbackAccountName": "nuestra cuenta de wacrm",
+      "fallbackAccountName": "nuestra cuenta de wabi",
       "dialogDesc": "Genera un enlace de invitación de un solo uso. Compártelo por WhatsApp, Slack o el canal que prefieras; no se necesita servicio de correo.",
       "roleLabel": "Rol",
       "validForLabel": "Enlace válido por",
@@ -1693,7 +1696,7 @@
       "labelTooLong": "La etiqueta debe tener {max} caracteres o menos",
       "copied": "Enlace de invitación copiado",
       "clipboardBlocked": "Portapapeles bloqueado: copia el enlace manualmente",
-      "whatsappMessage": "Únete a {accountName} en wacrm con este enlace (válido por {expiresInDays} días): {url}",
+      "whatsappMessage": "Únete a {accountName} en wabi con este enlace (válido por {expiresInDays} días): {url}",
       "createFailed": "No se pudo crear la invitación"
     },
     "tagsAndFields": {
@@ -1814,8 +1817,8 @@
       "saveResubmit": "Guardar y reenviar",
       "submitApproval": "Enviar para aprobación",
       "deleteDialogTitle": "¿Eliminar plantilla?",
-      "deleteMetaDesc": "\"{name}\" se eliminará de Meta y de wacrm. Las difusiones activas que usen esta plantilla empezarán a fallar en su próximo envío. No se puede deshacer.",
-      "deleteLocalDesc": "\"{name}\" se eliminará de wacrm. Nunca se envió a Meta, así que no hace falta limpieza remota.",
+      "deleteMetaDesc": "\"{name}\" se eliminará de Meta y de wabi. Las difusiones activas que usen esta plantilla empezarán a fallar en su próximo envío. No se puede deshacer.",
+      "deleteLocalDesc": "\"{name}\" se eliminará de wabi. Nunca se envió a Meta, así que no hace falta limpieza remota.",
       "deleting": "Eliminando…",
       "delete": "Eliminar",
       "toastLoadFailed": "Error al cargar las plantillas",
@@ -1867,7 +1870,7 @@
       "notConnected": "No conectado",
       "connectedDesc": "Tu token de acceso se autentica con Meta. Revisa el estado de registro abajo para saber si los webhooks están realmente conectados.",
       "notConnectedDesc": "Configura abajo tus credenciales de la API de Meta para conectar tu cuenta de WhatsApp Business.",
-      "registered": "Registrado: Meta entregará los eventos a wacrm",
+      "registered": "Registrado: Meta entregará los eventos a wabi",
       "notRegistered": "No registrado: Meta no entregará eventos",
       "verifyWithMeta": "Verificar con Meta",
       "subscribedSince": "Suscrito desde {date}. Haz clic en Verificar con Meta si los eventos dejan de llegar.",
@@ -1892,7 +1895,7 @@
       "twoStepPin": "PIN de verificación en dos pasos",
       "optional": "(opcional)",
       "pinPlaceholder": "PIN de 6 dígitos del Administrador de WhatsApp de Meta",
-      "pinHint": "Solo se necesita para recibir mensajes entrantes en un número de producción. Configúralo en Meta Business Manager → Cuentas de WhatsApp → Números de teléfono → Verificación en dos pasos y pégalo aquí para que wacrm pueda suscribir el número; de lo contrario, Meta envía los eventos entrantes a la última app que reclamó el número (el síntoma que afecta a segundos números bajo una WABA compartida). Los números de prueba de Meta no tienen PIN y ya vienen registrados: déjalo en blanco para ellos. Dejarlo en blanco también mantiene intacto un registro existente.",
+      "pinHint": "Solo se necesita para recibir mensajes entrantes en un número de producción. Configúralo en Meta Business Manager → Cuentas de WhatsApp → Números de teléfono → Verificación en dos pasos y pégalo aquí para que wabi pueda suscribir el número; de lo contrario, Meta envía los eventos entrantes a la última app que reclamó el número (el síntoma que afecta a segundos números bajo una WABA compartida). Los números de prueba de Meta no tienen PIN y ya vienen registrados: déjalo en blanco para ellos. Dejarlo en blanco también mantiene intacto un registro existente.",
       "webhookTitle": "Configuración del webhook",
       "webhookDesc": "Usa esta URL como callback del webhook en el panel de la app de Meta.",
       "webhookUrl": "URL de callback del webhook",
@@ -2166,7 +2169,7 @@
     },
     "aiConfig": {
       "title": "Configuración del agente",
-      "description": "Usa tu propia clave de OpenAI, Anthropic o de una API compatible con OpenAI. wacrm llama al proveedor directamente con tu clave, sin cargos de IA por puesto, y tus datos siguen siendo tuyos. Esto impulsa las respuestas redactadas por IA, el bot de respuesta automática y el Playground.",
+      "description": "Usa tu propia clave de OpenAI, Anthropic o de una API compatible con OpenAI. wabi llama al proveedor directamente con tu clave, sin cargos de IA por puesto, y tus datos siguen siendo tuyos. Esto impulsa las respuestas redactadas por IA, el bot de respuesta automática y el Playground.",
       "adminOnlyConfig": "Solo los administradores y propietarios pueden cambiar la configuración de IA.",
       "loadFailed": "Error al cargar la configuración de IA",
       "providerAndKey": "Proveedor y clave",
@@ -2926,7 +2929,7 @@
       "wabaIdDigits": "El WhatsApp Business Account ID debe contener solo dígitos: cópialo de Meta → WhatsApp → API Setup.",
       "pinDigits": "El PIN debe tener exactamente 6 dígitos.",
       "validateFailed": "Error al validar la configuración",
-      "numberLinkedElsewhere": "Este número de WhatsApp ya está vinculado a otra cuenta en esta instancia. Cada número de teléfono solo puede conectarse a un usuario de wacrm.",
+      "numberLinkedElsewhere": "Este número de WhatsApp ya está vinculado a otra cuenta en esta instancia. Cada número de teléfono solo puede conectarse a un usuario de wabi.",
       "encryptFailed": "Error al cifrar el token. Verifica que ENCRYPTION_KEY sea una cadena hexadecimal válida de 64 caracteres en tus variables de entorno.",
       "updateFailed": "Error al actualizar la configuración",
       "saveFailed": "Error al guardar la configuración",

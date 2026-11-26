@@ -58,7 +58,9 @@
     "defaultAvatar": "아바타",
     "menuProfile": "프로필",
     "menuSettings": "설정",
-    "menuSignOut": "로그아웃"
+    "menuSignOut": "로그아웃",
+    "flows": "플로우",
+    "aiAgents": "AI 에이전트"
   },
   "ModeToggle": {
     "switchMode": "{mode} 모드로 전환"
@@ -1089,7 +1091,10 @@
         "estimatedReach": "예상 도달 수",
         "language": "언어",
         "confirmTitle": "브로드캐스트 확인",
-        "confirmDesc": "<b>{template}</b> 템플릿으로 연락처 <b>{count, number}</b>명에게 이 브로드캐스트를 보내려고 합니다. 이 작업은 되돌릴 수 없습니다."
+        "confirmDesc": "<b>{template}</b> 템플릿으로 연락처 <b>{count, number}</b>명에게 이 브로드캐스트를 보내려고 합니다. 이 작업은 되돌릴 수 없습니다.",
+        "costTitle": "Estimated WhatsApp cost (paid to Meta)",
+        "costCategory": "{category} template · priced by each recipient's country",
+        "costNote": "Estimate from Meta's list prices. You pay Meta directly; wabi adds 0% markup. Replies inside an open 24-hour chat or 72 hours after an ad click can be free."
       }
     },
     "sending": {
@@ -1676,7 +1681,7 @@
       "done": "완료",
       "dialogTitle": "팀원 초대",
       "networkError": "서버에 연결할 수 없습니다. 다시 시도할까요?",
-      "fallbackAccountName": "우리 wacrm 계정",
+      "fallbackAccountName": "우리 wabi 계정",
       "dialogDesc": "일회용 초대 링크를 생성합니다. WhatsApp, Slack 등 원하는 채널로 공유하세요 — 이메일 서비스가 필요하지 않습니다.",
       "roleLabel": "역할",
       "validForLabel": "링크 유효 기간",
@@ -2926,7 +2931,7 @@
       "wabaIdDigits": "WhatsApp Business Account ID는 숫자만 포함해야 합니다 — Meta → WhatsApp → API Setup에서 복사하세요.",
       "pinDigits": "PIN은 정확히 6자리여야 합니다.",
       "validateFailed": "설정을 검증하지 못했습니다",
-      "numberLinkedElsewhere": "이 WhatsApp 전화번호는 이미 이 인스턴스의 다른 계정에 연결되어 있습니다. 각 전화번호는 하나의 wacrm 사용자에만 연결할 수 있습니다.",
+      "numberLinkedElsewhere": "이 WhatsApp 전화번호는 이미 이 인스턴스의 다른 계정에 연결되어 있습니다. 각 전화번호는 하나의 wabi 사용자에만 연결할 수 있습니다.",
       "encryptFailed": "토큰을 암호화하지 못했습니다. 환경 변수의 ENCRYPTION_KEY가 유효한 64자 16진수 문자열인지 확인하세요.",
       "updateFailed": "설정을 업데이트하지 못했습니다",
       "saveFailed": "설정을 저장하지 못했습니다",

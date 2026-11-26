@@ -1,7 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { countAudience, type AudienceConfig } from '@/lib/broadcast-audience';
+import { countAudience, resolveAudienceContacts, type AudienceConfig } from '@/lib/broadcast-audience';
+import { estimateBroadcastCost, formatCost, type CostEstimate } from '@/lib/whatsapp/cost-estimate';
+import { useAuth } from '@/hooks/use-auth';
 import { createClient } from '@/lib/supabase/client';
 import { MessageTemplate } from '@/types';
 import { Button } from '@/components/ui/button';
@@ -15,7 +17,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { ArrowLeft, Send, Loader2, Users, Save } from 'lucide-react';
+import { ArrowLeft, Send, Loader2, Users, Save, Receipt } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
 interface Step4Props {
@@ -45,6 +47,8 @@ export function Step4ScheduleSend({
   const [showConfirm, setShowConfirm] = useState(false);
   const [estimatedReach, setEstimatedReach] = useState<number>(0);
   const [loadingReach, setLoadingReach] = useState(true);
+  const [cost, setCost] = useState<CostEstimate | null>(null);
+  const currency = useAuth().account?.default_currency ?? 'USD';
 
   useEffect(() => {
     async function calculateReach() {
@@ -58,8 +62,24 @@ export function Step4ScheduleSend({
       }
     }
 
+    // wabi: estimate Meta's per-message charge from recipient countries.
+    // CSV rows are priced from the uploaded numbers directly (resolving them
+    // would create contacts, which must not happen on a preview).
+    async function calculateCost() {
+      try {
+        const phones =
+          audience.type === 'csv'
+            ? (audience.csvContacts ?? []).map((r) => r.phone)
+            : (await resolveAudienceContacts(createClient(), audience, async () => [])).map((c) => c.phone);
+        setCost(estimateBroadcastCost(template.category, phones));
+      } catch {
+        setCost(null);
+      }
+    }
+
     calculateReach();
-  }, [audience]);
+    calculateCost();
+  }, [audience, template.category]);
 
   const audienceLabel =
     audience.type === 'all'
@@ -121,6 +141,32 @@ export function Step4ScheduleSend({
           </div>
         </div>
       </div>
+
+      {/* wabi: Meta cost preview */}
+      {cost && (
+        <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-2" data-testid="cost-preview">
+          <div className="flex items-baseline justify-between gap-2">
+            <p className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+              <Receipt className="h-3.5 w-3.5 text-primary" />
+              {t('scheduleSend.costTitle')}
+            </p>
+            <p className="text-lg font-semibold tabular-nums text-foreground" data-testid="cost-total">
+              ≈ {formatCost(cost.totalUsd, currency)}
+            </p>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {t('scheduleSend.costCategory', { category: template.category })}
+          </p>
+          {cost.lines.length > 0 && (
+            <ul className="text-xs text-muted-foreground">
+              {cost.lines.map((l) => (
+                <li key={l.code}>{l.country} · {l.count.toLocaleString()} {l.count === 1 ? 'message' : 'messages'} → {formatCost(l.usd, currency)}</li>
+              ))}
+            </ul>
+          )}
+          <p className="text-xs text-muted-foreground">{t('scheduleSend.costNote')}</p>
+        </div>
+      )}
 
       {/* Processing overlay */}
       {isProcessing && (

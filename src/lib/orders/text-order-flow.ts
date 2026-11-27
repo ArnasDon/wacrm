@@ -70,6 +70,84 @@ export interface TextOrderFlowResult {
   error?: string;
 }
 
+export const TECHNICAL_ERROR_CUSTOMER_NOTICE =
+  'Tivemos uma instabilidade técnica no atendimento automático.';
+
+function extractErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  if (error && typeof error === 'object') {
+    const maybe = error as {
+      message?: unknown;
+      code?: unknown;
+      details?: unknown;
+    };
+    if (typeof maybe.message === 'string' && maybe.message) {
+      return typeof maybe.code === 'string' && maybe.code
+        ? `${maybe.code}: ${maybe.message}`
+        : maybe.message;
+    }
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return String(error);
+    }
+  }
+  return String(error);
+}
+
+function formatErrorDetail(error: unknown): string {
+  const detail =
+    error instanceof Error && error.stack
+      ? error.stack
+      : extractErrorMessage(error);
+  return detail.slice(0, 2000);
+}
+
+export async function recordOrderInboundError(
+  db: SupabaseClient,
+  input: {
+    accountId: string;
+    conversationId: string;
+    inboundMessageId?: string;
+    inboundText?: string;
+    ownsTurn?: boolean;
+    error: unknown;
+  }
+): Promise<void> {
+  if (!input.inboundMessageId) return;
+  const errorDetail = formatErrorDetail(input.error);
+  try {
+    if (input.ownsTurn) {
+      await db
+        .from('order_inbound_events')
+        .update({ status: 'failed', error_detail: errorDetail })
+        .eq('account_id', input.accountId)
+        .eq('meta_message_id', input.inboundMessageId);
+      return;
+    }
+    const { error: insertError } = await db
+      .from('order_inbound_events')
+      .insert({
+        account_id: input.accountId,
+        meta_message_id: input.inboundMessageId,
+        conversation_id: input.conversationId,
+        raw_text: input.inboundText ?? '',
+        status: 'failed',
+        error_detail: errorDetail,
+      });
+    if (insertError?.code === '23505') {
+      await db
+        .from('order_inbound_events')
+        .update({ status: 'failed', error_detail: errorDetail })
+        .eq('account_id', input.accountId)
+        .eq('meta_message_id', input.inboundMessageId);
+    }
+  } catch (logError) {
+    console.error('[text-order-flow] failed to record error_detail:', logError);
+  }
+}
+
 // Cheap lookup gate only: this never grants priority without catalog parsing.
 const QUANTITY_CANDIDATE =
   /\d|\b(?:um|uma|dois|duas|tr[eê]s|quatro|cinco|seis|sete|oito|nove|dez|onze|doze|d[uú]zia)\b/i;
@@ -77,7 +155,8 @@ const QUANTITY_CANDIDATE =
 async function handoff(
   ctx: TextOrderFlowContext,
   reason: HandoffReason = 'order_review',
-  summary?: string
+  summary?: string,
+  onMetaAccepted?: () => void
 ): Promise<void> {
   await handleConversationHandoff({
     db: ctx.supabase,
@@ -89,7 +168,13 @@ async function handoff(
     reason,
     send: async (key, text) => {
       if (summary !== undefined)
-        await sendAndRecord(ctx, key, summary ? `${summary}\n${text}` : text);
+        await sendAndRecord(
+          ctx,
+          key,
+          summary ? `${summary}\n${text}` : text,
+          undefined,
+          onMetaAccepted
+        );
     },
   });
   await applyContactTag(ctx.supabase, ctx, ctx.contactRecord.id, TAG_HUMANO);
@@ -182,7 +267,8 @@ async function sendAndRecord(
   ctx: TextOrderFlowContext,
   effectKey: string,
   text: string,
-  paymentUrl?: string
+  paymentUrl?: string,
+  onOutboundAttempted?: () => void
 ): Promise<void> {
   const db = ctx.supabase;
   const { error: claimError } = await db.from('order_message_outbox').insert({
@@ -194,6 +280,7 @@ async function sendAndRecord(
   });
   if (claimError?.code === '23505') return;
   if (claimError) throw claimError;
+  onOutboundAttempted?.();
   try {
     let record: {
       messageId: string;
@@ -329,6 +416,10 @@ export async function processFreeTextOrderInbound(
   const db = ctx.supabase;
   let ownsTurn = false;
   let catalogRunOwnsTurn = false;
+  let outboundAcceptedInTurn = false;
+  const markOutboundAccepted = () => {
+    outboundAcceptedInTurn = true;
+  };
   try {
     const priorEvent = await db
       .from('order_inbound_events')
@@ -344,7 +435,9 @@ export async function processFreeTextOrderInbound(
       await sendAndRecord(
         ctx,
         `resume:${ctx.inboundMessageId}`,
-        'Voltei! Posso ajudar com seu pedido. Nenhuma cobrança foi criada.'
+        'Voltei! Posso ajudar com seu pedido. Nenhuma cobrança foi criada.',
+        undefined,
+        markOutboundAccepted
       );
       return { handled: true, outcome: 'bot_resumed' };
     }
@@ -355,8 +448,17 @@ export async function processFreeTextOrderInbound(
       .eq('conversation_id', ctx.conversationId)
       .maybeSingle();
     if (readError) throw readError;
+    const existingState = existing?.state as Partial<OrderDraft> | undefined;
+    const hasActiveDraft = Boolean(
+      existingState &&
+        ((Array.isArray(existingState.items) && existingState.items.length > 0) ||
+          (Array.isArray(existingState.unresolved) &&
+            existingState.unresolved.length > 0) ||
+          existingState.stage === 'payment_created' ||
+          Boolean(existingState.deliveryAddress))
+    );
     if (
-      !existing &&
+      !hasActiveDraft &&
       !hasOrderIntent(ctx.inboundText) &&
       (!QUANTITY_CANDIDATE.test(ctx.inboundText) ||
         !hasValidatedQuantifiedOrderIntent(
@@ -391,7 +493,9 @@ export async function processFreeTextOrderInbound(
       await sendAndRecord(
         ctx,
         `turn:${ctx.inboundMessageId}`,
-        'Sua alteração foi preservada para revisão. Se o checkout já iniciou, um atendente reconciliará o pedido e o pagamento; não presumimos cancelamento.'
+        'Sua alteração foi preservada para revisão. Se o checkout já iniciou, um atendente reconciliará o pedido e o pagamento; não presumimos cancelamento.',
+        undefined,
+        markOutboundAccepted
       );
       return { handled: true, outcome: 'needs_human' };
     }
@@ -409,11 +513,28 @@ export async function processFreeTextOrderInbound(
     if (claim?.outcome === 'duplicate')
       return { handled: true, outcome: 'duplicate' };
     if (claim?.outcome !== 'claimed') {
-      await handoff(ctx, 'technical_error', '');
+      const busyMessage =
+        'Outro turno está em processamento; atendimento necessário.';
+      console.error('[text-order-flow] busy turn technical_error:', {
+        accountId: ctx.accountId,
+        conversationId: ctx.conversationId,
+        inboundMessageId: ctx.inboundMessageId,
+      });
+      await db
+        .from('order_inbound_events')
+        .update({ error_detail: busyMessage })
+        .eq('account_id', ctx.accountId)
+        .eq('meta_message_id', ctx.inboundMessageId);
+      await handoff(
+        ctx,
+        'technical_error',
+        TECHNICAL_ERROR_CUSTOMER_NOTICE,
+        markOutboundAccepted
+      );
       return {
         handled: true,
         outcome: 'needs_human',
-        error: 'Outro turno está em processamento; atendimento necessário.',
+        error: busyMessage,
       };
     }
     ownsTurn = true;
@@ -470,7 +591,13 @@ export async function processFreeTextOrderInbound(
       const faq = classifyFaq(ctx.inboundText);
       if (faq) {
         const response = faqResponse(faq, ctx.inboundText);
-        await sendAndRecord(ctx, `faq:${ctx.inboundMessageId}`, response.text);
+        await sendAndRecord(
+          ctx,
+          `faq:${ctx.inboundMessageId}`,
+          response.text,
+          undefined,
+          markOutboundAccepted
+        );
         // Unknown store policy is not permission to change the order or lift
         // review. Known FAQs only complete this turn with the frozen draft.
         if (response.needsHandoff) await handoff(ctx, 'payment_review');
@@ -578,7 +705,8 @@ export async function processFreeTextOrderInbound(
         ctx,
         `payment:${reference}`,
         `La Empanadas — Pedido ${result.orderId || result.dealId || draft.id}\nTotal: R$ ${draft.total.toFixed(2).replace('.', ',')}\nPague com segurança pelo Mercado Pago.\nPara obter o Pix Copia e Cola, escolha Pix no checkout.`,
-        result.link_mercado_pago
+        result.link_mercado_pago,
+        markOutboundAccepted
       );
     } else {
       const reply =
@@ -586,8 +714,15 @@ export async function processFreeTextOrderInbound(
           ? `${transition.reply}\nOu responda SIM para usar o endereço cadastrado: ${savedAddress}`
           : transition.reply;
       if (draft.stage === 'needs_human' || draft.stage === 'payment_created')
-        await handoff(ctx, 'order_review', reply);
-      else await sendAndRecord(ctx, `turn:${ctx.inboundMessageId}`, reply);
+        await handoff(ctx, 'order_review', reply, markOutboundAccepted);
+      else
+        await sendAndRecord(
+          ctx,
+          `turn:${ctx.inboundMessageId}`,
+          reply,
+          undefined,
+          markOutboundAccepted
+        );
     }
     await completeTurn(ctx, draft);
     return {
@@ -601,17 +736,32 @@ export async function processFreeTextOrderInbound(
             : 'confirmation_requested',
     };
   } catch (error) {
+    const message = extractErrorMessage(error);
+    console.error('[text-order-flow] technical_error:', {
+      accountId: ctx.accountId,
+      conversationId: ctx.conversationId,
+      inboundMessageId: ctx.inboundMessageId,
+      error: message,
+    });
     // Fail closed: no LLM/legacy payment fallback and no automatic uncertain-effect retry.
-    if (ownsTurn)
-      await db
-        .from('order_inbound_events')
-        .update({ status: 'failed' })
-        .eq('account_id', ctx.accountId)
-        .eq('meta_message_id', ctx.inboundMessageId);
+    await recordOrderInboundError(db, {
+      accountId: ctx.accountId,
+      conversationId: ctx.conversationId,
+      inboundMessageId: ctx.inboundMessageId,
+      inboundText: ctx.inboundText,
+      ownsTurn,
+      error,
+    });
     try {
       // Catalog ownership is exclusively changed by the consent RPC. A failed
       // RPC/notice must not let this stale text worker hand off a newer run.
-      if (!catalogRunOwnsTurn) await handoff(ctx, 'technical_error');
+      if (!catalogRunOwnsTurn) {
+        await handoff(
+          ctx,
+          'technical_error',
+          outboundAcceptedInTurn ? undefined : TECHNICAL_ERROR_CUSTOMER_NOTICE
+        );
+      }
     } catch (handoffError) {
       console.error(
         '[text-order-flow] handoff persistence failed',
@@ -621,7 +771,7 @@ export async function processFreeTextOrderInbound(
     return {
       handled: true,
       outcome: 'needs_human',
-      error: error instanceof Error ? error.message : String(error),
+      error: message,
     };
   }
 }

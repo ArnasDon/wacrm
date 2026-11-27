@@ -34,7 +34,7 @@ vi.mock('./create-order', () => ({
 function fixture() {
   let state: OrderDraft | null = null;
   let processing: string | null = null;
-  const events = new Set<string>();
+  const events = new Map<string, { status: string; error_detail?: string }>();
   const outbox = new Set<string>();
   const messages: Record<string, unknown>[] = [];
   let storedOrder: Record<string, unknown> | null = {
@@ -133,8 +133,11 @@ function fixture() {
         throw new Error(`Unexpected RPC ${name}`);
       if (events.has(args.p_message_id))
         return { data: { outcome: 'duplicate' }, error: null };
-      events.add(args.p_message_id);
-      if (processing) return { data: { outcome: 'busy' }, error: null };
+      events.set(args.p_message_id, { status: 'processing' });
+      if (processing) {
+        events.set(args.p_message_id, { status: 'blocked' });
+        return { data: { outcome: 'busy' }, error: null };
+      }
       processing = args.p_message_id;
       return {
         data: { outcome: 'claimed', id: 'draft-1', state },
@@ -146,13 +149,37 @@ function fixture() {
       let payload: Record<string, unknown> = {};
       const filters: Record<string, unknown> = {};
       const result = () => {
-        if (table === 'order_inbound_events' && operation === 'select')
-          return {
-            data: events.has(String(filters.meta_message_id))
-              ? { status: 'completed' }
-              : null,
-            error: null,
-          };
+        if (table === 'order_inbound_events') {
+          if (operation === 'select') {
+            const existingEvent = events.get(String(filters.meta_message_id));
+            return {
+              data: existingEvent ? { status: existingEvent.status } : null,
+              error: null,
+            };
+          }
+          if (operation === 'insert') {
+            const msgId = String(payload.meta_message_id);
+            if (events.has(msgId))
+              return { data: null, error: { code: '23505', message: 'duplicate' } };
+            events.set(msgId, {
+              status: String(payload.status),
+              error_detail: payload.error_detail as string | undefined,
+            });
+            return { data: null, error: null };
+          }
+          if (operation === 'update') {
+            const msgId = String(filters.meta_message_id);
+            const cur = events.get(msgId) ?? { status: 'failed' };
+            events.set(msgId, {
+              ...cur,
+              ...(payload.status ? { status: String(payload.status) } : {}),
+              ...(payload.error_detail !== undefined
+                ? { error_detail: String(payload.error_detail) }
+                : {}),
+            });
+            return { data: null, error: null };
+          }
+        }
         if (table === 'conversations') {
           if (operation === 'update' && payload.ai_autoreply_disabled === true)
             conversationDisabled = true;
@@ -257,6 +284,7 @@ function fixture() {
     inboundTimestamp: '2026-10-11T01:00:00.000Z',
   };
   return {
+    events,
     messages,
     db,
     flowUpdates,
@@ -1130,15 +1158,41 @@ describe('text order pipeline (all external effects mocked)', () => {
     expect((await f.turn('2 carne', 'items')).outcome).toBe('needs_human');
     await f.turn('2 carne', 'items');
     expect(fetch).toHaveBeenCalledTimes(1);
+    expect(f.events.get('items')).toMatchObject({
+      status: 'failed',
+      error_detail: expect.stringContaining('DB unavailable after Meta accepted'),
+    });
   });
-  it('fails closed on catalog errors and leaves normal messages to other responders', async () => {
+  it('fails closed on catalog errors, informs the customer clearly and persists error_detail', async () => {
     const f = fixture();
     expect((await f.turn('boa tarde', 'greeting')).handled).toBe(false);
+    // Empty draft row left over by an earlier crash must not swallow "ola"
+    f.seedDraft({
+      id: 'empty-draft',
+      version: 0,
+      items: [],
+      unresolved: [],
+      stage: 'collecting',
+      total: 0,
+    });
+    expect((await f.turn('ola', 'greeting-after-empty-draft')).handled).toBe(
+      false
+    );
+
     vi.mocked(loadOrderCatalog).mockRejectedValueOnce(
       new Error('catalog unavailable')
     );
-    expect((await f.turn('1 carne', 'items')).outcome).toBe('needs_human');
-    expect(fetch).not.toHaveBeenCalled();
+    const result = await f.turn('1 carne', 'items');
+    expect(result.outcome).toBe('needs_human');
+    expect(result.error).toContain('catalog unavailable');
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(f.messages.at(-1)?.content_text).toBe(
+      'Tivemos uma instabilidade técnica no atendimento automático.\nUm atendente já vai te responder.'
+    );
+    expect(f.events.get('items')).toMatchObject({
+      status: 'failed',
+      error_detail: expect.stringContaining('catalog unavailable'),
+    });
     expect(createOrderWithMercadoPago).not.toHaveBeenCalled();
   });
 });

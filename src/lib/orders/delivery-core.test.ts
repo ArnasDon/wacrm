@@ -1,6 +1,8 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import cardapio from '../../../assets/js/cardapio.json';
+import { catalogEntries } from './order-catalog';
+import { parseCatalogOrder } from './text-order-parser';
 
 const skillPath = '.hermes/skills/delivery-core.md';
 
@@ -42,5 +44,35 @@ describe('permanent delivery project rules', () => {
       '.env.local',
     ])
       expect(skill).toContain(required);
+  });
+
+  it('keeps the 045 seed aligned with all 26 official items and prices', () => {
+    const seedPath = 'supabase/migrations/045_seed_official_menu_items.sql';
+    expect(existsSync(seedPath)).toBe(true);
+    const seedSql = readFileSync(seedPath, 'utf8');
+    for (const item of cardapio.itens) {
+      expect(seedSql).toContain(`'${item.nome}'`);
+      expect(seedSql).toContain(`${item.preco.toFixed(2)}::numeric(10,2)`);
+    }
+    const entries = catalogEntries(
+      cardapio.itens.map((item) => ({
+        id: item.id,
+        name: item.nome,
+        price: item.preco,
+        is_available: true,
+      }))
+    );
+    expect(entries).toHaveLength(cardapio.itens.length);
+    const carneOrder = parseCatalogOrder('2 carne', entries);
+    expect(carneOrder.unresolved).toEqual([]);
+    expect(carneOrder.items).toEqual([
+      expect.objectContaining({
+        id: 'emp_hamburguer',
+        title: 'Empanada de Carne com Ovos',
+        quantity: 2,
+        unitPrice: 14,
+        totalPrice: 28,
+      }),
+    ]);
   });
 });

@@ -36,6 +36,12 @@ beforeAll(async () => {
   await db.exec(
     readFileSync('supabase/migrations/042_order_intent_priority.sql', 'utf8')
   );
+  await db.exec(
+    readFileSync(
+      'supabase/migrations/044_handoff_auto_resume_and_error_detail.sql',
+      'utf8'
+    )
+  );
 }, 30000);
 afterAll(async () => {
   await db?.close();
@@ -408,13 +414,56 @@ describe('handoff migration on real in-memory Postgres', () => {
         .rows[0]
     ).toEqual({ status: 'open', ai_autoreply_disabled: false });
   });
-  it('resumes recoverable pauses automatically but never an active human or manual pause', async () => {
+  it('resumes human_active, technical_error and non-open payment_review after 30 minutes, keeping manual and open payment_review permanently blocked', async () => {
     await decision(true, 'order_review');
     await db.query(
       "UPDATE conversations SET bot_resume_after=now()-interval '1 minute' WHERE id=$1",
       [conversation]
     );
-    expect(await decision()).toMatchObject({ blocked: false });
+    expect(await decision()).toMatchObject({ blocked: false, resumed: true });
+
+    await decision(true, 'technical_error');
+    await db.query(
+      "UPDATE conversations SET bot_resume_after=now()-interval '1 minute' WHERE id=$1",
+      [conversation]
+    );
+    expect(await decision()).toMatchObject({ blocked: false, resumed: true });
+
+    await db.query(
+      "UPDATE conversations SET assigned_agent_id=$1,last_agent_message_at=now()-interval '31 minutes' WHERE id=$2",
+      [admin, conversation]
+    );
+    await decision(true, 'human_active');
+    await db.query(
+      "UPDATE conversations SET bot_resume_after=now()-interval '1 minute' WHERE id=$1",
+      [conversation]
+    );
+    expect(await decision()).toMatchObject({ blocked: false, resumed: true });
+
+    // payment_review with an open checkout stays permanently blocked after 30 minutes
+    const openState = { id: contact, version: 2, stage: 'payment_created' };
+    await db.query(
+      'INSERT INTO order_drafts(account_id,conversation_id,state) VALUES($1,$2,$3)',
+      [account, conversation, openState]
+    );
+    await db.query("INSERT INTO orders VALUES($1,$2,$3,'pending')", [
+      contact,
+      account,
+      `TEXT-${contact}-2`,
+    ]);
+    await decision(true, 'payment_review');
+    await db.query(
+      "UPDATE conversations SET bot_resume_after=now()-interval '1 minute' WHERE id=$1",
+      [conversation]
+    );
+    expect((await decision(false, 'customer_request', true)).blocked).toBe(
+      true
+    );
+
+    // Once payment is completed/paid, expired payment_review can resume
+    await db.query("UPDATE orders SET status='paid' WHERE id=$1", [contact]);
+    expect(await decision()).toMatchObject({ blocked: false, resumed: true });
+
     await decision(true, 'manual');
     await db.query(
       "UPDATE conversations SET bot_resume_after=now()-interval '1 minute' WHERE id=$1",
@@ -430,6 +479,29 @@ describe('handoff migration on real in-memory Postgres', () => {
     expect((await decision(false, 'customer_request', true)).blocked).toBe(
       true
     );
+  });
+  it('notifies the owner on technical_error even when assigned or escalating from another pause, and stores error_detail', async () => {
+    await db.query(
+      'UPDATE conversations SET assigned_agent_id=$1 WHERE id=$2',
+      [admin, conversation]
+    );
+    const first = await decision(true, 'order_review');
+    const second = await decision(true, 'technical_error');
+    expect(second.episode_id).not.toBe(first.episode_id);
+    const notes = await db.query<{ user_id: string; title: string }>(
+      "SELECT user_id, title FROM notifications WHERE title = 'Erro técnico no atendimento'"
+    );
+    expect(notes.rows.map((r) => r.user_id).sort()).toEqual(
+      [owner, admin].sort()
+    );
+    await db.query(
+      "INSERT INTO order_inbound_events(account_id,meta_message_id,conversation_id,raw_text,status,error_detail) VALUES($1,'err-1',$2,'2 carne','failed','menu_items missing')",
+      [account, conversation]
+    );
+    const errRow = await db.query<{ error_detail: string }>(
+      "SELECT error_detail FROM order_inbound_events WHERE meta_message_id='err-1'"
+    );
+    expect(errRow.rows[0].error_detail).toBe('menu_items missing');
   });
   it('rejects a foreign contact without notifications', async () => {
     await expect(

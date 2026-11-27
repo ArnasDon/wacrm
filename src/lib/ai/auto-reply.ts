@@ -98,7 +98,7 @@ export async function dispatchInboundToAiReply(
     const { data: conv, error: convErr } = await db
       .from('conversations')
       .select(
-        'status, assigned_agent_id, ai_autoreply_disabled, ai_reply_count, last_agent_message_at, bot_order_resumed_at'
+        'status, assigned_agent_id, ai_autoreply_disabled, ai_reply_count, last_agent_message_at, bot_order_resumed_at, bot_pause_reason, bot_resume_after'
       )
       .eq('id', conversationId)
       .maybeSingle();
@@ -122,11 +122,7 @@ export async function dispatchInboundToAiReply(
       return;
     }
 
-    // Only the locked inbound handoff policy can resume a paused conversation.
-    // A missing agent timestamp must never override the disabled flag.
     if (
-      conv.ai_autoreply_disabled ||
-      conv.status === 'pending' ||
       hasActiveHuman(
         conv.last_agent_message_at,
         Date.now(),
@@ -134,6 +130,43 @@ export async function dispatchInboundToAiReply(
       )
     ) {
       return;
+    }
+
+    // Auto-resume recoverable pauses after 30 minutes (human_active, technical_error,
+    // order_review, or non-open-checkout payment_review), while keeping manual,
+    // unconfirmed customer_request, and open-checkout payment_review blocked.
+    if (conv.ai_autoreply_disabled || conv.status === 'pending') {
+      const resumeAtMs = Date.parse(conv.bot_resume_after ?? '');
+      const canAutoResume =
+        Number.isFinite(resumeAtMs) &&
+        resumeAtMs <= Date.now() &&
+        conv.bot_pause_reason !== 'manual' &&
+        conv.bot_pause_reason !== 'customer_request';
+
+      if (!canAutoResume) {
+        return;
+      }
+
+      const { data: handoffDecision, error: handoffErr } = await db.rpc(
+        'handle_conversation_handoff',
+        {
+          p_account_id: accountId,
+          p_conversation_id: conversationId,
+          p_contact_id: contactId,
+          p_request: false,
+          p_reason: conv.bot_pause_reason ?? 'human_active',
+          p_resume: false,
+          p_new_order: false,
+        }
+      );
+
+      if (
+        handoffErr ||
+        !handoffDecision ||
+        (handoffDecision as { blocked?: boolean }).blocked !== false
+      ) {
+        return;
+      }
     }
 
     // Cheap early-out; the authoritative cap check is the atomic claim

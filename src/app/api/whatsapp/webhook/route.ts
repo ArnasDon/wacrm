@@ -1,7 +1,7 @@
 import { NextResponse, after } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption';
-import { getCatalogProductNames, getMediaUrl } from '@/lib/whatsapp/meta-api';
+import { getCatalogProductNames, getMediaUrl, sendTextMessage } from '@/lib/whatsapp/meta-api';
 import { productNameFromCardapio } from '@/lib/cardapio/product-names';
 import { normalizePhone } from '@/lib/whatsapp/phone-utils';
 import { resolveOrCreateConversation } from '@/lib/whatsapp/resolve-conversation';
@@ -12,9 +12,16 @@ import { dispatchInboundToFlows } from '@/lib/flows/engine';
 import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply';
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver';
 import {
+  TECHNICAL_ERROR_CUSTOMER_NOTICE,
   processFreeTextOrderInbound,
   processInboundHandoff,
+  recordOrderInboundError,
 } from '@/lib/orders/text-order-flow';
+import {
+  HANDOFF_WAITING,
+  handleConversationHandoff,
+  sendHandoffNotice,
+} from '@/lib/whatsapp/handoff';
 import {
   handleTemplateWebhookChange,
   isTemplateWebhookField,
@@ -629,6 +636,12 @@ async function processMessage(
             '[webhook] Mensagem processada pelo fluxo de pedido por texto livre:',
             textOrderResult.outcome
           );
+          if (textOrderResult.error) {
+            console.error(
+              '[webhook] Detalhe do erro no fluxo de pedido por texto livre:',
+              textOrderResult.error
+            );
+          }
 
           await dispatchWebhookEvent(
             supabaseAdmin(),
@@ -651,11 +664,70 @@ async function processMessage(
           err
         );
         // Never fall through to the LLM or a second payment path after a failed order turn.
-        await supabaseAdmin()
-          .from('conversations')
-          .update({ ai_autoreply_disabled: true })
-          .eq('id', conversation.id)
-          .eq('account_id', accountId);
+        await recordOrderInboundError(supabaseAdmin(), {
+          accountId,
+          conversationId: conversation.id,
+          inboundMessageId: message.id,
+          inboundText: contentText ?? message.text?.body ?? '',
+          error: err,
+        });
+        try {
+          await handleConversationHandoff({
+            db: supabaseAdmin(),
+            accountId,
+            conversationId: conversation.id,
+            contactId: contactRecord.id,
+            text: contentText ?? message.text?.body ?? '',
+            messageId: message.id,
+            reason: 'technical_error',
+            send: (key, waitingText) =>
+              sendHandoffNotice(
+                supabaseAdmin(),
+                accountId,
+                conversation.id,
+                key,
+                `${TECHNICAL_ERROR_CUSTOMER_NOTICE}\n${waitingText || HANDOFF_WAITING}`,
+                async (body) => {
+                  const sent = await sendTextMessage({
+                    phoneNumberId,
+                    accessToken,
+                    to: senderPhone,
+                    text: body,
+                  });
+                  if (sent.messageId) {
+                    await supabaseAdmin().from('messages').insert({
+                      conversation_id: conversation.id,
+                      sender_type: 'bot',
+                      content_type: 'text',
+                      content_text: body,
+                      message_id: sent.messageId,
+                      status: 'sent',
+                    });
+                  }
+                  return sent;
+                }
+              ),
+          });
+        } catch (handoffErr) {
+          console.error(
+            '[webhook] Falha no handoff após erro no fluxo de texto:',
+            handoffErr
+          );
+          const pausedAt = new Date();
+          await supabaseAdmin()
+            .from('conversations')
+            .update({
+              ai_autoreply_disabled: true,
+              status: 'pending',
+              bot_pause_reason: 'technical_error',
+              bot_paused_at: pausedAt.toISOString(),
+              bot_resume_after: new Date(
+                pausedAt.getTime() + 30 * 60 * 1000
+              ).toISOString(),
+            })
+            .eq('id', conversation.id)
+            .eq('account_id', accountId);
+        }
         return;
       }
     }
@@ -698,9 +770,18 @@ async function processMessage(
         // owns notes review, delivery collection and explicit checkout consent.
       } catch (error) {
         console.error('[webhook] native order handoff failed:', error);
+        const pausedAt = new Date();
         await supabaseAdmin()
           .from('conversations')
-          .update({ ai_autoreply_disabled: true })
+          .update({
+            ai_autoreply_disabled: true,
+            status: 'pending',
+            bot_pause_reason: 'technical_error',
+            bot_paused_at: pausedAt.toISOString(),
+            bot_resume_after: new Date(
+              pausedAt.getTime() + 30 * 60 * 1000
+            ).toISOString(),
+          })
           .eq('id', conversation.id)
           .eq('account_id', accountId);
         return;

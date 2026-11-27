@@ -14,6 +14,11 @@ const h = vi.hoisted(() => ({
     conv: null as Record<string, unknown> | null,
     autoResponders: [] as { id: string }[],
     claim: true as boolean,
+    handoffDecision: {
+      blocked: true,
+      episode_id: 'episode',
+      notice: 'waiting',
+    } as Record<string, unknown>,
     updatePayload: null as Record<string, unknown> | null,
     rpcCalls: [] as { name: string; args: unknown }[],
   },
@@ -73,7 +78,7 @@ vi.mock('./admin-client', () => ({
       h.state.rpcCalls.push({ name, args });
       if (name === 'handle_conversation_handoff')
         return Promise.resolve({
-          data: { blocked: true, episode_id: 'episode', notice: 'waiting' },
+          data: h.state.handoffDecision,
           error: null,
         });
       return Promise.resolve({ data: h.state.claim, error: null });
@@ -112,6 +117,11 @@ beforeEach(() => {
   };
   h.state.autoResponders = [];
   h.state.claim = true;
+  h.state.handoffDecision = {
+    blocked: true,
+    episode_id: 'episode',
+    notice: 'waiting',
+  };
   h.state.updatePayload = null;
   h.state.rpcCalls = [];
   h.loadAiConfig.mockResolvedValue(aiConfig());
@@ -237,6 +247,76 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
     h.buildConversationContext.mockResolvedValue([]);
     await dispatchInboundToAiReply(ARGS);
     expect(h.generateReply).not.toHaveBeenCalled();
+    expect(h.engineSendText).not.toHaveBeenCalled();
+  });
+
+  it.each(['human_active', 'technical_error'] as const)(
+    'auto-resumes %s pause after 30 minutes and sends welcome + menu for "ola"',
+    async (reason) => {
+      const expired = new Date(Date.now() - 60_000).toISOString();
+      h.state.handoffDecision = { blocked: false, resumed: true };
+      h.state.conv = {
+        status: 'pending',
+        ai_autoreply_disabled: true,
+        ai_reply_count: 0,
+        bot_pause_reason: reason,
+        bot_resume_after: expired,
+        last_agent_message_at:
+          reason === 'human_active'
+            ? new Date(Date.now() - 31 * 60_000).toISOString()
+            : null,
+      };
+      h.buildConversationContext.mockResolvedValue([
+        { role: 'user', content: 'ola' },
+      ]);
+
+      await dispatchInboundToAiReply(ARGS);
+
+      expect(h.state.rpcCalls[0]).toEqual({
+        name: 'handle_conversation_handoff',
+        args: expect.objectContaining({
+          p_request: false,
+          p_reason: reason,
+          p_resume: false,
+          p_new_order: false,
+        }),
+      });
+      expect(h.engineSendText).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: expect.stringContaining('La Empanadas Argentinas'),
+        })
+      );
+      expect(h.generateReply).not.toHaveBeenCalled();
+    }
+  );
+
+  it('keeps manual and open-checkout payment_review permanently blocked even after 30 minutes', async () => {
+    const expired = new Date(Date.now() - 60_000).toISOString();
+    h.state.conv = {
+      status: 'pending',
+      ai_autoreply_disabled: true,
+      ai_reply_count: 0,
+      bot_pause_reason: 'manual',
+      bot_resume_after: expired,
+    };
+    await dispatchInboundToAiReply(ARGS);
+    expect(h.state.rpcCalls).toHaveLength(0);
+    expect(h.engineSendText).not.toHaveBeenCalled();
+
+    h.state.handoffDecision = {
+      blocked: true,
+      episode_id: 'episode',
+      notice: 'waiting',
+    };
+    h.state.conv = {
+      status: 'pending',
+      ai_autoreply_disabled: true,
+      ai_reply_count: 0,
+      bot_pause_reason: 'payment_review',
+      bot_resume_after: expired,
+    };
+    await dispatchInboundToAiReply(ARGS);
+    expect(h.state.rpcCalls).toHaveLength(1);
     expect(h.engineSendText).not.toHaveBeenCalled();
   });
 });

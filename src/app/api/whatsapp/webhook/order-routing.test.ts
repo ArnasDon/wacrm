@@ -720,4 +720,11 @@ describe('real WhatsApp POST and text processor ownership', () => {
       expect(fetch).not.toHaveBeenCalled();
     }
   );
+  it('lets a plain greeting "ola" pass through to AI responder on open conversations', async () => {
+    tables.order_drafts = [];
+    mocks.flow.mockResolvedValueOnce({ consumed: false, outcome: 'none' });
+    await deliver('greeting-ola', { type: 'text', text: { body: 'ola' } });
+    expect(mocks.ai).toHaveBeenCalledTimes(1);
+    expect(mocks.payment).not.toHaveBeenCalled();
+  });
 });

@@ -50,6 +50,8 @@ it. Grant the minimum.
 | `conversations:read` | List and read conversations              |
 | `broadcasts:send`    | Launch broadcast campaigns               |
 | `webhooks:manage`    | Register and manage outbound webhooks    |
+| `flows:read`         | List flows and export them as JSON       |
+| `flows:write`        | Import flows from JSON, activate/pause   |
 
 A key with **no scopes** still authenticates and can call
 `GET /api/v1/me` — useful for verifying a key works.
@@ -374,10 +376,81 @@ resolve to a public address — requests to `localhost`, private/RFC1918
 ranges, link-local (incl. cloud metadata `169.254.169.254`), and similar
 internal targets are refused at delivery time.
 
+## Flows (import / export)
+
+Flows can be moved around as one portable JSON file — the same file
+the dashboard's **Export** button (flow editor) and **Import JSON**
+button (Flows list) use. A ready-made example lives in
+[`docs/examples/online-onward-tickets.wacrm-flow.json`](./examples/online-onward-tickets.wacrm-flow.json).
+
+- `GET /api/v1/flows` — list flows (`flows:read`).
+- `GET /api/v1/flows/{id}` — export one flow as portable JSON (`flows:read`).
+- `POST /api/v1/flows` — import a flow (`flows:write`). Body is the portable
+  document. It is **always created as a draft**; the response includes an
+  `issues` array from the activation validator.
+- `POST /api/v1/flows/{id}/activate` — body `{ "status": "active" | "draft" | "archived" }`
+  (`flows:write`). Going `active` returns `422` while any validation error remains.
+
+Portable format: `{ name, description?, trigger_type, trigger_config, fallback_policy?,
+entry_node_id?, nodes: [{ node_key, node_type, config, position_x?, position_y? }] }`.
+Edges are `next_node_key` fields inside each node's `config` (button / list-row /
+condition branches included). `set_tag` nodes use `tag_name` instead of a tag UUID;
+missing tags are created on import.
+
+```bash
+curl -X POST https://YOUR-CRM/api/v1/flows \
+  -H "Authorization: Bearer wacrm_live_…" \
+  -H "Content-Type: application/json" \
+  --data @docs/examples/online-onward-tickets.wacrm-flow.json
+```
+
+## AI knowledge base (JSON import)
+
+The **AI Agents → Knowledge base → Import JSON** button (admin) loads many
+documents at once from a file shaped like
+[`docs/examples/online-onward-tickets-knowledge.json`](./examples/online-onward-tickets-knowledge.json):
+`{ "documents": [{ "title": "…", "content": "…" }] }`. Documents are matched by
+title, so importing again updates existing ones instead of duplicating them.
+This is a dashboard (session) endpoint, `POST /api/ai/knowledge/import`, not part of
+the API-key surface.
+
+## Workspace bundle (one-file setup)
+
+One JSON file can carry a whole setup: flows, automations, quick replies, message
+templates and the AI agent (instructions + knowledge base). Use **Settings → Import /
+export** in the dashboard (admin). A ready example is
+[`docs/examples/online-onward-tickets.wacrm-bundle.json`](./examples/online-onward-tickets.wacrm-bundle.json).
+
+```json
+{
+  "wacrm_bundle_version": 1,
+  "flows":         [ { "...portable flow...", "activate": false } ],
+  "automations":   [ { "name": "...", "trigger_type": "keyword_match", "trigger_config": {}, "steps": [], "activate": false } ],
+  "quick_replies": [ { "title": "...", "kind": "text", "content_text": "..." } ],
+  "templates":     [ { "name": "...", "category": "Utility", "language": "en_US", "body_text": "...", "buttons": [], "sample_values": { "body": [] } } ],
+  "ai": { "config": { "system_prompt": "...", "is_active": true, "auto_reply_enabled": false }, "knowledge": [ { "title": "...", "content": "..." } ] }
+}
+```
+
+- `POST /api/workspace/import` — body `{ "bundle": {…}, "sections": ["flows", …], "dry_run": false }`
+  (or the bundle itself). Every section is optional and applied independently; the response
+  reports created / updated / skipped counts and warnings per section.
+- `GET /api/workspace/export?sections=flows,automations,quick_replies,templates,ai` —
+  downloads the same format from the current workspace.
+- Both are dashboard (session) endpoints and need the `admin` role.
+- Re-importing is safe: quick replies and knowledge documents are updated by title; flows,
+  automations and templates that already exist are skipped. Flows/automations are created
+  inactive unless the file says `"activate": true` and validation passes.
+- Templates are submitted to Meta for approval through the same code path as the
+  "New template" form. Secrets (AI provider key, WhatsApp token, API keys) are never
+  exported or imported; AI settings are only applied once a provider key has been saved.
+- Automation `add_tag` / `remove_tag` steps and flow `set_tag` nodes use `tag_name` in the
+  file; missing tags are created on import.
+
 ## Roadmap
 
 The public API now covers messaging, contacts, conversations,
 broadcasts, and outbound webhooks — the full scope of
 [#245](https://github.com/ArnasDon/wacrm/issues/245). Future ideas
-(deals/pipelines, templates, flows, a delivery queue for webhooks) are
+(deals/pipelines, message templates, automations import/export, a delivery queue for webhooks) are
 not yet scheduled.

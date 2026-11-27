@@ -1009,7 +1009,17 @@
       "triggerKeywordNone": "키워드로 트리거 (설정 안 됨)",
       "triggerKeyword": "트리거 조건: {keywords}",
       "triggerFirstInbound": "연락처의 첫 수신 메시지에서 트리거됨",
-      "triggerManual": "수동 트리거"
+      "triggerManual": "수동 트리거",
+      "importJson": "JSON 가져오기",
+      "importTitle": "JSON에서 플로우 가져오기",
+      "importDesc": "다른 wacrm에서 내보낸 .json 파일(또는 스크립트로 생성한 파일)을 업로드하거나 아래에 붙여넣으세요. 초안으로 생성되며, 검토 후 활성화할 수 있습니다.",
+      "importPlaceholder": "{ \"name\": \"My flow\", \"trigger_type\": \"keyword\", ... }",
+      "importButton": "플로우 가져오기",
+      "importReadError": "파일을 읽을 수 없습니다.",
+      "importInvalidJson": "올바른 JSON이 아닙니다.",
+      "importError": "가져오기에 실패했습니다.",
+      "importSuccess": "플로우를 초안으로 가져왔습니다.",
+      "importSuccessIssues": "초안으로 가져왔습니다 — 활성화하기 전에 수정할 문제가 {count}개 있습니다."
     },
     "edit": {
       "notFound": "플로우를 찾을 수 없습니다.",
@@ -1669,6 +1679,11 @@
       "removeFailed": "제거하지 못했습니다."
     },
     "aiKnowledge": {
+      "importJson": "JSON 가져오기",
+      "importTooltip": "JSON 파일에서 여러 문서를 가져옵니다. 제목이 같은 문서는 업데이트됩니다.",
+      "importInvalidJson": "올바른 JSON이 아닙니다.",
+      "importFailed": "가져오기에 실패했습니다.",
+      "importDone": "가져오기 완료: 새 문서 {created}개, 업데이트 {updated}개.",
       "loadFailed": "지식베이스를 불러오지 못했습니다",
       "openFailed": "문서를 열지 못했습니다",
       "titleContentRequired": "제목과 내용은 필수입니다.",

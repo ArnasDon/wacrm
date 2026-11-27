@@ -16,6 +16,7 @@ import {
   HelpCircle,
   UserPlus,
   FileText,
+  Upload,
 } from "lucide-react";
 
 import { useTranslations } from "next-intl";
@@ -31,6 +32,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
@@ -92,6 +94,9 @@ export default function FlowsPage() {
   const [newName, setNewName] = useState("");
   const [creating, setCreating] = useState(false);
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importText, setImportText] = useState("");
+  const [importing, setImporting] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -177,6 +182,56 @@ export default function FlowsPage() {
     }
   }
 
+  async function handleImportFile(file: File | undefined) {
+    if (!file) return;
+    try {
+      setImportText(await file.text());
+    } catch {
+      toast.error(t("importReadError"));
+    }
+  }
+
+  async function handleImport() {
+    let doc: unknown;
+    try {
+      doc = JSON.parse(importText);
+    } catch {
+      toast.error(t("importInvalidJson"));
+      return;
+    }
+    setImporting(true);
+    try {
+      const res = await fetch("/api/flows/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(doc),
+      });
+      const json = (await res.json().catch(() => ({}))) as {
+        flow?: FlowRow;
+        issues?: Array<{ severity: string }>;
+        error?: string;
+        details?: string[];
+      };
+      if (!res.ok || !json.flow) {
+        const detail = json.details?.length ? ` ${json.details.slice(0, 3).join(" ")}` : "";
+        throw new Error((json.error ?? t("importError")) + detail);
+      }
+      const problems = (json.issues ?? []).filter((i) => i.severity === "error").length;
+      toast.success(
+        problems > 0
+          ? t("importSuccessIssues", { count: problems })
+          : t("importSuccess"),
+      );
+      setImportOpen(false);
+      setImportText("");
+      router.push(`/flows/${json.flow.id}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("importError"));
+    } finally {
+      setImporting(false);
+    }
+  }
+
   async function handleDelete(flow: FlowRow) {
     const yes = window.confirm(t("deleteConfirm", { name: flow.name }));
     if (!yes) return;
@@ -213,14 +268,25 @@ export default function FlowsPage() {
             {t("description")}
           </p>
         </div>
-        <GatedButton
-          canAct={canCreate}
-          gateReason="create flows"
-          onClick={() => setCreateOpen(true)}
-        >
-          <Plus className="h-4 w-4" />
-          {t("newFlow")}
-        </GatedButton>
+        <div className="flex flex-wrap items-center gap-2">
+          <GatedButton
+            canAct={canCreate}
+            gateReason="import flows"
+            variant="outline"
+            onClick={() => setImportOpen(true)}
+          >
+            <Upload className="h-4 w-4" />
+            {t("importJson")}
+          </GatedButton>
+          <GatedButton
+            canAct={canCreate}
+            gateReason="create flows"
+            onClick={() => setCreateOpen(true)}
+          >
+            <Plus className="h-4 w-4" />
+            {t("newFlow")}
+          </GatedButton>
+        </div>
       </header>
 
       {flows.length === 0 ? (
@@ -242,6 +308,46 @@ export default function FlowsPage() {
           ))}
         </div>
       )}
+
+      <Dialog open={importOpen} onOpenChange={setImportOpen}>
+        <DialogContent className="sm:max-w-2xl bg-popover text-popover-foreground">
+          <DialogHeader>
+            <DialogTitle>{t("importTitle")}</DialogTitle>
+            <DialogDescription className="text-muted-foreground">
+              {t("importDesc")}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Input
+              type="file"
+              accept="application/json,.json"
+              onChange={(e) => void handleImportFile(e.target.files?.[0])}
+              className="bg-muted"
+            />
+            <Textarea
+              value={importText}
+              onChange={(e) => setImportText(e.target.value)}
+              placeholder={t("importPlaceholder")}
+              rows={10}
+              spellCheck={false}
+              className="bg-muted font-mono text-xs"
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => setImportOpen(false)}
+              disabled={importing}
+            >
+              {t("cancel")}
+            </Button>
+            <Button onClick={handleImport} disabled={!importText.trim() || importing}>
+              {importing && <Loader2 className="h-4 w-4 animate-spin" />}
+              {t("importButton")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         {/* `sm:max-w-4xl` not `max-w-4xl` — shadcn's DialogContent has

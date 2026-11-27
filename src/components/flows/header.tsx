@@ -26,6 +26,7 @@ import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   CircleDot,
+  Download,
   History,
   Loader2,
   PauseCircle,
@@ -105,6 +106,15 @@ export function EditorHeader() {
             <span className="ml-0.5 rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
               {flow.execution_count}
             </span>
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            render={<a href={`/api/flows/${flow.id}/export`} download />}
+            title="Download this flow as a JSON file (re-importable)"
+          >
+            <Download className="h-3.5 w-3.5" />
+            Export
           </Button>
           <Button
             variant="ghost"

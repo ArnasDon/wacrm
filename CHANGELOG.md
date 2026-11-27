@@ -9,6 +9,25 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [Unreleased]
+
+### Added
+
+- **Flow import / export (JSON).** "Import JSON" on the Flows list and
+  "Export" in the flow editor move a whole flow as one portable file
+  (no UUIDs; `set_tag` nodes reference tags by name). Imports always land
+  as a draft and report validation issues. No migration required.
+- **Flows in the public API.** New scopes `flows:read` / `flows:write` and
+  endpoints `GET/POST /api/v1/flows`, `GET /api/v1/flows/{id}`,
+  `POST /api/v1/flows/{id}/activate`. See `docs/public-api.md`.
+- **AI knowledge base import.** "Import JSON" on the Knowledge base card loads many documents
+  at once (upsert by title) via `POST /api/ai/knowledge/import`.
+- **Workspace bundle import / export.** New Settings → Import / export section loads or
+  downloads flows, automations, quick replies, message templates and the AI agent (instructions
+  + knowledge base) as one JSON file (`POST /api/workspace/import`, `GET /api/workspace/export`).
+  Secrets are never included; imports are idempotent and create drafts unless told to activate.
+- Examples: `docs/examples/online-onward-tickets.*.json`.
+
 ## [0.8.1] — 2026-07-10
 
 Fixes inbound chats fragmenting into multiple threads for the same

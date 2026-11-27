@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Loader2, Plus, Trash2, Pencil, RefreshCw, BookOpen } from 'lucide-react';
+import { Loader2, Plus, Trash2, Pencil, RefreshCw, BookOpen, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -41,6 +41,8 @@ export function AiKnowledgeCard({
   const [content, setContent] = useState('');
   const [saving, setSaving] = useState(false);
   const [reindexing, setReindexing] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const loadedAccountIdRef = useRef<string | null>(null);
   const t = useTranslations('Settings.aiKnowledge');
 
@@ -157,6 +159,41 @@ export function AiKnowledgeCard({
     }
   };
 
+  const importFile = async (file: File | undefined) => {
+    if (!file) return;
+    setImporting(true);
+    try {
+      let body: unknown;
+      try {
+        body = JSON.parse(await file.text());
+      } catch {
+        toast.error(t('importInvalidJson'));
+        return;
+      }
+      const res = await fetch('/api/ai/knowledge/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const detail = Array.isArray(data.details) ? ` ${data.details.slice(0, 2).join(' ')}` : '';
+        toast.error((data.error ?? t('importFailed')) + detail);
+        return;
+      }
+      toast.success(t('importDone', { created: data.created ?? 0, updated: data.updated ?? 0 }));
+      if (Array.isArray(data.warnings) && data.warnings.length > 0) {
+        toast.warning(data.warnings.slice(0, 3).join(' '));
+      }
+      await fetchDocs();
+    } catch {
+      toast.error(t('importFailed'));
+    } finally {
+      setImporting(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -255,9 +292,32 @@ export function AiKnowledgeCard({
             ) : (
               canEdit && (
                 <div className="flex items-center justify-between">
-                  <Button variant="outline" size="sm" onClick={openNew}>
-                    <Plus className="mr-2 h-4 w-4" /> {t('addDoc')}
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={openNew}>
+                      <Plus className="mr-2 h-4 w-4" /> {t('addDoc')}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={importing}
+                      title={t('importTooltip')}
+                    >
+                      {importing ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Upload className="mr-2 h-4 w-4" />
+                      )}
+                      {t('importJson')}
+                    </Button>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="application/json,.json"
+                      className="hidden"
+                      onChange={(e) => void importFile(e.target.files?.[0])}
+                    />
+                  </div>
                   {hasEmbeddingsKey && docs.length > 0 && (
                     <Button
                       variant="ghost"

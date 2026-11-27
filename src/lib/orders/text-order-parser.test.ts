@@ -3,6 +3,7 @@ import {
   hasOrderIntent,
   parseTextOrder,
   extractAddressFromText,
+  extractDeliveryKindFromText,
   isAddressConfirmation,
 } from './text-order-parser';
 
@@ -164,6 +165,43 @@ describe('text-order-parser', () => {
       expect(isAddressConfirmation('Rua das Flores, 123')).toBe(false);
       expect(isAddressConfirmation('quero mudar')).toBe(false);
       expect(isAddressConfirmation('não')).toBe(false);
+    });
+  });
+
+  describe('extractDeliveryKindFromText & inline parsing', () => {
+    it('extracts delivery and pickup preferences accurately', () => {
+      expect(extractDeliveryKindFromText('retirada')).toBe('retirada');
+      expect(extractDeliveryKindFromText('Vou retirar na loja')).toBe('retirada');
+      expect(extractDeliveryKindFromText('para retirada')).toBe('retirada');
+      expect(extractDeliveryKindFromText('entrega')).toBe('delivery');
+      expect(extractDeliveryKindFromText('Delivery')).toBe('delivery');
+      expect(extractDeliveryKindFromText('quero entrega')).toBe('delivery');
+    });
+
+    it('returns null for questions, negations, ambiguous choices, or incomplete street phrases', () => {
+      expect(extractDeliveryKindFromText('qual o valor da entrega?')).toBeNull();
+      expect(extractDeliveryKindFromText('onde fica a retirada?')).toBeNull();
+      expect(extractDeliveryKindFromText('não quero retirada')).toBeNull();
+      expect(extractDeliveryKindFromText('entrega ou retirada')).toBeNull();
+      expect(extractDeliveryKindFromText('Entregar na Rua Flores')).toBeNull();
+    });
+
+    it('strips bounded inline deliveryKind clause without polluting item notes', () => {
+      const pickup = parseTextOrder('2 carne, para retirada');
+      expect(pickup.hasItems).toBe(true);
+      expect(pickup.items[0].quantity).toBe(2);
+      expect(pickup.items[0].notes).toBeUndefined();
+      expect(pickup.deliveryKind).toBe('retirada');
+      expect(pickup.unresolved).toEqual([]);
+
+      const inlineNoComma = parseTextOrder('2 carne para retirada');
+      expect(inlineNoComma.items[0].notes).toBeUndefined();
+      expect(inlineNoComma.deliveryKind).toBe('retirada');
+      expect(inlineNoComma.unresolved).toEqual([]);
+
+      const negated = parseTextOrder('2 carne sem entrega');
+      expect(negated.deliveryKind).toBeUndefined();
+      expect(negated.requiresKitchenReview).toBe(true);
     });
   });
 });

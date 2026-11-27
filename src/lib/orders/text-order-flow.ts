@@ -655,7 +655,8 @@ export async function processFreeTextOrderInbound(
     const draft = transition.draft;
     if (
       JSON.stringify(previous.items) !== JSON.stringify(draft.items) ||
-      previous.deliveryAddress !== draft.deliveryAddress
+      previous.deliveryAddress !== draft.deliveryAddress ||
+      previous.deliveryKind !== draft.deliveryKind
     )
       (draft as OrderDraft & { cartUpdatedAt: string }).cartUpdatedAt =
         new Date().toISOString();
@@ -664,11 +665,14 @@ export async function processFreeTextOrderInbound(
         existing?.updated_at || new Date().toISOString();
     await saveDraft(ctx, draft);
     const customerName = ctx.contactRecord.name || ctx.contactName || 'Cliente';
+    const resolvedDeliveryKind = draft.deliveryKind ?? 'delivery';
     await saveContactOrderFields(db, ctx.accountId, ctx.contactRecord.id, {
       itens: orderSummary(draft),
-      endereco: isCompleteDeliveryAddress(draft.deliveryAddress || '')
-        ? draft.deliveryAddress
-        : undefined,
+      endereco:
+        resolvedDeliveryKind !== 'retirada' &&
+        isCompleteDeliveryAddress(draft.deliveryAddress || '')
+          ? draft.deliveryAddress
+          : undefined,
       nomeCliente: customerName,
     });
     if (transition.checkout) {
@@ -678,8 +682,11 @@ export async function processFreeTextOrderInbound(
         {
           contactId: ctx.contactRecord.id,
           customerName,
-          deliveryKind: 'delivery',
-          deliveryAddress: draft.deliveryAddress,
+          deliveryKind: resolvedDeliveryKind,
+          deliveryAddress:
+            resolvedDeliveryKind === 'retirada'
+              ? undefined
+              : draft.deliveryAddress,
           items: draft.items.map((item) => ({
             id: item.id,
             title: item.title,
@@ -710,7 +717,9 @@ export async function processFreeTextOrderInbound(
       );
     } else {
       const reply =
-        draft.stage === 'awaiting_address' && savedAddress
+        draft.stage === 'awaiting_address' &&
+        draft.deliveryKind !== 'retirada' &&
+        savedAddress
           ? `${transition.reply}\nOu responda SIM para usar o endereço cadastrado: ${savedAddress}`
           : transition.reply;
       if (draft.stage === 'needs_human' || draft.stage === 'payment_created')

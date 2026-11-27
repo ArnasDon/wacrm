@@ -103,13 +103,15 @@ describe('structured order draft', () => {
     expect(repriced.reply).toContain('Resumo do pedido');
     expect(repriced.reply).toContain('Total: R$ 30,00');
   });
-  it('acknowledges item selection briefly and shows the full summary only after the address', () => {
+  it('shows items and total with delivery or pickup choice before the address and full summary upon address', () => {
     const first = advanceOrderDraft(initial(), '2 carne', catalog);
     expect(first.reply).toContain('Anotado!');
     expect(first.reply).toContain('2 itens');
+    expect(first.reply).toContain('1. 2x Carne');
+    expect(first.reply).toContain('Total: R$ 28,00');
+    expect(first.reply).toContain('ENTREGA');
+    expect(first.reply).toContain('RETIRADA');
     expect(first.reply).not.toContain('Resumo do pedido');
-    expect(first.reply).not.toContain('1. 2x');
-    expect(first.reply).not.toContain('Total:');
     const addressed = advanceOrderDraft(
       first.draft,
       'Rua Flores, 10 Centro',
@@ -128,6 +130,85 @@ describe('structured order draft', () => {
     expect(repeatedAddress.reply).not.toContain('Resumo do pedido');
     expect(repeatedAddress.draft.version).toBe(addressed.draft.version);
     expect(repeatedAddress.checkout).toBe(false);
+  });
+  it('supports pickup (retirada) without an address and asks for Entrega address when switching back', () => {
+    const first = advanceOrderDraft(initial(), '2 carne', catalog);
+    const pickup = advanceOrderDraft(first.draft, 'retirada', catalog);
+    expect(pickup.draft.deliveryKind).toBe('retirada');
+    expect(pickup.draft.deliveryAddress).toBeUndefined();
+    expect(pickup.draft.stage).toBe('awaiting_confirmation');
+    expect(pickup.draft.version).toBeGreaterThan(first.draft.version);
+    expect(pickup.reply).toContain('Retirada na loja');
+    expect(pickup.reply).toContain('Av. Industrial, 750');
+    expect(pickup.reply).toContain('Total: R$ 28,00');
+    expect(pickup.reply).toContain('CONFIRMO O PEDIDO');
+    expect(pickup.checkout).toBe(false);
+    expect(
+      advanceOrderDraft(pickup.draft, 'confirmo o pedido', catalog).checkout
+    ).toBe(true);
+
+    const switchedToDelivery = advanceOrderDraft(
+      pickup.draft,
+      'entrega',
+      catalog
+    );
+    expect(switchedToDelivery.draft.deliveryKind).toBe('delivery');
+    expect(switchedToDelivery.draft.stage).toBe('awaiting_address');
+    expect(switchedToDelivery.draft.version).toBeGreaterThan(
+      pickup.draft.version
+    );
+    expect(switchedToDelivery.reply).toContain('Total: R$ 28,00');
+    expect(switchedToDelivery.reply).toContain('Rua, Número e Bairro');
+    expect(
+      advanceOrderDraft(
+        switchedToDelivery.draft,
+        'confirmo o pedido',
+        catalog
+      ).checkout
+    ).toBe(false);
+  });
+  it('clears previous delivery address and bumps version when switching to retirada', () => {
+    const addressed = advanceOrderDraft(
+      initial(),
+      '2 carne, entregar na Rua Flores, 10 Centro',
+      catalog
+    );
+    expect(addressed.draft.deliveryKind).toBe('delivery');
+    expect(addressed.draft.deliveryAddress).toBe('Rua Flores, 10 Centro');
+
+    const switched = advanceOrderDraft(
+      addressed.draft,
+      'vou retirar na loja',
+      catalog
+    );
+    expect(switched.draft.deliveryKind).toBe('retirada');
+    expect(switched.draft.deliveryAddress).toBeUndefined();
+    expect(switched.draft.stage).toBe('awaiting_confirmation');
+    expect(switched.draft.version).toBeGreaterThan(addressed.draft.version);
+    expect(switched.checkout).toBe(false);
+    expect(switched.reply).toContain('Retirada na loja');
+    expect(
+      advanceOrderDraft(switched.draft, 'confirmo o pedido', catalog).checkout
+    ).toBe(true);
+  });
+  it('accepts inline retirada preference in the initial item message', () => {
+    const inlinePickup = advanceOrderDraft(
+      initial(),
+      '2 carne, para retirada',
+      catalog
+    );
+    expect(inlinePickup.draft.items).toHaveLength(1);
+    expect(inlinePickup.draft.items[0].notes).toBeUndefined();
+    expect(inlinePickup.draft.unresolved).toEqual([]);
+    expect(inlinePickup.draft.deliveryKind).toBe('retirada');
+    expect(inlinePickup.draft.stage).toBe('awaiting_confirmation');
+    expect(inlinePickup.reply).toContain('Retirada na loja');
+    expect(inlinePickup.reply).toContain('Total: R$ 28,00');
+    expect(inlinePickup.checkout).toBe(false);
+    expect(
+      advanceOrderDraft(inlinePickup.draft, 'confirmo o pedido', catalog)
+        .checkout
+    ).toBe(true);
   });
   it.each([
     '2 carne\n3 carne',

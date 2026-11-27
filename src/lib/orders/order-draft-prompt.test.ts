@@ -12,13 +12,15 @@ const empty = (): OrderDraft => ({
   items: [],
   unresolved: [],
 });
-const prompt =
-  'Quer adicionar mais algo (bebida, sobremesa) ou posso fechar o pedido?';
+const prompt = 'Quer adicionar mais algo (bebida, sobremesa)?';
 
 describe('closing prompt wording without a new stage', () => {
-  it('offers drinks and dessert only as text while awaiting the address', () => {
+  it('shows items, total and delivery/pickup choice while awaiting the address', () => {
     const result = advanceOrderDraft(empty(), '2 carne', catalog);
     expect(result.reply).toContain(prompt);
+    expect(result.reply).toContain('Total: R$ 28,00');
+    expect(result.reply).toContain('ENTREGA');
+    expect(result.reply).toContain('RETIRADA');
     expect(result.reply).not.toContain(
       'Gostaria de adicionar mais alguma coisa'
     );

@@ -217,7 +217,7 @@ describe('standalone trailing note belongs to the whole order', () => {
       expect(Object.keys(result.draft).sort()).toEqual(
         [
           ...Object.keys(initial()),
-          ...(withAddress ? ['deliveryAddress'] : []),
+          ...(withAddress ? ['deliveryAddress', 'deliveryKind'] : []),
         ].sort()
       );
     }

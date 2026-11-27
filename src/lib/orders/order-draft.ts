@@ -5,6 +5,7 @@ import {
 } from './kitchen-notes';
 import {
   extractAddressFromText,
+  extractDeliveryKindFromText,
   isCompleteDeliveryAddress,
   isAddressConfirmation,
   parseCatalogOrder,
@@ -23,6 +24,7 @@ export interface OrderDraft {
     | 'awaiting_confirmation'
     | 'needs_human'
     | 'payment_created';
+  deliveryKind?: 'delivery' | 'retirada';
   deliveryAddress?: string;
   paymentReference?: string;
   cartUpdatedAt?: string;
@@ -75,11 +77,12 @@ export function orderSummary(draft: OrderDraft): string {
 }
 
 function summaryReply(draft: OrderDraft, previous: OrderDraft): string {
-  const summary = `La Empanadas — Resumo do pedido\n${orderSummary(draft)}`;
+  const itemsText = orderSummary(draft);
+  const summary = `La Empanadas — Resumo do pedido\n${itemsText}`;
   if (draft.stage === 'needs_human')
     return `${summary}\n${draft.unresolved.length ? `Não confirmado: ${draft.unresolved.join('; ')}\n` : ''}As observações/itens precisam de esclarecimento ou aprovação da cozinha. Um atendente deve revisar. Nenhuma cobrança foi gerada.`;
   const total = `Total: R$ ${draft.total.toFixed(2).replace('.', ',')}`;
-  if (!isCompleteDeliveryAddress(draft.deliveryAddress || '')) {
+  if (draft.stage === 'awaiting_address') {
     const quantity = draft.items.reduce((sum, item) => sum + item.quantity, 0);
     const noun = draft.items.every((item) => /^empanada\b/i.test(item.title))
       ? quantity === 1
@@ -88,17 +91,19 @@ function summaryReply(draft: OrderDraft, previous: OrderDraft): string {
       : quantity === 1
         ? 'item'
         : 'itens';
-    const notes = orderSummary(draft)
-      .split('\n')
-      .filter((line) => line.startsWith('📝 Obs.'))
-      .join('\n');
-    return `Anotado! Temos ${quantity} ${noun} no seu pedido. Quer adicionar mais algo (bebida, sobremesa) ou posso fechar o pedido? Para fechar, envie o endereço completo (Rua, Número e Bairro).${notes ? `\n${notes}` : ''}`;
+    if (draft.deliveryKind === 'delivery' || Boolean(draft.deliveryAddress)) {
+      return `Combinado, *Entrega* (frete *GRÁTIS*)!\n${itemsText}\n${total}\nPor favor, envie o endereço completo (Rua, Número e Bairro).`;
+    }
+    return `Anotado! Temos ${quantity} ${noun} no seu pedido:\n${itemsText}\n${total}\n\nQuer adicionar mais algo (bebida, sobremesa)?\nPara fechar, responda *ENTREGA* (frete *GRÁTIS*) ou *RETIRADA* (Av. Industrial, 750) — ou já envie o endereço completo (Rua, Número e Bairro).`;
   }
   if (
     previous.stage === 'awaiting_confirmation' &&
     previous.version === draft.version
   )
     return 'Seu pedido continua salvo. Responda CONFIRMO O PEDIDO para gerar o pagamento, ou envie uma correção.';
+  if (draft.deliveryKind === 'retirada') {
+    return `${summary}\n🛍️ *Retirada na loja* (Av. Industrial, 750)\n${total}\nPagamento online via Mercado Pago. Confira todas as linhas e observações. Responda CONFIRMO O PEDIDO para gerar o pagamento, ou envie uma correção.`;
+  }
   return `${summary}\n🚚 Entrega: *GRÁTIS*\n${total}\nEndereço: ${draft.deliveryAddress}\nConfira todas as linhas e observações. Responda CONFIRMO O PEDIDO para gerar o pagamento, ou envie uma correção.`;
 }
 
@@ -142,7 +147,8 @@ export function advanceOrderDraft(
   if (
     !parsed.hasItems &&
     !parsed.unresolved?.length &&
-    !parsed.deliveryAddress
+    !parsed.deliveryAddress &&
+    !parsed.deliveryKind
   ) {
     if (
       /^(?:vixi(?: esta)?(?: meio)? confuso|(?:esta|ficou)(?: meio)? confuso|nao entendi|seria (?:este|esse|o) pedido)$/.test(
@@ -296,18 +302,42 @@ export function advanceOrderDraft(
     if (notesChanged) draft.version += 1;
   }
   const address = parsed.deliveryAddress || extractAddressFromText(text);
+  const explicitDeliveryKind =
+    parsed.deliveryKind ?? extractDeliveryKindFromText(text);
   if (address) {
-    if (address !== draft.deliveryAddress) {
+    if (
+      address !== draft.deliveryAddress ||
+      (draft.deliveryKind && draft.deliveryKind !== 'delivery')
+    ) {
       draft.deliveryAddress = address;
+      draft.deliveryKind = 'delivery';
       draft.version += 1;
+    } else if (!draft.deliveryKind) {
+      draft.deliveryKind = 'delivery';
     }
   } else if (
     previous.stage === 'awaiting_address' &&
+    previous.deliveryKind !== 'retirada' &&
     isAddressConfirmation(text) &&
     savedAddress
   ) {
+    draft.deliveryKind = 'delivery';
     draft.deliveryAddress = savedAddress;
     draft.version += 1;
+  } else if (explicitDeliveryKind === 'retirada') {
+    if (
+      draft.deliveryKind !== 'retirada' ||
+      draft.deliveryAddress !== undefined
+    ) {
+      draft.deliveryKind = 'retirada';
+      draft.deliveryAddress = undefined;
+      draft.version += 1;
+    }
+  } else if (explicitDeliveryKind === 'delivery') {
+    if (draft.deliveryKind !== 'delivery') {
+      draft.deliveryKind = 'delivery';
+      draft.version += 1;
+    }
   } else if (
     text.trim() &&
     !confirms &&
@@ -344,6 +374,9 @@ export function advanceOrderDraft(
       0
     ) / 100;
   draft.unresolved = Array.from(new Set(draft.unresolved));
+  const isReadyForConfirmation =
+    draft.deliveryKind === 'retirada' ||
+    isCompleteDeliveryAddress(draft.deliveryAddress || '');
   draft.stage =
     !draft.items.length ||
     draft.unresolved.length ||
@@ -352,7 +385,7 @@ export function advanceOrderDraft(
     ) ||
     previous.stage === 'needs_human'
       ? 'needs_human'
-      : isCompleteDeliveryAddress(draft.deliveryAddress || '')
+      : isReadyForConfirmation
         ? 'awaiting_confirmation'
         : 'awaiting_address';
   const checkout =
@@ -367,7 +400,9 @@ export function advanceOrderDraft(
     previous.version === draft.version
       ? `${conversationalReply} ${
           draft.stage === 'awaiting_address'
-            ? 'Por favor, envie o endereço completo (Rua, Número e Bairro).'
+            ? draft.deliveryKind === 'delivery' || Boolean(draft.deliveryAddress)
+              ? 'Por favor, envie o endereço completo (Rua, Número e Bairro).'
+              : 'Responda ENTREGA (frete GRÁTIS) ou RETIRADA (Av. Industrial, 750), ou envie o endereço completo (Rua, Número e Bairro).'
             : 'Para gerar o pagamento, responda CONFIRMO O PEDIDO, ou envie uma correção.'
         }`
       : summaryReply(draft, previous);

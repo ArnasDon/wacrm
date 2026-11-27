@@ -10,7 +10,10 @@ import { catalogEntries, loadOrderCatalog } from './order-catalog';
 import { applyContactTag } from './create-order';
 import type { OrderDraft } from './order-draft';
 import { getExistingPaymentLink } from '@/lib/payments/mercado-pago';
-import { saveContactOrderFields } from './custom-fields';
+import {
+  getSavedCustomerAddress,
+  saveContactOrderFields,
+} from './custom-fields';
 
 vi.mock('./create-order-with-mercado-pago', () => ({
   createOrderWithMercadoPago: vi.fn(),
@@ -1194,5 +1197,87 @@ describe('text order pipeline (all external effects mocked)', () => {
       error_detail: expect.stringContaining('catalog unavailable'),
     });
     expect(createOrderWithMercadoPago).not.toHaveBeenCalled();
+  });
+
+  it('shows items and total before address, supports retirada with Mercado Pago link without address', async () => {
+    const f = fixture();
+    const first = await f.turn('2 carne', 'items');
+    expect(first.outcome).toBe('address_requested');
+    expect(f.messages.at(-1)?.content_text).toContain('2x Carne');
+    expect(f.messages.at(-1)?.content_text).toContain('Total: R$ 28,00');
+    expect(f.messages.at(-1)?.content_text).toContain('ENTREGA');
+    expect(f.messages.at(-1)?.content_text).toContain('RETIRADA');
+
+    const pickup = await f.turn('retirada', 'choose-pickup');
+    expect(pickup.outcome).toBe('confirmation_requested');
+    expect(f.state().deliveryKind).toBe('retirada');
+    expect(f.state().deliveryAddress).toBeUndefined();
+    expect(f.messages.at(-1)?.content_text).toContain('Retirada na loja');
+    expect(f.messages.at(-1)?.content_text).toContain('Av. Industrial, 750');
+    expect(f.messages.at(-1)?.content_text).toContain('Total: R$ 28,00');
+    expect(f.messages.at(-1)?.content_text).toContain('CONFIRMO O PEDIDO');
+    expect(createOrderWithMercadoPago).not.toHaveBeenCalled();
+
+    const confirmed = await f.turn('confirmo o pedido', 'confirm-pickup');
+    expect(confirmed.outcome).toBe('order_created');
+    expect(createOrderWithMercadoPago).toHaveBeenCalledTimes(1);
+    expect(createOrderWithMercadoPago).toHaveBeenCalledWith(
+      expect.objectContaining({ accountId: 'account-1' }),
+      expect.objectContaining({
+        deliveryKind: 'retirada',
+        deliveryAddress: undefined,
+        items: [
+          expect.objectContaining({ id: 'meat', quantity: 2, unitPrice: 14 }),
+        ],
+      })
+    );
+    expect(f.messages.at(-1)?.interactive_payload).toMatchObject({
+      type: 'cta_url',
+    });
+  });
+
+  it('supports choosing entrega explicitly before sending address and creates delivery checkout', async () => {
+    const f = fixture();
+    await f.turn('2 carne', 'items');
+    const chosen = await f.turn('entrega', 'choose-delivery');
+    expect(chosen.outcome).toBe('address_requested');
+    expect(f.state().deliveryKind).toBe('delivery');
+    expect(f.messages.at(-1)?.content_text).toContain('Total: R$ 28,00');
+    expect(f.messages.at(-1)?.content_text).toContain('Rua, Número e Bairro');
+
+    const addressed = await f.turn('Rua Flores, 10 Centro', 'address');
+    expect(addressed.outcome).toBe('confirmation_requested');
+
+    const confirmed = await f.turn('confirmo o pedido', 'confirm-delivery');
+    expect(confirmed.outcome).toBe('order_created');
+    expect(createOrderWithMercadoPago).toHaveBeenCalledTimes(1);
+    expect(createOrderWithMercadoPago).toHaveBeenCalledWith(
+      expect.objectContaining({ accountId: 'account-1' }),
+      expect.objectContaining({
+        deliveryKind: 'delivery',
+        deliveryAddress: 'Rua Flores, 10 Centro',
+      })
+    );
+  });
+
+  it('supports inline retirada in the first message and suppresses saved address prompt on retirada', async () => {
+    vi.mocked(getSavedCustomerAddress).mockResolvedValueOnce(
+      'Rua Salva, 99 Centro'
+    );
+    const f = fixture();
+    const first = await f.turn('2 carne, para retirada', 'inline-pickup');
+    expect(first.outcome).toBe('confirmation_requested');
+    expect(f.state().deliveryKind).toBe('retirada');
+    expect(f.messages.at(-1)?.content_text).not.toContain('Rua Salva, 99');
+
+    const confirmed = await f.turn('confirmo o pedido', 'confirm');
+    expect(confirmed.outcome).toBe('order_created');
+    expect(createOrderWithMercadoPago).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        deliveryKind: 'retirada',
+        deliveryAddress: undefined,
+      })
+    );
   });
 });

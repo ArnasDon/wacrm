@@ -30,6 +30,7 @@ export interface ParsedOrderResult {
   total: number;
   totalFormatted: string;
   deliveryAddress?: string;
+  deliveryKind?: 'delivery' | 'retirada';
   rawText: string;
   unresolved?: string[];
   requiresKitchenReview?: boolean;
@@ -521,6 +522,120 @@ function rangesOverlap(
   return r1.start < r2.end && r2.start < r1.end;
 }
 
+const RETIRADA_CLAUSE_PATTERNS = [
+  /^(?:para|pra|quero|prefiro|vai ser|pode ser|por)?\s*(?:retirada|retirar|retiro)(?:\s+(?:na loja|no local|no balcao|ai))?$/,
+  /^(?:vou\s+)?(?:retirar|buscar|pegar)(?:\s+(?:na loja|no local|no balcao|ai))?$/,
+  /^(?:no\s+)?balcao$/,
+];
+
+const DELIVERY_CLAUSE_PATTERNS = [
+  /^(?:para|pra|quero|prefiro|vai ser|pode ser|por)?\s*(?:entrega|delivery|tele[\s-]?entrega)$/,
+  /^(?:entrega|entregar|receber)\s+(?:em casa|no\s+(?:meu\s+)?endereco(?:\s+cadastrado)?)$/,
+  /^(?:para|pra|quero|prefiro|vai ser|pode ser)?\s*entregar(?:\s+em casa)?$/,
+  /^pode entregar$/,
+];
+
+const TRAILING_DELIVERY_KIND_REGEX =
+  /\s+((?:para|pra)\s+(?:retirada|retirar(?:\s+(?:na\s+loja|no\s+local|no\s+balc[aã]o))?|entrega|delivery|entregar(?:\s+em\s+casa)?)|e\s+(?:para\s+|pra\s+)?(?:retirada|retirar(?:\s+(?:na\s+loja|no\s+local|no\s+balc[aã]o))?|entrega|delivery))\.?$/i;
+
+function matchDeliveryKindClause(
+  clause: string
+): 'delivery' | 'retirada' | null {
+  const cleaned = normalize(clause)
+    .replace(/^(?:ok|okay|certo|beleza|sim|entendi)\s+/, '')
+    .replace(/[.!]+$/, '')
+    .trim();
+  if (!cleaned) return null;
+  if (RETIRADA_CLAUSE_PATTERNS.some((pattern) => pattern.test(cleaned))) {
+    return 'retirada';
+  }
+  if (DELIVERY_CLAUSE_PATTERNS.some((pattern) => pattern.test(cleaned))) {
+    return 'delivery';
+  }
+  return null;
+}
+
+/**
+ * Identifica preferência explícita de entrega (delivery) ou retirada na loja.
+ * Retorna null em perguntas, negações, mensagens ambíguas ou endereços parciais.
+ */
+export function extractDeliveryKindFromText(
+  text: string
+): 'delivery' | 'retirada' | null {
+  if (!text || !text.trim()) return null;
+  const trimmed = text.trim();
+  if (/[?？]\s*$/.test(trimmed)) return null;
+  const norm = normalize(trimmed);
+  if (
+    /\b(?:qual|quais|quanto|como|onde|aceita|posso|da pra)\b/.test(norm) ||
+    /\b(?:nao|nunca|nem|sem)\b/.test(norm)
+  ) {
+    return null;
+  }
+  const hasRetiradaTerm = /\b(?:retirada|retirar|retiro|balcao)\b/.test(norm);
+  const hasDeliveryTerm =
+    /\b(?:entrega|delivery|entregar|tele[\s-]?entrega)\b/.test(norm);
+  if (hasRetiradaTerm && hasDeliveryTerm) return null;
+
+  const fullMatch = matchDeliveryKindClause(norm);
+  if (fullMatch) return fullMatch;
+
+  const clauses = norm.split(/[\r\n,;!?]+|\s+[-–—]\s+/);
+  let detected: 'delivery' | 'retirada' | null = null;
+  for (const rawClause of clauses) {
+    for (const part of rawClause.split(':')) {
+      const candidate = matchDeliveryKindClause(part);
+      if (!candidate) continue;
+      if (detected && detected !== candidate) return null;
+      detected = candidate;
+    }
+  }
+  if (detected) return detected;
+
+  const trailingMatch = TRAILING_DELIVERY_KIND_REGEX.exec(trimmed);
+  if (trailingMatch) {
+    return matchDeliveryKindClause(trailingMatch[1]);
+  }
+  return null;
+}
+
+function stripDeliveryKindClauses(
+  input: string,
+  expectedKind: 'delivery' | 'retirada'
+): string {
+  const cleanedLines: string[] = [];
+  for (const line of input.split(/\r?\n/)) {
+    if (matchDeliveryKindClause(line) === expectedKind) continue;
+    const colonParts = line.split(/(\s*:\s*)/);
+    if (
+      colonParts.length >= 3 &&
+      matchDeliveryKindClause(colonParts[0]) === expectedKind
+    ) {
+      const rest = colonParts.slice(2).join('').trim();
+      if (rest) cleanedLines.push(rest);
+      continue;
+    }
+    const parts = line.split(/(\s*[,;]\s*|\s+[-–—]\s+)/);
+    const kept: string[] = [];
+    for (let i = 0; i < parts.length; i += 2) {
+      const segment = parts[i] ?? '';
+      const sep = parts[i - 1] ?? '';
+      if (matchDeliveryKindClause(segment) === expectedKind) {
+        continue;
+      }
+      if (kept.length > 0 && sep) kept.push(sep);
+      if (segment) kept.push(segment);
+    }
+    let nextLine = kept.join('').trim();
+    const trailing = TRAILING_DELIVERY_KIND_REGEX.exec(nextLine);
+    if (trailing && matchDeliveryKindClause(trailing[1]) === expectedKind) {
+      nextLine = nextLine.slice(0, trailing.index).trim();
+    }
+    if (nextLine) cleanedLines.push(nextLine);
+  }
+  return cleanedLines.join('\n').trim();
+}
+
 /**
  * 2. Parser Determinístico de Itens do Cardápio:
  * Extrai itens e quantidades, calculando o valor total oficial.
@@ -543,7 +658,13 @@ export function parseCatalogOrder(
   const source = (text || '').normalize('NFC').trim();
   const address = extractAddressFromText(source);
   const addressStart = address ? source.indexOf(address) : -1;
-  const orderText = (
+  const extractedDeliveryKind = address
+    ? null
+    : extractDeliveryKindFromText(source);
+  const deliveryKind: 'delivery' | 'retirada' | undefined = address
+    ? 'delivery'
+    : (extractedDeliveryKind ?? undefined);
+  let orderText = (
     addressStart >= 0
       ? source
           .slice(0, addressStart)
@@ -563,6 +684,9 @@ export function parseCatalogOrder(
       '$1 '
     )
     .trim();
+  if (extractedDeliveryKind) {
+    orderText = stripDeliveryKindClauses(orderText, extractedDeliveryKind);
+  }
   const normalized = normalize(orderText);
   const matches: Array<{
     start: number;
@@ -721,6 +845,7 @@ export function parseCatalogOrder(
     total,
     totalFormatted: `R$ ${total.toFixed(2).replace('.', ',')}`,
     deliveryAddress: address || undefined,
+    ...(deliveryKind ? { deliveryKind } : {}),
     rawText: text,
     unresolved,
     ...(orderNotes.length ? { orderNotes } : {}),

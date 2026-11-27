@@ -65,6 +65,36 @@ let tables: Record<string, Row[]>;
 let oldDraft: Row;
 let failMessageInsert: boolean | string = false;
 let failReceiptInsert: boolean | string = false;
+function resolveConversationRpc(
+  name: string,
+  args: Record<string, unknown>
+) {
+  if (name !== 'resolve_or_create_conversation') return null;
+  const existing = tables.conversations.find(
+    (c) =>
+      c.account_id === args.p_account_id && c.contact_id === args.p_contact_id
+  );
+  if (existing) {
+    return {
+      data: { conversation: structuredClone(existing), is_new: false },
+      error: null,
+    };
+  }
+  const created = {
+    id: `conv-${tables.conversations.length + 1}`,
+    account_id: args.p_account_id,
+    user_id: args.p_user_id,
+    contact_id: args.p_contact_id,
+    status: args.p_status ?? 'open',
+    unread_count: 0,
+  };
+  tables.conversations.push(created);
+  return {
+    data: { conversation: structuredClone(created), is_new: true },
+    error: null,
+  };
+}
+
 function database() {
   return (table: string) => {
     let operation = 'select';
@@ -238,7 +268,9 @@ beforeEach(() => {
     broadcast_recipients: [],
   };
   mocks.db.from.mockImplementation(database());
-  mocks.db.rpc.mockImplementation(async () => {
+  mocks.db.rpc.mockImplementation(async (name, args) => {
+    const resolved = resolveConversationRpc(name, args);
+    if (resolved) return resolved;
     throw new Error('A catalog reply must not acquire an old text-draft turn');
   });
   mocks.flow.mockImplementation(async (input) => {
@@ -289,6 +321,8 @@ describe('real WhatsApp POST and text processor ownership', () => {
       last_agent_message_at: new Date(Date.now() - 60000).toISOString(),
     });
     mocks.db.rpc.mockImplementation(async (name, args) => {
+      const resolved = resolveConversationRpc(name, args);
+      if (resolved) return resolved;
       expect(name).toBe('handle_conversation_handoff');
       if (args.p_new_order === true && args.p_request === false) {
         Object.assign(tables.conversations[0], {
@@ -347,7 +381,11 @@ describe('real WhatsApp POST and text processor ownership', () => {
         },
       ];
       tables.conversations[0].ai_autoreply_disabled = true;
-      mocks.db.rpc.mockResolvedValue({ data: { blocked: true }, error: null });
+      mocks.db.rpc.mockImplementation(async (name, args) => {
+        const resolved = resolveConversationRpc(name, args);
+        if (resolved) return resolved;
+        return { data: { blocked: true }, error: null };
+      });
       await deliver('invalid-native', {
         type: 'order',
         order: {
@@ -519,7 +557,9 @@ describe('real WhatsApp POST and text processor ownership', () => {
     'blocks native catalog automation for a human episode (RPC fails: %s)',
     async (fails) => {
       tables.conversations[0].status = 'pending';
-      mocks.db.rpc.mockImplementation(async () => {
+      mocks.db.rpc.mockImplementation(async (name, args) => {
+        const resolved = resolveConversationRpc(name, args);
+        if (resolved) return resolved;
         if (fails) throw new Error('handoff unavailable');
         return { data: { blocked: true }, error: null };
       });
@@ -666,7 +706,14 @@ describe('real WhatsApp POST and text processor ownership', () => {
       expect(tables.messages).toHaveLength(2);
       expect(tables.order_drafts[0].state).toEqual(oldDraft);
       expect(tables.flow_runs[0].status).toBe('active');
-      expect(mocks.db.rpc).not.toHaveBeenCalled();
+      expect(mocks.db.rpc).not.toHaveBeenCalledWith(
+        'claim_order_turn',
+        expect.anything()
+      );
+      expect(mocks.db.rpc).not.toHaveBeenCalledWith(
+        'handle_conversation_handoff',
+        expect.anything()
+      );
       expect(mocks.payment).not.toHaveBeenCalled();
       expect(mocks.text).not.toHaveBeenCalled();
       expect(mocks.ai).not.toHaveBeenCalled();

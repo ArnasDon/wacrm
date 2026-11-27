@@ -67,31 +67,62 @@ describe('dedupeByPhone', () => {
 });
 
 describe('findExistingContact', () => {
-  // Minimal SupabaseClient stub: resolves the .from().select().eq().like()
-  // chain to a fixed candidate set.
-  function stubDb(rows: Array<{ id: string; phone: string }>): SupabaseClient {
+  // Minimal SupabaseClient stub: records the column queried with .like()
+  // and resolves to a fixed candidate set.
+  function stubDb(
+    rows: Array<{ id: string; phone: string; phone_normalized?: string }>
+  ): { db: SupabaseClient; likeCalls: Array<[string, string]> } {
+    const likeCalls: Array<[string, string]> = [];
     const builder = {
       select: () => builder,
       eq: () => builder,
-      like: () => Promise.resolve({ data: rows, error: null }),
+      like: (col: string, pattern: string) => {
+        likeCalls.push([col, pattern]);
+        return Promise.resolve({ data: rows, error: null });
+      },
     };
-    return { from: () => builder } as unknown as SupabaseClient;
+    return {
+      db: { from: () => builder } as unknown as SupabaseClient,
+      likeCalls,
+    };
   }
 
+  it('queries phone_normalized instead of raw phone', async () => {
+    const { db, likeCalls } = stubDb([
+      {
+        id: 'c1',
+        phone: '+55 11 98765-4321',
+        phone_normalized: '5511987654321',
+      },
+    ]);
+    const hit = await findExistingContact(db, 'acct', '5511987654321');
+    expect(hit?.id).toBe('c1');
+    expect(likeCalls).toEqual([['phone_normalized', '%87654321']]);
+  });
+
   it('returns a trunk-variant match via phonesMatch', async () => {
-    const db = stubDb([{ id: 'c1', phone: '37063949836' }]);
+    const { db } = stubDb([{ id: 'c1', phone: '37063949836' }]);
     const hit = await findExistingContact(db, 'acct', '+370 063 949 836');
     expect(hit?.id).toBe('c1');
   });
 
+  it('prefers an exact normalized match over a fuzzy last-8 match', async () => {
+    const { db } = stubDb([
+      { id: 'c-fuzzy', phone: '37063949836' },
+      { id: 'c-exact', phone: '+370 063 949 836' },
+    ]);
+    const hit = await findExistingContact(db, 'acct', '370063949836');
+    expect(hit?.id).toBe('c-exact');
+  });
+
   it('returns null when no candidate matches', async () => {
-    const db = stubDb([{ id: 'c1', phone: '15559999999' }]);
+    const { db } = stubDb([{ id: 'c1', phone: '15559999999' }]);
     const hit = await findExistingContact(db, 'acct', '+1 555-123-4567');
     expect(hit).toBeNull();
   });
 
   it('returns null for an empty phone without querying', async () => {
-    const db = stubDb([{ id: 'c1', phone: '15551234567' }]);
+    const { db } = stubDb([{ id: 'c1', phone: '15551234567' }]);
     expect(await findExistingContact(db, 'acct', '   ')).toBeNull();
   });
 });

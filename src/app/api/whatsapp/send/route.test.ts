@@ -14,6 +14,7 @@ const messageInserts: Array<Record<string, unknown>> = [];
 // Toggles for the per-test scenario.
 let existingConversation: Record<string, unknown> | null = null;
 let contactRow: Record<string, unknown> | null = null;
+let rpcError: { message: string; code?: string } | null = null;
 // A conversation created during the request becomes retrievable by id —
 // the shared send core re-loads the conversation (with its contact) from
 // just the id, so the mock must model insert-then-select-by-id.
@@ -126,6 +127,35 @@ function makeSupabaseMock() {
       })),
     },
     from: vi.fn((table: string) => builder(table)),
+    rpc: vi.fn(async (fn: string, args: Record<string, unknown>) => {
+      if (fn !== 'resolve_or_create_conversation') {
+        return { data: null, error: { message: `Unknown rpc: ${fn}` } };
+      }
+      if (rpcError) {
+        return { data: null, error: rpcError };
+      }
+      if (existingConversation) {
+        return {
+          data: { conversation: existingConversation, is_new: false },
+          error: null,
+        };
+      }
+      conversationInserts.push({
+        account_id: args.p_account_id,
+        user_id: args.p_user_id,
+        contact_id: args.p_contact_id,
+      });
+      createdConversation = {
+        id: 'conv-new',
+        account_id: 'acct-1',
+        contact_id: 'contact-1',
+        contact: CONTACT,
+      };
+      return {
+        data: { conversation: createdConversation, is_new: true },
+        error: null,
+      };
+    }),
   };
 }
 
@@ -189,6 +219,7 @@ describe('POST /api/whatsapp/send — contact_id template path', () => {
     messageInserts.length = 0;
     existingConversation = null;
     createdConversation = null;
+    rpcError = null;
     contactRow = CONTACT;
     supabaseMock = makeSupabaseMock();
     sendTemplateMessage.mockClear();
@@ -258,6 +289,17 @@ describe('POST /api/whatsapp/send — contact_id template path', () => {
 
     expect(res.status).toBe(404);
     expect(json.error).toMatch(/contact not found/i);
+    expect(sendTemplateMessage).not.toHaveBeenCalled();
+  });
+
+  it('returns 403 when the resolve_or_create_conversation RPC fails with 42501', async () => {
+    rpcError = { message: 'Forbidden', code: '42501' };
+
+    const res = await postContactTemplate();
+    const json = await res.json();
+
+    expect(res.status).toBe(403);
+    expect(json.error).toBe('Forbidden');
     expect(sendTemplateMessage).not.toHaveBeenCalled();
   });
 

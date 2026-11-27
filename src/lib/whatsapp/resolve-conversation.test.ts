@@ -1,13 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { resolveConversationByPhone } from './resolve-conversation';
+import {
+  ConversationResolutionError,
+  resolveConversationByPhone,
+  resolveOrCreateConversation,
+} from './resolve-conversation';
 import { SendMessageError } from './send-message';
 
 // ------------------------------------------------------------
-// Chainable Supabase stub, scripted per table. Terminal methods
-// (like/maybeSingle/single) resolve to configured data; the builder
-// itself is thenable so an awaited `update().eq()` resolves cleanly.
+// Chainable Supabase stub, scripted per table + rpc.
 // ------------------------------------------------------------
 type ContactRow = { id: string; phone: string; name?: string | null };
 
@@ -19,14 +21,16 @@ interface Script {
   contactCandidatesByCall?: ContactRow[][];
   insertedContactId?: string; // contacts insert -> single
   insertContactError?: { code?: string } | null;
-  existingConversation?: { id: string } | null; // conversations select.maybeSingle
-  insertedConversationId?: string; // conversations insert -> single
+  existingConversation?: { id: string } | null;
+  insertedConversationId?: string;
+  rpcError?: { message?: string; code?: string } | null;
 }
 
-function makeDb(script: Script): SupabaseClient {
+function makeDb(script: Script) {
   let table = '';
   let mode: 'select' | 'insert' | 'update' = 'select';
   let likeCalls = 0;
+  const likeCols: string[] = [];
 
   const builder: Record<string, unknown> = {
     select: () => builder,
@@ -39,7 +43,8 @@ function makeDb(script: Script): SupabaseClient {
       return builder;
     },
     eq: () => builder,
-    like: () => {
+    like: (col: string) => {
+      likeCols.push(col);
       const data = script.contactCandidatesByCall
         ? (script.contactCandidatesByCall[likeCalls] ?? [])
         : (script.contactCandidates ?? []);
@@ -49,11 +54,6 @@ function makeDb(script: Script): SupabaseClient {
     maybeSingle: () => {
       if (table === 'whatsapp_config')
         return Promise.resolve({ data: script.config ?? null, error: null });
-      if (table === 'conversations' && mode === 'select')
-        return Promise.resolve({
-          data: script.existingConversation ?? null,
-          error: null,
-        });
       return Promise.resolve({ data: null, error: null });
     },
     single: () => {
@@ -68,11 +68,6 @@ function makeDb(script: Script): SupabaseClient {
           error: null,
         });
       }
-      if (table === 'conversations' && mode === 'insert')
-        return Promise.resolve({
-          data: { id: script.insertedConversationId },
-          error: null,
-        });
       return Promise.resolve({ data: null, error: null });
     },
     // Thenable: `await db.from().update().eq()` lands here.
@@ -80,14 +75,119 @@ function makeDb(script: Script): SupabaseClient {
       resolve({ data: null, error: null }),
   };
 
-  return {
+  const rpc = vi.fn(
+    async (fn: string, args: Record<string, unknown>) => {
+      if (fn !== 'resolve_or_create_conversation') {
+        throw new Error(`Unexpected rpc call: ${fn}`);
+      }
+      if (script.rpcError) {
+        return { data: null, error: script.rpcError };
+      }
+      if (script.existingConversation) {
+        return {
+          data: {
+            conversation: {
+              ...script.existingConversation,
+              account_id: args.p_account_id,
+              contact_id: args.p_contact_id,
+              status: args.p_status ?? 'open',
+            },
+            is_new: false,
+          },
+          error: null,
+        };
+      }
+      return {
+        data: {
+          conversation: {
+            id: script.insertedConversationId,
+            account_id: args.p_account_id,
+            user_id: args.p_user_id,
+            contact_id: args.p_contact_id,
+            status: args.p_status ?? 'open',
+            assigned_agent_id: args.p_assigned_agent_id ?? null,
+          },
+          is_new: true,
+        },
+        error: null,
+      };
+    }
+  );
+
+  const db = {
     from: (t: string) => {
       table = t;
       mode = 'select';
       return builder;
     },
+    rpc,
   } as unknown as SupabaseClient;
+
+  return { db, rpc, likeCols };
 }
+
+describe('resolveOrCreateConversation', () => {
+  it('calls resolve_or_create_conversation RPC and returns { conversation, is_new }', async () => {
+    const { db, rpc } = makeDb({ insertedConversationId: 'cv-created' });
+    const res = await resolveOrCreateConversation(db, {
+      accountId: 'acct-1',
+      userId: 'user-1',
+      contactId: 'contact-1',
+    });
+
+    expect(rpc).toHaveBeenCalledWith('resolve_or_create_conversation', {
+      p_account_id: 'acct-1',
+      p_user_id: 'user-1',
+      p_contact_id: 'contact-1',
+      p_status: 'open',
+      p_assigned_agent_id: null,
+    });
+    expect(res.is_new).toBe(true);
+    expect(res.conversation.id).toBe('cv-created');
+  });
+
+  it('returns is_new = false when an existing thread is returned', async () => {
+    const { db } = makeDb({ existingConversation: { id: 'cv-existing' } });
+    const res = await resolveOrCreateConversation(db, {
+      accountId: 'acct-1',
+      userId: 'user-1',
+      contactId: 'contact-1',
+    });
+
+    expect(res.is_new).toBe(false);
+    expect(res.conversation.id).toBe('cv-existing');
+  });
+
+  it('maps RPC 42501 error to ConversationResolutionError with status 403', async () => {
+    const { db } = makeDb({
+      rpcError: { message: 'Forbidden', code: '42501' },
+    });
+    await expect(
+      resolveOrCreateConversation(db, {
+        accountId: 'acct-1',
+        userId: 'user-1',
+        contactId: 'contact-1',
+      })
+    ).rejects.toMatchObject({
+      name: 'ConversationResolutionError',
+      code: '42501',
+      status: 403,
+    });
+  });
+
+  it('throws ConversationResolutionError on invalid RPC payload', async () => {
+    const db = {
+      rpc: vi.fn(async () => ({ data: {}, error: null })),
+    } as unknown as SupabaseClient;
+    await expect(
+      resolveOrCreateConversation(db, {
+        accountId: 'acct-1',
+        userId: 'user-1',
+        contactId: 'contact-1',
+      })
+    ).rejects.toBeInstanceOf(ConversationResolutionError);
+  });
+});
 
 describe('resolveConversationByPhone', () => {
   it('rejects an invalid phone before any DB call', async () => {
@@ -102,7 +202,7 @@ describe('resolveConversationByPhone', () => {
   });
 
   it('fails with whatsapp_not_configured when no config owner exists', async () => {
-    const db = makeDb({ config: null });
+    const { db } = makeDb({ config: null });
     await resolveConversationByPhone(db, 'acct', '+14155550123').catch(
       (e: SendMessageError) => {
         expect(e.code).toBe('whatsapp_not_configured');
@@ -115,7 +215,7 @@ describe('resolveConversationByPhone', () => {
   });
 
   it('returns the existing contact + conversation without creating', async () => {
-    const db = makeDb({
+    const { db, likeCols, rpc } = makeDb({
       config: { user_id: 'owner-1' },
       contactCandidates: [{ id: 'c1', phone: '14155550123' }],
       existingConversation: { id: 'cv1' },
@@ -125,6 +225,14 @@ describe('resolveConversationByPhone', () => {
       'acct',
       '+1 (415) 555-0123'
     );
+    expect(likeCols).toEqual(['phone_normalized']);
+    expect(rpc).toHaveBeenCalledWith('resolve_or_create_conversation', {
+      p_account_id: 'acct',
+      p_user_id: 'owner-1',
+      p_contact_id: 'c1',
+      p_status: 'open',
+      p_assigned_agent_id: null,
+    });
     expect(res).toEqual({
       conversationId: 'cv1',
       contactId: 'c1',
@@ -133,7 +241,7 @@ describe('resolveConversationByPhone', () => {
   });
 
   it('creates contact + conversation when none exist', async () => {
-    const db = makeDb({
+    const { db } = makeDb({
       config: { user_id: 'owner-1' },
       contactCandidates: [],
       insertedContactId: 'c2',
@@ -157,7 +265,7 @@ describe('resolveConversationByPhone', () => {
     // First lookup misses (→ we attempt an insert), the insert hits a
     // 23505 unique violation, and the post-race re-lookup now returns
     // the row a concurrent writer created.
-    const db = makeDb({
+    const { db } = makeDb({
       config: { user_id: 'owner-1' },
       contactCandidatesByCall: [[], [{ id: 'c-raced', phone: '14155550123' }]],
       insertContactError: { code: '23505' },

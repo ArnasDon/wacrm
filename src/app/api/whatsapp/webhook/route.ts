@@ -4,6 +4,7 @@ import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption';
 import { getCatalogProductNames, getMediaUrl } from '@/lib/whatsapp/meta-api';
 import { productNameFromCardapio } from '@/lib/cardapio/product-names';
 import { normalizePhone } from '@/lib/whatsapp/phone-utils';
+import { resolveOrCreateConversation } from '@/lib/whatsapp/resolve-conversation';
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe';
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature';
 import { runAutomationsForTrigger } from '@/lib/automations/engine';
@@ -464,14 +465,13 @@ async function processMessage(
   if (!contactOutcome) throw new Error('Unable to persist inbound contact');
   const contactRecord = contactOutcome.contact;
 
-  const convResult = await findOrCreateConversation(
+  const convResult = await resolveOrCreateConversation(supabaseAdmin(), {
     accountId,
-    configOwnerUserId,
-    contactRecord.id
-  );
-  if (!convResult) throw new Error('Unable to persist inbound conversation');
+    userId: configOwnerUserId,
+    contactId: contactRecord.id,
+  });
   const conversation = convResult.conversation;
-  const conversationCreated = convResult.created;
+  const conversationCreated = convResult.is_new;
   const contactWasCreated = contactOutcome.wasCreated;
 
   // Reactions have no standalone inbound history row.
@@ -509,12 +509,15 @@ async function processMessage(
       ? 'image'
       : 'text';
 
-  const { count: priorCustomerMsgCount } = await supabaseAdmin()
-    .from('messages')
-    .select('id', { count: 'exact', head: true })
-    .eq('conversation_id', conversation.id)
-    .eq('sender_type', 'customer');
-  const isFirstInboundMessage = (priorCustomerMsgCount ?? 0) === 0;
+  let isFirstInboundMessage = conversationCreated;
+  if (!isFirstInboundMessage && conversation.status !== 'pending') {
+    const { count: priorCustomerMsgCount } = await supabaseAdmin()
+      .from('messages')
+      .select('id', { count: 'exact', head: true })
+      .eq('conversation_id', conversation.id)
+      .eq('sender_type', 'customer');
+    isFirstInboundMessage = (priorCustomerMsgCount ?? 0) === 0;
+  }
 
   const { error: msgError } = await supabaseAdmin()
     .from('messages')
@@ -1041,38 +1044,4 @@ async function findOrCreateContact(
   }
 
   return { contact: newContact, wasCreated: true };
-}
-
-async function findOrCreateConversation(
-  accountId: string,
-  configOwnerUserId: string,
-  contactId: string
-) {
-  const { data: existing, error: findError } = await supabaseAdmin()
-    .from('conversations')
-    .select('*')
-    .eq('account_id', accountId)
-    .eq('contact_id', contactId)
-    .single();
-
-  if (!findError && existing) {
-    return { conversation: existing, created: false };
-  }
-
-  const { data: newConv, error: createError } = await supabaseAdmin()
-    .from('conversations')
-    .insert({
-      account_id: accountId,
-      user_id: configOwnerUserId,
-      contact_id: contactId,
-    })
-    .select()
-    .single();
-
-  if (createError) {
-    console.error('Error creating conversation:', createError);
-    return null;
-  }
-
-  return { conversation: newConv, created: true };
 }

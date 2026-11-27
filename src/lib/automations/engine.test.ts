@@ -8,6 +8,9 @@ const h = vi.hoisted(() => ({
     ownedCustomField: null as { id: string } | null,
     automations: [] as Record<string, unknown>[],
     steps: [] as Record<string, unknown>[],
+    conversation: null as { id: string } | null,
+    conversationOrderCalls: [] as Array<{ col: string; ascending?: boolean }>,
+    conversationLimitCalls: [] as number[],
     fromCalls: [] as string[],
     updateCalls: [] as {
       table: string;
@@ -54,6 +57,7 @@ vi.mock('./admin-client', () => {
       return { data: { steps_executed: [], status: 'success' }, error: null };
     }
     if (table === 'automation_steps') return { data: state.steps, error: null };
+    if (table === 'conversations') return { data: state.conversation, error: null };
     return { data: null, error: null };
   }
 
@@ -73,8 +77,21 @@ vi.mock('./admin-client', () => {
       eq: (k: string, v: unknown) => (ops.filters.push(['eq', k, v]), b),
       gte: () => b,
       is: () => b,
-      order: () => b,
-      limit: () => b,
+      order: (col: string, opts?: { ascending?: boolean }) => {
+        if (table === 'conversations') {
+          state.conversationOrderCalls.push({
+            col,
+            ascending: opts?.ascending,
+          });
+        }
+        return b;
+      },
+      limit: (n: number) => {
+        if (table === 'conversations') {
+          state.conversationLimitCalls.push(n);
+        }
+        return b;
+      },
       single: () => Promise.resolve(resolve(ops)),
       maybeSingle: () => Promise.resolve(resolve(ops)),
       then: (onF: (v: unknown) => unknown, onR?: (e: unknown) => unknown) =>
@@ -108,6 +125,9 @@ beforeEach(() => {
   h.state.ownedCustomField = null;
   h.state.automations = [];
   h.state.steps = [];
+  h.state.conversation = null;
+  h.state.conversationOrderCalls = [];
+  h.state.conversationLimitCalls = [];
   h.state.fromCalls = [];
   h.state.updateCalls = [];
   h.state.upsertCalls = [];
@@ -260,3 +280,34 @@ function customStep(field: string, value: string) {
     step_config: { field, value },
   };
 }
+
+describe('resolveConversationId defensive lookup', () => {
+  it('orders by updated_at DESC and applies limit(1) when context.conversation_id is omitted', async () => {
+    h.state.owned = { id: 'c1' };
+    h.state.conversation = { id: 'conv-1' };
+    h.state.automations = [automationWithUpdateStep()];
+    h.state.steps = [
+      {
+        id: 's1',
+        automation_id: 'a1',
+        step_type: 'send_template',
+        position: 0,
+        parent_step_id: null,
+        step_config: { template_name: 'welcome', language: 'pt_BR' },
+      },
+    ];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: 'new_message_received',
+      contactId: 'c1',
+      context: {},
+    });
+
+    expect(h.state.conversationOrderCalls).toContainEqual({
+      col: 'updated_at',
+      ascending: false,
+    });
+    expect(h.state.conversationLimitCalls).toContain(1);
+  });
+});

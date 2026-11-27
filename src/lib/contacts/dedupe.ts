@@ -46,12 +46,15 @@ export async function findExistingContact(
     .from('contacts')
     .select('*')
     .eq('account_id', accountId)
-    .like('phone', `%${suffix}`);
+    .like('phone_normalized', `%${suffix}`);
 
   if (error || !data) return null;
 
+  const candidates = data as ExistingContact[];
   return (
-    (data as ExistingContact[]).find((c) => phonesMatch(c.phone, phone)) ?? null
+    candidates.find((c) => isExactMatch(c, phone)) ??
+    candidates.find((c) => phonesMatch(c.phone, phone)) ??
+    null
   );
 }
 

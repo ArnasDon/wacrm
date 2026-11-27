@@ -25,6 +25,94 @@ import { sanitizePhoneForMeta, isValidE164 } from '@/lib/whatsapp/phone-utils';
 import { SendMessageError } from '@/lib/whatsapp/send-message';
 import { resolveAuditUserId, ContactError } from '@/lib/api/v1/contacts';
 
+export class ConversationResolutionError extends Error {
+  code?: string;
+  status: number;
+
+  constructor(message: string, code?: string, status?: number) {
+    super(message);
+    this.name = 'ConversationResolutionError';
+    this.code = code;
+    this.status = status ?? (code === '42501' ? 403 : 500);
+  }
+}
+
+export interface ConversationRecord {
+  id: string;
+  account_id: string;
+  user_id: string;
+  contact_id: string;
+  status: 'open' | 'pending' | 'closed';
+  assigned_agent_id: string | null;
+  last_message_text: string | null;
+  last_message_at: string | null;
+  unread_count: number | null;
+  ai_autoreply_disabled?: boolean;
+  ai_reply_count?: number;
+  bot_pause_reason?: string | null;
+  bot_paused_at?: string | null;
+  bot_resume_after?: string | null;
+  bot_handoff_id?: string | null;
+  bot_order_resumed_at?: string | null;
+  last_agent_message_at?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  [key: string]: unknown;
+}
+
+export interface ResolveOrCreateConversationParams {
+  accountId: string;
+  userId: string;
+  contactId: string;
+  status?: 'open' | 'pending' | 'closed';
+  assignedAgentId?: string | null;
+}
+
+export interface ResolveOrCreateConversationResult {
+  conversation: ConversationRecord;
+  is_new: boolean;
+}
+
+/**
+ * Single atomic entrypoint for getting or creating the unique conversation
+ * thread for `(accountId, contactId)` via the Postgres RPC
+ * `resolve_or_create_conversation`.
+ */
+export async function resolveOrCreateConversation(
+  db: SupabaseClient,
+  params: ResolveOrCreateConversationParams
+): Promise<ResolveOrCreateConversationResult> {
+  const { data, error } = await db.rpc('resolve_or_create_conversation', {
+    p_account_id: params.accountId,
+    p_user_id: params.userId,
+    p_contact_id: params.contactId,
+    p_status: params.status ?? 'open',
+    p_assigned_agent_id: params.assignedAgentId ?? null,
+  });
+
+  if (error) {
+    throw new ConversationResolutionError(
+      error.message || 'Failed to resolve conversation',
+      error.code
+    );
+  }
+
+  const payload = (
+    typeof data === 'string' ? JSON.parse(data) : data
+  ) as Partial<ResolveOrCreateConversationResult> | null;
+
+  if (!payload?.conversation?.id) {
+    throw new ConversationResolutionError(
+      'Invalid payload returned by resolve_or_create_conversation'
+    );
+  }
+
+  return {
+    conversation: payload.conversation,
+    is_new: Boolean(payload.is_new),
+  };
+}
+
 export interface ResolvedConversation {
   conversationId: string;
   contactId: string;
@@ -137,37 +225,23 @@ export async function resolveConversationByPhone(
   }
 
   // ---- conversation -------------------------------------------
-  // One conversation per (account, contact) — same convention as the
-  // webhook.
-  const { data: conv } = await db
-    .from('conversations')
-    .select('id')
-    .eq('account_id', accountId)
-    .eq('contact_id', contactId)
-    .maybeSingle();
-
-  if (conv?.id) {
-    return { conversationId: conv.id, contactId, contactCreated };
-  }
-
-  const { data: newConv, error: convErr } = await db
-    .from('conversations')
-    .insert({
-      account_id: accountId,
-      user_id: ownerUserId,
-      contact_id: contactId,
-    })
-    .select('id')
-    .single();
-
-  if (convErr || !newConv) {
+  // One conversation per (account, contact) via atomic Postgres RPC.
+  try {
+    const { conversation } = await resolveOrCreateConversation(db, {
+      accountId,
+      userId: ownerUserId,
+      contactId,
+    });
+    return { conversationId: conversation.id, contactId, contactCreated };
+  } catch (convErr) {
     console.error('[resolve-conversation] conversation create error:', convErr);
-    throw new SendMessageError(
-      'db_error',
-      'Failed to create conversation',
-      500
-    );
+    if (convErr instanceof ConversationResolutionError) {
+      throw new SendMessageError(
+        convErr.status === 403 ? 'forbidden' : 'db_error',
+        convErr.status === 403 ? 'Forbidden' : 'Failed to create conversation',
+        convErr.status
+      );
+    }
+    throw new SendMessageError('db_error', 'Failed to create conversation', 500);
   }
-
-  return { conversationId: newConv.id, contactId, contactCreated };
 }
